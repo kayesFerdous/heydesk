@@ -3,7 +3,7 @@
 What to build next and how to know it's done. Specs live in [`docs/`](docs/)
 (map in [CLAUDE.md](CLAUDE.md)); decisions in [docs/decisions.md](docs/decisions.md).
 
-> **Now:** M0 done (30 Sep). **Next:** M1 day 2 (ports, fakes, `run_turn` text only, SSE chat page).
+> **Now:** M1 day 2 done (30 Sep). **Next:** M1 day 3 (models + first migration, restaurant preset, `publish()`, dev agent, lease, greeting stored).
 > **Target dates:** day 1 = Wed 30 Sep 2026 → demo on day 27 (Mon 26 Oct),
 > buffer to day 30 (Thu 29 Oct).
 
@@ -41,7 +41,7 @@ Done 30 Sep: pyproject + tool config, `Settings` + `.env.example`, `db.py` (`UTC
 
 | Day | Build | Read | Done when |
 |---|---|---|---|
-| 2 | `ports/llm.py`, `ports/decider.py`; `FakeLLM`, `FakeDecider`; `runtime/events.py` (incl. `Progress`), `trace.py`; `run_turn` **text only**; `api/sse.py` + `POST /api/chat/{key}`; `web/static/` chat page | 02 §6 `LanguageModel`, §7 (up to *Structure*), §8, §14 · 03 §7 | [ ] Type in the browser, see fake tokens stream in |
+| 2 | `ports/llm.py`, `ports/decider.py`; `FakeLLM`, `FakeDecider`; `runtime/events.py` (incl. `Progress`), `trace.py`; `run_turn` **text only**; `api/sse.py` + `POST /api/chat/{key}`; `web/static/` chat page | 02 §6 `LanguageModel`, §7 (up to *Structure*), §8, §14 · 03 §7 | [x] Type in the browser, see fake tokens stream in |
 | 3 | Models: workspace, agent, agent_version, conversation (with turn lease columns), turn (with `messages`, insert-only) + first migration; `AgentConfig`; presets loader; **restaurant** preset + knowledge + `examples/agents/restaurant.yaml`; `publish()` builds prompt + tool specs; `ensure_dev_agent()`; `start_turn` claims the lease; the turn is saved at its end; **greeting stored as the first assistant message** (D8) | 02 §4 (to *What a customer can edit*), §9, §10, §12 · 07 §10 | [ ] Restart: the dev agent exists; conversations and turns appear in the DB; the transcript = the turns' messages in order |
 | 4 | `GroqLLM` (streaming, tool-call fragments joined, system + tools first, `reasoning_effort` `low`, timeouts); the context note (calendar); **current time in the state note** (D9) | 02 §6 `LanguageModel`, §7 *What the model sees* + *The system prompt* · 07 §2, §11 | [ ] Real chat about the menu; **cached tokens > 0** from turn 2; a trailing `system` message is followed |
 | 5 | `tools/base.py` (`Tool` with `role`, `label`, `fillers`, `expected_ms`, `timeout_s`; `run_tool` validates → runs under its timeout → catches); `update_order`; the tool loop; `runtime/tasks.py` (detail types with `display()`/`spoken()`, `next_step`), `set_details`, the state note; **`runtime/speech.py`** (D7) | 02 §5, §7 *Structure* · 07 §1, §5 | [ ] "Two biryanis for 7:30, I'm Kayes" → the right total, computed in Python; the state note says *Still needed: phone*; the next reply asks for the phone and nothing else |
