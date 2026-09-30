@@ -16,8 +16,8 @@ heydesk/
 ├── alembic.ini
 ├── README.md
 ├── CLAUDE.md                     how to work in this repo (read first)
-├── PLAN.md                       milestones, progress checkboxes, decision log
-├── docs/                         01–04, 06, 07: the spec
+├── PLAN.md                       milestones, progress checkboxes, what to read per day
+├── docs/                         01–04, 06, 07 + decisions.md: the spec
 ├── .github/workflows/ci.yml      runs scripts/check.sh on every push
 ├── migrations/                   Alembic, async template (generated, committed)
 ├── scripts/

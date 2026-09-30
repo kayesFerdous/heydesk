@@ -9,7 +9,7 @@ shapes.
 - Folder layout: [03-project-structure.md](03-project-structure.md)
 - Voice (week 4): [04-voice-later.md](04-voice-later.md)
 - **The conversation experience (fillers, interruptions, spoken forms): [07-conversation-experience.md](07-conversation-experience.md)**
-- **The plan, progress and decision log: [../PLAN.md](../PLAN.md)**
+- **The plan and progress: [../PLAN.md](../PLAN.md); the decision log: [decisions.md](decisions.md)**
 - Production readiness, caching and scaling: [06-production-and-scaling.md](06-production-and-scaling.md)
 
 Code blocks are **sketches**: the shape and the important lines, not every import.
@@ -28,7 +28,7 @@ Code blocks are **sketches**: the shape and the important lines, not every impor
 ### What changed in v3.1 (30 September 2026)
 
 Found while reviewing this design against the voice goals. Each change is a
-decision in [PLAN.md](../PLAN.md#decision-log), and the experience it serves is
+decision in [decisions.md](decisions.md), and the experience it serves is
 specified in [07-conversation-experience.md](07-conversation-experience.md).
 
 | v3 | v3.1 | Because |

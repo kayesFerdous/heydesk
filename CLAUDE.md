@@ -6,32 +6,50 @@ in front of its customers: web chat now, voice from M4. Async FastAPI, SQLAlchem
 2.0 async, Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for typed
 judgments. Built as an MVP that becomes production without a rewrite.
 
-## Start here
+## Start of a session: read only what the task needs
 
-- **[PLAN.md](PLAN.md)**: the *Now* line, the next unticked task, its **Done
-  when** check, the decision log and the open questions. Read it first.
-- The spec: [02](docs/02-build-guide.md) the engine, [07](docs/07-conversation-experience.md)
-  the conversation experience, [03](docs/03-project-structure.md) layout and import rules,
-  [04](docs/04-voice-later.md) voice, [06](docs/06-production-and-scaling.md) MVP → production,
-  [01](docs/01-frontdesk-analysis.md) lessons from Frontdesk (`../Frontdesk`, a working reference).
-- **The docs are the spec.** If code and a doc disagree, stop and say so; don't
-  silently pick one. A design change updates the doc **and** adds a decision-log
-  line in PLAN.md, in the same change.
+The docs are ~200 KB. Don't read them whole.
+
+1. Read **[PLAN.md](PLAN.md)**: the *Now* line, then the next unticked day.
+2. Read only the sections in that day's **Read** column. Find a section with
+   `grep -n '^## 7\.' docs/02-build-guide.md` (or `^### ` for a subsection) and
+   read from that line to the next `## `.
+3. Open anything else only when the task hits it. Use the map below; the
+   non-negotiables here are the summary of 02 §3 and 07.
+4. `docs/decisions.md`: only when changing a design, or when a `D#` is cited
+   and the section doesn't explain it.
+
+| Doc | Sections: what they answer |
+|---|---|
+| [02](docs/02-build-guide.md) engine | §1 words · §3 rules · §4 agent config, presets, custom tasks · §5 tools contract + rules · §6 ports (`LanguageModel`, `Decider`) · §7 the turn (`run_turn`, guards, *Structure*: tasks/state note, *What the model sees*, *The system prompt*) · §8 SSE, lease, `client_message_id` · §9 data model · §10 services · §11 API · §12 dev agent · §13 auth/tenancy · §14 trace, usage · §15 `.env` · §16 testing · §17 left out |
+| [07](docs/07-conversation-experience.md) experience | §1 model vs code · §2 latency · §3 progress policy · §4 interruptions, disconnects · §5 spoken forms · §6–8 voice hearing, turn-taking, silence · §9 failures · §10 web chat · §11 time and dates · §12 experience assertions |
+| [03](docs/03-project-structure.md) layout | §1 tree · §2 layer rules · §4 where new code goes · §7 wiring, test fixture · §8 pyproject |
+| [04](docs/04-voice-later.md) voice | M4 only |
+| [06](docs/06-production-and-scaling.md) production | After the month; open when something is being deferred |
+| [01](docs/01-frontdesk-analysis.md) Frontdesk | When reusing Frontdesk code (`../Frontdesk`, a working reference) |
+
+**The docs are the spec.** If code and a doc disagree, stop and say so; don't
+silently pick one. A design change updates the doc **and** adds a line to
+`docs/decisions.md`, in the same change.
 
 ## How we work
 
-- One PLAN.md task at a time, in order. Agree the scope with the user before
-  starting a new milestone. Tick a box only when its *Done when* check passes.
+- One PLAN.md day at a time, in order. Agree the scope with the user before
+  starting a new milestone. Tick a box only when its *Done when* check passes,
+  and update the *Now* line.
 - Code blocks in the docs are sketches: follow their shape and names
   (`ToolResult`, `TurnEnded`, `start_turn`…), not every line.
 - Commit only when asked. Before any commit: `scripts/check.sh`.
+- **Commits and PRs have no AI attribution**: no `Co-Authored-By: Claude`
+  trailer, no Claude or Anthropic email, no "Generated with Claude Code" line.
+  The author is the git user.
 - `uv` runs everything. Never `pip`, never a bare `python`.
 
-## Commands (from M0 on)
+## Commands
 
 ```bash
-uv run uvicorn heydesk.main:app --reload   # dev server; / is the minimal chat page
-uv run heydesk chat                        # terminal chat with the .env dev agent
+uv run uvicorn heydesk.main:app --reload   # dev server; / is the minimal chat page (M1)
+uv run heydesk chat                        # terminal chat with the .env dev agent (M2)
 uv run pytest                              # unit + integration + scripted scenarios: offline, free
 uv run pytest -m live tests/scenarios/<preset>   # real Groq + Jev: costs quota, ask first
 uv run alembic revision --autogenerate -m "…" && uv run alembic upgrade head
@@ -93,7 +111,9 @@ the tool library (DB only via `ctx.services`) · `presets/` data + pydantic ·
 - Tools return problems as data (`ok=False`, `error`, `hint`); exceptions are bugs.
 - Customer text is never passed to `str.format`; placeholders use `str.replace`
   on a fixed list.
-- Logs are JSON with ids only: never message text, names or phone numbers.
+- Logs are JSON with ids only (`heydesk.logs` contextvars): never message text,
+  names or phone numbers.
+- Errors that reach HTTP are `HeyDeskError` subclasses (`heydesk.errors`).
 - mypy strict on `domain/`, `ports/`, `runtime/`, `tools/`. `Confirmed[T]` is
   only a guarantee if the types are checked.
 
@@ -102,7 +122,8 @@ the tool library (DB only via `ctx.services`) · `presets/` data + pydantic ·
 - Every behaviour in `domain/`, `runtime/` and `tools/` gets a unit test with
   `FakeLLM`, `FakeDecider` and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026
   08:00 UTC = 14:00 in Dhaka).
-- Integration tests use in-memory SQLite through `httpx.ASGITransport`.
+- Integration tests use in-memory SQLite through `httpx.ASGITransport`
+  (`client` fixture in `tests/conftest.py`).
 - Scenarios are YAML **data**, graded on outcomes (rows written, nothing before
   a yes) and experience assertions (07 §12), never on exact wording.
 - Every bug from a real chat becomes a scenario YAML before it's fixed.
@@ -124,3 +145,5 @@ the tool library (DB only via `ctx.services`) · `presets/` data + pydantic ·
 - Changing a detail clears what `depends_on` it (read back Wednesday, booked
   Tuesday). `next_step()` is the one function for both "what do we ask next?"
   and "can we commit?".
+- `ruff format` would rewrite code blocks in the docs; `*.md` is excluded in
+  pyproject. Don't run it on docs.

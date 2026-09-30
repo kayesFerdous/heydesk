@@ -7,7 +7,7 @@ engine is responsible for each piece of it.
 
 - Engine: [02-build-guide.md](02-build-guide.md) (§3 rules, §5 tools, §7 the turn)
 - Voice channel: [04-voice-later.md](04-voice-later.md)
-- The plan and decision log: [../PLAN.md](../PLAN.md)
+- The plan: [../PLAN.md](../PLAN.md); the decision log: [decisions.md](decisions.md)
 
 Everything here is designed now. Most of it is **built in M1–M2** because it
 also improves web chat; the audio-only parts are built in **M4 (voice)**. §13

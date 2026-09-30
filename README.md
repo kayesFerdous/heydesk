@@ -12,14 +12,15 @@ waiting in silence while it checks something.
 
 ## Status
 
-Planning is done; code hasn't started. See **[PLAN.md](PLAN.md)** for the
-milestones, progress and decisions.
+M0 (foundations) is done: config, database, JSON logs, `/health`, checks and CI. See **[PLAN.md](PLAN.md)** for the
+milestones and progress.
 
 ## Docs
 
 | | |
 |---|---|
-| [PLAN.md](PLAN.md) | What to build next, how to know it's done, what we decided |
+| [PLAN.md](PLAN.md) | What to build next, how to know it's done, what to read for it |
+| [docs/decisions.md](docs/decisions.md) | The decision log (D1–D13) |
 | [CLAUDE.md](CLAUDE.md) | How to work in this repo: commands, rules, conventions |
 | [docs/02](docs/02-build-guide.md) | The engine: rules, tools, ports, one turn, data model, API |
 | [docs/07](docs/07-conversation-experience.md) | The experience: latency, fillers, interruptions, spoken forms |
@@ -30,5 +31,9 @@ milestones, progress and decisions.
 
 ## Running it
 
-Coming in M0. The commands will be `uv run uvicorn heydesk.main:app --reload`
-and `uv run pytest`.
+```bash
+cp .env.example .env
+uv sync
+uv run uvicorn heydesk.main:app --reload   # GET /health
+scripts/check.sh                           # tests, lint, format, types, import rules
+```
