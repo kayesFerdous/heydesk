@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,7 +16,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings.LOG_LEVEL, settings.LOG_JSON)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         engine, sessions = make_engine(settings.DATABASE_URL)
         app.state.settings = settings
         app.state.sessions = sessions
