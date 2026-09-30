@@ -8,3 +8,24 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local settings and data: secrets live in .env, never in git
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+
+# Frontend (after the month)
+node_modules/
+frontend/dist/

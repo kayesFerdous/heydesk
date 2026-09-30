@@ -2,7 +2,8 @@
 
 The layout for HeyDesk as an **async FastAPI SaaS**: presets and editable
 agents, a tool library, a model-driven runtime behind two ports (Groq for
-talking, Jev for judging), a minimal chat page now and a Vue app later.
+talking, Jev for judging), a minimal chat page now, a voice channel in week 4,
+and a Vue app after the month.
 
 ---
 
@@ -14,16 +15,20 @@ heydesk/
 ├── .env.example                  every setting, one-line comment each (committed)
 ├── alembic.ini
 ├── README.md
-├── docs/                         01–06
+├── CLAUDE.md                     how to work in this repo (read first)
+├── PLAN.md                       milestones, progress checkboxes, decision log
+├── docs/                         01–04, 06, 07: the spec
+├── .github/workflows/ci.yml      runs scripts/check.sh on every push
 ├── migrations/                   Alembic, async template (generated, committed)
 ├── scripts/
+│   ├── check.sh                  everything CI runs: pytest, ruff, format, mypy, imports
 │   └── check_imports.sh          the layer rules below, as greps
 ├── examples/
 │   └── agents/                   seed files for DEV_AGENT_SEED: one business per preset
 │       ├── restaurant.yaml
 │       ├── receptionist.yaml
 │       └── clinic.yaml
-├── frontend/                     Vue 3 + Vite (week 4). Its own package.json; talks to /api only.
+├── frontend/                     Vue 3 + Vite (after the month). Its own package.json; talks to /api only.
 │
 ├── src/heydesk/
 │   ├── main.py                   create_app() + lifespan; `uv run heydesk` starts uvicorn
@@ -31,20 +36,23 @@ heydesk/
 │   ├── wiring.py                 build_llm(), build_decider(), build_services(): the ONLY file that imports adapters
 │   ├── db.py                     async engine, session factory, Base, UTCDateTime
 │   ├── errors.py                 HeyDeskError family + exception handlers
+│   ├── logs.py                   JSON log formatter + contextvars (request_id, workspace_id, conversation_id, turn)
 │   ├── cli.py                    `heydesk chat` (terminal), `heydesk create-user`
 │   │
 │   ├── domain/                   PURE VALUES. Imports nothing from the project.
 │   │   └── values.py             Money, PhoneNumber, Confirmed[T]: invalid values can't be built
 │   │
 │   ├── runtime/                  THE ENGINE. No FastAPI, no SQLAlchemy, no provider SDKs.
-│   │   ├── loop.py               run_turn(): guard ∥ model ↔ tools, events, safe_close
-│   │   ├── events.py             Opened, Token, ToolStarted, ToolFinished, HandOff, TurnEnded
+│   │   ├── loop.py               run_turn(): guard ∥ model ↔ tools, progress, interrupt, events, safe_close
+│   │   ├── events.py             Opened, Token, Progress, ToolStarted, ToolFinished, HandOff, TurnEnded
+│   │   ├── progress.py           the progress policy: channel profiles, thresholds, phrase rotation, watch() (07 §3)
+│   │   ├── speech.py             display + spoken forms: money, time, date, phone, order numbers (07 §5)
 │   │   ├── config.py             AgentConfig, ToolSetting, ModelSettings, Handoff (pydantic)
 │   │   ├── prompt.py             build_system_prompt(): platform rules → instructions → knowledge → FAQ (called at publish)
-│   │   ├── context.py            the first-turn context note: channel style + date/time
-│   │   ├── tasks.py              TaskDef, detail types (phone, date, slot…), next_step(), read_back(), depends_on clearing
-│   │   ├── state_note.py         the note sent last on every model call: have / still needed / next
-│   │   ├── guards.py             Jev hand-off guard, commit check
+│   │   ├── context.py            the first-turn context note: channel style + calendar; the calendar note on a date change
+│   │   ├── tasks.py              TaskDef, detail types (phone, date, slot…) with display()/spoken(), next_step(), read_back(), depends_on clearing
+│   │   ├── state_note.py         the note sent last on every model call: now / have / still needed / next
+│   │   ├── guards.py             Jev hand-off guard (Gate, deadline, fails open), commit check (fails closed)
 │   │   ├── schedule.py           WeeklyHours, business-local "today", slot grids
 │   │   ├── entities.py           phone normalisation, money formatting, date validation
 │   │   └── trace.py              per-turn steps, timings, usage
@@ -64,7 +72,7 @@ heydesk/
 │   │
 │   ├── tools/                    THE TOOL LIBRARY. What an agent can do.
 │   │   ├── __init__.py           TOOLS registry
-│   │   ├── base.py               Tool, ToolContext, ToolResult, run_tool() (validate → run → catch)
+│   │   ├── base.py               Tool, ToolContext, ToolResult, run_tool() (validate → run under timeout → catch)
 │   │   ├── details.py            set_details: fill, validate and clear task details
 │   │   ├── orders.py             update_order, place_order
 │   │   ├── bookings.py           check_availability, create_booking
@@ -90,7 +98,7 @@ heydesk/
 │   │
 │   ├── services/                 USE CASES. The only code that opens sessions and commits.
 │   │   ├── __init__.py           Services dataclass
-│   │   ├── conversations.py      handle_turn(): the ONE entry point for every channel
+│   │   ├── conversations.py      start_turn() → RunningTurn: the ONE entry point for every channel; the turn runner, lease, save
 │   │   ├── agents.py             create_from_preset, update_draft, publish, published_by_key, ensure_dev_agent
 │   │   ├── orders.py
 │   │   ├── bookings.py
@@ -109,19 +117,26 @@ heydesk/
 │   │   ├── orders.py · bookings.py · requests.py
 │   │   └── health.py
 │   │
+│   ├── voice/                    THE VOICE CHANNEL (M4). Framework glue only; no business logic
+│   │   ├── app.py                entry point: the framework worker / WebRTC room, or a WebSocket route
+│   │   ├── pipeline.py           final transcript → start_turn(channel="voice") → sentences → speech; interrupt + heard
+│   │   ├── sentences.py          cut the token stream into sentences, so speech starts after the first
+│   │   ├── speakable.py          last-line normaliser before TTS: no markdown, symbols expanded
+│   │   └── routing.py            room or dialled number → agent; caller ID → caller_ref
+│   │
 │   └── web/                      THE MINIMAL CHAT PAGE (dev only; retired when Vue lands)
 │       └── static/
-│           ├── index.html
+│           ├── index.html        chat + status line; a Call button in M4
 │           └── chat.js           fetch() + streamed SSE reader, ~40 lines
 │
 └── tests/
     ├── conftest.py               app, async client, SQLite in memory, fixed clock, FakeLLM, FakeDecider
     ├── unit/
-    │   ├── runtime/              test_loop, test_prompt (byte-stable), test_guards, test_entities, test_tasks, test_state_note, test_history
+    │   ├── runtime/              test_loop, test_prompt (byte-stable), test_guards, test_entities, test_tasks, test_state_note, test_progress (fake clock), test_speech
     │   ├── tools/                test_orders, test_bookings, test_requests
     │   ├── presets/              each preset loads; example seed validates; render deterministic
     │   └── adapters/             groq chunk mapping, jev mapping
-    ├── integration/              test_chat_api, test_agents_api, test_tenant_isolation, test_bookings_db, test_conflict_409
+    ├── integration/              test_chat_api, test_agents_api, test_tenant_isolation, test_bookings_db, test_turn_lease_409, test_disconnect_saves, test_retry_idempotent
     └── scenarios/                <preset>/*.yaml (visitor lines + expected rows) + one runner test; FakeLLM by default, `-m live` for Groq + Jev
 ```
 
@@ -159,6 +174,7 @@ in a sentence.
 | `models/` | `db`, `errors` | `services/`, `api/`, `fastapi` |
 | `services/` | `runtime/`, `tools/`, `presets/`, `ports/`, `models/`, `db` | `api/`, `fastapi`, `adapters/` |
 | `api/` | `services/`, `runtime/` types, `fastapi` | `adapters/`, `models/` for writing |
+| `voice/` (M4) | `services/` (`start_turn`), `runtime/` types (events, `speech`), the voice framework SDK | `models/`, `tools/`, `adapters/`, `db`. It's a listener, like `api/chat.py` |
 | `wiring.py`, `main.py` | everything | — |
 
 Why `tools/` doesn't import services directly: a tool is handed a
@@ -180,7 +196,7 @@ forbid() {  # message, paths, pattern
 }
 imp='^[[:space:]]*(from|import)[[:space:]]+'
 src=src/heydesk
-io='fastapi|starlette|sqlalchemy|groq|typesafe_sdk'
+io='fastapi|starlette|sqlalchemy|groq|typesafe_sdk|livekit|pipecat'
 
 forbid "domain/ is pure" $src/domain "${imp}(${io}|pydantic|heydesk\.(runtime|ports|tools|presets|models|services|api|adapters|wiring|db))"
 forbid "runtime/ is framework-free" $src/runtime "${imp}(${io}|heydesk\.(presets|tools|models|services|api|adapters|wiring|db))"
@@ -189,6 +205,9 @@ forbid "presets/ are pure" $src/presets "${imp}(${io}|heydesk\.(models|services|
 forbid "ports/ import nothing from the project" $src/ports "${imp}heydesk\."
 forbid "only wiring.py imports adapters" "$src/runtime $src/tools $src/presets $src/models $src/services $src/api" "${imp}heydesk\.adapters"
 forbid "services/ and models/ don't know HTTP" "$src/services $src/models" "${imp}(fastapi|starlette)"
+if [ -d $src/voice ]; then
+  forbid "voice/ is a listener: no DB, no tools" $src/voice "${imp}(sqlalchemy|heydesk\.(models|tools|adapters|db))"
+fi
 exit $fail
 ```
 
@@ -198,16 +217,18 @@ exit $fail
 
 ```
 POST /api/chat/{public_key}  {message, conversation_id}
-  api/chat.py                  validate → services.agents.published_by_key() → StreamingResponse(handle_turn(...))
-  services/conversations.py    [session 1] load conversation + its PINNED agent version; build TurnInput
-  runtime/loop.py              guard ∥ model.stream() → tokens out → tool calls
+  api/chat.py                  validate → services.agents.published_by_key() → start_turn() (409 here) → StreamingResponse
+  services/conversations.py    [session 1] claim the lease; load conversation, its PINNED version, its turns; start the turn task
+  runtime/loop.py              guard ∥ model.stream() → tokens + progress out → tool calls
   tools/orders.py              validate args → ctx.services.orders.place() [session 2, scoped] → result
   runtime/loop.py              results back to the model → final text → TurnEnded
-  services/conversations.py    [session 3] append transcript, state, turn, usage (optimistic lock)
-  api/sse.py                   token / tool / handoff / done events to the browser
+  services/conversations.py    [session 3] once the listener reports what was heard: insert the turn, update state,
+                               write usage, release the lease (version-checked)
+  api/sse.py                   token / status / tool / handoff / done events to the browser
 ```
 
-A phone call later is the same list with `voice/` at the top instead of `api/chat.py`.
+A voice call (M4) is the same list with `voice/pipeline.py` at the top instead
+of `api/chat.py`. The turn runs the same way; only the listener differs.
 
 ---
 
@@ -276,7 +297,7 @@ aggregates and in-memory repositories: order and booking status methods live
 on the SQLAlchemy models, and tests use SQLite in memory. That's one mapping
 layer fewer for a CRUD-heavy SaaS.
 
-**Why `wiring.py`.** Web, CLI, tests and voice later all build the system
+**Why `wiring.py`.** Web, CLI, tests and voice all build the system
 the same way, and `main.py`'s lifespan creates the SDK clients **once** (warm
 connections), then closes them on shutdown.
 
@@ -388,7 +409,7 @@ dependencies = [
 heydesk = "heydesk.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "httpx", "asgi-lifespan", "ruff"]
+dev = ["pytest", "pytest-asyncio", "httpx", "asgi-lifespan", "ruff", "mypy", "types-PyYAML"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -401,6 +422,15 @@ line-length = 100
 
 [tool.ruff.lint]
 extend-select = ["I", "B", "UP", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]            # the layers whose guarantees are types: Confirmed[T], Protocols
+module = ["heydesk.domain.*", "heydesk.ports.*", "heydesk.runtime.*", "heydesk.tools.*"]
+strict = true
 ```
 
 Let `uv add` pin the versions. `ASYNC` lint rules catch blocking calls
@@ -416,7 +446,9 @@ uv run alembic upgrade head
 uv run pytest
 uv run pytest -m live                      # scenarios against real Groq + Jev: after a prompt change
 uv run ruff check .
+uv run mypy src
 ./scripts/check_imports.sh
+./scripts/check.sh                         # all of the above, as CI runs it
 ```
 
 ---
@@ -425,7 +457,7 @@ uv run ruff check .
 
 | Add | When |
 |---|---|
-| `voice/` | You start voice (04) |
+| `voice/` | M4, week 4 (04); it's in the tree above |
 | `tools/webhook.py` + a `custom_tools` table | Customers want their own actions |
 | `adapters/llm/anthropic.py` (or another) | A second model provider |
 | Postgres (`asyncpg`) + `docker-compose.yml` | The production phase: change `DATABASE_URL`, run the migrations (06) |

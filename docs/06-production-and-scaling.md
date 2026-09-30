@@ -79,7 +79,11 @@ otherwise mean touching most of the code, or data you can't get back.
 | Commit check → `Confirmed[T]`; DB constraints; idempotency keys | Correctness; a double order is a real business's real problem |
 | Ports + fakes + `wiring.py` | Every provider upgrade (fallback, cassettes, a comparison) becomes one adapter |
 | Alembic from day one, portable SQL, `UTCDateTime` | Postgres becomes a `DATABASE_URL` change |
-| The conversation's `version` column (one reply at a time) | Already safe for several app processes |
+| The turn lease + the conversation's `version` column (one reply at a time) | Already safe for several app processes; concurrency bugs found after launch cost real orders |
+| Turns that run in their own task, interruptible by a signal (02 §10) | A disconnect or a barge-in can't lose a turn that already wrote; graceful shutdown is "await the running turns" |
+| `client_message_id` on every message | Retries from flaky networks and proxies are safe from the first user |
+| JSON logs with ids, mypy, CI (from M0) | Log context and type discipline are painful to retrofit into a codebase that grew without them |
+| The progress policy and spoken forms (07) | Voice and every slow integration later reuse them; they're pure code with tests |
 | `Tool.role` | The cache rule "never cache a commit" has something to read |
 | Scenario tests as YAML | The eval runner later reads the same files |
 | Timeouts on provider clients | Without them a hung provider hangs a visitor's chat |
@@ -90,15 +94,15 @@ otherwise mean touching most of the code, or data you can't get back.
 
 In a sensible order. **Size** is the change to existing code, not the new
 code: *small* means a new file or two and a line in `wiring.py`, `main.py` or
-`handle_turn`.
+`start_turn`.
 
 | # | Upgrade | Plugs in at | Size |
 |---|---|---|---|
 | 1 | **Postgres**: `asyncpg`, `docker-compose.yml`, managed Postgres with backups | `DATABASE_URL`; run the same migrations; run the tests on Postgres | Small |
 | 2 | **Rate limit** per IP and per conversation on `POST /api/chat` | `api/limits.py`, a FastAPI dependency; in memory, Redis when there's more than one process | Small |
-| 3 | **Daily token budget** per workspace | A sum over `usage_events` and an `if` at the top of `handle_turn`; over budget → the hand-off message, no model call | Small |
-| 4 | **Observability**: JSON logs with `workspace_id`, `conversation_id` and `turn` (ids, never message text or phone numbers); error tracking; `/ready` | Logging setup in `main.py`; one route | Small |
-| 5 | **Deploy hardening**: migrations before the new version starts; graceful shutdown that lets streams finish; secrets | Deploy scripts, the lifespan | Small |
+| 3 | **Daily token budget** per workspace | A sum over `usage_events` and an `if` at the top of `start_turn`; over budget → the hand-off message, no model call | Small |
+| 4 | **Observability**: error tracking; `/ready`; log shipping and dashboards on `ttft_ms`, `first_output_ms` and hand-off rate. (JSON logs with `workspace_id`, `conversation_id` and `turn` are in from M0: ids only, never message text or phone numbers) | `main.py`; one route | Small |
+| 5 | **Deploy hardening**: migrations before the new version starts; graceful shutdown that waits for running turns (the turn runner's task set) and lets streams finish; secrets | Deploy scripts, the lifespan | Small |
 | 6 | **Adapter resilience**: one retry before the first token; `FallbackLLM` (§5) | Inside `adapters/llm/`; one line in `wiring.py` | Small |
 | 7 | **Eval harness**: `evals/runner.py` (`--live`, `--record`, `--replay`), `grader.py`, cassettes | Reads `tests/scenarios/**/*.yaml`; record/replay are wrapper adapters around `LanguageModel` and `Decider` | Medium (new code, no changes) |
 | 8 | **History budget**: `runtime/history.py` (`window()`) | The one marked line in `build_request` (02 §7) | Small |
@@ -198,8 +202,11 @@ waiting on Groq. Measure before adding processes. When you do:
 
 - **Nothing that must be shared lives in process memory.** Rate-limit
   counters and caches move to Redis (a second adapter for each). The
-  one-reply-at-a-time lock is already in Postgres (the conversation's
-  `version`).
+  one-reply-at-a-time lock is already in Postgres (the turn lease and the
+  conversation's `version`).
+- **Voice workers** (M4's `voice/`) move to their own processes when calls
+  need their own scaling. They only call `start_turn()`, so they scale like
+  any other listener.
 - **Database connections:** never hold a transaction open while waiting on a
   model (already a rule in 02 §8), so a small pool serves many streams.
   (Postgres first: SQLite allows one writer at a time.)

@@ -4,8 +4,8 @@ This is a read of `../Frontdesk`. The goal is to decide what to copy into
 HeyDesk, what to make smaller, and what to leave out.
 
 Read next: [02-build-guide.md](02-build-guide.md), [03-project-structure.md](03-project-structure.md),
-[04-voice-later.md](04-voice-later.md), [05-one-month-plan.md](05-one-month-plan.md) and
-[06-production-and-scaling.md](06-production-and-scaling.md).
+[04-voice-later.md](04-voice-later.md), [06-production-and-scaling.md](06-production-and-scaling.md),
+[07-conversation-experience.md](07-conversation-experience.md) and the plan, [../PLAN.md](../PLAN.md).
 
 ---
 
@@ -160,7 +160,7 @@ customers can't edit them away.
 | Value objects, `Confirmed[T]` | **Keep** in `domain/values.py` | Writing an unconfirmed order becomes a type error |
 | Custom durable job queue | **Later, same design on Postgres** (leases, backoff, `SKIP LOCKED`); nothing runs in the background in the MVP (06) | Nothing must survive a restart yet |
 | Payments | **Later** | Not in the first month |
-| Voice (endpointing, barge-in, fillers) | **Designed for, built later**: see [04-voice-later.md](04-voice-later.md) | Barge-in becomes an appended note, because transcripts are append-only |
+| Voice (endpointing, barge-in, fillers) | **Fillers, interrupt-safe turns and spoken forms in the core from M1; the voice channel in week 4 (M4)**: see [04-voice-later.md](04-voice-later.md) and [07](07-conversation-experience.md) | Barge-in becomes an appended note, because transcripts are append-only |
 | Tool cache tiered by role, in-flight joins, shadow/comparing deciders, speculative prefetch, audio cache | **Later**, each with a trigger; `Tool.role` exists from day one so the cache rule has something to read (06) | Measurement and latency tricks for later |
 | Bangla word lists | **Later** | English first |
 | Scenario evals + cassettes | **Keep the idea now**: scenario YAML per preset, played with `FakeLLM` or `-m live`; the runner with cassettes in the production phase reads the same files (06) | Check outcomes (rows written), not wording |
