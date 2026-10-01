@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -15,12 +16,39 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.main import create_app
+from heydesk.runtime.config import AgentConfig, Handoff
+from heydesk.runtime.items import Item
 from heydesk.services import Services
 from heydesk.wiring import build_services
 
 FIXED_NOW = datetime(2026, 9, 29, 8, 0, tzinfo=UTC)  # Tuesday, 14:00 in Dhaka
 SEED = Path(__file__).parents[1] / "examples" / "agents" / "restaurant.yaml"
 DEV_KEY = "dev-restaurant"
+MENU = [Item.model_validate(i) for i in yaml.safe_load(SEED.read_text(encoding="utf-8"))["items"]]
+AGENT = AgentConfig(  # a small config for unit tests
+    preset="restaurant",
+    name="Test assistant",
+    business_name="Spice Garden",
+    timezone="Asia/Dhaka",
+    greeting="Hi, welcome to {business_name}!",
+    instructions="Be brief.",
+    knowledge={},
+    tools=[],
+    handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
+)
+
+
+class ListCatalog:
+    """An in-memory `Catalog` for unit tests: the seed's menu."""
+
+    def __init__(self, items: list[Item] = MENU) -> None:
+        self.items = items
+
+    async def get(self, codes: list[str]) -> dict[str, Item]:
+        return {i.code: i for i in self.items if i.code in codes}
+
+    async def search(self, query: str) -> list[Item]:
+        return [i for i in self.items if query.lower() in i.name.lower()]
 
 
 def make_test_settings() -> Settings:

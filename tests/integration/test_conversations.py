@@ -2,6 +2,7 @@ import pytest
 
 from heydesk.errors import NotFound
 from heydesk.models import Conversation
+from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.conversations import RunningTurn
 from tests.conftest import DEV_KEY, World
@@ -53,3 +54,31 @@ async def test_the_prompt_has_the_date_and_an_edit_shows_up_next_message(world: 
 async def test_an_unknown_conversation_is_not_found(world: World) -> None:
     with pytest.raises(NotFound):
         await start(world, "hi", "nope")
+
+
+async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: World) -> None:
+    lines = [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]
+    world.llm.script = [ToolCall("call_1", "update_order", {"lines": lines}), "That's ৳1,030."]
+    conv_id = await say(world, "two biryanis and a borhani")
+
+    async with world.sessions() as s:
+        conv = await s.get(Conversation, conv_id)
+    assert conv is not None and conv.state["cart"]["total"] == 103000
+    assert '"total": "৳1,030"' in conv.messages[3]["content"]  # the tool result the model read
+    # The menu is short, so it's in the prompt and search_items isn't offered
+    request = world.llm.requests[0]
+    assert "Chicken Biryani [chk-biryani] ৳450" in request.system
+    assert [t.name for t in request.tools] == ["update_order"]
+
+
+async def test_items_are_searched_in_the_database(world: World) -> None:
+    agent = await world.services.agents.by_key(DEV_KEY)
+    catalog = world.services.items.catalog(DEV_WORKSPACE_ID, agent.agent_id)
+
+    # Borhani's description says "the classic with biryani"
+    assert [i.code for i in await catalog.search("biryanis")] == ["chk-biryani", "borhani"]
+    vegetarian = await catalog.search("Vegetarian")  # matches the tags too
+    assert len(vegetarian) == 6 and "chk-biryani" not in {i.code for i in vegetarian}
+    assert await catalog.search("pizza") == []
+    other = world.services.items.catalog("someone-else", agent.agent_id)
+    assert await other.get(["chk-biryani"]) == {}  # rule 6: workspace_id on every query

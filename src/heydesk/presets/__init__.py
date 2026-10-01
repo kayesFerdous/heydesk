@@ -18,6 +18,7 @@ class Preset(BaseModel):
     description: str
     greeting: str
     instructions: str
+    items_label: str = "Items"  # what the prompt calls the business's items: "Menu", "Services"
     tools: list[str]  # the tools an agent of this kind may use; all on by default
     tasks: dict[str, dict[str, Any]]  # typed as TaskDef with runtime/tasks.py (day 6)
     knowledge_model: type[BaseModel]  # "module:Class" in the YAML

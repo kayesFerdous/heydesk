@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 4 done (1 Oct), and the storage simplified (D15). **Next:** day 5, tools: `update_order` (needs `LLM_PROVIDER=groq`: Gigalogy can't call tools).
+> **Now:** day 5 built (1 Oct): the tool loop, `update_order`, the `items` table and `search_items` (D17), Gigalogy tool calls as JSON (D16). Tests green; waiting on the **Done when** chat with a real model. **Next:** day 6, tasks and the state note.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -42,7 +42,9 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - The tool contract and `run_tool` in `runtime/tool.py` (validates, timeout, never raises)
 - The tool loop in `run_turn` (at most 6 model calls); conversation state saved with the turn
 - `update_order`: the whole order in, the total computed in Python
-- Tests: `run_tool` failures, the order total, a tool call in the loop
+- Items in their own table, one shape for every preset; listed in the prompt up to 60, else `search_items` (D17)
+- Gigalogy tool calls: the tools in the query, a JSON reply read into a `ToolCall` (D16)
+- Tests: `run_tool` failures, the order total, a tool call in the loop, Gigalogy's JSON calls, item search
 
 **Done when:** "two biryanis and a borhani" → ৳1,030 in the reply. [ ]
 

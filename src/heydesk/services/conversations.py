@@ -15,9 +15,20 @@ from heydesk.models import Conversation
 from heydesk.runtime.events import Event, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
+from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
+from heydesk.services.items import ItemService
+from heydesk.tools import TOOLS
 
 log = logging.getLogger(__name__)
+
+
+def enabled_tools(agent: LiveAgent) -> list[Tool]:
+    """The agent's tools that are built. `search_items` only when the items aren't all listed."""
+    names = [n for n in agent.config.tools if n in TOOLS]
+    if agent.items_in_prompt:
+        names = [n for n in names if n != "search_items"]
+    return [TOOLS[n] for n in names]
 
 
 @dataclass
@@ -31,11 +42,13 @@ class ConversationService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
+        items: ItemService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.runtime = runtime
+        self.items = items
         self.settings = settings
         self.now = now
 
@@ -63,12 +76,14 @@ class ConversationService:
 
         turn = TurnInput(
             system=build_system_prompt(agent.config, agent.knowledge, channel, self.now()),
-            tools=[],  # the enabled tools' specs arrive on day 5
+            tools=enabled_tools(agent),
             model=self.settings.MODEL,
             history=conv.messages,
             user_text=text,
             channel=channel,
             agent=agent.config,
+            items=self.items.catalog(agent.workspace_id, agent.agent_id),
+            state=conv.state,
             is_first=not conv.messages,
         )
         return RunningTurn(conv.id, self._run(turn, conv))
@@ -88,6 +103,7 @@ class ConversationService:
         async with self.sessions() as s, s.begin():
             saved = await self._get_by_id(s, conv.workspace_id, conv.id)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
+            saved.state = ended.state
             saved.updated_at = self.now()
         log.info("turn finished", extra={"conversation_id": conv.id, "trace": ended.trace})
 

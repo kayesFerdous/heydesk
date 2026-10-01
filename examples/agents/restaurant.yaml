@@ -17,22 +17,23 @@ knowledge:
     fri: ["14:00", "23:00"]
     sat: ["11:00", "23:00"]
     sun: ["11:00", "23:00"]
-  menu:
-    - {id: chk-biryani, name: Chicken Biryani, price: 45000, category: Rice, tags: [popular, spicy],
-       description: "Basmati rice slow-cooked with chicken, potato and egg."}
-    - {id: mutton-kacchi, name: Mutton Kacchi, price: 55000, category: Rice, tags: [popular],
-       description: "Old Dhaka style, mutton layered with rice and cooked sealed."}
-    - {id: veg-khichuri, name: Vegetable Khichuri, price: 22000, category: Rice, tags: [vegetarian, mild]}
-    - {id: veg-korma, name: Vegetable Korma, price: 32000, category: Curry, tags: [vegetarian, mild, contains-nuts]}
-    - {id: beef-rezala, name: Beef Rezala, price: 48000, category: Curry, tags: [spicy]}
-    - {id: chk-roast, name: Chicken Roast, price: 38000, category: Curry, tags: [mild]}
-    - {id: butter-naan, name: Butter Naan, price: 6000, category: Breads, tags: [vegetarian]}
-    - {id: borhani, name: Borhani, price: 13000, category: Drinks, tags: [vegetarian],
-       description: "Spiced yoghurt drink, the classic with biryani."}
-    - {id: mango-lassi, name: Mango Lassi, price: 15000, category: Drinks, tags: [vegetarian], available: false}
-    - {id: firni, name: Firni, price: 9000, category: Desserts, tags: [vegetarian, contains-nuts]}
   policies: |
     Pickup only for now. Prices include VAT.
     Dishes may contain nuts, dairy and gluten. Ask the team about allergens before ordering.
+# The menu: saved in the items table, not the config (D17)
+items:
+  - {code: chk-biryani, name: Chicken Biryani, price: 45000, category: Rice, tags: [popular, spicy],
+     description: "Basmati rice slow-cooked with chicken, potato and egg."}
+  - {code: mutton-kacchi, name: Mutton Kacchi, price: 55000, category: Rice, tags: [popular],
+     description: "Old Dhaka style, mutton layered with rice and cooked sealed."}
+  - {code: veg-khichuri, name: Vegetable Khichuri, price: 22000, category: Rice, tags: [vegetarian, mild]}
+  - {code: veg-korma, name: Vegetable Korma, price: 32000, category: Curry, tags: [vegetarian, mild, contains-nuts]}
+  - {code: beef-rezala, name: Beef Rezala, price: 48000, category: Curry, tags: [spicy]}
+  - {code: chk-roast, name: Chicken Roast, price: 38000, category: Curry, tags: [mild]}
+  - {code: butter-naan, name: Butter Naan, price: 6000, category: Breads, tags: [vegetarian]}
+  - {code: borhani, name: Borhani, price: 13000, category: Drinks, tags: [vegetarian],
+     description: "Spiced yoghurt drink, the classic with biryani."}
+  - {code: mango-lassi, name: Mango Lassi, price: 15000, category: Drinks, tags: [vegetarian], available: false}
+  - {code: firni, name: Firni, price: 9000, category: Desserts, tags: [vegetarian, contains-nuts]}
 faq: |
   We don't have parking, but there is a public car park 2 minutes away.

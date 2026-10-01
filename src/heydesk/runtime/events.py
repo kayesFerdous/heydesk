@@ -44,6 +44,7 @@ class HandOff:
 @dataclass(frozen=True)
 class TurnEnded:
     added: list[Message]  # transcript additions, provider-native, in order
+    state: dict[str, Any]  # the conversation state after the turn
     trace: dict[str, Any]
     handed_off: bool = False
     interrupted: bool = False

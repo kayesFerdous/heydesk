@@ -26,6 +26,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 |---|---|
 | Preset | A kind of agent: YAML (greeting, instructions, tools, tasks) + a knowledge model |
 | Agent | A business's agent: one `AgentConfig` the business edits. Edits are live on the next message |
+| Item | Something a business sells: a dish, a service, a product. One shape for every preset (D17) |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Tool | Something the model can call: `update_order`, `place_order`… |
@@ -58,9 +59,10 @@ src/heydesk/
 ├── domain/values.py     Confirmed[T]: only the commit check makes one
 ├── ports/               Protocols: LanguageModel, Decider
 ├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, and fakes for tests
-├── runtime/             the engine: loop, config, prompt, tasks, state note, speech, trace
+├── runtime/             the engine: loop, tool contract, items, config, prompt, tasks, state note, speech, trace
 ├── tools/               the tools; DB access only through ctx.services
 ├── presets/             restaurant/, receptionist/: preset.yaml + knowledge.py
+│                        (a business's items are in the `items` table, D17)
 ├── models/              tables
 ├── services/            the only code that opens DB sessions
 ├── api/                 routes: read the request, call one service, return
@@ -95,13 +97,27 @@ tasks:
 `knowledge.py` holds the preset's pydantic knowledge model and `render()`,
 which writes the knowledge as short prompt lines.
 
+**Items** (D17). What a business sells is its **items**, in the `items` table,
+not in the config. Every preset uses one shape, `runtime/items.py`'s `Item`:
+`code` (the short id the model uses, `chk-biryani`), name, description, price,
+category, tags, available. So the tools that use them work for any business.
+The preset only names them for the prompt (`items_label: Menu`).
+
+- Up to `MAX_ITEMS_IN_PROMPT` (60) items: all listed in the knowledge, one line each.
+- More: the prompt gives the count and the categories, and the agent gets
+  `search_items` to find them.
+
 **`AgentService`** (`services/agents.py`): `create_from_preset`, `update`
 (validates; live from the next message), `by_key` (the config plus its
-rendered knowledge). There is no publish step and no versions (D15).
+rendered knowledge and items). There is no publish step and no versions (D15).
+**`ItemService`** (`services/items.py`) saves an agent's items and gives its
+tools a `Catalog`: `get(codes)` and `search(query)`, always scoped to one
+workspace and agent.
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev`
 workspace and the agent `dev-<preset>` from `DEV_AGENT_PRESET` +
-`DEV_AGENT_SEED`. Edit the seed and restart, and the agent is updated.
+`DEV_AGENT_SEED`, and its `items:`. Edit the seed and restart, and the agent
+and its items are updated.
 
 ## 6. One turn
 
@@ -130,10 +146,24 @@ OpenAI chat format, so a stored conversation works with any of them.
 
 | | Gigalogy (default) | Groq |
 |---|---|---|
-| Request | one `query`: system prompt, then the conversation as labelled lines | system message, tool specs, messages |
+| Request | one `query`: system prompt, the tools, then the conversation as labelled lines | system message, tool specs, messages |
 | Model | set on the Maira profile (`GIGALOGY_PROFILE_ID`) | `MODEL` (`openai/gpt-oss-120b`), `reasoning_effort` low |
 | Streaming | no: the reply arrives whole | yes; tool calls joined at the end |
-| Tool calls | **no**: tool specs aren't sent | yes |
+| Tool calls | **as JSON in the reply** (D16): `{"tool": …, "arguments": …}`, read by the adapter | native |
+
+**Gigalogy tool calls** (D16). The query's `# Tools` section lists each tool
+with its JSON Schema and asks for only `{"tool": "<name>", "arguments": {…}}`
+to use one, one per reply. Past calls appear in the conversation in that same
+form, so the model copies it. The reply arrives whole, so the adapter reads it
+before the visitor sees anything: the first `{"tool": …}` becomes a `ToolCall`
+(words around it are dropped; JSON it can't read becomes a call with no
+arguments, and the tool's validation says what's missing). The runtime can't
+tell Gigalogy from Groq.
+
+**The tool loop.** A step is one model call. If it asks for tools, they run
+and every call gets its result, then the next step goes to the model. A step
+with no tool calls is the reply. At most 6 model calls; still calling tools
+after that, or a step with neither words nor tools, is a hand-off.
 
 ```
 # Conversation state
@@ -150,9 +180,18 @@ yes.
 ## 7. Tools
 
 The contract lives in `runtime/tool.py` (the engine may not import `tools/`);
-the tools themselves are in `tools/`, registered in `TOOLS`.
+the tools themselves are in `tools/`, registered in `TOOLS`. Tools are shared:
+one `update_order` serves every business, reaching its items through
+`ctx.items`. An agent's config lists the tools it uses; the conversation
+service passes the built ones to the turn.
 
 ```python
+@dataclass(frozen=True)
+class ToolContext:
+    agent: AgentConfig
+    state: dict                    # the conversation state so far
+    items: Catalog                 # this agent's items: get(codes), search(query)
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -171,11 +210,14 @@ class ToolResult:
 ```
 
 `run_tool` validates the arguments, runs the tool under its timeout and turns
-any problem into `ok=False` with a hint, so the model can recover.
+any problem into `ok=False` with a hint (`{"error": "…"}`), so the model can
+recover. A tool's `state` changes are merged into the conversation's `state`,
+saved with the turn.
 
 | Tool | Writes? | What it does |
 |---|---|---|
-| `update_order` | no | Sets the whole order (item ids + quantities). Checks items exist; Python computes the total |
+| `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
+| `search_items` | no | Finds items by words in their name, category, description or tags (up to 10). Offered only when the items aren't all in the prompt |
 | `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), validated by their type |
 | `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
 | `submit_request` | **yes** | Same for a message to the team (receptionist) |
@@ -203,6 +245,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `workspaces` | id, name |
 | `users` (M3) | email, password_hash |
 | `agents` | preset, name, public_key (unique), config JSON |
+| `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
 | `orders` | conversation_id, number, lines JSON, total, currency, pickup_time, customer_name, customer_phone, status |
 | `requests` | conversation_id, task, details JSON, name, phone, status |
@@ -270,6 +313,9 @@ version handles them.
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
+| Ranked or fuzzy item search | `search_items` matches words (`LIKE`), at most 10, in the business's order |
+| Loading only the items a turn needs | Every turn reads all of an agent's items to build the prompt; fine for hundreds |
+| Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Usage events, budgets, rate limits | Cost is in each turn's log line |

@@ -20,6 +20,7 @@ from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.items import ItemService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -55,7 +56,9 @@ def build_services(
     now: Callable[[], datetime],
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
+    items = ItemService(sessions)
     return Services(
-        agents=AgentService(sessions, load_presets(), now),
-        conversations=ConversationService(sessions, runtime, settings, now),
+        agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
+        conversations=ConversationService(sessions, runtime, items, settings, now),
+        items=items,
     )

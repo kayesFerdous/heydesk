@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,6 +18,8 @@ from heydesk.errors import InvalidConfig, NotFound
 from heydesk.models import Agent, Workspace
 from heydesk.presets import Preset
 from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.items import Item, render_items
+from heydesk.services.items import ItemService
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ class LiveAgent:
     agent_id: str
     public_key: str
     config: AgentConfig
-    knowledge: str  # rendered for the prompt
+    knowledge: str  # rendered for the prompt, items included
+    items_in_prompt: bool  # every item is listed, so `search_items` isn't needed (D17)
 
     @property
     def greeting(self) -> str:
@@ -67,7 +70,7 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
     for name in config.tools:
         if name not in preset.tools:
             problems[f"tools.{name}"] = f"not available to the {preset.id} preset"
-    # ponytail: check each tool exists in TOOLS once tools arrive (day 5)
+    # ponytail: check each tool exists in TOOLS once all the preset's tools are built (day 8)
     if problems:
         raise InvalidConfig(problems)
     return config
@@ -85,10 +88,14 @@ class AgentService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         presets: dict[str, Preset],
+        items: ItemService,
+        max_items_in_prompt: int,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.presets = presets
+        self.items = items
+        self.max_items_in_prompt = max_items_in_prompt
         self.now = now
 
     def _preset(self, preset_id: str) -> Preset:
@@ -130,24 +137,41 @@ class AgentService:
         if agent is None:
             raise NotFound("There's no agent with that key.")
         config = AgentConfig.model_validate(agent.config)
-        knowledge = self.presets[config.preset].render(config.knowledge, config.currency)
-        return LiveAgent(agent.workspace_id, agent.id, agent.public_key, config, knowledge)
+        preset = self.presets[config.preset]
+        items = await self.items.all(agent.workspace_id, agent.id)
+        in_prompt = len(items) <= self.max_items_in_prompt
+        knowledge = "\n\n".join(
+            [
+                preset.render(config.knowledge, config.currency),
+                render_items(items, preset.items_label, config.currency, self.max_items_in_prompt),
+            ]
+        )
+        return LiveAgent(
+            agent.workspace_id, agent.id, agent.public_key, config, knowledge, in_prompt
+        )
 
     async def ensure_dev_agent(self, preset_id: str, seed_path: str | Path) -> LiveAgent:
         """The `.env` agent (design §5): the dev workspace, and the agent `dev-<preset>`
-        from the preset + seed, updated from the seed on every start."""
+        from the preset + seed, updated from the seed on every start (its items too)."""
         text = await asyncio.to_thread(Path(seed_path).read_text, encoding="utf-8")
         seed: dict[str, Any] = yaml.safe_load(text)
+        try:
+            items = TypeAdapter(list[Item]).validate_python(seed.pop("items", []))
+        except ValidationError as error:
+            raise InvalidConfig(_fields(error, "items")) from None
         key = f"dev-{preset_id}"
         async with self.sessions() as s, s.begin():
             if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
                 s.add(Workspace(id=DEV_WORKSPACE_ID, name="Dev", created_at=self.now()))
             agent_id = await s.scalar(select(Agent.id).where(Agent.public_key == key))
         if agent_id is None:
-            await self.create_from_preset(DEV_WORKSPACE_ID, preset_id, seed, public_key=key)
+            agent_id = await self.create_from_preset(
+                DEV_WORKSPACE_ID, preset_id, seed, public_key=key
+            )
         else:
             data = config_from_preset(self._preset(preset_id), seed)
             await self.update(DEV_WORKSPACE_ID, agent_id, data)
+        await self.items.replace(DEV_WORKSPACE_ID, agent_id, items)
         log.info("dev agent ready", extra={"public_key": key})
         return await self.by_key(key)
 

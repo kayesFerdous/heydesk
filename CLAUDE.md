@@ -4,7 +4,8 @@ HeyDesk is an **MVP**: a business creates an AI front-desk agent from a preset
 (restaurant, receptionist), edits it, and visitors talk to it by
 web chat or voice. Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira
 (the default) or Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for
-the commit check. Tools need Groq: Maira can't call them (D14).
+the commit check. Maira has no native tool calls, so its adapter asks for them
+as JSON in the reply (D16).
 
 **Keep it simple.** The owner is learning, and the code should read easily.
 Build the normal path well; don't add code for edge cases that aren't worth it

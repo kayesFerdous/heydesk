@@ -1,21 +1,12 @@
+import json
+
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
-from heydesk.ports.llm import LLMUnavailable
-from heydesk.runtime.config import AgentConfig, Handoff
-from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
-from heydesk.runtime.loop import Runtime, TurnInput, run_turn
-
-AGENT = AgentConfig(
-    preset="restaurant",
-    name="Test assistant",
-    business_name="Spice Garden",
-    timezone="Asia/Dhaka",
-    greeting="Hi, welcome to {business_name}!",
-    instructions="Be brief.",
-    knowledge={},
-    tools=[],
-    handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
-)
+from heydesk.ports.llm import LLMUnavailable, ToolCall
+from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
+from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
+from heydesk.tools import order
+from tests.conftest import AGENT, ListCatalog
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -27,6 +18,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "user_text": text,
         "channel": "web",
         "agent": AGENT,
+        "items": ListCatalog(),
     }
     return TurnInput(**(fields | kw))  # type: ignore[arg-type]
 
@@ -95,3 +87,38 @@ async def test_interrupt_stops_talking_and_keeps_what_was_streamed() -> None:
     end = events[-1]
     assert isinstance(end, TurnEnded) and end.interrupted and not end.handed_off
     assert end.added[-1] == {"role": "assistant", "content": "one "}
+
+
+ORDER = ToolCall(
+    "call_1",
+    "update_order",
+    {"lines": [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]},
+)
+
+
+async def test_a_tool_runs_and_its_result_goes_back_to_the_model() -> None:
+    llm = FakeLLM([ORDER, "That's ৳1,030 for the two of them."])
+    events = await collect(make_turn("two biryanis and a borhani", tools=[order.TOOL]), llm)
+
+    assert ToolStarted("update_order", "Updating your order…") in events
+    assert ToolFinished("update_order", ok=True) in events
+    end = events[-1]
+    assert isinstance(end, TurnEnded) and not end.handed_off
+    assert [m["role"] for m in end.added] == ["user", "assistant", "tool", "assistant"]
+    result = json.loads(end.added[2]["content"])
+    assert result["total"] == "৳1,030"
+    assert end.state["cart"]["total"] == 103000  # paisa
+    # The model saw the tool's spec, then its result in the second call
+    assert [t.name for t in llm.requests[0].tools] == ["update_order"]
+    assert llm.requests[1].messages[-1] == end.added[2]
+    assert [s["name"] for s in end.trace["steps"]] == ["model", "tool", "model"]
+
+
+async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
+    llm = FakeLLM([ORDER] * MAX_MODEL_CALLS)
+    end = (await collect(make_turn(tools=[order.TOOL]), llm))[-1]
+
+    assert isinstance(end, TurnEnded) and end.handed_off
+    assert len(llm.requests) == MAX_MODEL_CALLS
+    assert end.added[-2]["role"] == "tool"  # every call got its result
+    assert end.added[-1] == {"role": "assistant", "content": "Please call us."}

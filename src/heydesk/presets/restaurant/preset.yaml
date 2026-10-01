@@ -9,7 +9,8 @@ instructions: |
   then suggest at most three dishes from the menu, each with a one-line reason.
   Only suggest dishes that are on the menu and available.
   To take an order, keep the order up to date with update_order after every change.
-tools: [update_order, set_details, place_order, submit_request, handoff_to_human]  # an agent may turn some off
+items_label: Menu
+tools: [update_order, search_items, set_details, place_order, submit_request, handoff_to_human]  # an agent may turn some off
 tasks:                                    # the structure of a conversation (design §6)
   order:
     label: pickup order

@@ -34,19 +34,14 @@ def test_render_is_compact_and_deterministic() -> None:
     assert text == preset.render(config.knowledge, config.currency)
     assert "Opening hours: Mon 11:00–22:00, Tue 11:00–22:00, Wed 11:00–22:00, " in text
     assert "Fri 14:00–23:00, Sat 11:00–23:00, Sun 11:00–23:00" in text
-    assert (
-        "- Chicken Biryani [chk-biryani] ৳450 (popular, spicy): "
-        "Basmati rice slow-cooked with chicken, potato and egg." in text
-    )
-    assert "- Mango Lassi [mango-lassi] ৳150 (vegetarian) NOT AVAILABLE" in text
-    assert text.index("Rice:") < text.index("Curry:") < text.index("Drinks:")
+    assert "Biryani" not in text  # the menu is items, rendered on their own
 
 
 def test_problems_come_back_per_field() -> None:
-    menu = [{"id": "x", "name": "X", "price": -1, "category": "Rice"}]
-    knowledge = seed_config()["knowledge"] | {"menu": menu}
+    knowledge = seed_config()["knowledge"]
+    del knowledge["address"]
     data = seed_config(knowledge=knowledge) | {"tools": ["create_booking"]}
 
     with pytest.raises(InvalidConfig) as caught:
         validate(data, load_presets())
-    assert set(caught.value.fields) == {"knowledge.menu.0.price", "tools.create_booking"}
+    assert set(caught.value.fields) == {"knowledge.address", "tools.create_booking"}
