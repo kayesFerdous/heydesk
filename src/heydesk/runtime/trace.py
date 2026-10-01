@@ -1,4 +1,4 @@
-"""The per-turn trace (02 §14): steps, timings, usage. Stored on the turn."""
+"""The per-turn trace (rule 7): steps, timings, tokens, errors. Logged when the turn finishes."""
 
 import time
 from collections.abc import Iterator
@@ -15,10 +15,8 @@ class Trace:
         self.data: dict[str, Any] = {
             "channel": channel,
             "first_output_ms": None,
-            "progress": [],
             "cost_micros": 0,
             "error": None,
-            "marks": {},
         }
 
     def ms(self) -> int:
@@ -42,7 +40,7 @@ class Trace:
             self.data["first_output_ms"] = self.ms()
 
     def add_usage(self, step: dict[str, Any], usage: Usage) -> None:
-        step["tokens"] = {"input": usage.input, "cached": usage.cached, "output": usage.output}
+        step["tokens"] = {"input": usage.input, "output": usage.output}
         self.data["cost_micros"] += usage.cost_micros
 
     def to_dict(self) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 """JSON log lines carrying the ids of whatever is running.
 
-Ids only: never message text, names or phone numbers (D12). Pass extra fields
-with `log.info("turn saved", extra={"steps": 3})`.
+Ids only: never message text, names or phone numbers (D10). Pass extra fields
+with `log.info("turn finished", extra={"conversation_id": "…"})`.
 """
 
 import json
@@ -17,9 +17,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 workspace_id: ContextVar[str | None] = ContextVar("workspace_id", default=None)
 conversation_id: ContextVar[str | None] = ContextVar("conversation_id", default=None)
-turn: ContextVar[int | None] = ContextVar("turn", default=None)
 
-_CONTEXT = (request_id, workspace_id, conversation_id, turn)
+_CONTEXT = (request_id, workspace_id, conversation_id)
 _STANDARD = set(vars(logging.makeLogRecord({}))) | {
     "message",
     "asctime",

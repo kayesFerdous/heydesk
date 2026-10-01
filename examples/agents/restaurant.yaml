@@ -1,0 +1,38 @@
+# The dev agent's business (DEV_AGENT_SEED). Any AgentConfig field may be set here;
+# what's left out comes from the preset. Prices are in paisa: 45000 = ৳450.
+name: Spice Garden assistant
+business_name: Spice Garden
+timezone: Asia/Dhaka
+currency: BDT
+handoff:
+  message: Let me get a member of our team to help you. You can also call us.
+  phone: "+880 1700 000000"
+knowledge:
+  address: "House 12, Road 5, Dhanmondi, Dhaka"
+  hours:
+    mon: ["11:00", "22:00"]
+    tue: ["11:00", "22:00"]
+    wed: ["11:00", "22:00"]
+    thu: ["11:00", "22:00"]
+    fri: ["14:00", "23:00"]
+    sat: ["11:00", "23:00"]
+    sun: ["11:00", "23:00"]
+  menu:
+    - {id: chk-biryani, name: Chicken Biryani, price: 45000, category: Rice, tags: [popular, spicy],
+       description: "Basmati rice slow-cooked with chicken, potato and egg."}
+    - {id: mutton-kacchi, name: Mutton Kacchi, price: 55000, category: Rice, tags: [popular],
+       description: "Old Dhaka style, mutton layered with rice and cooked sealed."}
+    - {id: veg-khichuri, name: Vegetable Khichuri, price: 22000, category: Rice, tags: [vegetarian, mild]}
+    - {id: veg-korma, name: Vegetable Korma, price: 32000, category: Curry, tags: [vegetarian, mild, contains-nuts]}
+    - {id: beef-rezala, name: Beef Rezala, price: 48000, category: Curry, tags: [spicy]}
+    - {id: chk-roast, name: Chicken Roast, price: 38000, category: Curry, tags: [mild]}
+    - {id: butter-naan, name: Butter Naan, price: 6000, category: Breads, tags: [vegetarian]}
+    - {id: borhani, name: Borhani, price: 13000, category: Drinks, tags: [vegetarian],
+       description: "Spiced yoghurt drink, the classic with biryani."}
+    - {id: mango-lassi, name: Mango Lassi, price: 15000, category: Drinks, tags: [vegetarian], available: false}
+    - {id: firni, name: Firni, price: 9000, category: Desserts, tags: [vegetarian, contains-nuts]}
+  policies: |
+    Pickup only for now. Prices include VAT.
+    Dishes may contain nuts, dairy and gluten. Ask the team about allergens before ordering.
+faq: |
+  We don't have parking, but there is a public car park 2 minutes away.

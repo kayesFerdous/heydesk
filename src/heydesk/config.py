@@ -12,9 +12,12 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""  # required in production
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]  # Vite dev server
 
-    LLM_PROVIDER: Literal["groq", "fake"] = "fake"
+    LLM_PROVIDER: Literal["gigalogy", "groq", "fake"] = "gigalogy"  # D14
     GROQ_API_KEY: str = ""
-    DEFAULT_MODEL: str = "openai/gpt-oss-120b"  # used by new agents; each agent can override
+    GIGALOGY_PROJECT_KEY: str = ""
+    GIGALOGY_API_KEY: str = ""
+    GIGALOGY_PROFILE_ID: str = ""  # the Maira profile picks the model, not DEFAULT_MODEL
+    MODEL: str = "openai/gpt-oss-120b"  # Groq's model for every agent
 
     DECIDER: Literal["jev", "llm", "fake"] = "fake"
     TYPESAFE_API_KEY: str = ""

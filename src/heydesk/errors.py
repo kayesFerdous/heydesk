@@ -32,6 +32,17 @@ class Unauthorized(HeyDeskError):
     code = "unauthorized"
 
 
+class InvalidConfig(HeyDeskError):
+    """An agent config that fails validation. `fields` maps a path to what's wrong with it."""
+
+    status_code = 422
+    code = "invalid_config"
+
+    def __init__(self, fields: dict[str, str]) -> None:
+        super().__init__("; ".join(f"{path}: {problem}" for path, problem in fields.items()))
+        self.fields = fields
+
+
 def _body(code: str, message: str) -> dict[str, dict[str, str]]:
     return {"error": {"code": code, "message": message}}
 

@@ -19,13 +19,20 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
+import heydesk.models  # noqa: E402, F401  (registers every table on Base.metadata)
 from heydesk.config import Settings  # noqa: E402
-from heydesk.db import Base  # noqa: E402
+from heydesk.db import Base, UTCDateTime  # noqa: E402
 
 # the app's DATABASE_URL, not alembic.ini's
 config.set_main_option("sqlalchemy.url", Settings().DATABASE_URL)
-# models/ register their tables on Base.metadata once imported (M1 day 3)
 target_metadata = Base.metadata
+
+
+def render_item(type_, obj, autogen_context):
+    """UTCDateTime only converts in Python; in the database it's a plain DateTime."""
+    if type_ == "type" and isinstance(obj, UTCDateTime):
+        return "sa.DateTime(timezone=True)"
+    return False
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -51,6 +58,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         render_as_batch=True,
+        render_item=render_item,
         dialect_opts={"paramstyle": "named"},
     )
 
@@ -60,7 +68,10 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(
-        connection=connection, target_metadata=target_metadata, render_as_batch=True
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=True,
+        render_item=render_item,
     )
 
     with context.begin_transaction():

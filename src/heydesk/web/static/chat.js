@@ -1,8 +1,9 @@
 // The dev chat page: POST a message, read the SSE reply from the response body
 // (EventSource only does GET). Retired when the Vue app lands.
 const $ = (id) => document.getElementById(id);
-const AGENT_KEY = "dev";
+const AGENT_KEY = document.querySelector('meta[name="agent-key"]').content;  // baked in by GET /
 let conversationId = null;
+let greeting = "";
 
 const add = (cls, text) => {
   const node = document.createElement("div");
@@ -48,15 +49,14 @@ const handle = (event, data, reply) => {
   }
 };
 
-async function send(message, clientMessageId) {
+async function send(message) {
   busy(true);
   const reply = {};
   try {
     const res = await fetch(`/api/chat/${AGENT_KEY}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message, conversation_id: conversationId,
-                             client_message_id: clientMessageId }),
+      body: JSON.stringify({ message, conversation_id: conversationId }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -81,8 +81,8 @@ async function send(message, clientMessageId) {
   } catch (failure) {
     const err = add("err", failure.message);
     const retry = document.createElement("button");
-    retry.textContent = "Retry";  // same client_message_id: a retry never runs a turn twice (D10)
-    retry.onclick = () => { err.remove(); reply.node?.remove(); send(message, clientMessageId); };
+    retry.textContent = "Retry";
+    retry.onclick = () => { err.remove(); reply.node?.remove(); send(message); };
     err.append(retry);
   } finally {
     busy(false);
@@ -95,11 +95,26 @@ $("form").addEventListener("submit", (e) => {
   if (!message) return;
   $("input").value = "";
   add("you", message);
-  send(message, crypto.randomUUID());
+  send(message);
 });
 
 $("restart").addEventListener("click", () => {
   conversationId = null;
   $("log").replaceChildren();
+  if (greeting) add("agent", greeting);
   $("input").focus();
 });
+
+// The greeting shows at once; the first turn stores it as the first assistant message (D8)
+(async () => {
+  try {
+    const res = await fetch(`/api/chat/${AGENT_KEY}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const agent = await res.json();
+    $("agent-name").textContent = agent.name;
+    greeting = agent.greeting;
+    add("agent", greeting);
+  } catch (failure) {
+    add("err", `Couldn't load the agent: ${failure.message}`);
+  }
+})();

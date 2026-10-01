@@ -1,11 +1,11 @@
-"""One turn: the model talks, the visitor sees it streamed (02 §7).
+"""One turn: the model talks, the visitor sees it streamed (design §6).
 
-Text only for now. Tools and the step loop arrive on M1 day 5, the progress
-policy on day 6, the hand-off guard on M2 day 8.
+Text only for now. Tools and the step loop arrive on day 5, the state note on
+day 6.
 """
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from dataclasses import dataclass, field
 
@@ -16,10 +16,10 @@ from heydesk.ports.llm import (
     LanguageModel,
     LLMUnavailable,
     Message,
-    ModelSettings,
     TextDelta,
     ToolSpec,
 )
+from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
 from heydesk.runtime.trace import Trace
 
@@ -34,26 +34,28 @@ class Runtime:
 
 @dataclass
 class TurnInput:
-    system: str  # built at publish; sent byte-for-byte
+    system: str  # built for this turn
     tools: list[ToolSpec]
-    settings: ModelSettings
+    model: str
     history: list[Message]  # the transcript so far
     user_text: str
     channel: str
-    handoff: HandOff
+    agent: AgentConfig
+    is_first: bool = False  # the conversation's first turn: the greeting goes in first (D8)
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
 
 
-async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncIterator[Event]:
+async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     """Every path ends in exactly one `TurnEnded`: no early return, no yield in `finally`."""
     trace = Trace(channel=turn.channel)
-    added = [rt.llm.user_message(turn.user_text)]
+    trace.data["llm"] = rt.llm.name
+    added = opening_messages(turn, rt.llm)
     streamed: list[str] = []  # text sent in this step, for safe_close
     handoff = interrupted = False
     finished: Finished | None = None
 
     try:
-        request = ChatRequest(turn.system, turn.tools, [*turn.history, *added], turn.settings)
+        request = ChatRequest(turn.system, turn.tools, [*turn.history, *added], turn.model)
         with trace.step("model", n=0) as step:
             async with aclosing(rt.llm.stream(request)) as stream:
                 async for event in stream:
@@ -81,13 +83,23 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncIterator[Event]:
         trace.data["error"] = str(error)
         handoff = True
 
+    contact = turn.agent.handoff
     if handoff or interrupted:
-        closing = turn.handoff.message if handoff else None
+        closing = contact.message if handoff else None
         added = safe_close(added, partial="".join(streamed), closing=closing, llm=rt.llm)
     if handoff:
-        yield turn.handoff
+        yield HandOff(contact.message, contact.phone, contact.email)
     trace.data["interrupted"] = interrupted
     yield TurnEnded(added, trace.to_dict(), handed_off=handoff, interrupted=interrupted)
+
+
+def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
+    """This turn's first transcript additions."""
+    added = []
+    if turn.is_first:  # what they saw first, so the model never greets twice (D8)
+        added.append(llm.assistant_message(turn.agent.fill(turn.agent.greeting)))
+    added.append(llm.user_message(turn.user_text))
+    return added
 
 
 def safe_close(

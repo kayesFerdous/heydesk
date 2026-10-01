@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The layer rules of docs/03 §2, as greps. A layer that doesn't exist yet passes.
+# The layer rules of docs/design.md §4, as greps. A layer that doesn't exist yet passes.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 fail=0
@@ -8,7 +8,7 @@ forbid() {  # message, paths, pattern
 }
 imp='^[[:space:]]*(from|import)[[:space:]]+'
 src=src/heydesk
-io='fastapi|starlette|sqlalchemy|groq|typesafe_sdk|livekit|pipecat'
+io='fastapi|starlette|sqlalchemy|groq|httpx|typesafe_sdk|livekit|pipecat'
 
 forbid "domain/ is pure" $src/domain "${imp}(${io}|pydantic|heydesk\.(runtime|ports|tools|presets|models|services|api|adapters|wiring|db))"
 forbid "runtime/ is framework-free" $src/runtime "${imp}(${io}|heydesk\.(presets|tools|models|services|api|adapters|wiring|db))"

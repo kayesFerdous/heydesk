@@ -1,4 +1,4 @@
-"""A turn's events → text/event-stream frames (02 §8)."""
+"""A turn's events → text/event-stream frames (design §9)."""
 
 import json
 import logging
@@ -29,8 +29,8 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
             match event:
                 case Token(text):
                     yield frame("token", {"text": text})
-                case Progress(kind, label):
-                    yield frame("status", {"kind": kind, "label": label})
+                case Progress(label):
+                    yield frame("status", {"label": label})
                 case ToolStarted(name):
                     yield frame("tool", {"name": name, "status": "started"})
                 case ToolFinished(name, ok):

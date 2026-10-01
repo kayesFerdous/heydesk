@@ -1,7 +1,7 @@
 """What a turn yields to its listeners (the SSE response, later the voice pipeline)."""
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from heydesk.ports.llm import Message
 
@@ -13,14 +13,13 @@ class Token:
 
 @dataclass(frozen=True)
 class Progress:
-    """A scripted status line (07 §3). Never enters the transcript.
+    """A scripted waiting line while a tool runs (D6). Never enters the transcript.
 
-    Web shows `label` ("Checking availability…"); voice speaks `text`.
+    Web shows `label` ("Checking the menu…"); voice says `text` ("Let me check that.").
     """
 
-    kind: Literal["ack", "wait", "long_wait"]
     label: str
-    text: str | None = None
+    text: str = ""
 
 
 @dataclass(frozen=True)

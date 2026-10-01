@@ -1,4 +1,4 @@
-"""The `Decider` port: fast typed judgments (Jev), 02 §6.
+"""The `Decider` port: fast typed judgments (Jev), design §7.
 
 Our names, not a vendor's; the Jev adapter maps them. Jev's rules: small
 focused state, questions worded positively, a `none` option on every Choice,

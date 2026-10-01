@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="agent-key" content="__AGENT_KEY__">
 <title>HeyDesk dev chat</title>
 <style>
   :root {
@@ -48,7 +49,7 @@
 <body>
 <main>
   <header>
-    <h1>HeyDesk <span style="color: var(--dim); font-weight: 400">dev agent</span></h1>
+    <h1><span id="agent-name">HeyDesk</span> <span style="color: var(--dim); font-weight: 400">dev agent</span></h1>
     <button class="link" id="restart" type="button">Start over</button>
   </header>
   <div id="log" aria-live="polite"></div>

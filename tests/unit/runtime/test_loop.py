@@ -1,23 +1,34 @@
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
-from heydesk.ports.llm import LLMUnavailable, ModelSettings
+from heydesk.ports.llm import LLMUnavailable
+from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 
-HANDOFF = HandOff("Please call us.", phone="+880 1700 000000")
+AGENT = AgentConfig(
+    preset="restaurant",
+    name="Test assistant",
+    business_name="Spice Garden",
+    timezone="Asia/Dhaka",
+    greeting="Hi, welcome to {business_name}!",
+    instructions="Be brief.",
+    knowledge={},
+    tools=[],
+    handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
+)
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
-    return TurnInput(
-        system="SYSTEM",
-        tools=[],
-        settings=ModelSettings("fake"),
-        history=[{"role": "user", "content": "earlier"}],
-        user_text=text,
-        channel="web",
-        handoff=HANDOFF,
-        **kw,  # type: ignore[arg-type]
-    )
+    fields: dict[str, object] = {
+        "system": "SYSTEM",
+        "tools": [],
+        "model": "fake",
+        "history": [{"role": "user", "content": "earlier"}],
+        "user_text": text,
+        "channel": "web",
+        "agent": AGENT,
+    }
+    return TurnInput(**(fields | kw))  # type: ignore[arg-type]
 
 
 async def collect(turn: TurnInput, llm: FakeLLM) -> list[Event]:
@@ -43,10 +54,20 @@ async def test_streams_the_reply_and_adds_it_to_the_transcript() -> None:
     assert end.trace["first_output_ms"] is not None
 
 
+async def test_the_first_turn_starts_with_the_greeting_the_visitor_saw() -> None:
+    llm = FakeLLM(["What can I get you?"])
+    end = (await collect(make_turn("hi", history=[], is_first=True), llm))[-1]
+
+    greeting = {"role": "assistant", "content": "Hi, welcome to Spice Garden!"}  # D8
+    user = {"role": "user", "content": "hi"}
+    assert isinstance(end, TurnEnded) and end.added[:2] == [greeting, user]
+    assert llm.requests[0].messages == [greeting, user]
+
+
 async def test_provider_failure_hands_off_politely() -> None:
     events = await collect(make_turn(), FakeLLM([LLMUnavailable("503")]))
 
-    assert events[0] == HANDOFF
+    assert events[0] == HandOff("Please call us.", phone="+880 1700 000000")
     end = events[-1]
     assert isinstance(end, TurnEnded) and end.handed_off
     assert end.added[-1] == {"role": "assistant", "content": "Please call us."}

@@ -11,18 +11,29 @@ from heydesk.services import Services
 router = APIRouter()
 
 
+class AgentOut(BaseModel):
+    name: str
+    greeting: str  # the page shows it on load; the first turn stores it (D8)
+
+
 class ChatIn(BaseModel):
     message: str
-    conversation_id: str | None = None
-    client_message_id: str  # a uuid per message, reused on retry (D10)
+    conversation_id: str | None = None  # none: start a new conversation
+
+
+@router.get("/api/chat/{public_key}")
+async def agent(public_key: str, services: Annotated[Services, Depends(get_services)]) -> AgentOut:
+    found = await services.agents.by_key(public_key)  # 404 if unknown
+    return AgentOut(name=found.config.name, greeting=found.greeting)
 
 
 @router.post("/api/chat/{public_key}")
 async def chat(
     public_key: str, body: ChatIn, services: Annotated[Services, Depends(get_services)]
 ) -> StreamingResponse:
+    agent = await services.agents.by_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
-        public_key, body.conversation_id, body.message, body.client_message_id, channel="web"
+        agent, body.conversation_id, body.message, channel="web"
     )
     return StreamingResponse(
         to_sse(turn),

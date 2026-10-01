@@ -1,149 +1,88 @@
 # CLAUDE.md
 
-HeyDesk is a SaaS where a business creates its own AI front-desk agent from a
-preset (restaurant, receptionist, clinic), edits it, publishes it, and puts it
-in front of its customers: web chat now, voice from M4. Async FastAPI, SQLAlchemy
-2.0 async, Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for typed
-judgments. Built as an MVP that becomes production without a rewrite.
+HeyDesk is an **MVP**: a business creates an AI front-desk agent from a preset
+(restaurant, receptionist), edits it, and visitors talk to it by
+web chat or voice. Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira
+(the default) or Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for
+the commit check. Tools need Groq: Maira can't call them (D14).
 
-## Start of a session: read only what the task needs
+**Keep it simple.** The owner is learning, and the code should read easily.
+Build the normal path well; don't add code for edge cases that aren't worth it
+(docs/design.md §12). If something seems to need extra protection, say so
+instead of adding it.
 
-The docs are ~200 KB. Don't read them whole.
+## Start of a session
 
-1. Read **[PLAN.md](PLAN.md)**: the *Now* line, then the next unticked day.
-2. Read only the sections in that day's **Read** column. Find a section with
-   `grep -n '^## 7\.' docs/02-build-guide.md` (or `^### ` for a subsection) and
-   read from that line to the next `## `.
-3. Open anything else only when the task hits it. Use the map below; the
-   non-negotiables here are the summary of 02 §3 and 07.
-4. `docs/decisions.md`: only when changing a design, or when a `D#` is cited
-   and the section doesn't explain it.
+When the user says "do today's work" (or similar):
 
-| Doc | Sections: what they answer |
-|---|---|
-| [02](docs/02-build-guide.md) engine | §1 words · §3 rules · §4 agent config, presets, custom tasks · §5 tools contract + rules · §6 ports (`LanguageModel`, `Decider`) · §7 the turn (`run_turn`, guards, *Structure*: tasks/state note, *What the model sees*, *The system prompt*) · §8 SSE, lease, `client_message_id` · §9 data model · §10 services · §11 API · §12 dev agent · §13 auth/tenancy · §14 trace, usage · §15 `.env` · §16 testing · §17 left out |
-| [07](docs/07-conversation-experience.md) experience | §1 model vs code · §2 latency · §3 progress policy · §4 interruptions, disconnects · §5 spoken forms · §6–8 voice hearing, turn-taking, silence · §9 failures · §10 web chat · §11 time and dates · §12 experience assertions |
-| [03](docs/03-project-structure.md) layout | §1 tree · §2 layer rules · §4 where new code goes · §7 wiring, test fixture · §8 pyproject |
-| [04](docs/04-voice-later.md) voice | M4 only |
-| [06](docs/06-production-and-scaling.md) production | After the month; open when something is being deferred |
-| [01](docs/01-frontdesk-analysis.md) Frontdesk | When reusing Frontdesk code (`../Frontdesk`, a working reference) |
+1. Read [PLAN.md](PLAN.md): the **Now** line and the next unticked day's bullets.
+2. Read the parts of [docs/design.md](docs/design.md) that day touches, and build it.
+3. Run `scripts/check.sh`, do the **Done when** check (ask the user if it needs
+   them), tick the day, update **Now**, and say in a few lines what changed.
 
-**The docs are the spec.** If code and a doc disagree, stop and say so; don't
-silently pick one. A design change updates the doc **and** adds a line to
-`docs/decisions.md`, in the same change.
+Read [docs/decisions.md](docs/decisions.md) only when changing a design.
+
+If the code and design.md disagree, stop and say so. A design change updates
+design.md **and** adds a line to decisions.md, in the same change.
 
 ## How we work
 
-- One PLAN.md day at a time, in order. Agree the scope with the user before
-  starting a new milestone. Tick a box only when its *Done when* check passes,
-  and update the *Now* line.
-- Code blocks in the docs are sketches: follow their shape and names
-  (`ToolResult`, `TurnEnded`, `start_turn`…), not every line.
+- One PLAN.md day at a time, in order. Tick a box only when its *Done when*
+  check passes, and update the **Now** line.
+- Code blocks in design.md are sketches: follow their shape and names, not every line.
 - Commit only when asked. Before any commit: `scripts/check.sh`.
 - **Commits and PRs have no AI attribution**: no `Co-Authored-By: Claude`
   trailer, no Claude or Anthropic email, no "Generated with Claude Code" line.
-  The author is the git user.
 - `uv` runs everything. Never `pip`, never a bare `python`.
+- `../Frontdesk` is a working reference (for example its Jev adapter).
 
 ## Commands
 
 ```bash
-uv run uvicorn heydesk.main:app --reload   # dev server; / is the minimal chat page (M1)
-uv run heydesk chat                        # terminal chat with the .env dev agent (M2)
-uv run pytest                              # unit + integration + scripted scenarios: offline, free
-uv run pytest -m live tests/scenarios/<preset>   # real Groq + Jev: costs quota, ask first
-uv run alembic revision --autogenerate -m "…" && uv run alembic upgrade head
-scripts/check.sh                           # pytest, ruff check, ruff format --check, mypy, import rules
+uv run alembic upgrade head                # once, and after every new migration
+uv run uvicorn heydesk.main:app --reload   # / is the dev chat page
+uv run pytest                              # offline and free
+uv run pytest -m live                      # real Groq + Jev: costs quota, ask first
+uv run alembic revision --autogenerate -m "…"
+scripts/check.sh                           # pytest, ruff, format, mypy, import rules
 ```
 
-## Non-negotiables
+## The rules (design.md §3)
 
-Full list and reasons: 02 §3 and 07.
-
-1. **The model talks; code guarantees.** Prices, totals, dates, availability,
-   validation and "it was saved" are decided in Python inside tools. The model
-   never does arithmetic or date maths; it reads what tools return.
-2. **Nothing is committed without a read-back and a yes.** Writing services
-   accept only `Confirmed[T]`, and only `confirm()` (the Jev commit check, on the
-   *heard* text) makes one. It fails closed.
-3. **Customers edit the words, not the guarantees.** Platform rules come first
-   in the prompt and aren't editable.
-4. **A conversation is pinned to one agent version.** The system prompt and
-   tool specs are built at publish, stored, and sent byte-for-byte. Nothing that
-   varies (date, time, channel) goes in the system prompt: use the context note
-   or the state note.
-5. **Transcripts are append-only.** Turns are insert-only; the transcript is
-   every turn's `messages` in order. Never edit a stored message; append a note.
-6. **`workspace_id` on every row and every query.** Tools reach the database
-   only through `ctx.services`, already scoped.
-7. **Every turn is traced, including failures.** A failure is a polite scripted
-   line plus a hand-off: never silence, never a stack trace.
+1. **Python does facts**: prices, totals, dates, times. The model only talks.
+2. **Read back, then a yes, then save.** Writing services take only
+   `Confirmed[T]`, made only by `confirm()` (Jev). It fails closed.
+3. **Platform rules come first** in the prompt and aren't editable.
+4. **The system prompt is built every turn** from the agent's config, with the
+   channel, date and time at the end. No versions, no caching (D15).
+5. **Messages are only added**, never edited.
+6. **`workspace_id` on every table and query.**
+7. **Every turn is traced.** A failure is a polite line and a hand-off.
 8. **`runtime/` knows no framework, database or SDK.** Only `wiring.py` imports adapters.
-9. **Bounded:** `MAX_STEPS` 6 model calls per turn, `max_completion_tokens`,
-   a timeout on every tool, `MAX_TURNS` per conversation.
-10. **One turn at a time per conversation, and it always finishes.** The turn
-    lease is claimed first (409 otherwise). The turn runs in its own task;
-    listeners subscribe. A disconnect doesn't stop it; a barge-in *signals* it.
-11. **Scripted moments are code.** Greeting, progress lines, hand-off, apologies.
-    Progress lines never enter the transcript, and the model is told never to say
-    "let me check" itself.
-12. **Values:** money in minor units; datetimes stored UTC, "today" is the
-    business's timezone; display and spoken forms come from `runtime/speech.py`,
-    picked by channel in code.
-
-## Layers (checked by `scripts/check_imports.sh`)
-
-`domain/` pure values · `ports/` Protocols only · `runtime/` the engine ·
-`adapters/` provider implementations (imported only by `wiring.py`) · `tools/`
-the tool library (DB only via `ctx.services`) · `presets/` data + pydantic ·
-`models/` tables · `services/` the only code that opens sessions and commits ·
-`api/` read the request, call one service, return · `voice/` a listener, like
-`api/chat.py`. Where new code goes: 03 §4.
 
 ## Conventions
 
-- Python 3.12, async all the way down. No blocking calls in async code (ruff's
-  `ASYNC` rules catch many). SDK clients are built once in the lifespan.
-- pydantic v2 for every input: requests, config, knowledge, tool arguments.
-- SQLAlchemy 2.0 typed ORM (`Mapped[...]`), short sessions; **never hold a
-  transaction open while waiting on a model**. Portable SQL only (SQLite now,
-  Postgres later): SQLAlchemy types, `UTCDateTime`, Alembic `render_as_batch`.
-- Tools return problems as data (`ok=False`, `error`, `hint`); exceptions are bugs.
-- Customer text is never passed to `str.format`; placeholders use `str.replace`
-  on a fixed list.
-- Logs are JSON with ids only (`heydesk.logs` contextvars): never message text,
-  names or phone numbers.
+- Python 3.12, async all the way down. SDK clients are built once in the lifespan.
+- pydantic v2 for inputs: requests, config, knowledge, tool arguments.
+- SQLAlchemy 2.0 typed (`Mapped[...]`), short sessions; never hold a
+  transaction open while waiting on a model.
+- Tools return problems as data (`ok=False`, a hint), not exceptions.
+- Customer text is never passed to `str.format`; placeholders use `str.replace`.
+- Logs are JSON with ids only: never message text, names or phone numbers.
 - Errors that reach HTTP are `HeyDeskError` subclasses (`heydesk.errors`).
-- mypy strict on `domain/`, `ports/`, `runtime/`, `tools/`. `Confirmed[T]` is
-  only a guarantee if the types are checked.
+- Money in minor units; datetimes stored UTC; display and spoken forms come from `runtime/speech.py`.
 
 ## Testing
 
-- Every behaviour in `domain/`, `runtime/` and `tools/` gets a unit test with
-  `FakeLLM`, `FakeDecider` and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026
-  08:00 UTC = 14:00 in Dhaka).
-- Integration tests use in-memory SQLite through `httpx.ASGITransport`
-  (`client` fixture in `tests/conftest.py`).
-- Scenarios are YAML **data**, graded on outcomes (rows written, nothing before
-  a yes) and experience assertions (07 §12), never on exact wording.
-- Every bug from a real chat becomes a scenario YAML before it's fixed.
+- Unit tests for `runtime/`, `tools/`, `domain/` with `FakeLLM`, `FakeDecider`
+  and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
+- Integration tests on in-memory SQLite: the `world` and `client` fixtures in `tests/conftest.py`.
+- Test the normal path and the failures that matter (no yes → no order), not every edge.
 
 ## Gotchas
 
-- Starlette cancels a streaming response when the client disconnects, so a
-  turn must never run inside the response generator (D3).
 - SQLAlchemy doesn't see in-place changes to JSON columns; assign a new value.
-- Groq caches an exact prefix. If `cached` tokens drop to zero after turn 1,
-  something changed the system prompt or tool specs.
-- gpt-oss reasoning counts as output tokens and delays the first token. An
-  empty model reply is an error, not "the model said nothing".
-- Don't run tools when `finish_reason` is `length`: the arguments may be cut off.
-- Jev: no arithmetic, counting or date comparisons; small focused state;
-  positively worded questions; a `none` option on every Choice.
-- "I'd like to see someone about a rash" is not a request for a human. Word
-  hand-off questions carefully.
-- Changing a detail clears what `depends_on` it (read back Wednesday, booked
-  Tuesday). `next_step()` is the one function for both "what do we ask next?"
-  and "can we commit?".
-- `ruff format` would rewrite code blocks in the docs; `*.md` is excluded in
-  pyproject. Don't run it on docs.
+- gpt-oss reasoning counts as output tokens. An empty model reply is an error.
+- Don't run tools when the model stopped for length: the arguments may be cut off.
+- Jev: no arithmetic or date comparisons; small state; positive questions.
+- `ruff format` would rewrite code blocks in the docs; `*.md` is excluded. Don't run it on docs.

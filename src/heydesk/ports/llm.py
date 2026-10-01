@@ -1,4 +1,4 @@
-"""The `LanguageModel` port: talks and calls tools (02 §6).
+"""The `LanguageModel` port: talks and calls tools (design §6).
 
 The runtime deals in these neutral types. The transcript stays in the
 provider's own message format; adapters build those messages so the runtime
@@ -20,23 +20,16 @@ class ToolSpec:
 
 
 @dataclass(frozen=True)
-class ModelSettings:
-    model: str
-    effort: Literal["low", "medium", "high"] = "low"
-
-
-@dataclass(frozen=True)
 class ChatRequest:
-    system: str  # stable for the agent version, so it's cached
-    tools: list[ToolSpec]  # stable for the agent version, same order every time
-    messages: list[Message]  # append-only history, then this turn's additions
-    settings: ModelSettings
+    system: str  # built for this turn: rules, role, knowledge, today's date
+    tools: list[ToolSpec]
+    messages: list[Message]  # the conversation so far, then this turn's additions
+    model: str
 
 
 @dataclass(frozen=True)
 class Usage:
     input: int = 0
-    cached: int = 0
     output: int = 0
     cost_micros: int = 0  # millionths of a dollar
 
@@ -81,7 +74,6 @@ class LanguageModel(Protocol):
     # Provider-native messages, so the runtime never touches the format:
     def user_message(self, text: str) -> Message: ...
     def assistant_message(self, text: str) -> Message: ...  # a scripted line the visitor saw
-    def context_note(self, text: str) -> Message: ...  # operator context: channel style, calendar
     def tool_results(self, results: list[ToolOutcome]) -> list[Message]: ...
 
 

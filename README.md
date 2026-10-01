@@ -1,39 +1,34 @@
 # HeyDesk
 
-A SaaS where businesses build their own AI front-desk agent from a preset
-(restaurant host, receptionist, clinic front desk), edit its instructions,
-knowledge and tools, publish it, and put it in front of their customers by web
-chat and, from week 4, by voice.
+An AI front desk a business can build in minutes. It picks a preset
+(restaurant host, receptionist), fills in its menu, hours and FAQ, edits the
+instructions. Visitors talk to the agent by web chat or by
+voice; it answers questions, takes orders and messages, and hands over to a
+person when needed.
 
-The agent is **natural but deterministic**: the model writes the words, while
-code decides what to collect, when to commit, and every price, time and total.
-Nothing is ordered or booked without a read-back and a yes. Nobody is left
-waiting in silence while it checks something.
+The model writes the words; code decides every price, total and time, and
+nothing is saved without reading it back and hearing a yes.
 
 ## Status
 
-M0 (foundations) is done: config, database, JSON logs, `/health`, checks and CI. See **[PLAN.md](PLAN.md)** for the
-milestones and progress.
+Days 1–4 are done: streamed chat with Groq, Gigalogy or a fake model, agents
+and conversations saved, the restaurant preset. See **[PLAN.md](PLAN.md)**.
 
 ## Docs
 
 | | |
 |---|---|
-| [PLAN.md](PLAN.md) | What to build next, how to know it's done, what to read for it |
-| [docs/decisions.md](docs/decisions.md) | The decision log (D1–D13) |
-| [CLAUDE.md](CLAUDE.md) | How to work in this repo: commands, rules, conventions |
-| [docs/02](docs/02-build-guide.md) | The engine: rules, tools, ports, one turn, data model, API |
-| [docs/07](docs/07-conversation-experience.md) | The experience: latency, fillers, interruptions, spoken forms |
-| [docs/03](docs/03-project-structure.md) | Folder layout and import rules |
-| [docs/04](docs/04-voice-later.md) | The voice channel |
-| [docs/06](docs/06-production-and-scaling.md) | From MVP to production |
-| [docs/01](docs/01-frontdesk-analysis.md) | What we took from Frontdesk |
+| [PLAN.md](PLAN.md) | What to build, day by day, and how to know it's done |
+| [docs/design.md](docs/design.md) | How it works |
+| [docs/decisions.md](docs/decisions.md) | Why it works that way |
+| [CLAUDE.md](CLAUDE.md) | Commands, rules and conventions |
 
 ## Running it
 
 ```bash
 cp .env.example .env
 uv sync
-uv run uvicorn heydesk.main:app --reload   # GET /health
+uv run alembic upgrade head
+uv run uvicorn heydesk.main:app --reload   # open http://localhost:8000
 scripts/check.sh                           # tests, lint, format, types, import rules
 ```
