@@ -1,6 +1,6 @@
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.prompt import CHANNEL_STYLE, PLATFORM_RULES, build_system_prompt
-from tests.conftest import FIXED_NOW
+from heydesk.runtime.prompt import CHANNEL_STYLE, PLATFORM_RULES, build_system_prompt, state_note
+from tests.conftest import CART, FIXED_NOW, TASKS
 
 
 def agent(**kw: object) -> AgentConfig:
@@ -19,14 +19,14 @@ def agent(**kw: object) -> AgentConfig:
 
 
 def prompt(**kw: object) -> str:
-    return build_system_prompt(agent(**kw), "MENU", "web", FIXED_NOW)
+    return build_system_prompt(agent(**kw), TASKS, "MENU", "web", FIXED_NOW)
 
 
 def test_platform_rules_first_and_right_now_last() -> None:
     text = prompt()
 
     assert text.startswith(PLATFORM_RULES)
-    headings = ("# Your role", "# Knowledge\nMENU", "# FAQ\nParking", "# Right now")
+    headings = ("# Your role", "# Tasks", "# Knowledge\nMENU", "# FAQ\nParking", "# Right now")
     positions = [text.index(h) for h in headings]
     assert positions == sorted(positions)
 
@@ -50,3 +50,34 @@ def test_right_now_has_the_channel_the_local_time_and_the_next_two_weeks() -> No
             "Tue 6 Oct, Wed 7 Oct, Thu 8 Oct, Fri 9 Oct, Sat 10 Oct, Sun 11 Oct, Mon 12 Oct, Tue 13 Oct"
         ),
     ]
+
+
+def test_the_tasks_section_lists_each_task_and_its_details() -> None:
+    section = prompt().split("# Tasks\n")[1].split("\n\n")[0]
+    assert (
+        "- order (pickup order): when the visitor wants to order food. Details: items (with "
+        "update_order), pickup time, name, phone, note (optional). Finish with place_order."
+    ) in section
+
+
+def test_the_state_note_says_what_is_known_and_what_to_ask_next() -> None:
+    state = {"cart": CART, "details": {"pickup_time": "19:30"}}
+    assert state_note(TASKS, state, "BDT") == (
+        "\n# Conversation state\n"
+        "Task: pickup order\n"
+        "Have: items = 2 × Chicken Biryani, 1 × Borhani, total ৳1,030; "
+        "pickup time = today, 7:30 pm\n"
+        "Still needed: name, phone\n"
+        'Next: ask for the name. Suggested: "What name should I put the order under?"\n'
+    )
+
+
+def test_with_everything_there_the_state_note_asks_for_the_read_back() -> None:
+    have = {"pickup_time": "19:30", "name": "Kayes", "phone": "01712345678"}
+    note = state_note(TASKS, {"cart": CART, "details": have}, "BDT")
+    assert "Still needed: nothing\n" in note  # the note is optional
+    assert "Next: read all of that back and ask for a clear yes. Only after the yes, call " in note
+
+
+def test_no_state_note_before_a_task_starts() -> None:
+    assert state_note(TASKS, {}, "BDT") == ""

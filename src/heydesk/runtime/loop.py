@@ -2,13 +2,15 @@
 
 A step is one model call. If it asks for tools, they run and their results go
 back to the model in the next step; a step with no tool calls is the reply.
-The state note arrives on day 6.
+Before every step the state note is added to the system prompt, so the model
+always sees what's known and what to ask next.
 """
 
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from heydesk.ports.decider import Decider
@@ -24,6 +26,8 @@ from heydesk.ports.llm import (
 )
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
+from heydesk.runtime.prompt import state_note
+from heydesk.runtime.tasks import Task
 from heydesk.runtime.tool import Catalog, Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
@@ -40,7 +44,7 @@ class Runtime:
 
 @dataclass
 class TurnInput:
-    system: str  # built for this turn
+    system: str  # built for this turn; the state note is added before every model call
     tools: list[Tool]  # the agent's enabled tools
     model: str
     history: list[Message]  # the transcript so far
@@ -48,6 +52,8 @@ class TurnInput:
     channel: str
     agent: AgentConfig
     items: Catalog  # the agent's items, for the tools
+    tasks: dict[str, Task]  # the preset's tasks
+    now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
     is_first: bool = False  # the conversation's first turn: the greeting goes in first (D8)
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
@@ -68,7 +74,8 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
         for n in range(MAX_MODEL_CALLS):
             finished: Finished | None = None
             calls: list[ToolCall] = []
-            request = ChatRequest(turn.system, specs, [*turn.history, *added], turn.model)
+            system = turn.system + state_note(turn.tasks, state, turn.agent.currency)
+            request = ChatRequest(system, specs, [*turn.history, *added], turn.model)
             with trace.step("model", n=n) as step:
                 async with aclosing(rt.llm.stream(request)) as stream:
                     async for event in stream:
@@ -98,7 +105,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             if not calls:
                 break  # the reply is done
 
-            ctx = ToolContext(agent=turn.agent, state=state, items=turn.items)
+            ctx = ToolContext(turn.agent, state, turn.items, turn.tasks, turn.now)
             outcomes = []
             for call in calls:
                 tool = tools.get(call.name)

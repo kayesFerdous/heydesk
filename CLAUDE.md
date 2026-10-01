@@ -85,5 +85,6 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 - SQLAlchemy doesn't see in-place changes to JSON columns; assign a new value.
 - gpt-oss reasoning counts as output tokens. An empty model reply is an error.
 - Don't run tools when the model stopped for length: the arguments may be cut off.
+- gpt-oss doesn't follow `$ref` in a tool schema; `Tool.spec` writes nested models out.
 - Jev: no arithmetic or date comparisons; small state; positive questions.
 - `ruff format` would rewrite code blocks in the docs; `*.md` is excluded. Don't run it on docs.

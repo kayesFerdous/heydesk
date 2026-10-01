@@ -16,6 +16,7 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.main import create_app
+from heydesk.presets import load_presets
 from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.items import Item
 from heydesk.services import Services
@@ -36,6 +37,14 @@ AGENT = AgentConfig(  # a small config for unit tests
     tools=[],
     handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
 )
+TASKS = load_presets()["restaurant"].tasks  # order and message
+CART = {  # what update_order saves for two biryanis and a borhani
+    "lines": [
+        {"code": "chk-biryani", "name": "Chicken Biryani", "quantity": 2, "price": 45000},
+        {"code": "borhani", "name": "Borhani", "quantity": 1, "price": 13000},
+    ],
+    "total": 103000,
+}
 
 
 class ListCatalog:

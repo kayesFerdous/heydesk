@@ -5,8 +5,8 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
-from heydesk.tools import order
-from tests.conftest import AGENT, ListCatalog
+from heydesk.tools import details, order
+from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -19,6 +19,8 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "channel": "web",
         "agent": AGENT,
         "items": ListCatalog(),
+        "tasks": TASKS,
+        "now": FIXED_NOW,
     }
     return TurnInput(**(fields | kw))  # type: ignore[arg-type]
 
@@ -122,3 +124,19 @@ async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
     assert len(llm.requests) == MAX_MODEL_CALLS
     assert end.added[-2]["role"] == "tool"  # every call got its result
     assert end.added[-1] == {"role": "assistant", "content": "Please call us."}
+
+
+async def test_the_state_note_is_rebuilt_before_every_model_call() -> None:
+    said = {"pickup_time": "7:30", "name": "Kayes"}
+    call = ToolCall("call_2", "set_details", {"task": "order", "details": said})
+    llm = FakeLLM([call, "And the best number to reach you?"])
+    turn = make_turn("for 7:30, I'm Kayes", tools=[details.TOOL], state={"cart": CART})
+    end = (await collect(turn, llm))[-1]
+
+    first, second = (request.system for request in llm.requests)
+    assert first.startswith("SYSTEM\n# Conversation state\nTask: pickup order\n")
+    assert "Next: ask for the pickup time." in first
+    assert "pickup time = today, 7:30 pm; name = Kayes\n" in second
+    assert "Still needed: phone\nNext: ask for the phone." in second
+    assert isinstance(end, TurnEnded)
+    assert end.state["details"] == {"pickup_time": "19:30", "name": "Kayes"}

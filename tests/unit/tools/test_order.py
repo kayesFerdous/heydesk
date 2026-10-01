@@ -3,9 +3,9 @@ from typing import Any
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.tool import ToolContext, ToolResult, run_tool
 from heydesk.tools import order
-from tests.conftest import AGENT, ListCatalog
+from tests.conftest import AGENT, FIXED_NOW, TASKS, ListCatalog
 
-CTX = ToolContext(agent=AGENT, state={}, items=ListCatalog())
+CTX = ToolContext(AGENT, state={}, items=ListCatalog(), tasks=TASKS, now=FIXED_NOW)
 
 
 async def update(*lines: tuple[str, int]) -> ToolResult:

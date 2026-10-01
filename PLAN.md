@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 5 built (1 Oct): the tool loop, `update_order`, the `items` table and `search_items` (D17), Gigalogy tool calls as JSON (D16). Tests green; waiting on the **Done when** chat with a real model. **Next:** day 6, tasks and the state note.
+> **Now:** days 5 and 6 done (1 Oct), checked on Groq and on Gigalogy. **Next:** day 7, the commit check (needs the Jev key, Q2).
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -28,6 +28,8 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - **Day 2:** the `LanguageModel` and `Decider` ports with fakes; `run_turn` (text only); SSE; the dev chat page.
 - **Day 3:** tables + first migration; `AgentConfig`; the restaurant preset and seed; the dev agent; conversations saved; the greeting stored first.
 - **Day 4:** `GroqLLM` and `GigalogyLLM` (the default, D14); the date, time and channel in the system prompt. Then simpler storage (D15): one config per agent, the transcript on the conversation, traces as log lines, no versions, lease or caching.
+- **Day 5:** the tool contract and the tool loop; `update_order`; the `items` table and `search_items` (D17); Gigalogy tool calls as JSON (D16). Tool schemas go to the model with nested models written out.
+- **Day 6:** detail types, `next_step`, `set_details`; the tasks section and the state note.
 
 ## M1 — The agent takes an order
 
@@ -46,14 +48,14 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - Gigalogy tool calls: the tools in the query, a JSON reply read into a `ToolCall` (D16)
 - Tests: `run_tool` failures, the order total, a tool call in the loop, Gigalogy's JSON calls, item search
 
-**Done when:** "two biryanis and a borhani" → ৳1,030 in the reply. [ ]
+**Done when:** "two biryanis and a borhani" → ৳1,030 in the reply. [x] (Groq: 4 of 5 runs said the total; Gigalogy: 3 of 5, the others asked "which biryani?")
 
 **Day 6 — Tasks and the state note**
 - Detail types (`text`, `person_name`, `phone`, `time_today`, `cart`) and `next_step`
 - `set_details`; the state note at the end of the system prompt, rebuilt before every model call; tasks in the prompt
 - Tests: each detail type, `next_step`, the state note
 
-**Done when:** "for 7:30, I'm Kayes" → the next reply asks only for the phone. [ ]
+**Done when:** "for 7:30, I'm Kayes" → the next reply asks only for the phone. [x] (Groq 5 of 5, Gigalogy 3 of 3)
 
 **Day 7 — The commit check: `place_order`**
 - `JevDecider` (from Frontdesk's); `Confirmed[T]`; `confirm()` fails closed
@@ -161,7 +163,7 @@ preset (day 17) → barge-in (day 14). Never cut: the commit check, voice, and t
 
 | # | Question | Needed by |
 |---|---|---|
-| Q1 | ~~Groq API key~~ in `.env`. Still open: Gigalogy keys that work (Frontdesk's give 401) | Day 4 |
+| Q1 | ~~Groq API key~~ and ~~Gigalogy keys~~ in `.env`: both work (Gigalogy's 401 on 1 Oct was on their side and went away) | Day 4 |
 | Q2 | TypeSafe (Jev) API key | Day 7 |
 | Q3 | Voice framework: Pipecat or LiveKit Agents | Day 10 |
 | Q4 | Speech-to-text and text-to-speech providers, and a budget | Day 10 |

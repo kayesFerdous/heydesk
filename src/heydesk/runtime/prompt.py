@@ -1,14 +1,16 @@
 """The system prompt, built for every turn (design §6).
 
 Platform rules come first and override the rest: then the preset role and the
-business's instructions, the knowledge, the FAQ, and last the channel and the
-date. Tasks join after the instructions on day 6.
+business's instructions, the tasks, the knowledge, the FAQ, and last the channel
+and the date. The loop adds the state note after it before every model call.
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.tasks import Task, current_task, display_detail, filled_details, next_step
 
 PLATFORM_RULES = """\
 # Platform rules
@@ -33,16 +35,44 @@ CHANNEL_STYLE = {
 }
 
 
-def build_system_prompt(agent: AgentConfig, knowledge: str, channel: str, now: datetime) -> str:
-    sections = [
-        PLATFORM_RULES,
-        "# Your role\n" + agent.fill(agent.instructions).strip(),
-        "# Knowledge\n" + knowledge.strip(),
-    ]
+def build_system_prompt(
+    agent: AgentConfig, tasks: dict[str, Task], knowledge: str, channel: str, now: datetime
+) -> str:
+    sections = [PLATFORM_RULES, "# Your role\n" + agent.fill(agent.instructions).strip()]
+    if tasks:
+        sections.append(tasks_section(tasks))
+    sections.append("# Knowledge\n" + knowledge.strip())
     if agent.faq.strip():
         sections.append("# FAQ\n" + agent.fill(agent.faq).strip())
     sections.append(right_now(channel, now, agent.timezone))
     return "\n\n".join(sections) + "\n"
+
+
+def tasks_section(tasks: dict[str, Task]) -> str:
+    lines = [
+        "# Tasks",
+        (
+            "What a visitor can get done here. Whenever the visitor gives you something, save it "
+            "with a tool first, before you reply: update_order for items (the whole order, every "
+            "time it changes), set_details for everything else. Then reply: say what changed "
+            "(after update_order, the order and its total exactly as the tool gave them), and "
+            "ask for the one thing # Conversation state, at the end, says is next."
+        ),
+    ]
+    for task_id, task in tasks.items():
+        details = []
+        for d in task.details:
+            if d.type == "cart":
+                details.append(f"{d.label} (with update_order)")
+            elif not d.required:
+                details.append(f"{d.label} (optional)")
+            else:
+                details.append(d.label)
+        lines.append(
+            f"- {task_id} ({task.label}): when {task.start_when}. "
+            f"Details: {', '.join(details)}. Finish with {task.finish_with}."
+        )
+    return "\n".join(lines)
 
 
 def right_now(channel: str, now: datetime, timezone: str) -> str:
@@ -54,4 +84,35 @@ def right_now(channel: str, now: datetime, timezone: str) -> str:
         f"Channel: {CHANNEL_STYLE[channel]}\n"
         f"Now: {local:%A} {local.day} {local:%B %Y}, {local:%H:%M}\n"
         "Next 14 days: " + ", ".join(f"{d:%a} {d.day} {d:%b}" for d in days)
+    )
+
+
+def state_note(tasks: dict[str, Task], state: dict[str, Any], currency: str) -> str:
+    """The end of the system prompt, rebuilt before every model call and never stored:
+    what's known and what to ask next. Empty until a task has started."""
+    task_id = current_task(tasks, state)
+    if task_id is None:
+        return ""
+    task = tasks[task_id]
+    have = filled_details(task, state)
+    known = [
+        f"{d.label} = {display_detail(d.type, have[d.name], currency)}"
+        for d in task.details
+        if d.name in have
+    ]
+    missing = [d.label for d in task.details if d.required and d.name not in have]
+    step = next_step(task, have)
+    if step is None:
+        then = (
+            "read all of that back and ask for a clear yes. "
+            f"Only after the yes, call {task.finish_with}."
+        )
+    else:
+        then = f"ask for the {step.label}." + (f' Suggested: "{step.ask}"' if step.ask else "")
+    return (
+        "\n# Conversation state\n"
+        f"Task: {task.label}\n"
+        f"Have: {'; '.join(known) or 'nothing yet'}\n"
+        f"Still needed: {', '.join(missing) or 'nothing'}\n"
+        f"Next: {then}\n"
     )

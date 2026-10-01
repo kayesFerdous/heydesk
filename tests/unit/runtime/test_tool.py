@@ -1,13 +1,15 @@
 import asyncio
+import json
 from typing import Any
 
 from pydantic import BaseModel
 
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult, run_tool
-from tests.conftest import AGENT, ListCatalog
+from heydesk.tools import order
+from tests.conftest import AGENT, FIXED_NOW, TASKS, ListCatalog
 
-CTX = ToolContext(agent=AGENT, state={}, items=ListCatalog())
+CTX = ToolContext(AGENT, state={}, items=ListCatalog(), tasks=TASKS, now=FIXED_NOW)
 
 
 class Echo(BaseModel):
@@ -50,3 +52,9 @@ async def test_problems_come_back_as_data_never_raised() -> None:
     for tool, call, hint in cases:
         result = await run_tool(tool, call, CTX)
         assert not result.ok and hint in result.data["error"]
+
+
+def test_the_schema_the_model_sees_has_nested_models_written_out() -> None:
+    schema = order.TOOL.spec.input_schema
+    assert "$ref" not in json.dumps(schema) and "$defs" not in schema
+    assert schema["properties"]["lines"]["items"]["required"] == ["code", "quantity"]

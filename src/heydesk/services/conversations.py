@@ -74,8 +74,9 @@ class ConversationService:
                 )
                 s.add(conv)
 
+        now = self.now()
         turn = TurnInput(
-            system=build_system_prompt(agent.config, agent.knowledge, channel, self.now()),
+            system=build_system_prompt(agent.config, agent.tasks, agent.knowledge, channel, now),
             tools=enabled_tools(agent),
             model=self.settings.MODEL,
             history=conv.messages,
@@ -83,6 +84,8 @@ class ConversationService:
             channel=channel,
             agent=agent.config,
             items=self.items.catalog(agent.workspace_id, agent.agent_id),
+            tasks=agent.tasks,
+            now=now,
             state=conv.state,
             is_first=not conv.messages,
         )

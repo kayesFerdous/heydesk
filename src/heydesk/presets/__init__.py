@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, field_validator
 
+from heydesk.runtime.tasks import Task
+
 HERE = Path(__file__).parent
 
 
@@ -20,7 +22,7 @@ class Preset(BaseModel):
     instructions: str
     items_label: str = "Items"  # what the prompt calls the business's items: "Menu", "Services"
     tools: list[str]  # the tools an agent of this kind may use; all on by default
-    tasks: dict[str, dict[str, Any]]  # typed as TaskDef with runtime/tasks.py (day 6)
+    tasks: dict[str, Task]
     knowledge_model: type[BaseModel]  # "module:Class" in the YAML
     render_knowledge: Callable[[Any, str], str]  # "module:function": (knowledge, currency) → text
 

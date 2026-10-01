@@ -19,6 +19,7 @@ from heydesk.models import Agent, Workspace
 from heydesk.presets import Preset
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item, render_items
+from heydesk.runtime.tasks import Task
 from heydesk.services.items import ItemService
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class LiveAgent:
     agent_id: str
     public_key: str
     config: AgentConfig
+    tasks: dict[str, Task]  # from the preset
     knowledge: str  # rendered for the prompt, items included
     items_in_prompt: bool  # every item is listed, so `search_items` isn't needed (D17)
 
@@ -147,7 +149,13 @@ class AgentService:
             ]
         )
         return LiveAgent(
-            agent.workspace_id, agent.id, agent.public_key, config, knowledge, in_prompt
+            agent.workspace_id,
+            agent.id,
+            agent.public_key,
+            config,
+            preset.tasks,
+            knowledge,
+            in_prompt,
         )
 
     async def ensure_dev_agent(self, preset_id: str, seed_path: str | Path) -> LiveAgent:

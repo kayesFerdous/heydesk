@@ -8,6 +8,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 from heydesk.ports.llm import ToolCall, ToolSpec
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
+from heydesk.runtime.tasks import Task
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ class ToolContext:
     agent: AgentConfig
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     items: Catalog
+    tasks: dict[str, Task]  # the preset's tasks
+    now: datetime  # when the turn started, in UTC
 
 
 @dataclass(frozen=True)
@@ -57,7 +61,28 @@ class Tool:
 
     @property
     def spec(self) -> ToolSpec:
-        return ToolSpec(self.name, self.description, self.input_model.model_json_schema())
+        schema = inline_refs(self.input_model.model_json_schema())
+        return ToolSpec(self.name, self.description, schema)
+
+
+def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Writes each nested model out where it's used, instead of pydantic's `$defs` + `$ref`.
+
+    gpt-oss doesn't follow a `$ref`: it guessed the field names (`item_code` for `code`).
+    """
+    defs = schema.get("$defs", {})
+
+    def expand(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:  # "#/$defs/OrderLine"
+                return expand(defs[node["$ref"].split("/")[-1]])
+            return {key: expand(value) for key, value in node.items() if key != "$defs"}
+        if isinstance(node, list):
+            return [expand(value) for value in node]
+        return node
+
+    result: dict[str, Any] = expand(schema)
+    return result
 
 
 async def run_tool(tool: Tool | None, call: ToolCall, ctx: ToolContext) -> ToolResult:

@@ -86,6 +86,7 @@ A preset (`presets/<id>/preset.yaml`) gives the defaults and the **tasks**:
 tasks:
   order:
     label: pickup order
+    start_when: the visitor wants to order food
     details:                       # asked in this order; the visitor may give them in any order
       - {name: items,       type: cart}
       - {name: pickup_time, type: time_today,  ask: "What time would you like to pick it up?"}
@@ -168,14 +169,15 @@ after that, or a step with neither words nor tools, is a hand-off.
 ```
 # Conversation state
 Task: pickup order
-Order: 2 × Chicken Biryani, 1 × Borhani. Total ৳1,030.
-Have: pickup time = today, 7:30 pm
+Have: items = 2 × Chicken Biryani, 1 × Borhani, total ৳1,030; pickup time = today, 7:30 pm
 Still needed: name, phone
-Next: ask for their name. Suggested: "What name should I put the order under?"
+Next: ask for the name. Suggested: "What name should I put the order under?"
 ```
 
-When everything is there, **Next** gives the read-back to say and asks for a
-yes.
+The note is empty until a task starts: `set_details` names the task, or a cart
+starts the task that collects one. When everything is there, **Still needed**
+is `nothing` and **Next** says to read it all back and get a clear yes before
+the task's `finish_with` tool.
 
 ## 7. Tools
 
@@ -191,6 +193,8 @@ class ToolContext:
     agent: AgentConfig
     state: dict                    # the conversation state so far
     items: Catalog                 # this agent's items: get(codes), search(query)
+    tasks: dict[str, Task]         # the preset's tasks
+    now: datetime                  # when the turn started, UTC
 
 @dataclass(frozen=True)
 class Tool:
@@ -218,7 +222,7 @@ saved with the turn.
 |---|---|---|
 | `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
 | `search_items` | no | Finds items by words in their name, category, description or tags (up to 10). Offered only when the items aren't all in the prompt |
-| `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), validated by their type |
+| `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), parsed by their type. Good ones are saved even when another fails; the problems come back as data |
 | `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
 | `submit_request` | **yes** | Same for a message to the team (receptionist) |
 | `handoff_to_human` | no | Marks the conversation `needs_human`, returns the hand-off message and phone |
@@ -231,9 +235,10 @@ back and ask. `OrderService.place()` accepts only `Confirmed[...]`, so mypy
 catches a write that skipped the check.
 
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
-`person_name`, `phone`, `time_today`), each with `parse`, `display` and
-`spoken`. `next_step(task, filled)` returns the first missing detail, or the
-read-back once everything is there. The state note and `place_order` both use
+`person_name`, `phone`, `time_today`), each with a `parse` and a `display`
+(spoken forms on day 12). A bare "7:30" is the next 7:30 from now, and a time
+that has passed is refused. `next_step(task, filled)` returns the first missing
+required detail, or None: everything's there, so read it back. The state note and `place_order` both use
 it, so "what do we ask next?" and "can we save?" can't disagree.
 
 ## 8. Data model
