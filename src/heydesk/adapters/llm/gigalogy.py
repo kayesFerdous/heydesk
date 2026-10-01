@@ -83,12 +83,17 @@ def build_query(system: str, messages: list[Message]) -> str:
 
 
 def read_detail(response: httpx.Response) -> dict[str, Any]:
-    """Maira wraps answers and errors alike in `detail`; the status says which."""
+    """Maira wraps answers and errors alike in `detail`; the status says which.
+
+    An error keeps Maira's own reason ("Project credential not found.",
+    "Profile Not Found!"): it's about our setup, never the visitor's text.
+    """
     try:
         data = response.json()
     except ValueError:
         data = None
     detail = data.get("detail") if isinstance(data, dict) else None
     if response.is_error or not isinstance(detail, dict):
-        raise LLMUnavailable(f"gigalogy: HTTP {response.status_code}")
+        reason = detail.get("response") if isinstance(detail, dict) else detail
+        raise LLMUnavailable(f"gigalogy: HTTP {response.status_code}: {str(reason)[:100]}")
     return detail

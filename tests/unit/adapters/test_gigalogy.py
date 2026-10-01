@@ -55,12 +55,8 @@ async def test_the_reply_comes_whole_with_its_usage() -> None:
 
 
 async def test_an_error_or_an_empty_reply_is_unavailable() -> None:
-    with pytest.raises(LLMUnavailable, match="HTTP 401"):
-        [
-            e
-            async for e in llm_answering(401, {"detail": "Project credential not found"}).stream(
-                REQUEST
-            )
-        ]
+    answer = {"detail": {"response": "Project credential not found."}}
+    with pytest.raises(LLMUnavailable, match="HTTP 401: Project credential not found"):
+        [e async for e in llm_answering(401, answer).stream(REQUEST)]
     with pytest.raises(LLMUnavailable, match="no reply text"):
         [e async for e in llm_answering(200, {"detail": {"response": " "}}).stream(REQUEST)]
