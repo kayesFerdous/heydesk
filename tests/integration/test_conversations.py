@@ -1,8 +1,9 @@
 import pytest
+from sqlalchemy import select
 
 from heydesk.errors import NotFound
 from heydesk.models import Conversation
-from heydesk.ports.llm import ToolCall
+from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.conversations import RunningTurn
 from tests.conftest import DEV_KEY, World
@@ -51,6 +52,18 @@ async def test_the_prompt_has_the_date_and_an_edit_shows_up_next_message(world: 
     assert "Changed." not in first.system and "Changed." in second.system
 
 
+async def test_a_hand_off_marks_the_conversation_for_a_person(world: World) -> None:
+    world.llm.script = [ToolCall("call_1", "handoff_to_human", {}), "Of course.", "Fine."]
+    asked = await say(world, "can I talk to a person?")
+    fine = await say(world, "hi")
+    world.llm.script = [LLMUnavailable("503")]
+    failed = await say(world, "hello")
+
+    async with world.sessions() as s:
+        status = {c.id: c.status for c in await s.scalars(select(Conversation))}
+    assert status == {asked: "needs_human", fine: "active", failed: "needs_human"}
+
+
 async def test_an_unknown_conversation_is_not_found(world: World) -> None:
     with pytest.raises(NotFound):
         await start(world, "hi", "nope")
@@ -72,6 +85,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "update_order",
         "set_details",
         "place_order",
+        "handoff_to_human",
     ]
     # After the order, the state note says what to ask next
     assert "Task: pickup order" not in request.system

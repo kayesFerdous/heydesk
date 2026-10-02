@@ -70,7 +70,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     tools = {tool.name: tool for tool in turn.tools}
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
-    handoff = interrupted = False
+    failed = asked_for_person = interrupted = False
 
     try:
         for n in range(MAX_MODEL_CALLS):
@@ -100,7 +100,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             # A refusal, a lost stream, or a step with neither words nor tools is a failure
             if finished is None or finished.stop == "refusal" or not (streamed or calls):
                 trace.data["error"] = f"no usable reply (stop: {finished and finished.stop})"
-                handoff = True
+                failed = True
                 break
             added.append(finished.assistant_message)
             streamed = []  # that text is in the transcript now
@@ -127,6 +127,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                     step["ok"] = result.ok
                 yield ToolFinished(call.name, result.ok)
                 state |= result.state or {}
+                asked_for_person |= result.handoff  # the model still replies; the card follows
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
             added += rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
             if turn.interrupt.is_set():
@@ -134,15 +135,16 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 break
         else:
             trace.data["error"] = f"still calling tools after {MAX_MODEL_CALLS} model calls"
-            handoff = True
+            failed = True
     except LLMUnavailable as error:
         trace.data["error"] = str(error)
-        handoff = True
+        failed = True
 
     contact = turn.agent.handoff
-    if handoff or interrupted:
-        closing = contact.message if handoff else None
+    if failed or interrupted:  # a failure ends with the hand-off message as a polite line
+        closing = contact.message if failed else None
         added = safe_close(added, partial="".join(streamed), closing=closing, llm=rt.llm)
+    handoff = failed or asked_for_person
     if handoff:
         yield HandOff(contact.message, contact.phone, contact.email)
     trace.data["interrupted"] = interrupted

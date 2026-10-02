@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 7 built (1 Oct), green offline; it waits for its *Done when* on real Jev (`TYPESAFE_API_KEY`, Q2). **Next:** day 8, the status line and hand-off.
+> **Now:** day 8 done (1 Oct), checked on Groq. Day 7 is built and green offline but waits for its *Done when* on real Jev (`TYPESAFE_API_KEY`, Q2). **Next:** day 9, tests and catch up; then day 7's live check when the key arrives.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -30,6 +30,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - **Day 4:** `GroqLLM` and `GigalogyLLM` (the default, D14); the date, time and channel in the system prompt. Then simpler storage (D15): one config per agent, the transcript on the conversation, traces as log lines, no versions, lease or caching.
 - **Day 5:** the tool contract and the tool loop; `update_order`; the `items` table and `search_items` (D17); Gigalogy tool calls as JSON (D16). Tool schemas go to the model with nested models written out.
 - **Day 6:** detail types, `next_step`, `set_details`; the tasks section and the state note.
+- **Day 8:** the tool's label as a `status` event; `handoff_to_human`; a hand-off (asked for, or a failure) marks the conversation `needs_human`.
 
 ## M1 — The agent takes an order
 
@@ -69,7 +70,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - `handoff_to_human` tool; conversation marked `needs_human`; provider failure → polite hand-off
 - Tests: progress before a tool; the hand-off
 
-**Done when:** "Checking…" shows while a tool runs; "can I talk to a person?" shows the hand-off card. [ ]
+**Done when:** "Checking…" shows while a tool runs; "can I talk to a person?" shows the hand-off card. [x] (Groq: "Updating your order…", then the card; Gigalogy's 401 that day also ended in the card)
 
 **Day 9 — Tests and catch up**
 - A test for each branch of `run_turn`

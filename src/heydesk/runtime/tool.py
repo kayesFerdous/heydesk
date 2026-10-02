@@ -54,6 +54,7 @@ class ToolResult:
     ok: bool
     data: dict[str, Any]  # short JSON the model reads
     state: dict[str, Any] | None = None  # changes to the conversation state (the cart, details)
+    handoff: bool = False  # the turn ends with the hand-off card; the conversation needs a person
 
 
 def fail(hint: str) -> ToolResult:

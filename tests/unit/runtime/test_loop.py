@@ -5,7 +5,7 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
-from heydesk.tools import details, order
+from heydesk.tools import details, handoff, order
 from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog, ListOrders
 
 
@@ -125,6 +125,18 @@ async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
     assert len(llm.requests) == MAX_MODEL_CALLS
     assert end.added[-2]["role"] == "tool"  # every call got its result
     assert end.added[-1] == {"role": "assistant", "content": "Please call us."}
+
+
+async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
+    llm = FakeLLM([ToolCall("call_1", "handoff_to_human", {}), "Of course. Please call us."])
+    events = await collect(make_turn("can I talk to a person?", tools=[handoff.TOOL]), llm)
+
+    *_, card, end = events
+    assert card == HandOff("Please call us.", "+880 1700 000000", None)
+    assert isinstance(end, TurnEnded) and end.handed_off
+    # The model's own reply is the last word: no closing line added, unlike a failure
+    assert end.added[-1] == {"role": "assistant", "content": "Of course. Please call us."}
+    assert json.loads(end.added[-2]["content"])["phone"] == "+880 1700 000000"
 
 
 async def test_the_state_note_is_rebuilt_before_every_model_call() -> None:

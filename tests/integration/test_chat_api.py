@@ -1,7 +1,9 @@
 import json
 
+from fastapi import FastAPI
 from httpx import AsyncClient
 
+from heydesk.ports.llm import ToolCall
 from tests.conftest import DEV_KEY
 
 
@@ -32,6 +34,21 @@ async def test_chat_streams_tokens_over_sse(client: AsyncClient) -> None:
     assert frames[-1] == ("done", {"interrupted": False})
     text = "".join(str(data["text"]) for event, data in frames if event == "token")
     assert text == "(fake model) You said: a table for two"
+
+
+async def test_a_tool_shows_a_status_line_and_a_hand_off_shows_the_card(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [ToolCall("call_1", "handoff_to_human", {}), "Of course."]
+    res = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "can I talk to a person?"})
+
+    events = [event for event, _ in parse(res.text)]
+    order = list(dict.fromkeys(events))  # each kind once, in the order it first came
+    assert order == ["open", "status", "token", "handoff", "done"]  # the status comes first
+    frames = dict(parse(res.text))
+    assert frames["status"] == {"label": "Getting someone from the team…"}
+    assert frames["handoff"]["phone"] == "+880 1700 000000"
 
 
 async def test_the_next_message_continues_the_conversation(client: AsyncClient) -> None:

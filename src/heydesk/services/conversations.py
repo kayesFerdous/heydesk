@@ -111,6 +111,8 @@ class ConversationService:
             saved = await self._get_by_id(s, conv.workspace_id, conv.id)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
+            if ended.handed_off:
+                saved.status = "needs_human"
             saved.updated_at = self.now()
         log.info("turn finished", extra={"conversation_id": conv.id, "trace": ended.trace})
 

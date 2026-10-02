@@ -211,6 +211,7 @@ class ToolResult:
     ok: bool
     data: dict                     # short JSON the model reads
     state: dict | None = None      # changes to the conversation state (the cart, details)
+    handoff: bool = False          # handoff_to_human: the reply, then the hand-off card
 ```
 
 `run_tool` validates the arguments, runs the tool under its timeout and turns

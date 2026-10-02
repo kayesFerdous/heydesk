@@ -9,7 +9,6 @@ from heydesk.runtime.events import (
     HandOff,
     Progress,
     Token,
-    ToolFinished,
     ToolStarted,
     TurnEnded,
 )
@@ -31,10 +30,8 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
                     yield frame("token", {"text": text})
                 case Progress(label):
                     yield frame("status", {"label": label})
-                case ToolStarted(name):
-                    yield frame("tool", {"name": name, "status": "started"})
-                case ToolFinished(name, ok):
-                    yield frame("tool", {"name": name, "status": "done", "ok": ok})
+                case ToolStarted(label=label) if label:
+                    yield frame("status", {"label": label})  # shown until the reply starts
                 case HandOff(message, phone, email):
                     yield frame("handoff", {"message": message, "phone": phone, "email": email})
                 case TurnEnded(interrupted=interrupted):
