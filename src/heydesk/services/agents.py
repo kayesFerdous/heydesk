@@ -72,7 +72,6 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
     for name in config.tools:
         if name not in preset.tools:
             problems[f"tools.{name}"] = f"not available to the {preset.id} preset"
-    # ponytail: check each tool exists in TOOLS once submit_request is built (day 17)
     if problems:
         raise InvalidConfig(problems)
     return config

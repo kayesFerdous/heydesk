@@ -27,3 +27,13 @@ class NewOrder:
     customer_name: str
     customer_phone: str
     note: str = ""
+
+
+@dataclass(frozen=True)
+class NewRequest:
+    """A message for the team, ready to save: the task's details as the visitor gave them."""
+
+    task: str  # "message"
+    details: dict[str, str]  # label → value, the name and phone left out
+    name: str
+    phone: str

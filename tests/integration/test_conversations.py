@@ -85,6 +85,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "update_order",
         "set_details",
         "place_order",
+        "submit_request",
         "handoff_to_human",
     ]
     # After the order, the state note says what to ask next

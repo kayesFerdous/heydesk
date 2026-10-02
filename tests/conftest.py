@@ -16,7 +16,7 @@ from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
-from heydesk.domain.values import Confirmed, NewOrder
+from heydesk.domain.values import Confirmed, NewOrder, NewRequest
 from heydesk.main import create_app
 from heydesk.presets import load_presets
 from heydesk.runtime.config import AgentConfig, Handoff
@@ -74,6 +74,17 @@ class ListOrders:
         return 100 + len(self.placed)
 
 
+class ListRequests:
+    """An in-memory `Requests` for unit tests: what was sent."""
+
+    def __init__(self) -> None:
+        self.sent: list[NewRequest] = []
+
+    async def submit(self, request: Confirmed[NewRequest]) -> str:
+        self.sent.append(request.value)
+        return f"req-{len(self.sent)}"
+
+
 def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
     """A `ToolContext` for unit tests; pass any field to change it."""
     fields: dict[str, Any] = {
@@ -84,6 +95,7 @@ def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
         "now": FIXED_NOW,
         "decider": FakeDecider(),
         "orders": ListOrders(),
+        "requests": ListRequests(),
         "agent_said": "",
         "visitor_said": "",
     }

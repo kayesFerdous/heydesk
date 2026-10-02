@@ -1,0 +1,34 @@
+# A receptionist agent (DEV_AGENT_PRESET=receptionist, DEV_AGENT_SEED=this file).
+# Any AgentConfig field may be set here; what's left out comes from the preset.
+# Prices are in paisa: 500000 = ৳5,000.
+name: Rahman Accounting front desk
+business_name: Rahman Accounting
+timezone: Asia/Dhaka
+currency: BDT
+handoff:
+  message: Let me get someone from the office to help you. You can also call us.
+  phone: "+880 1800 000000"
+knowledge:
+  address: "Level 4, 22 Gulshan Avenue, Dhaka"
+  hours:
+    sun: ["09:00", "18:00"]
+    mon: ["09:00", "18:00"]
+    tue: ["09:00", "18:00"]
+    wed: ["09:00", "18:00"]
+    thu: ["09:00", "17:00"]
+  about: |
+    A small firm of chartered accountants. We help people and small businesses with
+    tax returns, bookkeeping and company registration.
+    Mr. Rahman handles companies; Ms. Akter handles personal tax.
+# The services: saved in the items table, not the config (D17)
+items:
+  - {code: tax-return, name: Personal tax return, price: 500000, category: Tax,
+     description: "We prepare and file your yearly return. Bring your salary statement and bank certificates."}
+  - {code: tax-advice, name: Tax advice session (1 hour), price: 300000, category: Tax}
+  - {code: bookkeeping, name: Monthly bookkeeping, price: 1500000, category: Business,
+     description: "For small businesses, up to 200 transactions a month."}
+  - {code: company-reg, name: Company registration, price: 4000000, category: Business,
+     description: "Registering a private limited company with RJSC, start to finish."}
+faq: |
+  We're a 5-minute walk from Gulshan 1 circle. There's visitor parking in the basement.
+  First meetings are by appointment only: leave a message and we'll call you to set a time.

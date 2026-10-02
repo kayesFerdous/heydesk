@@ -24,6 +24,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
 from heydesk.services.orders import OrderService
+from heydesk.services.requests import RequestService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -70,9 +71,13 @@ def build_services(
     runtime = Runtime(llm=llm, decider=decider)
     items = ItemService(sessions)
     orders = OrderService(sessions, now)
+    requests = RequestService(sessions, now)
     return Services(
         agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
-        conversations=ConversationService(sessions, runtime, items, orders, settings, now),
+        conversations=ConversationService(
+            sessions, runtime, items, orders, requests, settings, now
+        ),
         items=items,
         orders=orders,
+        requests=requests,
     )

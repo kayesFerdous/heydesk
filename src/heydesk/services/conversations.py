@@ -20,6 +20,7 @@ from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
 from heydesk.services.items import ItemService
 from heydesk.services.orders import OrderService
+from heydesk.services.requests import RequestService
 from heydesk.tools import TOOLS
 
 log = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class ConversationService:
         runtime: Runtime,
         items: ItemService,
         orders: OrderService,
+        requests: RequestService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -54,6 +56,7 @@ class ConversationService:
         self.runtime = runtime
         self.items = items
         self.orders = orders
+        self.requests = requests
         self.settings = settings
         self.now = now
 
@@ -90,6 +93,7 @@ class ConversationService:
             agent=agent.config,
             items=self.items.catalog(agent.workspace_id, agent.agent_id),
             orders=self.orders.for_conversation(agent.workspace_id, agent.agent_id, conv.id),
+            requests=self.requests.for_conversation(agent.workspace_id, agent.agent_id, conv.id),
             tasks=agent.tasks,
             now=now,
             state=conv.state,

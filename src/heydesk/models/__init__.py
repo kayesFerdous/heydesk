@@ -4,6 +4,7 @@ from heydesk.models.agent import Agent
 from heydesk.models.conversation import Conversation
 from heydesk.models.item import ItemRow
 from heydesk.models.order import Order
+from heydesk.models.request import VisitorRequest
 from heydesk.models.workspace import Workspace
 
-__all__ = ["Agent", "Conversation", "ItemRow", "Order", "Workspace"]
+__all__ = ["Agent", "Conversation", "ItemRow", "Order", "VisitorRequest", "Workspace"]

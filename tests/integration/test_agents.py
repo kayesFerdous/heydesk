@@ -49,3 +49,16 @@ async def test_another_workspace_cant_edit_the_agent(world: World) -> None:
     agent = await world.services.agents.by_key(DEV_KEY)
     with pytest.raises(NotFound):
         await world.services.agents.update("someone-else", agent.agent_id, {"faq": "Mine."})
+
+
+async def test_the_receptionist_dev_agent_lists_its_services(world: World) -> None:
+    agent = await world.services.agents.ensure_dev_agent(
+        "receptionist", SEED.parent / "receptionist.yaml"
+    )
+
+    assert (
+        agent.greeting
+        == "Hello, thanks for contacting Rahman Accounting. How can I help you today?"
+    )
+    assert "Personal tax return [tax-return] ৳5,000" in agent.knowledge
+    assert set(agent.tasks) == {"message"}

@@ -6,6 +6,7 @@ import yaml
 from heydesk.errors import InvalidConfig
 from heydesk.presets import load_presets
 from heydesk.services.agents import config_from_preset, validate
+from heydesk.tools import TOOLS
 from tests.conftest import SEED
 
 
@@ -14,8 +15,19 @@ def seed_config(**changes: Any) -> dict[str, Any]:
     return config_from_preset(load_presets()["restaurant"], seed)
 
 
-def test_every_preset_loads() -> None:
-    assert "restaurant" in load_presets()
+def test_every_preset_loads_and_its_tools_are_built() -> None:
+    presets = load_presets()
+    assert {"restaurant", "receptionist"} <= set(presets)
+    for preset in presets.values():
+        assert set(preset.tools) <= set(TOOLS), preset.id
+
+
+def test_the_receptionist_seed_validates() -> None:
+    seed = yaml.safe_load((SEED.parent / "receptionist.yaml").read_text(encoding="utf-8"))
+    seed.pop("items")
+    config = validate(config_from_preset(load_presets()["receptionist"], seed), load_presets())
+    assert config.business_name == "Rahman Accounting"
+    assert "submit_request" in config.tools
 
 
 def test_the_example_seed_validates_with_the_preset_defaults() -> None:
