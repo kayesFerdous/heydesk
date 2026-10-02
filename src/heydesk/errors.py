@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -38,13 +39,16 @@ class InvalidConfig(HeyDeskError):
         self.fields = fields
 
 
-def _body(code: str, message: str) -> dict[str, dict[str, str]]:
+def _body(code: str, message: str) -> dict[str, dict[str, Any]]:
     return {"error": {"code": code, "message": message}}
 
 
 async def _heydesk_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, HeyDeskError)
-    return JSONResponse(_body(exc.code, exc.message), status_code=exc.status_code)
+    body = _body(exc.code, exc.message)
+    if isinstance(exc, InvalidConfig):
+        body["error"]["fields"] = exc.fields
+    return JSONResponse(body, status_code=exc.status_code)
 
 
 async def _unexpected(request: Request, exc: Exception) -> JSONResponse:

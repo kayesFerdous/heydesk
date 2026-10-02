@@ -150,9 +150,8 @@ class FirstSound(BaseObserver):
 
 
 async def run_call(
-    connection: SmallWebRTCConnection, settings: Settings, services: Services, agent_key: str
+    connection: SmallWebRTCConnection, settings: Settings, services: Services, agent: LiveAgent
 ) -> None:
-    agent = await services.agents.by_key(agent_key)
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )

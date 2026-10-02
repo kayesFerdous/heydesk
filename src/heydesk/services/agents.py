@@ -44,6 +44,15 @@ class LiveAgent:
         return self.config.fill(self.config.greeting)
 
 
+@dataclass(frozen=True)
+class AgentInfo:
+    """An agent as its business sees it."""
+
+    id: str
+    public_key: str
+    config: AgentConfig
+
+
 def config_from_preset(preset: Preset, overrides: dict[str, Any]) -> dict[str, Any]:
     """The preset's defaults under the business's own fields."""
     return {
@@ -75,6 +84,10 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
     if problems:
         raise InvalidConfig(problems)
     return config
+
+
+def _info(agent: Agent) -> AgentInfo:
+    return AgentInfo(agent.id, agent.public_key, AgentConfig.model_validate(agent.config))
 
 
 def _fields(error: ValidationError, prefix: str = "") -> dict[str, str]:
@@ -131,6 +144,17 @@ class AgentService:
             agent.name = config.name
             agent.updated_at = self.now()
         return config
+
+    async def list(self, ws: str) -> list[AgentInfo]:
+        async with self.sessions() as s:
+            agents = await s.scalars(
+                select(Agent).where(Agent.workspace_id == ws).order_by(Agent.created_at)
+            )
+            return [_info(agent) for agent in agents]
+
+    async def get(self, ws: str, agent_id: str) -> AgentInfo:
+        async with self.sessions() as s:
+            return _info(await self._get(s, ws, agent_id))
 
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:

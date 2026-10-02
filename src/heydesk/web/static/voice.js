@@ -32,7 +32,8 @@ const call = async () => {
     if (pc.iceGatheringState === "complete") return done();
     pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && done();
   });
-  const res = await fetch("/api/voice/offer", {
+  const key = document.querySelector('meta[name="agent-key"]').content;
+  const res = await fetch(`/api/voice/offer?key=${encodeURIComponent(key)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
