@@ -3,8 +3,12 @@
 Each thing the caller says becomes a `start_turn(channel="voice")`, the same
 turn the web chat runs; the reply's tokens go to the TTS, which speaks it
 sentence by sentence as they arrive.
+
+Barge-in: talking over the agent for `BARGE_IN_S` stops the audio and the turn,
+which still saves what it had. A short "mm-hmm" doesn't stop it and isn't a turn.
 """
 
+import asyncio
 import time
 
 from loguru import logger
@@ -12,12 +16,14 @@ from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     Frame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
     TranscriptionFrame,
     TTSSpeakFrame,
+    VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.observers.base_observer import BaseObserver, FramePushed
@@ -42,6 +48,8 @@ from heydesk.voice.chorus import ChorusSTT
 
 VOICE = "en_US-lessac-medium"  # Piper, free and local, until the real TTS lands
 PAUSE_S = 0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
+BARGE_IN_S = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
+BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
 
 
 class Agent(FrameProcessor):
@@ -52,20 +60,59 @@ class Agent(FrameProcessor):
         self.conversations = conversations
         self.agent = agent
         self.conversation_id: str | None = None  # one conversation per call
+        self.turn: asyncio.Task[None] | None = None  # the running turn, in its own task
+        self.interrupt: asyncio.Event | None = None  # that turn's stop flag
+        self.speaking = False  # the agent's audio is playing
+        self.over_agent = False  # the caller started talking while the agent was busy
+        self.barge_in: asyncio.Task[None] | None = None
+
+    def busy(self) -> bool:
+        return self.speaking or (self.turn is not None and not self.turn.done())
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame):
-            await self.reply(frame.text)
-        else:
-            await self.push_frame(frame, direction)
+            await self.heard(frame.text)
+            return
+        if isinstance(frame, BotStartedSpeakingFrame | BotStoppedSpeakingFrame):
+            self.speaking = isinstance(frame, BotStartedSpeakingFrame)
+        elif isinstance(frame, VADUserStartedSpeakingFrame):
+            self.over_agent = self.busy()
+            if self.over_agent:
+                self.barge_in = self.create_task(self.stop_after(BARGE_IN_S))
+        elif isinstance(frame, VADUserStoppedSpeakingFrame) and self.barge_in:
+            await self.cancel_task(self.barge_in)
+            self.barge_in = None
+        await self.push_frame(frame, direction)
+
+    async def heard(self, text: str) -> None:
+        if self.over_agent and text.lower().strip(" .,!?") in BACKCHANNEL:
+            return  # "mm-hmm" while the agent talks: let it go on
+        await self.stop()  # anything else is a new turn: the old one stops first
+        if self.turn:
+            await asyncio.wait([self.turn])  # wait, don't cancel: it saves what it had
+        self.turn = self.create_task(self.reply(text))
+
+    async def stop_after(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        await self.stop()
+
+    async def stop(self) -> None:
+        """Stops the turn at its next token and the audio now."""
+        if self.interrupt:
+            self.interrupt.set()
+        if self.busy():
+            await self.broadcast_interruption()
 
     async def reply(self, text: str) -> None:
         turn = await self.conversations.start_turn(self.agent, self.conversation_id, text, "voice")
         self.conversation_id = turn.conversation_id
+        self.interrupt = turn.interrupt
         spoken = ""
         await self.push_frame(LLMFullResponseStartFrame())
         async for event in turn.events:
+            if turn.interrupt.is_set():
+                continue  # read to the end, so the turn is saved; say nothing more
             if isinstance(event, Token):
                 spoken += event.text
                 await self.push_frame(LLMTextFrame(event.text))

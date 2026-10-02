@@ -302,7 +302,9 @@ the real one is added.
   never to say "let me check" itself.
 - **Barge-in:** when the caller talks over the agent, the framework stops the
   audio and the channel sets the turn's interrupt flag; the turn stops at the
-  next token and is saved as `interrupted`.
+  next token and is saved as `interrupted`. Talking over it for 0.6s stops it; a
+  short "mm-hmm" doesn't, and isn't a turn. The old turn is saved before the next
+  one starts.
 
 ## 11. Testing
 

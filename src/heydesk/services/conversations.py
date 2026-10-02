@@ -1,5 +1,6 @@
 """Conversations: the one entry point for web and voice (design §6)."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
@@ -36,6 +37,7 @@ def enabled_tools(agent: LiveAgent) -> list[Tool]:
 class RunningTurn:
     conversation_id: str
     events: AsyncGenerator[Event]  # the listener reads these; the turn is saved at the end
+    interrupt: asyncio.Event  # set it to stop the turn at the next token (a barge-in)
 
 
 class ConversationService:
@@ -93,7 +95,7 @@ class ConversationService:
             state=conv.state,
             is_first=not conv.messages,
         )
-        return RunningTurn(conv.id, self._run(turn, conv))
+        return RunningTurn(conv.id, self._run(turn, conv), turn.interrupt)
 
     async def _run(self, turn: TurnInput, conv: Conversation) -> AsyncGenerator[Event]:
         """Passes the turn's events to the listener and saves the turn when it ends.
