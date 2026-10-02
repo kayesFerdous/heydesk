@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 12 done (2 Oct): money, times and phone numbers are spoken as words by `speakable()` (D20). **Next:** day 13, fillers.
+> **Now:** days 13–23 built (2 Oct). Days 13–18 wait for a live check by ear or with a real model (each says what). **Next:** the demo.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -34,6 +34,16 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - **Day 8:** the tool's label as a `status` event; `handoff_to_human`; a hand-off (asked for, or a failure) marks the conversation `needs_human`.
 - **Day 9:** a test for each branch of `run_turn`; a whole order over four turns, saved only at the yes; tidied (an unused `Conflict` error, stale comments).
 - **Day 10:** Pipecat over SmallWebRTC; Chorus speech-to-text, Piper speech; the **Call** button; an echo call that logs the first-sound time.
+- **Day 11:** each utterance runs `start_turn(channel="voice")`; Pipecat speaks sentence by sentence (D19).
+- **Day 12:** `speakable()` says money, times and phone numbers in words before the TTS (D20).
+- **Day 13:** a tool's filler is said while it runs.
+- **Day 14:** barge-in: 0.6s of talking over the agent stops it; "mm-hmm" doesn't.
+- **Days 15–16:** `scripts/latency.py` prints P50/P95 from the server log.
+- **Day 17:** the receptionist preset, the `requests` table, `submit_request`.
+- **Day 18:** presets, agents and items API; per-field errors; `?key=` on the dev page.
+- **Day 19:** orders, requests and conversations API; an order's status.
+- **Day 20:** signup, login, the workspace from the token; `heydesk create-user`.
+- **Days 21–23:** one error shape; `MAX_TURNS` (D21); isolation tests; the README.
 
 ## M1 — The agent takes an order
 
@@ -139,19 +149,19 @@ normal path; skip edge cases that aren't worth the code (design §12).
 **Day 19 — Orders, messages, conversations API**
 - List orders and messages; a conversation with its messages; change an order's status
 
-**Done when:** an order placed on the page shows up in the API with its conversation. [ ]
+**Done when:** an order placed on the page shows up in the API with its conversation. [x] (2 Oct: integration test, chat API → orders and conversation API)
 
 **Day 20 — Login**
 - `users`, signup and login (pwdlib + pyjwt); `current_workspace` from the token
 - `heydesk create-user` for the dev workspace
 
-**Done when:** a second account can't see the first account's agent (404). [ ]
+**Done when:** a second account can't see the first account's agent (404). [x] (2 Oct: integration test)
 
 **Days 21–23 — Tidy up**
 - Isolation test per resource; one error shape everywhere; `MAX_TURNS`
 - README: how to run, switch presets, use the API; catch up
 
-**Done when:** `scripts/check.sh` is green and a fresh clone runs from the README. [ ]
+**Done when:** `scripts/check.sh` is green and a fresh clone runs from the README. [x] (2 Oct: fresh clone, fake model: page, chat and 149 tests)
 
 ## Demo (days 24–27) and buffer (28–30)
 
