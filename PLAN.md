@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 11 done (2 Oct): an order is placed by voice; each utterance runs `start_turn` (D19). **Next:** day 12, spoken forms.
+> **Now:** day 12 done (2 Oct): money, times and phone numbers are spoken as words by `speakable()` (D20). **Next:** day 13, fillers.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -102,7 +102,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - Money, time, phone and order number in words (`runtime/speech.py`)
 - `speakable()` turns each sentence into words before the TTS; the model sees display forms (D20)
 
-**Done when:** the total and the read-back are heard as words. [ ]
+**Done when:** the total and the read-back are heard as words. [x] (2 Oct: Kayes heard them in Chrome)
 
 **Day 13 — Fillers**
 - The voice channel says a tool's `filler` when it starts (not while already speaking)
