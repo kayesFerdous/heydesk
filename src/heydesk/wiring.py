@@ -7,8 +7,10 @@ from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
 from heydesk.adapters.decider.fake import FakeDecider
+from heydesk.adapters.decider.jev import JevDecider
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
@@ -21,6 +23,7 @@ from heydesk.services import Services
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
+from heydesk.services.orders import OrderService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -43,9 +46,18 @@ def _required(settings: Settings, name: str) -> str:
 
 
 def build_decider(settings: Settings) -> Decider:
+    if settings.DECIDER == "jev":
+        if not settings.TYPESAFE_API_KEY:
+            raise RuntimeError("DECIDER=jev needs TYPESAFE_API_KEY in .env")
+        client = AsyncTypeSafeClient(
+            api_key=settings.TYPESAFE_API_KEY,
+            timeout=settings.TYPESAFE_TIMEOUT,
+            retry=RetryPolicy(max_retries=0),  # inside a tool's timeout; a failure fails closed
+        )
+        return JevDecider(client, settings.TYPESAFE_MODEL)
     if settings.DECIDER == "fake":
-        return FakeDecider()
-    raise NotImplementedError("JevDecider arrives on day 7; set DECIDER=fake")
+        return FakeDecider()  # says no to everything: no order is ever confirmed
+    raise NotImplementedError(f"DECIDER={settings.DECIDER} isn't built; use jev or fake")
 
 
 def build_services(
@@ -57,8 +69,10 @@ def build_services(
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     items = ItemService(sessions)
+    orders = OrderService(sessions, now)
     return Services(
         agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
-        conversations=ConversationService(sessions, runtime, items, settings, now),
+        conversations=ConversationService(sessions, runtime, items, orders, settings, now),
         items=items,
+        orders=orders,
     )

@@ -13,6 +13,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from heydesk.domain.values import Confirmed, NewOrder
+from heydesk.ports.decider import Decider
 from heydesk.ports.llm import ToolCall, ToolSpec
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
@@ -28,6 +30,12 @@ class Catalog(Protocol):
     async def search(self, query: str) -> list[Item]: ...
 
 
+class Orders(Protocol):
+    """Where one conversation's orders are saved. Only a confirmed order gets in (rule 2)."""
+
+    async def place(self, order: Confirmed[NewOrder]) -> int: ...  # the order number
+
+
 @dataclass(frozen=True)
 class ToolContext:
     agent: AgentConfig
@@ -35,6 +43,10 @@ class ToolContext:
     items: Catalog
     tasks: dict[str, Task]  # the preset's tasks
     now: datetime  # when the turn started, in UTC
+    decider: Decider  # for the commit check
+    orders: Orders
+    agent_said: str  # the agent's last message before this turn: the read-back, if there was one
+    visitor_said: str  # this turn's message: the yes, if there was one
 
 
 @dataclass(frozen=True)

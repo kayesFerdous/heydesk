@@ -10,7 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.tasks import Task, current_task, display_detail, filled_details, next_step
+from heydesk.runtime.tasks import Task, current_task, describe, filled_details, next_step
 
 PLATFORM_RULES = """\
 # Platform rules
@@ -95,11 +95,7 @@ def state_note(tasks: dict[str, Task], state: dict[str, Any], currency: str) -> 
         return ""
     task = tasks[task_id]
     have = filled_details(task, state)
-    known = [
-        f"{d.label} = {display_detail(d.type, have[d.name], currency)}"
-        for d in task.details
-        if d.name in have
-    ]
+    known = describe(task, have, currency)
     missing = [d.label for d in task.details if d.required and d.name not in have]
     step = next_step(task, have)
     if step is None:

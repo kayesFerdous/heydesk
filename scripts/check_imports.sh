@@ -17,6 +17,7 @@ forbid "presets/ are pure" $src/presets "${imp}(${io}|heydesk\.(models|services|
 forbid "ports/ import nothing from the project" $src/ports "${imp}heydesk\."
 forbid "only wiring.py imports adapters" "$src/runtime $src/tools $src/presets $src/models $src/services $src/api" "${imp}heydesk\.adapters"
 forbid "services/ and models/ don't know HTTP" "$src/services $src/models" "${imp}(fastapi|starlette)"
+forbid "only runtime/guards.py makes a Confirmed" "$src --exclude=guards.py --exclude=values.py" 'Confirmed\('
 if [ -d $src/voice ]; then
   forbid "voice/ is a listener: no DB, no tools" $src/voice "${imp}(sqlalchemy|heydesk\.(models|tools|adapters|db))"
 fi

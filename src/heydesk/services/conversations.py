@@ -18,6 +18,7 @@ from heydesk.runtime.prompt import build_system_prompt
 from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
 from heydesk.services.items import ItemService
+from heydesk.services.orders import OrderService
 from heydesk.tools import TOOLS
 
 log = logging.getLogger(__name__)
@@ -43,12 +44,14 @@ class ConversationService:
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
         items: ItemService,
+        orders: OrderService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.runtime = runtime
         self.items = items
+        self.orders = orders
         self.settings = settings
         self.now = now
 
@@ -84,6 +87,7 @@ class ConversationService:
             channel=channel,
             agent=agent.config,
             items=self.items.catalog(agent.workspace_id, agent.agent_id),
+            orders=self.orders.for_conversation(agent.workspace_id, agent.agent_id, conv.id),
             tasks=agent.tasks,
             now=now,
             state=conv.state,

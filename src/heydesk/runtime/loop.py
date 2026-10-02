@@ -28,7 +28,7 @@ from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.prompt import state_note
 from heydesk.runtime.tasks import Task
-from heydesk.runtime.tool import Catalog, Tool, ToolContext, run_tool
+from heydesk.runtime.tool import Catalog, Orders, Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
 MAX_MODEL_CALLS = 6  # rule 9
@@ -52,6 +52,7 @@ class TurnInput:
     channel: str
     agent: AgentConfig
     items: Catalog  # the agent's items, for the tools
+    orders: Orders  # where place_order saves
     tasks: dict[str, Task]  # the preset's tasks
     now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
@@ -64,6 +65,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     trace = Trace(channel=turn.channel)
     trace.data["llm"] = rt.llm.name
     added = opening_messages(turn, rt.llm)
+    agent_said = last_agent_text([*turn.history, *added])  # what the visitor is replying to
     state = dict(turn.state)
     tools = {tool.name: tool for tool in turn.tools}
     specs = [tool.spec for tool in turn.tools]
@@ -105,7 +107,17 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             if not calls:
                 break  # the reply is done
 
-            ctx = ToolContext(turn.agent, state, turn.items, turn.tasks, turn.now)
+            ctx = ToolContext(
+                turn.agent,
+                state,
+                turn.items,
+                turn.tasks,
+                turn.now,
+                rt.decider,
+                turn.orders,
+                agent_said=agent_said,
+                visitor_said=turn.user_text,
+            )
             outcomes = []
             for call in calls:
                 tool = tools.get(call.name)
@@ -144,6 +156,14 @@ def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
         added.append(llm.assistant_message(turn.agent.fill(turn.agent.greeting)))
     added.append(llm.user_message(turn.user_text))
     return added
+
+
+def last_agent_text(messages: list[Message]) -> str:
+    """The text of the last assistant message that has some."""
+    for m in reversed(messages):
+        if m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"]:
+            return str(m["content"])
+    return ""
 
 
 def safe_close(

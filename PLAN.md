@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 5 and 6 done (1 Oct), checked on Groq and on Gigalogy. **Next:** day 7, the commit check (needs the Jev key, Q2).
+> **Now:** day 7 built (1 Oct), green offline; it waits for its *Done when* on real Jev (`TYPESAFE_API_KEY`, Q2). **Next:** day 8, the status line and hand-off.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to

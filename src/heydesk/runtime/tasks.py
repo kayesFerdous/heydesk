@@ -58,6 +58,15 @@ def filled_details(task: Task, state: dict[str, Any]) -> dict[str, Any]:
     return have
 
 
+def describe(task: Task, filled: dict[str, Any], currency: str) -> list[str]:
+    """What's known, one "label = value" each: for the state note and the read-back check."""
+    return [
+        f"{d.label} = {display_detail(d.type, filled[d.name], currency)}"
+        for d in task.details
+        if d.name in filled
+    ]
+
+
 def next_step(task: Task, filled: dict[str, Any]) -> Detail | None:
     """The first required detail still missing, or None: everything's there, so read it back."""
     return next((d for d in task.details if d.required and d.name not in filled), None)

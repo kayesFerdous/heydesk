@@ -68,7 +68,11 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
     # The menu is short, so it's in the prompt and search_items isn't offered
     request = world.llm.requests[0]
     assert "Chicken Biryani [chk-biryani] ৳450" in request.system
-    assert [t.name for t in request.tools] == ["update_order", "set_details"]
+    assert [t.name for t in request.tools] == [
+        "update_order",
+        "set_details",
+        "place_order",
+    ]
     # After the order, the state note says what to ask next
     assert "Task: pickup order" not in request.system
     assert "Next: ask for the pickup time." in world.llm.requests[1].system

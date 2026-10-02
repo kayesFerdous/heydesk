@@ -1,11 +1,11 @@
 from typing import Any
 
 from heydesk.ports.llm import ToolCall
-from heydesk.runtime.tool import ToolContext, ToolResult, run_tool
+from heydesk.runtime.tool import ToolResult, run_tool
 from heydesk.tools import order
-from tests.conftest import AGENT, FIXED_NOW, TASKS, ListCatalog
+from tests.conftest import make_ctx
 
-CTX = ToolContext(AGENT, state={}, items=ListCatalog(), tasks=TASKS, now=FIXED_NOW)
+CTX = make_ctx()
 
 
 async def update(*lines: tuple[str, int]) -> ToolResult:

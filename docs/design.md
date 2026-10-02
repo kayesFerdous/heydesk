@@ -56,7 +56,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 ```
 src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
-├── domain/values.py     Confirmed[T]: only the commit check makes one
+├── domain/values.py     Confirmed[T] (only the commit check makes one), NewOrder
 ├── ports/               Protocols: LanguageModel, Decider
 ├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, and fakes for tests
 ├── runtime/             the engine: loop, tool contract, items, config, prompt, tasks, state note, speech, trace
@@ -231,8 +231,12 @@ saved with the turn.
 questions: *did the agent's last message read these details back?* and *is the
 visitor's reply a clear yes?* Both likely → a `Confirmed[T]`; anything else,
 including Jev being down → not confirmed, and the tool tells the model to read
-back and ask. `OrderService.place()` accepts only `Confirmed[...]`, so mypy
-catches a write that skipped the check.
+back and ask. "Likely" is P(yes) ≥ 0.7, so "hmm, maybe" fails. Each check logs
+its two probabilities (never the text). `OrderService.place()` accepts only
+`Confirmed[...]`, so mypy catches a write that skipped the check, and
+`scripts/check_imports.sh` checks that only `runtime/guards.py` makes one.
+`place_order` reads the order from the state, asks `next_step` first (a missing
+detail is asked for, with no Jev call), and once placed clears the task.
 
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
 `person_name`, `phone`, `time_today`), each with a `parse` and a `display`
@@ -252,7 +256,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | preset, name, public_key (unique), config JSON |
 | `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
-| `orders` | conversation_id, number, lines JSON, total, currency, pickup_time, customer_name, customer_phone, status |
+| `orders` | agent_id, conversation_id, number (101, 102… per agent), lines JSON, total, currency, pickup_time, customer_name, customer_phone, note, status |
 | `requests` | conversation_id, task, details JSON, name, phone, status |
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the

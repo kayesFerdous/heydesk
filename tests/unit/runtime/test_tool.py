@@ -7,9 +7,9 @@ from pydantic import BaseModel
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult, run_tool
 from heydesk.tools import order
-from tests.conftest import AGENT, FIXED_NOW, TASKS, ListCatalog
+from tests.conftest import make_ctx
 
-CTX = ToolContext(AGENT, state={}, items=ListCatalog(), tasks=TASKS, now=FIXED_NOW)
+CTX = make_ctx()
 
 
 class Echo(BaseModel):

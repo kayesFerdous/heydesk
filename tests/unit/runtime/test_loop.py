@@ -6,7 +6,7 @@ from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
 from heydesk.tools import details, order
-from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog
+from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog, ListOrders
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -19,6 +19,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "channel": "web",
         "agent": AGENT,
         "items": ListCatalog(),
+        "orders": ListOrders(),
         "tasks": TASKS,
         "now": FIXED_NOW,
     }

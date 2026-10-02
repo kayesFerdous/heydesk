@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -15,10 +16,12 @@ from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
+from heydesk.domain.values import Confirmed, NewOrder
 from heydesk.main import create_app
 from heydesk.presets import load_presets
 from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.items import Item
+from heydesk.runtime.tool import ToolContext
 from heydesk.services import Services
 from heydesk.wiring import build_services
 
@@ -60,6 +63,33 @@ class ListCatalog:
         return [i for i in self.items if query.lower() in i.name.lower()]
 
 
+class ListOrders:
+    """An in-memory `Orders` for unit tests: what was placed."""
+
+    def __init__(self) -> None:
+        self.placed: list[NewOrder] = []
+
+    async def place(self, order: Confirmed[NewOrder]) -> int:
+        self.placed.append(order.value)
+        return 100 + len(self.placed)
+
+
+def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
+    """A `ToolContext` for unit tests; pass any field to change it."""
+    fields: dict[str, Any] = {
+        "agent": AGENT,
+        "state": state or {},
+        "items": ListCatalog(),
+        "tasks": TASKS,
+        "now": FIXED_NOW,
+        "decider": FakeDecider(),
+        "orders": ListOrders(),
+        "agent_said": "",
+        "visitor_said": "",
+    }
+    return ToolContext(**(fields | kw))
+
+
 def make_test_settings() -> Settings:
     return Settings(  # offline: never a real provider
         APP_ENV="test", DATABASE_URL="sqlite+aiosqlite://", LLM_PROVIDER="fake", _env_file=None
@@ -91,6 +121,7 @@ class World:
     services: Services
     sessions: async_sessionmaker[AsyncSession]
     llm: FakeLLM
+    decider: FakeDecider  # says no unless a test scripts it
     clock: Clock
 
 
@@ -98,10 +129,10 @@ class World:
 async def world() -> AsyncIterator[World]:
     engine, sessions = make_engine("sqlite+aiosqlite://")
     await create_tables(engine)
-    llm, clock = FakeLLM(), Clock()
-    services = build_services(sessions, llm, FakeDecider(), make_test_settings(), clock)
+    llm, decider, clock = FakeLLM(), FakeDecider(), Clock()
+    services = build_services(sessions, llm, decider, make_test_settings(), clock)
     await services.agents.ensure_dev_agent("restaurant", SEED)
-    yield World(services, sessions, llm, clock)
+    yield World(services, sessions, llm, decider, clock)
     await engine.dispose()
 
 

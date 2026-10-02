@@ -1,13 +1,13 @@
 from typing import Any
 
 from heydesk.ports.llm import ToolCall
-from heydesk.runtime.tool import ToolContext, ToolResult, run_tool
+from heydesk.runtime.tool import ToolResult, run_tool
 from heydesk.tools import details
-from tests.conftest import AGENT, FIXED_NOW, TASKS, ListCatalog
+from tests.conftest import make_ctx
 
 
 async def save(state: dict[str, Any], task: str = "order", **said: str) -> ToolResult:
-    ctx = ToolContext(AGENT, state=state, items=ListCatalog(), tasks=TASKS, now=FIXED_NOW)
+    ctx = make_ctx(state)
     call = ToolCall("1", "set_details", {"task": task, "details": said})
     return await run_tool(details.TOOL, call, ctx)
 
