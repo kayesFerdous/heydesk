@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.domain.values import Confirmed, NewRequest
@@ -31,6 +32,22 @@ class RequestService:
         async with self.sessions() as s, s.begin():
             s.add(row)
         return row.id
+
+    async def list(
+        self, ws: str, agent_id: str | None = None, conversation_id: str | None = None
+    ) -> list[VisitorRequest]:
+        """Newest first."""
+        query = (
+            select(VisitorRequest)
+            .where(VisitorRequest.workspace_id == ws)
+            .order_by(VisitorRequest.created_at.desc())
+        )
+        if agent_id:
+            query = query.where(VisitorRequest.agent_id == agent_id)
+        if conversation_id:
+            query = query.where(VisitorRequest.conversation_id == conversation_id)
+        async with self.sessions() as s:
+            return list(await s.scalars(query))
 
     def for_conversation(
         self, ws: str, agent_id: str, conversation_id: str

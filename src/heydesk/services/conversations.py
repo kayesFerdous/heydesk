@@ -101,6 +101,26 @@ class ConversationService:
         )
         return RunningTurn(conv.id, self._run(turn, conv), turn.interrupt)
 
+    async def list(
+        self, ws: str, agent_id: str | None = None, status: str | None = None
+    ) -> list[Conversation]:
+        """Newest activity first."""
+        query = (
+            select(Conversation)
+            .where(Conversation.workspace_id == ws)
+            .order_by(Conversation.updated_at.desc())
+        )
+        if agent_id:
+            query = query.where(Conversation.agent_id == agent_id)
+        if status:
+            query = query.where(Conversation.status == status)
+        async with self.sessions() as s:
+            return list(await s.scalars(query))
+
+    async def get(self, ws: str, conversation_id: str) -> Conversation:
+        async with self.sessions() as s:
+            return await self._get_by_id(s, ws, conversation_id)
+
     async def _run(self, turn: TurnInput, conv: Conversation) -> AsyncGenerator[Event]:
         """Passes the turn's events to the listener and saves the turn when it ends.
 

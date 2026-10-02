@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.domain.values import Confirmed, NewOrder
+from heydesk.errors import NotFound
 from heydesk.models import Order
 
 FIRST_NUMBER = 101  # an agent's first order; "order 1" sounds like a test
@@ -42,6 +43,28 @@ class OrderService:
                 )
             )
         return number
+
+    async def list(
+        self, ws: str, agent_id: str | None = None, conversation_id: str | None = None
+    ) -> list[Order]:
+        """Newest first."""
+        query = select(Order).where(Order.workspace_id == ws).order_by(Order.created_at.desc())
+        if agent_id:
+            query = query.where(Order.agent_id == agent_id)
+        if conversation_id:
+            query = query.where(Order.conversation_id == conversation_id)
+        async with self.sessions() as s:
+            return list(await s.scalars(query))
+
+    async def set_status(self, ws: str, order_id: str, status: str) -> Order:
+        async with self.sessions() as s, s.begin():
+            order = await s.scalar(
+                select(Order).where(Order.id == order_id, Order.workspace_id == ws)
+            )
+            if order is None:
+                raise NotFound("There's no such order.")
+            order.status = status
+        return order
 
     def for_conversation(
         self, ws: str, agent_id: str, conversation_id: str
