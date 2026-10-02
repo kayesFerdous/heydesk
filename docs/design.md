@@ -241,7 +241,7 @@ detail is asked for, with no Jev call), and once placed clears the task.
 
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
 `person_name`, `phone`, `time_today`), each with a `parse` and a `display`
-(spoken forms on day 12). A bare "7:30" is the next 7:30 from now, and a time
+(spoken by `speakable()` on voice, D20). A bare "7:30" is the next 7:30 from now, and a time
 that has passed is refused. `next_step(task, filled)` returns the first missing
 required detail, or None: everything's there, so read it back. The state note and `place_order` both use
 it, so "what do we ask next?" and "can we save?" can't disagree.
@@ -292,9 +292,11 @@ the real one is added.
 
 - **Sentences:** the reply's tokens go straight to Pipecat's TTS, which speaks them
   sentence by sentence, so speech starts after the first sentence.
-- **Spoken forms:** on voice, tool results and the state note use
-  `runtime/speech.py`'s spoken forms ("four hundred and fifty taka"), so the
-  model reads words, not digits. The "right now" section asks for short, list-free replies.
+- **Spoken forms:** the model always sees display forms ("৳450", "7:30 pm"). On
+  voice, each sentence goes through `runtime/speech.py`'s `speakable()` just
+  before the TTS, which says money, times, phone numbers and order numbers in
+  words ("four hundred and fifty taka") (D20). The "right now" section asks for
+  short, list-free replies.
 - **Fillers:** when a tool with a `filler` starts, the voice channel says it.
   Fillers never enter the transcript, and the platform rules tell the model
   never to say "let me check" itself.

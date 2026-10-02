@@ -2,7 +2,7 @@
 
 Python decides what to ask next (`next_step`), so the state note and
 `place_order` can't disagree. Each detail type has a `parse` (what the visitor
-said → the value to save) and a `display`; spoken forms arrive with voice (day 12).
+said → the value to save) and a `display`; `speakable()` says it on voice (D20).
 """
 
 import re

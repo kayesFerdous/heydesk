@@ -100,7 +100,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 
 **Day 12 — Spoken forms**
 - Money, time, phone and order number in words (`runtime/speech.py`)
-- Used on voice by the state note and tool results; `speakable()` before TTS
+- `speakable()` turns each sentence into words before the TTS; the model sees display forms (D20)
 
 **Done when:** the total and the read-back are heard as words. [ ]
 

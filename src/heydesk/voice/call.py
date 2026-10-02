@@ -30,9 +30,11 @@ from pipecat.services.piper.tts import PiperTTSService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.utils.text.base_text_filter import BaseTextFilter
 
 from heydesk.config import Settings
 from heydesk.runtime.events import HandOff, Token
+from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
 from heydesk.services.conversations import ConversationService
@@ -73,6 +75,13 @@ class Agent(FrameProcessor):
         await self.push_frame(LLMFullResponseEndFrame())
 
 
+class Speakable(BaseTextFilter):
+    """Each sentence in words just before it's spoken: "৳450" → "four hundred and fifty taka"."""
+
+    async def filter(self, text: str) -> str:
+        return speakable(text)
+
+
 class FirstSound(BaseObserver):
     """Logs the time from the caller's last word (the VAD's stop) to the agent's first sound."""
 
@@ -98,7 +107,9 @@ async def run_call(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
     stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY)
-    tts = PiperTTSService(settings=PiperTTSService.Settings(voice=VOICE))
+    tts = PiperTTSService(
+        settings=PiperTTSService.Settings(voice=VOICE), text_filters=[Speakable()]
+    )
     pipeline = Pipeline(
         [
             transport.input(),
