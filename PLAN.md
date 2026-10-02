@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 7 and 8 done (2 Oct), checked with real Jev on Groq and Gigalogy. **Next:** day 9, tests and catch up.
+> **Now:** day 10 done (2 Oct): the echo call works with Pipecat, Chorus and Piper (D18). **Next:** day 11, order by voice.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -32,6 +32,8 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - **Day 6:** detail types, `next_step`, `set_details`; the tasks section and the state note.
 - **Day 7:** `Confirmed[T]` and the Jev commit check; `JevDecider`; the `orders` table and `OrderService`; `place_order`.
 - **Day 8:** the tool's label as a `status` event; `handoff_to_human`; a hand-off (asked for, or a failure) marks the conversation `needs_human`.
+- **Day 9:** a test for each branch of `run_turn`; a whole order over four turns, saved only at the yes; tidied (an unused `Conflict` error, stale comments).
+- **Day 10:** Pipecat over SmallWebRTC; Chorus speech-to-text, Piper speech; the **Call** button; an echo call that logs the first-sound time.
 
 ## M1 — The agent takes an order
 
@@ -78,7 +80,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - One whole scripted order with `FakeLLM` + `FakeDecider`
 - Read through the code and tidy it
 
-**Done when:** the scripted order passes offline and `scripts/check.sh` is green. [ ]
+**Done when:** the scripted order passes offline and `scripts/check.sh` is green. [x]
 
 ## M2 — Voice
 
@@ -87,7 +89,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - An echo call in the browser; measure first-sound time
 - Log the choice in decisions.md
 
-**Done when:** you talk, it answers out loud, and the decision is written down. [ ]
+**Done when:** you talk, it answers out loud, and the decision is written down. [x] (2 Oct: Kayes heard the echo in Chrome; first sound 2.1s after the last word, D18)
 
 **Day 11 — Order by voice**
 - `voice/sentences.py`: speak sentence by sentence
@@ -167,5 +169,5 @@ preset (day 17) → barge-in (day 14). Never cut: the commit check, voice, and t
 |---|---|---|
 | Q1 | ~~Groq API key~~ and ~~Gigalogy keys~~ in `.env`: both work (Gigalogy's 401 on 1 Oct was on their side and went away) | Day 4 |
 | Q2 | ~~TypeSafe (Jev) API key~~ in `.env` (Frontdesk's), `DECIDER=jev` | Day 7 |
-| Q3 | Voice framework: Pipecat or LiveKit Agents | Day 10 |
-| Q4 | Speech-to-text and text-to-speech providers, and a budget | Day 10 |
+| Q3 | ~~Voice framework~~: Pipecat with SmallWebRTC (D18) | Day 10 |
+| Q4 | ~~Speech-to-text~~: Gigalogy Chorus (D18). Text-to-speech: Piper (free, local) until the owner adds theirs | Day 10 |

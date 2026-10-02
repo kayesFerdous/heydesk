@@ -285,8 +285,10 @@ tokens, cost, error (rule 7). There is no trace table (D15).
 ## 10. Voice (M2)
 
 A `voice/` package turns speech into `start_turn(channel="voice")` calls and
-the turn's events back into speech, using LiveKit Agents or Pipecat (picked by
-a one-day spike) for audio, speech-to-text and text-to-speech.
+the turn's events back into speech, with Pipecat (D18): the browser's audio over
+WebRTC (`POST /api/voice/offer`), Silero VAD, Chorus for speech-to-text (one
+upload per utterance, after 0.5s of silence) and Piper for text-to-speech until
+the real one is added.
 
 - **Sentences:** cut the token stream into sentences so speech starts after the first.
 - **Spoken forms:** on voice, tool results and the state note use

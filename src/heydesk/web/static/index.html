@@ -50,7 +50,10 @@
 <main>
   <header>
     <h1><span id="agent-name">HeyDesk</span> <span style="color: var(--dim); font-weight: 400">dev agent</span></h1>
-    <button class="link" id="restart" type="button">Start over</button>
+    <span>
+      <button id="call" type="button">Call</button>
+      <button class="link" id="restart" type="button">Start over</button>
+    </span>
   </header>
   <div id="log" aria-live="polite"></div>
   <div id="waiting"></div>
@@ -60,5 +63,6 @@
   </form>
 </main>
 <script src="chat.js" type="module"></script>
+<script src="voice.js" type="module"></script>
 </body>
 </html>
