@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** day 10 done (2 Oct): the echo call works with Pipecat, Chorus and Piper (D18). **Next:** day 11, order by voice.
+> **Now:** day 11 done (2 Oct): an order is placed by voice; each utterance runs `start_turn` (D19). **Next:** day 12, spoken forms.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -96,7 +96,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - `voice/call.py`: final transcript → `start_turn(channel="voice")` → TTS
 - A **Call** button on the dev page (from day 10)
 
-**Done when:** one order placed by voice. [ ]
+**Done when:** one order placed by voice. [x] (2 Oct: Kayes placed an order by voice in Chrome)
 
 **Day 12 — Spoken forms**
 - Money, time, phone and order number in words (`runtime/speech.py`)
