@@ -92,9 +92,9 @@ normal path; skip edge cases that aren't worth the code (design §12).
 **Done when:** you talk, it answers out loud, and the decision is written down. [x] (2 Oct: Kayes heard the echo in Chrome; first sound 2.1s after the last word, D18)
 
 **Day 11 — Order by voice**
-- `voice/sentences.py`: speak sentence by sentence
-- `voice/pipeline.py`: final transcript → `start_turn(channel="voice")` → TTS
-- A **Call** button on the dev page
+- Speak sentence by sentence: Pipecat's TTS does it (D19)
+- `voice/call.py`: final transcript → `start_turn(channel="voice")` → TTS
+- A **Call** button on the dev page (from day 10)
 
 **Done when:** one order placed by voice. [ ]
 

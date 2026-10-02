@@ -290,7 +290,8 @@ WebRTC (`POST /api/voice/offer`), Silero VAD, Chorus for speech-to-text (one
 upload per utterance, after 0.5s of silence) and Piper for text-to-speech until
 the real one is added.
 
-- **Sentences:** cut the token stream into sentences so speech starts after the first.
+- **Sentences:** the reply's tokens go straight to Pipecat's TTS, which speaks them
+  sentence by sentence, so speech starts after the first sentence.
 - **Spoken forms:** on voice, tool results and the state note use
   `runtime/speech.py`'s spoken forms ("four hundred and fifty taka"), so the
   model reads words, not digits. The "right now" section asks for short, list-free replies.

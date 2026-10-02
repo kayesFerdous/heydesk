@@ -21,7 +21,10 @@ calls: set[asyncio.Task[None]] = set()  # running calls, so they aren't garbage-
 @router.post("/api/voice/offer")
 async def offer(body: SmallWebRTCRequest, request: Request) -> dict[str, Any] | None:
     async def start(connection: SmallWebRTCConnection) -> None:
-        call = asyncio.create_task(run_call(connection, request.app.state.settings))
+        state = request.app.state
+        call = asyncio.create_task(
+            run_call(connection, state.settings, state.services, state.dev_agent_key)
+        )
         calls.add(call)
         call.add_done_callback(calls.discard)
 
