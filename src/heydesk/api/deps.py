@@ -1,7 +1,12 @@
-from fastapi import Request
+from typing import Annotated
 
+from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from heydesk.errors import Unauthorized
 from heydesk.services import Services
-from heydesk.services.agents import DEV_WORKSPACE_ID
+
+bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 
 
 def get_services(request: Request) -> Services:
@@ -9,6 +14,11 @@ def get_services(request: Request) -> Services:
     return services
 
 
-def current_workspace() -> str:
-    """The caller's workspace. The dev workspace until login (day 20)."""
-    return DEV_WORKSPACE_ID
+def current_workspace(
+    services: Annotated[Services, Depends(get_services)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> str:
+    """The workspace of the logged-in user (`Authorization: Bearer <token>`)."""
+    if credentials is None:
+        raise Unauthorized("Log in first, and send the token as 'Authorization: Bearer …'.")
+    return services.users.workspace_of(credentials.credentials)

@@ -3,13 +3,15 @@ from typing import Literal, Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEV_JWT_SECRET = "dev-only-secret-never-used-in-production"  # production refuses an empty one
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     APP_ENV: Literal["development", "test", "production"] = "development"
     DATABASE_URL: str = "sqlite+aiosqlite:///./heydesk.db"
-    JWT_SECRET: str = ""  # required in production
+    JWT_SECRET: str = ""  # required in production; development and tests use DEV_JWT_SECRET
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]  # Vite dev server
 
     LLM_PROVIDER: Literal["gigalogy", "groq", "fake"] = "gigalogy"  # D14
@@ -32,6 +34,10 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines
+
+    @property
+    def jwt_secret(self) -> str:
+        return self.JWT_SECRET or DEV_JWT_SECRET
 
     @model_validator(mode="after")
     def _production_is_real(self) -> Self:

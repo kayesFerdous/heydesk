@@ -28,6 +28,11 @@ class Unauthorized(HeyDeskError):
     code = "unauthorized"
 
 
+class Conflict(HeyDeskError):
+    status_code = 409
+    code = "conflict"
+
+
 class InvalidConfig(HeyDeskError):
     """An agent config that fails validation. `fields` maps a path to what's wrong with it."""
 

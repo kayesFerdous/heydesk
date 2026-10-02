@@ -23,6 +23,7 @@ from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.items import Item
 from heydesk.runtime.tool import ToolContext
 from heydesk.services import Services
+from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.wiring import build_services
 
 FIXED_NOW = datetime(2026, 9, 29, 8, 0, tzinfo=UTC)  # Tuesday, 14:00 in Dhaka
@@ -159,5 +160,12 @@ async def app() -> AsyncIterator[FastAPI]:
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
-    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as c:
+    """Logged in as a user of the dev workspace, which has the restaurant dev agent."""
+    token = await app.state.services.users.create_user(
+        DEV_WORKSPACE_ID, "owner@example.com", "a long password"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    async with AsyncClient(
+        transport=ASGITransport(app), base_url="http://test", headers=headers
+    ) as c:
         yield c

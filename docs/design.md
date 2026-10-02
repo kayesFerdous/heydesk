@@ -271,10 +271,19 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/` | Dev chat page (development only) |
 | GET | `/api/chat/{key}` | Agent name and greeting |
 | POST | `/api/chat/{key}` | `{message, conversation_id?}` → Server-Sent Events |
-| GET | `/api/presets` | Presets and their knowledge JSON Schema (M3) |
-| GET/POST/PATCH | `/api/agents…` | Create from a preset, read, edit (M3) |
-| GET | `/api/orders`, `/api/requests` | What the agents took (M3) |
+| POST | `/api/auth/signup`, `/api/auth/login` | A new workspace and user, or a login → `{token}` |
+| GET | `/api/presets` | Presets and their knowledge JSON Schema |
+| GET/POST/PATCH | `/api/agents…` | Create from a preset, list, read, edit; problems per field |
+| GET/PUT | `/api/agents/{id}/items` | An agent's items, replaced whole |
+| GET/PATCH | `/api/orders…` | Orders (newest first), and an order's status |
+| GET | `/api/requests` | Messages for the team |
+| GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET | `/health` | DB reachable |
+
+Everything under `/api` except chat, presets and auth needs
+`Authorization: Bearer <token>`; the token says the workspace (rule 6), and
+another workspace's agent is a 404. `uv run heydesk create-user EMAIL PASSWORD`
+adds a login to the dev workspace.
 
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 `handoff {message, phone}`, `done {interrupted}`, `error {message}`.

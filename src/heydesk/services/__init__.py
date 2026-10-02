@@ -5,6 +5,7 @@ from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
 from heydesk.services.orders import OrderService
 from heydesk.services.requests import RequestService
+from heydesk.services.users import UserService
 
 
 @dataclass(frozen=True)
@@ -14,3 +15,4 @@ class Services:
     items: ItemService
     orders: OrderService
     requests: RequestService
+    users: UserService

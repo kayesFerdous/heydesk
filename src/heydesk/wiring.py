@@ -25,6 +25,7 @@ from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
 from heydesk.services.orders import OrderService
 from heydesk.services.requests import RequestService
+from heydesk.services.users import UserService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -80,4 +81,5 @@ def build_services(
         items=items,
         orders=orders,
         requests=requests,
+        users=UserService(sessions, settings.jwt_secret, now),
     )
