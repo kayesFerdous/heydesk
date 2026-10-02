@@ -25,6 +25,9 @@ ORDER = TASKS["order"]
         ("19:30", "19:30"),
         ("7:30", "19:30"),  # said at 2 pm, so this evening
         ("3", "15:00"),
+        ("at 4pm", "16:00"),
+        ("today at 4 pm", "16:00"),
+        ("8 tonight", "20:00"),
     ],
 )
 def test_a_time_today(said: str, saved: str) -> None:
@@ -40,6 +43,11 @@ def test_a_time_that_has_passed_or_isnt_a_time_is_refused(said: str) -> None:
 def test_a_passed_time_says_what_time_it_is() -> None:
     with pytest.raises(ValueError, match="it's 2:00 pm now"):
         parse_detail("time_today", "11 am", NOW)
+
+
+def test_another_day_is_refused_with_a_reason() -> None:
+    with pytest.raises(ValueError, match="today only"):
+        parse_detail("time_today", "tomorrow at 4pm", NOW)
 
 
 def test_names_phones_and_text_are_tidied() -> None:

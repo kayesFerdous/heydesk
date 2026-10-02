@@ -100,7 +100,12 @@ def parse_detail(kind: DetailType, said: str, now: datetime) -> str:
             return parse_time_today(text, now)
 
 
-TIME = re.compile(r"(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?m\.?)?")
+# "7:30 pm", optionally with "today", "tonight" or "at" around it.
+TIME = re.compile(
+    r"(?:(?:today|tonight)\s+)?(?:at\s+)?"
+    r"(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?m\.?)?"
+    r"(?:\s+(?:today|tonight))?"
+)
 
 
 def parse_time_today(text: str, now: datetime) -> str:
@@ -110,7 +115,10 @@ def parse_time_today(text: str, now: datetime) -> str:
     """
     match = TIME.fullmatch(text.lower())
     if match is None:
-        raise ValueError("Give a clock time, like 7:30 pm.")
+        raise ValueError(
+            "Pass only a clock time for today, like 7:30 pm. Pickup is today only: "
+            "if they asked for another day, tell them that and ask for a time today."
+        )
     hour, minute, half = int(match[1]), int(match[2] or 0), match[3]
     if minute > 59 or hour > 23 or (half and not 1 <= hour <= 12):
         raise ValueError("That isn't a time of day. Give one like 7:30 pm.")
