@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"
 
     MAX_MESSAGE_CHARS: int = 2000
+    MAX_TURNS: int = 60  # visitor messages per conversation; each turn resends the transcript (D21)
     MAX_ITEMS_IN_PROMPT: int = 60  # more items than this: the model finds them with search_items
 
     LOG_LEVEL: str = "INFO"

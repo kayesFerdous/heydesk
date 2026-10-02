@@ -3,6 +3,8 @@
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from tests.integration.test_records_api import place_an_order
+
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
 
 
@@ -53,4 +55,20 @@ async def test_an_email_signs_up_once(app: FastAPI) -> None:
     second = await as_second_account(app)
     again = await second.post("/api/auth/signup", json=NEW | {"email": "second@example.com"})
     assert again.status_code == 409
+    await second.aclose()
+
+
+async def test_a_second_account_sees_none_of_the_firsts_records(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    conv_id = await place_an_order(app, client)
+    [order] = (await client.get("/api/orders")).json()
+    second = await as_second_account(app)
+
+    for path in ("/api/orders", "/api/requests", "/api/conversations"):
+        assert (await second.get(path)).json() == [], path
+    assert (await second.get(f"/api/conversations/{conv_id}")).status_code == 404
+    moved = await second.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
+    assert moved.status_code == 404
+    assert (await client.get("/api/orders")).json()[0]["status"] == "new"
     await second.aclose()

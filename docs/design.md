@@ -285,6 +285,9 @@ Everything under `/api` except chat, presets and auth needs
 another workspace's agent is a 404. `uv run heydesk create-user EMAIL PASSWORD`
 adds a login to the dev workspace.
 
+Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
+for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21).
+
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 `handoff {message, phone}`, `done {interrupted}`, `error {message}`.
 

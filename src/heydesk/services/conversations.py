@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.errors import HeyDeskError, NotFound
+from heydesk.errors import ConversationFull, HeyDeskError, NotFound
 from heydesk.models import Conversation
 from heydesk.runtime.events import Event, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
@@ -70,6 +70,11 @@ class ConversationService:
         async with self.sessions() as s, s.begin():
             if conversation_id:
                 conv = await self._get(s, agent, conversation_id)
+                turns = sum(1 for m in conv.messages if m.get("role") == "user")
+                if turns >= self.settings.MAX_TURNS:
+                    raise ConversationFull(
+                        "This conversation is very long. Please start a new one."
+                    )
             else:
                 conv = Conversation(
                     workspace_id=agent.workspace_id,

@@ -11,8 +11,8 @@ nothing is saved without reading it back and hearing a yes.
 
 ## Status
 
-Days 1–4 are done: streamed chat with Groq, Gigalogy or a fake model, agents
-and conversations saved, the restaurant preset. See **[PLAN.md](PLAN.md)**.
+Web chat and voice orders, the restaurant and receptionist presets, and the
+API with login all work. What's left is the demo (see **[PLAN.md](PLAN.md)**).
 
 ## Docs
 
@@ -25,13 +25,72 @@ and conversations saved, the restaurant preset. See **[PLAN.md](PLAN.md)**.
 
 ## Running it
 
+You need [uv](https://docs.astral.sh/uv/). Python 3.12 is installed by uv.
+
 ```bash
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run uvicorn heydesk.main:app --reload   # open http://localhost:8000
-scripts/check.sh                           # tests, lint, format, types, import rules
+uv run uvicorn heydesk.main:app --reload
 ```
+
+Open <http://localhost:8000> to chat with the dev agent, or press **Call** to
+talk to it (Chrome, on `localhost`, allows the microphone).
+
+In `.env`, pick the models:
+
+- **Talking:** `LLM_PROVIDER=gigalogy` with the three `GIGALOGY_*` keys, or
+  `LLM_PROVIDER=groq` with `GROQ_API_KEY`. `fake` runs without keys but only
+  says canned lines.
+- **The commit check:** `DECIDER=jev` with `TYPESAFE_API_KEY`. With `fake`, no
+  order or message is ever saved: it always says no.
+- **Voice** uses Gigalogy's Chorus for speech-to-text (the `GIGALOGY_*` keys)
+  and Piper for speech, which runs locally.
+
+Tests are offline and free:
+
+```bash
+scripts/check.sh   # tests, lint, format, types, import rules
+```
+
+## Switching presets
+
+The dev agent comes from a preset and a seed file. For the receptionist, set
+these in `.env` and restart:
+
+```bash
+DEV_AGENT_PRESET=receptionist
+DEV_AGENT_SEED=examples/agents/receptionist.yaml
+```
+
+Edit the seed (`examples/agents/*.yaml`) and restart to change the dev agent:
+its name, knowledge, FAQ and items. Any agent can be opened on the dev page
+with `http://localhost:8000/?key=<public_key>`.
+
+## Using the API
+
+Swagger is at <http://localhost:8000/docs>. Everything that belongs to a
+business needs a login token:
+
+```bash
+uv run heydesk create-user you@example.com "a long password"   # a login for the dev workspace
+```
+
+It prints a token. In Swagger, press **Authorize** and paste it. Then:
+
+| | |
+|---|---|
+| `GET /api/agents` | Your agents, with their `public_key` (the chat URL) |
+| `PATCH /api/agents/{id}` | Edit the config: `{"faq": "…"}`. Live on the next message |
+| `PUT /api/agents/{id}/items` | Replace the items, for example a new price (in paisa) |
+| `POST /api/agents` | A new agent from a preset (`GET /api/presets` lists them) |
+| `GET /api/orders`, `GET /api/requests` | What the agents took |
+| `PATCH /api/orders/{id}` | `{"status": "ready"}` |
+| `GET /api/conversations/{id}` | What was said, and the orders or messages it made |
+
+A new business signs up with `POST /api/auth/signup` and gets its own
+workspace; it never sees another's agents. Errors always look like
+`{"error": {"code": "…", "message": "…"}}`, with `fields` when a field is wrong.
 
 ## Voice latency
 
