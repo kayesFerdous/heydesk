@@ -32,3 +32,19 @@ uv run alembic upgrade head
 uv run uvicorn heydesk.main:app --reload   # open http://localhost:8000
 scripts/check.sh                           # tests, lint, format, types, import rules
 ```
+
+## Voice latency
+
+The time from the caller's last word to the agent's first sound. To measure
+it, keep the server's log, make about ten calls, then run the report:
+
+```bash
+uv run uvicorn heydesk.main:app 2>&1 | tee voice.log
+uv run python scripts/latency.py voice.log
+```
+
+| | P50 | P95 |
+|---|---|---|
+| Last word → first sound | not measured yet | not measured yet |
+
+So far: 2.1s on one echo call (2 Oct, no model). Chorus takes 1.8–2.4s of that.
