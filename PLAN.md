@@ -165,7 +165,7 @@ normal path; skip edge cases that aren't worth the code (design §12).
 
 ## Demo (days 24–27) and buffer (28–30)
 
-- Demo data in the seeds; a reset script; a five-minute demo script (web order, voice order, interruption, hand-off, edit the agent)
+- Demo data in the seeds; a reset script; a five-minute demo script (web order, voice order, interruption, hand-off, edit the agent) — built 2 Oct: `examples/agents/*.yaml`, `scripts/reset.sh`, [docs/demo.md](docs/demo.md)
 - Rehearse twice; record a backup video. Deploying is optional: browsers allow the microphone on `localhost`
 
 **Done when:** two clean rehearsals in a row and a backup video. [ ]

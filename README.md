@@ -21,6 +21,7 @@ API with login all work. What's left is the demo (see **[PLAN.md](PLAN.md)**).
 | [PLAN.md](PLAN.md) | What to build, day by day, and how to know it's done |
 | [docs/design.md](docs/design.md) | How it works |
 | [docs/decisions.md](docs/decisions.md) | Why it works that way |
+| [docs/demo.md](docs/demo.md) | The five-minute demo, and `scripts/reset.sh` before it |
 | [CLAUDE.md](CLAUDE.md) | Commands, rules and conventions |
 
 ## Running it
