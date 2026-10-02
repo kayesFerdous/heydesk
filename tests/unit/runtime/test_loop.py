@@ -1,8 +1,17 @@
 import json
+from collections.abc import AsyncGenerator
 
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
-from heydesk.ports.llm import LLMUnavailable, ToolCall
+from heydesk.ports.llm import (
+    ChatRequest,
+    Finished,
+    LLMUnavailable,
+    ModelEvent,
+    TextDelta,
+    ToolCall,
+    Usage,
+)
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
 from heydesk.tools import details, handoff, order
@@ -153,3 +162,65 @@ async def test_the_state_note_is_rebuilt_before_every_model_call() -> None:
     assert "Still needed: phone\nNext: ask for the phone." in second
     assert isinstance(end, TurnEnded)
     assert end.state["details"] == {"pickup_time": "19:30", "name": "Kayes"}
+
+
+class EndsWith(FakeLLM):
+    """A model whose only step ends with `finished`: a refusal, or None for a lost stream."""
+
+    def __init__(self, finished: Finished | None) -> None:
+        super().__init__()
+        self.finished = finished
+
+    async def stream(self, request: ChatRequest) -> AsyncGenerator[ModelEvent]:
+        self.requests.append(request)
+        yield TextDelta("Sorry")
+        if self.finished:
+            yield self.finished
+
+
+async def test_a_refusal_or_a_lost_stream_is_a_failure() -> None:
+    refusal = Finished("refusal", {"role": "assistant", "content": "Sorry"}, Usage())
+    for finished in (refusal, None):
+        end = (await collect(make_turn(), EndsWith(finished)))[-1]
+        assert isinstance(end, TurnEnded) and end.handed_off
+        # What was streamed stays, then the polite line
+        assert end.added[-2:] == [
+            {"role": "assistant", "content": "Sorry"},
+            {"role": "assistant", "content": "Please call us."},
+        ]
+
+
+async def test_a_provider_failure_after_a_tool_keeps_the_transcript_valid() -> None:
+    llm = FakeLLM([ORDER, LLMUnavailable("timeout")])
+    end = (await collect(make_turn(tools=[order.TOOL]), llm))[-1]
+
+    assert isinstance(end, TurnEnded) and end.handed_off
+    assert [m["role"] for m in end.added] == ["user", "assistant", "tool", "assistant"]
+    assert end.added[-1]["content"] == "Please call us."
+    assert end.state["cart"]["total"] == 103000  # what the tool did is kept
+
+
+async def test_a_barge_in_during_a_tool_stops_before_the_next_model_call() -> None:
+    turn = make_turn(tools=[order.TOOL])
+    llm = FakeLLM([ORDER, "never said"])
+    events: list[Event] = []
+    async for event in run_turn(turn, Runtime(llm, FakeDecider())):
+        events.append(event)
+        if isinstance(event, ToolStarted):
+            turn.interrupt.set()
+
+    end = events[-1]
+    assert isinstance(end, TurnEnded) and end.interrupted and not end.handed_off
+    assert len(llm.requests) == 1
+    assert end.added[-1]["role"] == "tool"  # the call still got its result
+
+
+async def test_an_unknown_tool_gets_a_hint_and_the_model_carries_on() -> None:
+    llm = FakeLLM([ToolCall("call_1", "fly_to_moon", {}), "I can't do that."])
+    events = await collect(make_turn(), llm)
+
+    assert ToolStarted("fly_to_moon", "") in events
+    assert ToolFinished("fly_to_moon", ok=False) in events
+    end = events[-1]
+    assert isinstance(end, TurnEnded) and not end.handed_off
+    assert "no tool called 'fly_to_moon'" in end.added[2]["content"]

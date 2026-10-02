@@ -22,11 +22,6 @@ class NotFound(HeyDeskError):
     code = "not_found"
 
 
-class Conflict(HeyDeskError):
-    status_code = 409
-    code = "conflict"
-
-
 class Unauthorized(HeyDeskError):
     status_code = 401
     code = "unauthorized"

@@ -56,7 +56,7 @@ def config_from_preset(preset: Preset, overrides: dict[str, Any]) -> dict[str, A
 
 
 def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
-    """Runs on every save and publish. Problems come back per field."""
+    """Runs on every save. Problems come back per field."""
     try:
         config = AgentConfig.model_validate(data)
     except ValidationError as error:
@@ -72,7 +72,7 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
     for name in config.tools:
         if name not in preset.tools:
             problems[f"tools.{name}"] = f"not available to the {preset.id} preset"
-    # ponytail: check each tool exists in TOOLS once all the preset's tools are built (day 8)
+    # ponytail: check each tool exists in TOOLS once submit_request is built (day 17)
     if problems:
         raise InvalidConfig(problems)
     return config

@@ -64,3 +64,32 @@ async def test_hmm_maybe_saves_nothing(world: World) -> None:
         conv = await s.get(Conversation, conv_id)
     assert conv is not None and conv.state["cart"]["total"] == 103000  # still there to confirm
     assert "clear yes" in conv.messages[-2]["content"]
+
+
+async def test_a_whole_order_is_saved_only_at_the_yes(world: World) -> None:
+    """Four turns: the order, the details, a "maybe", then a yes."""
+    world.decider.script = [
+        {"read_back": 0.95, "said_yes": 0.3},
+        {"read_back": 0.95, "said_yes": 0.95},
+    ]
+    turns = [
+        ("two biryanis and a borhani", [ToolCall("c1", "update_order", {"lines": LINES})]),
+        (
+            "7:30 pm, Kayes, 01712345678",
+            [ToolCall("c2", "set_details", {"task": "order", "details": DETAILS})],
+        ),
+        ("hmm, maybe", [ToolCall("c3", "place_order", {})]),
+        ("yes", [ToolCall("c4", "place_order", {})]),
+    ]
+    conv_id = None
+    for n, (text, calls) in enumerate(turns):
+        world.llm.script = [*calls, READ_BACK if n < 3 else "Done! Your order number is 101."]
+        conv_id = await say(world, text, conv_id)
+        assert len(await orders(world)) == (1 if n == 3 else 0)
+
+    [order] = await orders(world)
+    assert (order.total, order.customer_phone, order.conversation_id) == (
+        103000,
+        "01712345678",
+        conv_id,
+    )
