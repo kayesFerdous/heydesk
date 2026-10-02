@@ -121,7 +121,11 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             outcomes = []
             for call in calls:
                 tool = tools.get(call.name)
-                yield ToolStarted(call.name, tool.label if tool else "")
+                yield (
+                    ToolStarted(call.name, tool.label, tool.filler)
+                    if tool
+                    else ToolStarted(call.name)
+                )
                 with trace.step("tool", tool=call.name) as step:
                     result = await run_tool(tool, call, ctx)
                     step["ok"] = result.ok

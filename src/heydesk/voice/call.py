@@ -33,7 +33,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.utils.text.base_text_filter import BaseTextFilter
 
 from heydesk.config import Settings
-from heydesk.runtime.events import HandOff, Token
+from heydesk.runtime.events import HandOff, Token, ToolStarted
 from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
@@ -69,6 +69,9 @@ class Agent(FrameProcessor):
             if isinstance(event, Token):
                 spoken += event.text
                 await self.push_frame(LLMTextFrame(event.text))
+            elif isinstance(event, ToolStarted) and event.filler and not spoken.strip():
+                # Fills the silence while the tool runs; only the turn's own words are stored
+                await self.push_frame(LLMTextFrame(event.filler + " "))
             elif isinstance(event, HandOff) and event.message not in spoken:
                 # There's no card on a call: a failure's polite line is said out loud
                 await self.push_frame(LLMTextFrame(f" {event.message}"))

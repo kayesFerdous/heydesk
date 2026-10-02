@@ -25,7 +25,8 @@ class Progress:
 @dataclass(frozen=True)
 class ToolStarted:
     name: str
-    label: str = ""
+    label: str = ""  # web shows it: "Placing your order…"
+    filler: str = ""  # voice says it: "Placing that now."
 
 
 @dataclass(frozen=True)
