@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     TYPESAFE_MODEL: str = "jev-latest"  # pin a version the day a judgment changes under you
     TYPESAFE_TIMEOUT: float = 5.0
 
+    # The knowledge base (D33, D34): documents are embedded by Gemini and searched in Qdrant
+    EMBEDDER: Literal["gemini", "fake"] = "gemini"
+    GEMINI_API_KEY: str = ""
+    EMBEDDING_MODEL: str = "gemini-embedding-2"
+    EMBEDDING_DIMENSIONS: int = 768
+    QDRANT_URL: str = ""  # empty: Qdrant's local mode in QDRANT_LOCAL_PATH, for development
+    QDRANT_API_KEY: str = ""
+    QDRANT_LOCAL_PATH: str = "./qdrant_local"
+    QDRANT_COLLECTION: str = "heydesk_chunks"
+
     DEV_AGENT_PRESET: str = "restaurant"
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"
 
@@ -51,6 +61,10 @@ class Settings(BaseSettings):
             problems.append("LLM_PROVIDER is fake")
         if self.DECIDER == "fake":
             problems.append("DECIDER is fake")
+        if self.EMBEDDER == "fake":
+            problems.append("EMBEDDER is fake")
+        if not self.QDRANT_URL:
+            problems.append("QDRANT_URL is empty")
         if problems:
             raise ValueError("refusing to start in production: " + "; ".join(problems))
         return self

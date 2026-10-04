@@ -11,5 +11,10 @@ def test_production_refuses_fakes_and_an_empty_secret() -> None:
 
 def test_production_starts_when_configured() -> None:
     Settings(
-        APP_ENV="production", JWT_SECRET="x", LLM_PROVIDER="groq", DECIDER="jev", _env_file=None
+        APP_ENV="production",
+        JWT_SECRET="x",
+        LLM_PROVIDER="groq",
+        DECIDER="jev",
+        QDRANT_URL="https://example.qdrant.io",
+        _env_file=None,
     )  # type: ignore[call-arg]
