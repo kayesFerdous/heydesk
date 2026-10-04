@@ -14,18 +14,20 @@ def words(text: str) -> list[str]:
 
 
 SENTENCE_END = re.compile(r"(?<=[.!?।])\s+")
+HEADING = re.compile(r"#{1,6}\s")  # a Markdown heading starts a section
 
 
 def chunk_text(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
     """Pieces of about `size` characters that break at paragraphs, then sentences, then words,
     each starting with the tail of the one before it so an answer on a boundary isn't lost.
 
-    A heading line (`# …`) stays with the paragraph below it.
+    A heading line (`# …`) stays with the paragraph below it, and starts a new chunk, so a
+    section is searched on its own instead of mixed with its neighbours.
     """
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.replace("\r\n", "\n")) if p.strip()]
     units: list[str] = []
     for paragraph in paragraphs:
-        if units and units[-1].lstrip().startswith("#") and "\n" not in units[-1]:
+        if units and HEADING.match(units[-1].lstrip()) and "\n" not in units[-1]:
             units[-1] += "\n" + paragraph  # a heading joins what it heads
         else:
             units.append(paragraph)
@@ -35,7 +37,10 @@ def chunk_text(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
     chunks: list[str] = []
     current = ""
     for piece in pieces:
-        if current and len(current) + len(piece) + 2 > size:
+        if current and HEADING.match(piece):
+            chunks.append(current)  # a new section: no overlap, it isn't a continuation
+            current = piece
+        elif current and len(current) + len(piece) + 2 > size:
             chunks.append(current)
             tail = _tail(current, overlap)
             current = f"{tail}\n\n{piece}" if tail else piece

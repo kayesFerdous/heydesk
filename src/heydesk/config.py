@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str = ""
     QDRANT_LOCAL_PATH: str = "./qdrant_local"
     QDRANT_COLLECTION: str = "heydesk_chunks"
+    # A passage whose meaning-score is below this isn't similar at all and is left out. From a live
+    # run on 4 Oct (gemini-embedding-2, 768 dims, English and Bengali): questions the documents
+    # answered scored 0.69 to 0.79, ones they didn't 0.50 to 0.60. Raise it to say "not sure" more
+    # often, lower it if answerable questions get nothing. Exact-word matches ignore it.
+    KNOWLEDGE_MIN_SIMILARITY: float = 0.6
 
     DEV_AGENT_PRESET: str = "restaurant"
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"

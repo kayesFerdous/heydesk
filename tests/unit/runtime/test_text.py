@@ -57,3 +57,17 @@ def test_a_long_paragraph_is_cut_at_sentences_and_a_huge_word_run_at_words() -> 
     assert all(len(c) <= 200 for c in run)
     bangla = chunk_text("আমরা খুলি সকাল নয়টায়। বন্ধ করি রাত দশটায়।", size=30, overlap=0)
     assert bangla == ["আমরা খুলি সকাল নয়টায়।", "বন্ধ করি রাত দশটায়।"]  # the danda ends a sentence
+
+
+def test_each_heading_starts_its_own_chunk_even_when_both_would_fit_in_one() -> None:
+    text = "# Hours\n\nOpen nine to ten.\n\nClosed Fridays.\n\n# Fees\n\nA visit is 400 taka."
+
+    chunks = chunk_text(text, size=1200, overlap=150)
+
+    assert chunks == [
+        "# Hours\nOpen nine to ten.\n\nClosed Fridays.",
+        "# Fees\nA visit is 400 taka.",
+    ]
+    assert chunk_text("#1 priority is you.\n\nSecond line.") == [
+        "#1 priority is you.\n\nSecond line."
+    ]

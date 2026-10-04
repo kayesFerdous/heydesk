@@ -89,7 +89,11 @@ def build_knowledge_store(settings: Settings) -> KnowledgeStore:
         )
     else:
         client = AsyncQdrantClient(path=settings.QDRANT_LOCAL_PATH)
-    return QdrantKnowledgeStore(client, settings.QDRANT_COLLECTION, settings.EMBEDDING_DIMENSIONS)
+    # The floor was measured on Gemini's scores; the fake embedder's mean something else
+    floor = settings.KNOWLEDGE_MIN_SIMILARITY if settings.EMBEDDER == "gemini" else 0.0
+    return QdrantKnowledgeStore(
+        client, settings.QDRANT_COLLECTION, settings.EMBEDDING_DIMENSIONS, floor
+    )
 
 
 def build_services(
