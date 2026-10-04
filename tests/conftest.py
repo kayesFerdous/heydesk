@@ -9,10 +9,13 @@ import yaml
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 import heydesk.models  # noqa: F401  (registers the tables)
 from heydesk.adapters.decider.fake import FakeDecider
+from heydesk.adapters.embedder.fake import FakeEmbedder
+from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
@@ -105,8 +108,21 @@ def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
 
 def make_test_settings() -> Settings:
     return Settings(  # offline: never a real provider
-        APP_ENV="test", DATABASE_URL="sqlite+aiosqlite://", LLM_PROVIDER="fake", _env_file=None
+        APP_ENV="test",
+        DATABASE_URL="sqlite+aiosqlite://",
+        LLM_PROVIDER="fake",
+        EMBEDDER="fake",
+        EMBEDDING_DIMENSIONS=64,
+        QDRANT_LOCAL_PATH=":memory:",
+        _env_file=None,
     )  # type: ignore[call-arg]
+
+
+def make_knowledge() -> tuple[FakeEmbedder, QdrantKnowledgeStore]:
+    """An offline knowledge base: fake embeddings and Qdrant's own engine in memory."""
+    embedder = FakeEmbedder(dimensions=64)
+    store = QdrantKnowledgeStore(AsyncQdrantClient(":memory:"), "test", dimensions=64)
+    return embedder, store
 
 
 async def create_tables(engine: AsyncEngine) -> None:
@@ -136,6 +152,7 @@ class World:
     llm: FakeLLM
     decider: FakeDecider  # says no unless a test scripts it
     clock: Clock
+    embedder: FakeEmbedder
 
 
 @pytest.fixture
@@ -143,15 +160,25 @@ async def world() -> AsyncIterator[World]:
     engine, sessions = make_engine("sqlite+aiosqlite://")
     await create_tables(engine)
     llm, decider, clock = FakeLLM(), FakeDecider(), Clock()
-    services = build_services(sessions, llm, decider, make_test_settings(), clock)
+    embedder, store = make_knowledge()
+    services = build_services(sessions, llm, decider, embedder, store, make_test_settings(), clock)
     await services.agents.ensure_dev_agent("restaurant", SEED)
-    yield World(services, sessions, llm, decider, clock)
+    yield World(services, sessions, llm, decider, clock, embedder)
+    await store.client.close()
     await engine.dispose()
 
 
 @pytest.fixture
 async def app() -> AsyncIterator[FastAPI]:
-    app = create_app(make_test_settings(), llm=FakeLLM(), decider=FakeDecider(), now=Clock())
+    embedder, store = make_knowledge()
+    app = create_app(
+        make_test_settings(),
+        llm=FakeLLM(),
+        decider=FakeDecider(),
+        embedder=embedder,
+        knowledge_store=store,
+        now=Clock(),
+    )
     async with LifespanManager(app):
         await create_tables(app.state.engine)
         await app.state.services.agents.ensure_dev_agent("restaurant", SEED)

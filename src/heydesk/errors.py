@@ -52,6 +52,20 @@ class InvalidTransition(Conflict):
     code = "invalid_transition"
 
 
+class UnreadableDocument(HeyDeskError):
+    """A file we can't get text from, or a document that breaks a limit (D34)."""
+
+    status_code = 422
+    code = "unreadable_document"
+
+
+class KnowledgeUnavailable(HeyDeskError):
+    """The embedding service or Qdrant didn't answer. Nothing was saved: try again."""
+
+    status_code = 503
+    code = "knowledge_unavailable"
+
+
 class ConversationFull(HeyDeskError):
     """A conversation reached MAX_TURNS: every turn sends the whole transcript (D21)."""
 

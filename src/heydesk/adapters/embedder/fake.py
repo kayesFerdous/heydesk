@@ -7,21 +7,23 @@ test search. It knows nothing about meaning, so a real run needs the Gemini one.
 import math
 import zlib
 
+from heydesk.ports.embedder import EmbeddingUnavailable
 from heydesk.runtime.text import words
 
 
 class FakeEmbedder:
     def __init__(self, dimensions: int = 64) -> None:
         self.dimensions = dimensions
-        self.fail = False  # a test sets it to see search without the embedder
+        self.fail_documents = False  # a test sets these to see the knowledge base without it
+        self.fail_queries = False
 
     async def embed_documents(self, texts: list[str], title: str = "") -> list[list[float]]:
+        if self.fail_documents:
+            raise EmbeddingUnavailable("the fake embedder was told to fail")
         return [self._vector(t) for t in texts]
 
     async def embed_query(self, text: str) -> list[float]:
-        if self.fail:
-            from heydesk.ports.embedder import EmbeddingUnavailable
-
+        if self.fail_queries:
             raise EmbeddingUnavailable("the fake embedder was told to fail")
         return self._vector(text)
 

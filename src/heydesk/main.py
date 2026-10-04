@@ -14,8 +14,16 @@ from heydesk.db import make_engine, utcnow
 from heydesk.errors import register_exception_handlers
 from heydesk.logs import RequestLogMiddleware, configure_logging
 from heydesk.ports.decider import Decider
+from heydesk.ports.embedder import Embedder
+from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
-from heydesk.wiring import build_decider, build_llm, build_services
+from heydesk.wiring import (
+    build_decider,
+    build_embedder,
+    build_knowledge_store,
+    build_llm,
+    build_services,
+)
 
 
 def create_app(
@@ -23,6 +31,8 @@ def create_app(
     *,
     llm: LanguageModel | None = None,
     decider: Decider | None = None,
+    embedder: Embedder | None = None,
+    knowledge_store: KnowledgeStore | None = None,
     now: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
     settings = settings or Settings()
@@ -36,7 +46,13 @@ def create_app(
         app.state.engine = engine
         app.state.sessions = sessions
         app.state.services = build_services(
-            sessions, llm or build_llm(settings), decider or build_decider(settings), settings, now
+            sessions,
+            llm or build_llm(settings),
+            decider or build_decider(settings),
+            embedder or build_embedder(settings),
+            knowledge_store or build_knowledge_store(settings),
+            settings,
+            now,
         )
         if dev:
             try:

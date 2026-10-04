@@ -6,16 +6,22 @@ The only module that imports `heydesk.adapters`.
 from collections.abc import Callable
 from datetime import datetime
 
+from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.decider.jev import JevDecider
+from heydesk.adapters.embedder.fake import FakeEmbedder
+from heydesk.adapters.embedder.gemini import GeminiEmbedder
+from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
+from heydesk.ports.embedder import Embedder
+from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.presets import load_presets
 from heydesk.runtime.loop import Runtime
@@ -24,6 +30,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
+from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.records import RecordService
 from heydesk.services.users import UserService
 
@@ -40,10 +47,12 @@ def build_llm(settings: Settings) -> LanguageModel:
     return FakeLLM(delay=0.04)
 
 
-def _required(settings: Settings, name: str) -> str:
+def _required(settings: Settings, name: str, because: str = "") -> str:
     value: str = getattr(settings, name)
     if not value:
-        raise RuntimeError(f"LLM_PROVIDER={settings.LLM_PROVIDER} needs {name} in .env")
+        raise RuntimeError(
+            f"{because or 'LLM_PROVIDER=' + settings.LLM_PROVIDER} needs {name} in .env"
+        )
     return value
 
 
@@ -62,21 +71,48 @@ def build_decider(settings: Settings) -> Decider:
     raise NotImplementedError(f"DECIDER={settings.DECIDER} isn't built; use jev or fake")
 
 
+def build_embedder(settings: Settings) -> Embedder:
+    if settings.EMBEDDER == "gemini":
+        return GeminiEmbedder(
+            _required(settings, "GEMINI_API_KEY", "EMBEDDER=gemini"),
+            settings.EMBEDDING_MODEL,
+            settings.EMBEDDING_DIMENSIONS,
+        )
+    return FakeEmbedder(settings.EMBEDDING_DIMENSIONS)  # words only: no meaning, no key
+
+
+def build_knowledge_store(settings: Settings) -> KnowledgeStore:
+    """Qdrant Cloud when `QDRANT_URL` is set; otherwise its local mode, in a folder."""
+    if settings.QDRANT_URL:
+        client = AsyncQdrantClient(
+            url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY or None, timeout=20
+        )
+    else:
+        client = AsyncQdrantClient(path=settings.QDRANT_LOCAL_PATH)
+    return QdrantKnowledgeStore(client, settings.QDRANT_COLLECTION, settings.EMBEDDING_DIMENSIONS)
+
+
 def build_services(
     sessions: async_sessionmaker[AsyncSession],
     llm: LanguageModel,
     decider: Decider,
+    embedder: Embedder,
+    store: KnowledgeStore,
     settings: Settings,
     now: Callable[[], datetime],
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     items = ItemService(sessions)
     records = RecordService(sessions, now)
+    knowledge = KnowledgeService(sessions, embedder, store, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
-        conversations=ConversationService(sessions, runtime, items, records, settings, now),
+        conversations=ConversationService(
+            sessions, runtime, items, records, knowledge, settings, now
+        ),
         items=items,
+        knowledge=knowledge,
         records=records,
         users=UserService(sessions, settings.jwt_secret, now),
     )

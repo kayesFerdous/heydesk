@@ -19,6 +19,7 @@ from heydesk.runtime.prompt import build_system_prompt
 from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
 from heydesk.services.items import ItemService
+from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.records import RecordService
 from heydesk.tools import tools_for
 
@@ -44,6 +45,7 @@ class ConversationService:
         runtime: Runtime,
         items: ItemService,
         records: RecordService,
+        knowledge: KnowledgeService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -51,6 +53,7 @@ class ConversationService:
         self.runtime = runtime
         self.items = items
         self.records = records
+        self.knowledge = knowledge
         self.settings = settings
         self.now = now
 

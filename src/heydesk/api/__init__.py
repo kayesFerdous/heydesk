@@ -1,6 +1,17 @@
 from fastapi import FastAPI
 
-from heydesk.api import admin, agents, auth, chat, dev, health, presets, records, voice
+from heydesk.api import (
+    admin,
+    agents,
+    auth,
+    chat,
+    dev,
+    documents,
+    health,
+    presets,
+    records,
+    voice,
+)
 
 
 def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:
@@ -10,6 +21,7 @@ def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:
     app.include_router(admin.router)
     app.include_router(presets.router)
     app.include_router(agents.router)
+    app.include_router(documents.router)
     app.include_router(records.router)
     if dev_page:
         app.include_router(dev.router)

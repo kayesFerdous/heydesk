@@ -1,6 +1,7 @@
 """`uv run heydesk` starts the dev server. `create-user EMAIL PASSWORD` adds an owner to the
 dev workspace, so the API can manage the dev agent. `create-admin EMAIL PASSWORD` makes a
-platform admin (the only way to make one, D23)."""
+platform admin (the only way to make one, D23). `reindex-knowledge` rebuilds the Qdrant chunks
+from the documents saved in the database (D34)."""
 
 import asyncio
 import sys
@@ -12,9 +13,13 @@ from heydesk.db import make_engine, utcnow
 from heydesk.errors import HeyDeskError
 from heydesk.models import Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.users import UserService
+from heydesk.wiring import build_embedder, build_knowledge_store
 
-USAGE = "usage: heydesk [create-user EMAIL PASSWORD | create-admin EMAIL PASSWORD]"
+USAGE = (
+    "usage: heydesk [create-user EMAIL PASSWORD | create-admin EMAIL PASSWORD | reindex-knowledge]"
+)
 
 
 async def create_user(email: str, password: str) -> None:
@@ -38,6 +43,17 @@ async def create_admin(email: str, password: str) -> None:
     print(f"Created the admin {email}. Log in at POST /api/auth/login.")
 
 
+async def reindex_knowledge() -> None:
+    settings = Settings()
+    engine, sessions = make_engine(settings.DATABASE_URL)
+    knowledge = KnowledgeService(
+        sessions, build_embedder(settings), build_knowledge_store(settings), utcnow
+    )
+    count = await knowledge.reindex()
+    await engine.dispose()
+    print(f"Re-indexed {count} document(s).")
+
+
 def main() -> None:
     match sys.argv[1:]:
         case []:
@@ -52,5 +68,10 @@ def main() -> None:
                 asyncio.run(create_admin(email, password))
             except HeyDeskError as error:
                 sys.exit(error.message)
+        case ["reindex-knowledge"]:
+            try:
+                asyncio.run(reindex_knowledge())
+            except (HeyDeskError, RuntimeError) as error:
+                sys.exit(str(error))
         case _:
             sys.exit(USAGE)
