@@ -33,17 +33,13 @@ class RequestService:
             s.add(row)
         return row.id
 
-    async def list(
-        self, ws: str, agent_id: str | None = None, conversation_id: str | None = None
-    ) -> list[VisitorRequest]:
+    async def list(self, ws: str, conversation_id: str | None = None) -> list[VisitorRequest]:
         """Newest first."""
         query = (
             select(VisitorRequest)
             .where(VisitorRequest.workspace_id == ws)
             .order_by(VisitorRequest.created_at.desc())
         )
-        if agent_id:
-            query = query.where(VisitorRequest.agent_id == agent_id)
         if conversation_id:
             query = query.where(VisitorRequest.conversation_id == conversation_id)
         async with self.sessions() as s:

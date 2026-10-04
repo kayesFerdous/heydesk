@@ -106,17 +106,13 @@ class ConversationService:
         )
         return RunningTurn(conv.id, self._run(turn, conv), turn.interrupt)
 
-    async def list(
-        self, ws: str, agent_id: str | None = None, status: str | None = None
-    ) -> list[Conversation]:
+    async def list(self, ws: str, status: str | None = None) -> list[Conversation]:
         """Newest activity first."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
             .order_by(Conversation.updated_at.desc())
         )
-        if agent_id:
-            query = query.where(Conversation.agent_id == agent_id)
         if status:
             query = query.where(Conversation.status == status)
         async with self.sessions() as s:

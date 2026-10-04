@@ -29,3 +29,6 @@ htmlcov/
 # Frontend (after the month)
 node_modules/
 frontend/dist/
+
+# Personal notes and overviews (not part of the repo)
+notes/

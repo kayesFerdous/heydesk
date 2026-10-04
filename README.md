@@ -81,10 +81,10 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 
 | | |
 |---|---|
-| `GET /api/agents` | Your agents, with their `public_key` (the chat URL) |
-| `PATCH /api/agents/{id}` | Edit the config: `{"faq": "…"}`. Live on the next message |
-| `PUT /api/agents/{id}/items` | Replace the items, for example a new price (in paisa) |
-| `POST /api/agents` | A new agent from a preset (`GET /api/presets` lists them) |
+| `GET /api/agent` | Your agent (a business has one), with its `public_key` (the chat URL) |
+| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`. Live on the next message |
+| `PUT /api/agent/items` | Replace the items, for example a new price (in paisa) |
+| `POST /api/agent` | Create your agent from a preset (`GET /api/presets` lists them) |
 | `GET /api/orders`, `GET /api/requests` | What the agents took |
 | `PATCH /api/orders/{id}` | `{"status": "ready"}` |
 | `GET /api/conversations/{id}` | What was said, and the orders or messages it made |

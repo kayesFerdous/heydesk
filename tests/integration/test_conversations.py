@@ -42,8 +42,7 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
 
 async def test_the_prompt_has_the_date_and_an_edit_shows_up_next_message(world: World) -> None:
     conv_id = await say(world, "hi")
-    agent = await world.services.agents.by_key(DEV_KEY)
-    await world.services.agents.update(DEV_WORKSPACE_ID, agent.agent_id, {"faq": "Changed."})
+    await world.services.agents.update(DEV_WORKSPACE_ID, {"faq": "Changed."})
 
     await say(world, "and parking?", conv_id)
 

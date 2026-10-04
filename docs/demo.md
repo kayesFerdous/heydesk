@@ -54,10 +54,9 @@ In Swagger:
 
 1. `GET /api/orders` → orders 101 and 102, with what was said in
    `GET /api/conversations/{conversation_id}`.
-2. `GET /api/agents` → copy the agent's `id`.
-3. `GET /api/agents/{id}/items`, change Chicken Biryani's `price` to `47500`,
-   and send it back with `PUT /api/agents/{id}/items`.
-4. Back in the chat, a new conversation: *how much is the chicken biryani?* → **৳475**.
+2. `GET /api/agent/items`, change Chicken Biryani's `price` to `47500`,
+   and send it back with `PUT /api/agent/items`.
+3. Back in the chat, a new conversation: *how much is the chicken biryani?* → **৳475**.
 
 Say: an edit is live on the next message. There's no publish step.
 

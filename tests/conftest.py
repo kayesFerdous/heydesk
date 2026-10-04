@@ -158,6 +158,15 @@ async def app() -> AsyncIterator[FastAPI]:
         yield app
 
 
+async def new_business(app: FastAPI, email: str = "second@example.com") -> AsyncClient:
+    """A client logged in to a new business, which has no agent yet."""
+    anon = AsyncClient(transport=ASGITransport(app), base_url="http://test")
+    body = {"email": email, "password": "another long one", "workspace_name": "Cafe"}
+    signed_up = await anon.post("/api/auth/signup", json=body)
+    anon.headers["Authorization"] = f"Bearer {signed_up.json()['token']}"
+    return anon
+
+
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     """Logged in as a user of the dev workspace, which has the restaurant dev agent."""

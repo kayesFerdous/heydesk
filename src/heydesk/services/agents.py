@@ -1,4 +1,4 @@
-"""Agents: create one from a preset, and edit it (design §5). Edits are live at once."""
+"""The agent: a business has one. Create it from a preset, and edit it (design §5). Edits are live at once."""
 
 import asyncio
 import logging
@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.errors import InvalidConfig, NotFound
+from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.models import Agent, Workspace
 from heydesk.presets import Preset
 from heydesk.runtime.config import AgentConfig
@@ -120,6 +120,7 @@ class AgentService:
     async def create_from_preset(
         self, ws: str, preset_id: str, overrides: dict[str, Any], *, public_key: str | None = None
     ) -> str:
+        """The business's agent. A business has only one (D22)."""
         config = validate(config_from_preset(self._preset(preset_id), overrides), self.presets)
         now = self.now()
         agent = Agent(
@@ -132,29 +133,24 @@ class AgentService:
             updated_at=now,
         )
         async with self.sessions() as s, s.begin():
+            if await s.scalar(select(Agent.id).where(Agent.workspace_id == ws)):
+                raise Conflict("This business already has its agent. Edit it instead.")
             s.add(agent)
         return agent.id
 
-    async def update(self, ws: str, agent_id: str, patch: dict[str, Any]) -> AgentConfig:
+    async def update(self, ws: str, patch: dict[str, Any]) -> AgentConfig:
         """Top-level fields in `patch` replace the config's. Live from the next message."""
         async with self.sessions() as s, s.begin():
-            agent = await self._get(s, ws, agent_id)
+            agent = await self._get(s, ws)
             config = validate({**agent.config, **patch}, self.presets)
             agent.config = config.model_dump(mode="json")  # a new dict, so SQLAlchemy sees it
             agent.name = config.name
             agent.updated_at = self.now()
         return config
 
-    async def list(self, ws: str) -> list[AgentInfo]:
+    async def get(self, ws: str) -> AgentInfo:
         async with self.sessions() as s:
-            agents = await s.scalars(
-                select(Agent).where(Agent.workspace_id == ws).order_by(Agent.created_at)
-            )
-            return [_info(agent) for agent in agents]
-
-    async def get(self, ws: str, agent_id: str) -> AgentInfo:
-        async with self.sessions() as s:
-            return _info(await self._get(s, ws, agent_id))
+            return _info(await self._get(s, ws))
 
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:
@@ -182,8 +178,8 @@ class AgentService:
         )
 
     async def ensure_dev_agent(self, preset_id: str, seed_path: str | Path) -> LiveAgent:
-        """The `.env` agent (design §5): the dev workspace, and the agent `dev-<preset>`
-        from the preset + seed, updated from the seed on every start (its items too)."""
+        """The `.env` agent (design §5): the dev workspace's one agent, from the preset + seed,
+        updated from the seed on every start (its items too). Its key is `dev-<preset>`."""
         text = await asyncio.to_thread(Path(seed_path).read_text, encoding="utf-8")
         seed: dict[str, Any] = yaml.safe_load(text)
         try:
@@ -194,20 +190,23 @@ class AgentService:
         async with self.sessions() as s, s.begin():
             if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
                 s.add(Workspace(id=DEV_WORKSPACE_ID, name="Dev", created_at=self.now()))
-            agent_id = await s.scalar(select(Agent.id).where(Agent.public_key == key))
+            agent = await s.scalar(select(Agent).where(Agent.workspace_id == DEV_WORKSPACE_ID))
+            if agent is not None:
+                agent.public_key = key  # a changed DEV_AGENT_PRESET keeps the one agent
+            agent_id = agent.id if agent else None
         if agent_id is None:
             agent_id = await self.create_from_preset(
                 DEV_WORKSPACE_ID, preset_id, seed, public_key=key
             )
         else:
             data = config_from_preset(self._preset(preset_id), seed)
-            await self.update(DEV_WORKSPACE_ID, agent_id, data)
+            await self.update(DEV_WORKSPACE_ID, data)
         await self.items.replace(DEV_WORKSPACE_ID, agent_id, items)
         log.info("dev agent ready", extra={"public_key": key})
         return await self.by_key(key)
 
-    async def _get(self, s: AsyncSession, ws: str, agent_id: str) -> Agent:
-        agent = await s.scalar(select(Agent).where(Agent.id == agent_id, Agent.workspace_id == ws))
+    async def _get(self, s: AsyncSession, ws: str) -> Agent:
+        agent = await s.scalar(select(Agent).where(Agent.workspace_id == ws))
         if agent is None:
-            raise NotFound("There's no such agent.")
+            raise NotFound("This business has no agent yet. Create one from a preset.")
         return agent

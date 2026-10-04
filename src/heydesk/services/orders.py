@@ -44,13 +44,9 @@ class OrderService:
             )
         return number
 
-    async def list(
-        self, ws: str, agent_id: str | None = None, conversation_id: str | None = None
-    ) -> list[Order]:
+    async def list(self, ws: str, conversation_id: str | None = None) -> list[Order]:
         """Newest first."""
         query = select(Order).where(Order.workspace_id == ws).order_by(Order.created_at.desc())
-        if agent_id:
-            query = query.where(Order.agent_id == agent_id)
         if conversation_id:
             query = query.where(Order.conversation_id == conversation_id)
         async with self.sessions() as s:

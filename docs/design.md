@@ -108,8 +108,12 @@ The preset only names them for the prompt (`items_label: Menu`).
 - More: the prompt gives the count and the categories, and the agent gets
   `search_items` to find them.
 
+**One agent per business** (D22). `agents.workspace_id` is unique, so a
+business's agent is just "the agent": no ids in the URLs, no list. Creating a
+second is a 409.
+
 **`AgentService`** (`services/agents.py`): `create_from_preset`, `update`
-(validates; live from the next message), `by_key` (the config plus its
+(validates; live from the next message), `get`, `by_key` (the config plus its
 rendered knowledge and items). There is no publish step and no versions (D15).
 **`ItemService`** (`services/items.py`) saves an agent's items and gives its
 tools a `Catalog`: `get(codes)` and `search(query)`, always scoped to one
@@ -273,8 +277,8 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/chat/{key}` | `{message, conversation_id?}` → Server-Sent Events |
 | POST | `/api/auth/signup`, `/api/auth/login` | A new workspace and user, or a login → `{token}` |
 | GET | `/api/presets` | Presets and their knowledge JSON Schema |
-| GET/POST/PATCH | `/api/agents…` | Create from a preset, list, read, edit; problems per field |
-| GET/PUT | `/api/agents/{id}/items` | An agent's items, replaced whole |
+| GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
+| GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
 | GET/PATCH | `/api/orders…` | Orders (newest first), and an order's status |
 | GET | `/api/requests` | Messages for the team |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |

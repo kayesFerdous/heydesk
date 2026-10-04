@@ -20,7 +20,6 @@ class OrderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    agent_id: str
     conversation_id: str
     number: int
     lines: list[dict[str, Any]]  # {code, name, quantity, price}
@@ -42,7 +41,6 @@ class RequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    agent_id: str
     conversation_id: str
     task: str
     details: dict[str, str]
@@ -56,7 +54,6 @@ class ConversationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    agent_id: str
     channel: str
     status: str  # active / needs_human
     created_at: datetime
@@ -75,8 +72,8 @@ class ConversationWithMessages(ConversationOut):
 
 
 @router.get("/api/orders")
-async def orders(services: Svc, ws: Workspace, agent_id: str | None = None) -> list[OrderOut]:
-    return [OrderOut.model_validate(o) for o in await services.orders.list(ws, agent_id)]
+async def orders(services: Svc, ws: Workspace) -> list[OrderOut]:
+    return [OrderOut.model_validate(o) for o in await services.orders.list(ws)]
 
 
 @router.patch("/api/orders/{order_id}")
@@ -85,18 +82,17 @@ async def set_order_status(order_id: str, body: StatusIn, services: Svc, ws: Wor
 
 
 @router.get("/api/requests")
-async def requests(services: Svc, ws: Workspace, agent_id: str | None = None) -> list[RequestOut]:
-    return [RequestOut.model_validate(r) for r in await services.requests.list(ws, agent_id)]
+async def requests(services: Svc, ws: Workspace) -> list[RequestOut]:
+    return [RequestOut.model_validate(r) for r in await services.requests.list(ws)]
 
 
 @router.get("/api/conversations")
 async def conversations(
     services: Svc,
     ws: Workspace,
-    agent_id: str | None = None,
     status: Literal["active", "needs_human"] | None = None,
 ) -> list[ConversationOut]:
-    found = await services.conversations.list(ws, agent_id, status)
+    found = await services.conversations.list(ws, status=status)
     return [ConversationOut.model_validate(c) for c in found]
 
 

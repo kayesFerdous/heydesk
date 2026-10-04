@@ -1,4 +1,4 @@
-"""A business's agents and their items: create from a preset, read, edit (design §9).
+"""A business's agent and its items: create from a preset, read, edit (design §9). One per business.
 
 Edits are live from the next message. Problems come back per field.
 """
@@ -27,50 +27,42 @@ class AgentIn(BaseModel):
 
 
 class AgentOut(BaseModel):
-    id: str
     public_key: str  # the chat URL: /api/chat/{public_key}
     config: AgentConfig
 
 
 def out(agent: AgentInfo) -> AgentOut:
-    return AgentOut(id=agent.id, public_key=agent.public_key, config=agent.config)
+    return AgentOut(public_key=agent.public_key, config=agent.config)
 
 
-@router.post("/api/agents", status_code=status.HTTP_201_CREATED)
+@router.post("/api/agent", status_code=status.HTTP_201_CREATED)
 async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
     agent_id = await services.agents.create_from_preset(ws, body.preset, body.config)
     await services.items.replace(ws, agent_id, body.items)
-    return out(await services.agents.get(ws, agent_id))
+    return out(await services.agents.get(ws))
 
 
-@router.get("/api/agents")
-async def list_agents(services: Svc, ws: Workspace) -> list[AgentOut]:
-    return [out(agent) for agent in await services.agents.list(ws)]
+@router.get("/api/agent")
+async def read(services: Svc, ws: Workspace) -> AgentOut:
+    return out(await services.agents.get(ws))
 
 
-@router.get("/api/agents/{agent_id}")
-async def read(agent_id: str, services: Svc, ws: Workspace) -> AgentOut:
-    return out(await services.agents.get(ws, agent_id))
-
-
-@router.patch("/api/agents/{agent_id}")
-async def edit(agent_id: str, patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
+@router.patch("/api/agent")
+async def edit(patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
     """Top-level fields replace the config's: send the whole `knowledge`, not a part."""
-    await services.agents.update(ws, agent_id, patch)
-    return out(await services.agents.get(ws, agent_id))
+    await services.agents.update(ws, patch)
+    return out(await services.agents.get(ws))
 
 
-@router.get("/api/agents/{agent_id}/items")
-async def items(agent_id: str, services: Svc, ws: Workspace) -> list[Item]:
-    await services.agents.get(ws, agent_id)  # 404 if it isn't this workspace's
-    return await services.items.all(ws, agent_id)
+@router.get("/api/agent/items")
+async def items(services: Svc, ws: Workspace) -> list[Item]:
+    agent = await services.agents.get(ws)  # 404 until the business has an agent
+    return await services.items.all(ws, agent.id)
 
 
-@router.put("/api/agents/{agent_id}/items")
-async def replace_items(
-    agent_id: str, body: list[Item], services: Svc, ws: Workspace
-) -> list[Item]:
+@router.put("/api/agent/items")
+async def replace_items(body: list[Item], services: Svc, ws: Workspace) -> list[Item]:
     """The agent's items become exactly these, in this order. Live from the next message."""
-    await services.agents.get(ws, agent_id)  # 404 if it isn't this workspace's
-    await services.items.replace(ws, agent_id, body)
+    agent = await services.agents.get(ws)
+    await services.items.replace(ws, agent.id, body)
     return body

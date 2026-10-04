@@ -19,13 +19,13 @@ async def as_second_account(app: FastAPI) -> AsyncClient:
 async def test_a_second_account_cant_see_the_first_accounts_agent(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    [agent] = (await client.get("/api/agents")).json()
     second = await as_second_account(app)
 
-    assert (await second.get("/api/agents")).json() == []
-    assert (await second.get(f"/api/agents/{agent['id']}")).status_code == 404
-    assert (await second.patch(f"/api/agents/{agent['id']}", json={"faq": "x"})).status_code == 404
-    assert (await second.get(f"/api/agents/{agent['id']}/items")).status_code == 404
+    # Each account's /api/agent is its own, and the second has none
+    assert (await second.get("/api/agent")).status_code == 404
+    assert (await second.patch("/api/agent", json={"faq": "x"})).status_code == 404
+    assert (await second.get("/api/agent/items")).status_code == 404
+    assert (await client.get("/api/agent")).json()["config"]["faq"] != "x"
     await second.aclose()
 
 
@@ -35,7 +35,7 @@ async def test_login_gives_a_token_that_works(app: FastAPI, client: AsyncClient)
 
     token = (await client.post("/api/auth/login", json=login)).json()["token"]
 
-    me = await second.get("/api/agents", headers={"Authorization": f"Bearer {token}"})
+    me = await second.get("/api/orders", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     await second.aclose()
 
@@ -45,8 +45,8 @@ async def test_wrong_password_no_token_or_a_bad_token_is_401(app: FastAPI) -> No
         wrong = await anon.post(
             "/api/auth/login", json={"email": "owner@example.com", "password": "nope"}
         )
-        no_token = await anon.get("/api/agents")
-        bad = await anon.get("/api/agents", headers={"Authorization": "Bearer junk"})
+        no_token = await anon.get("/api/agent")
+        bad = await anon.get("/api/agent", headers={"Authorization": "Bearer junk"})
 
     assert [r.status_code for r in (wrong, no_token, bad)] == [401, 401, 401]
 

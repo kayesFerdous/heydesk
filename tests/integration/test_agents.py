@@ -33,9 +33,8 @@ async def test_a_restart_updates_the_same_agent(world: World, tmp_path: Path) ->
 
 
 async def test_an_edit_is_live_at_once(world: World) -> None:
-    agent = await world.services.agents.by_key(DEV_KEY)
 
-    await world.services.agents.update(DEV_WORKSPACE_ID, agent.agent_id, {"faq": "New."})
+    await world.services.agents.update(DEV_WORKSPACE_ID, {"faq": "New."})
 
     assert (await world.services.agents.by_key(DEV_KEY)).config.faq == "New."
 
@@ -46,9 +45,8 @@ async def test_an_unknown_key_is_not_found(world: World) -> None:
 
 
 async def test_another_workspace_cant_edit_the_agent(world: World) -> None:
-    agent = await world.services.agents.by_key(DEV_KEY)
     with pytest.raises(NotFound):
-        await world.services.agents.update("someone-else", agent.agent_id, {"faq": "Mine."})
+        await world.services.agents.update("someone-else", {"faq": "Mine."})
 
 
 async def test_the_receptionist_dev_agent_lists_its_services(world: World) -> None:
