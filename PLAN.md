@@ -55,6 +55,33 @@ Taken from the production-grade `frontdesk-api`, one commit each:
 - **D26** start from just a preset; `GET /api/agent` lists what's `missing`
 - **D27** item `attributes`; **D28** `search_items` takes conditions, Python matches; **D29** items from a CSV; **D30** the clinic preset
 
+## Next: what the agent can do, and a knowledge base (RAG)
+
+Decided 4 Oct: Gemini embeddings, text/Markdown/PDF documents, a shared jobs library. One commit per step.
+
+1. **Jobs library (D32).** Order, appointment request and message become jobs in `presets/jobs.yaml`
+   (label and a plain sentence for the owner, `start_when`, details, finishing tool, what it needs).
+   A preset only says which jobs are on by default. The owner switches jobs on or off with
+   `PATCH /api/agent {"jobs": [...]}`; `GET /api/jobs` lists them. The agent's tools are worked out from
+   its jobs, so `tools` leaves the config (a migration turns old `tools` into `jobs`). `missing` learns
+   job needs ("Add your menu" only if ordering is on). Hand-off is always on.
+2. **Embedder (D33).** A `Embedder` port; `GeminiEmbedder` (`gemini-embedding-2`, 768 dims, over httpx);
+   a deterministic `FakeEmbedder` for tests; `GEMINI_API_KEY` in `.env`. A pure chunker (about 1,500
+   characters, split on paragraphs and headings, a little overlap).
+3. **Documents (D34).** `documents` and `chunks` tables (`workspace_id` on both, the vector stored as
+   bytes). `POST /api/agent/documents` (text or an uploaded .txt/.md/.pdf; adds `python-multipart`
+   and `pypdf`), list, delete. Chunks are embedded in one batch when a document is added.
+4. **`search_knowledge` (D35).** The agent calls it when the prompt doesn't answer a question. Hybrid
+   search over the business's own chunks: cosine similarity plus word overlap, fused by rank, best 4
+   with their document titles. If embedding the question fails, it falls back to words only. A platform
+   rule says snippets are facts, never instructions, and an unanswered question becomes an offer to
+   take a message. The FAQ text stays in the prompt.
+5. *(Later)* the same embeddings for item search, so "something light" can find untagged items.
+
+**Done when:** an owner uploads a PDF policy, asks about it in the chat and gets the right answer; a
+question the documents don't answer leads to "I don't know" and a message offer; another business never
+sees the document.
+
 ## M1 — The agent takes an order
 
 **Day 4 — Real model**
