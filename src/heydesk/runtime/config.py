@@ -23,7 +23,8 @@ class AgentConfig(BaseModel):
     country: str = "BD"  # for phone numbers
     currency: str = "BDT"
     greeting: str
-    instructions: str = Field(max_length=8000)  # the editable prompt
+    instructions: str = Field(max_length=8000)  # the role text: HeyDesk's, from the preset (D25)
+    notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
     knowledge: dict[str, Any]  # validated by the preset's knowledge model
     faq: str = Field(default="", max_length=20000)
     tools: list[str]  # the tools this agent may use: a subset of the preset's

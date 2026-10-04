@@ -8,12 +8,24 @@ from typing import Any
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, User, Workspace
+from heydesk.errors import Forbidden
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
 from heydesk.services.agents import AgentInfo
 
 router = APIRouter(tags=["agents"])
+
+
+# What only an admin may change (D25): the role text and the tools come from the preset.
+# An owner writes `notes` for tone and rules, and edits everything about their business.
+ADMIN_ONLY = ("instructions", "tools", "preset")
+
+
+def owners_may_set(who: User, fields: dict[str, Any]) -> None:
+    locked = [name for name in ADMIN_ONLY if name in fields]
+    if locked and not who.is_admin:
+        raise Forbidden(f"{', '.join(locked)}: only HeyDesk can change that. Use `notes` instead.")
 
 
 class AgentIn(BaseModel):
@@ -32,7 +44,8 @@ def out(agent: AgentInfo) -> AgentOut:
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
-async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
+async def create(body: AgentIn, who: User, services: Svc, ws: Workspace) -> AgentOut:
+    owners_may_set(who, body.config)
     agent_id = await services.agents.create_from_preset(ws, body.preset, body.config)
     await services.items.replace(ws, agent_id, body.items)
     return out(await services.agents.get(ws))
@@ -44,8 +57,10 @@ async def read(services: Svc, ws: Workspace) -> AgentOut:
 
 
 @router.patch("/api/agent")
-async def edit(patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
-    """Top-level fields replace the config's: send the whole `knowledge`, not a part."""
+async def edit(patch: dict[str, Any], who: User, services: Svc, ws: Workspace) -> AgentOut:
+    """Top-level fields replace the config's: send the whole `knowledge`, not a part.
+    An owner can't change `instructions` or `tools` (403): they write `notes`."""
+    owners_may_set(who, patch)
     await services.agents.update(ws, patch)
     return out(await services.agents.get(ws))
 

@@ -35,6 +35,16 @@ def test_placeholders_are_filled_and_other_braces_left_alone() -> None:
     assert "You are the host for Spice Garden. Use {braces} as you like." in prompt()
 
 
+def test_the_owners_notes_come_right_after_the_role_text() -> None:
+    text = prompt(notes="Be formal. Call guests {business_name} friends.")
+
+    assert "# Notes from the business\nBe formal. Call guests Spice Garden friends." in text
+    assert (
+        text.index("# Your role") < text.index("# Notes from the business") < text.index("# Tasks")
+    )
+    assert "# Notes" not in prompt()
+
+
 def test_no_faq_section_when_empty() -> None:
     assert "# FAQ" not in prompt(faq="  ")
 

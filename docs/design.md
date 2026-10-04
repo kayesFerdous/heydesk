@@ -11,7 +11,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 ## 1. What it is
 
 A business picks a **preset** (restaurant host, receptionist), fills in its
-details (menu, hours, FAQ) and edits the instructions, and it has an AI
+details (menu, hours, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Visitors talk to it by **web chat** or **voice** in the
 browser. It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders and messages through the API.
@@ -75,10 +75,16 @@ Imports point inwards: `api`/`voice` → `services` → `runtime` → `ports`.
 
 ## 5. Agents and presets
 
-`AgentConfig` (`runtime/config.py`) is what a business edits: name, business
-name, timezone, currency, greeting, instructions, knowledge, FAQ, the tools it
-may use (a list of names), hand-off message and phone. One model serves every
-agent (`MODEL` in `.env`).
+`AgentConfig` (`runtime/config.py`) is the agent's settings: name, business
+name, timezone, currency, greeting, knowledge, FAQ, hand-off message and phone,
+and the owner's **notes**; plus `instructions` (the role text) and `tools` (a
+list of names), which come from the preset. One model serves every agent
+(`MODEL` in `.env`).
+
+**Owners never meet a technical setting** (D25). An owner edits their business:
+greeting, knowledge, FAQ, items, hand-off, and `notes` (tone and rules in their
+own words, put in the prompt right after the role text). `instructions` and
+`tools` are an admin's: an owner who sends them gets a 403.
 
 A preset (`presets/<id>/preset.yaml`) gives the defaults and the **tasks**:
 
@@ -140,7 +146,7 @@ the turn is saved when it ends.
 
 **What the model sees on every call**, in this order:
 
-1. System prompt: platform rules → role + instructions → tasks → knowledge →
+1. System prompt: platform rules → role text → owner's notes → tasks → knowledge →
    FAQ → **right now** (channel style, date and time, the next 14 days) → the
    **state note** (day 6), rebuilt before every model call and never stored
 2. Tool specs: the agent's enabled tools

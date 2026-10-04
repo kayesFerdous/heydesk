@@ -39,6 +39,8 @@ def build_system_prompt(
     agent: AgentConfig, tasks: dict[str, Task], knowledge: str, channel: str, now: datetime
 ) -> str:
     sections = [PLATFORM_RULES, "# Your role\n" + agent.fill(agent.instructions).strip()]
+    if agent.notes.strip():
+        sections.append("# Notes from the business\n" + agent.fill(agent.notes).strip())
     if tasks:
         sections.append(tasks_section(tasks))
     sections.append("# Knowledge\n" + knowledge.strip())

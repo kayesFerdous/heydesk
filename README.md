@@ -83,7 +83,7 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 | | |
 |---|---|
 | `GET /api/agent` | Your agent (a business has one), with its `public_key` (the chat URL) |
-| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`. Live on the next message |
+| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message. `instructions` and `tools` are for admins |
 | `PUT /api/agent/items` | Replace the items, for example a new price (in paisa) |
 | `POST /api/agent` | Create your agent from a preset (`GET /api/presets` lists them) |
 | `GET /api/admin/businesses` | Admins only: every business. Suspend one with `PATCH /api/admin/businesses/{id}`; act inside one with an `X-Business: <id>` header on the routes here |

@@ -20,6 +20,11 @@ class HeyDeskError(Exception):
         self.message = message or self.code
 
 
+class Forbidden(HeyDeskError):
+    status_code = 403
+    code = "forbidden"
+
+
 class NotFound(HeyDeskError):
     status_code = 404
     code = "not_found"
