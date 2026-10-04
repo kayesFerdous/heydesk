@@ -256,8 +256,9 @@ Every table has `workspace_id` (except `workspaces`).
 
 | Table | Columns |
 |---|---|
-| `workspaces` | id, name |
-| `users` (M3) | email, password_hash |
+| `workspaces` | id, name, status (`active`/`suspended`) |
+| `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
+| `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | preset, name, public_key (unique), config JSON |
 | `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
@@ -275,7 +276,9 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/` | Dev chat page (development only) |
 | GET | `/api/chat/{key}` | Agent name and greeting |
 | POST | `/api/chat/{key}` | `{message, conversation_id?}` → Server-Sent Events |
-| POST | `/api/auth/signup`, `/api/auth/login` | A new workspace and user, or a login → `{token}` |
+| POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
+| GET | `/api/auth/me` | Who you are: email, role, your business |
+| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset a password), the audit log |
 | GET | `/api/presets` | Presets and their knowledge JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
 | GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
@@ -285,9 +288,17 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/health` | DB reachable |
 
 Everything under `/api` except chat, presets and auth needs
-`Authorization: Bearer <token>`; the token says the workspace (rule 6), and
-another workspace's agent is a 404. `uv run heydesk create-user EMAIL PASSWORD`
-adds a login to the dev workspace.
+`Authorization: Bearer <token>`.
+
+**Two roles** (D23). An **owner** belongs to one business: the token says which
+(rule 6), and they only ever see it. An **admin** runs the platform and belongs to
+none: made only by `uv run heydesk create-admin EMAIL PASSWORD`, never by signup.
+An admin works inside a business by sending its id in an `X-Business` header on
+the ordinary routes (an owner's header is ignored). The database, not the token,
+says someone is still an admin. Every admin write, and every admin read of one
+thing (one conversation), is saved to `audit_events`. A suspended business's chat
+answers 404 `unavailable`; its owner can still log in.
+`uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
 for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21).

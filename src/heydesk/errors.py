@@ -25,6 +25,12 @@ class NotFound(HeyDeskError):
     code = "not_found"
 
 
+class Unavailable(NotFound):
+    """A suspended business's chat: the link is there, the agent isn't answering (D23)."""
+
+    code = "unavailable"
+
+
 class Unauthorized(HeyDeskError):
     status_code = 401
     code = "unauthorized"

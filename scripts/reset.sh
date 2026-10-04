@@ -7,5 +7,6 @@ cd "$(dirname "$0")/.."
 rm -f heydesk.db
 uv run alembic upgrade head
 uv run heydesk create-user demo@heydesk.test "demo password"
+uv run heydesk create-admin admin@heydesk.test "admin password"
 echo
 echo "Now start the server: uv run uvicorn heydesk.main:app"

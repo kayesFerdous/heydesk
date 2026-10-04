@@ -20,6 +20,7 @@ from heydesk.ports.llm import LanguageModel
 from heydesk.presets import load_presets
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
+from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
@@ -74,6 +75,7 @@ def build_services(
     orders = OrderService(sessions, now)
     requests = RequestService(sessions, now)
     return Services(
+        admin=AdminService(sessions, now),
         agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
         conversations=ConversationService(
             sessions, runtime, items, orders, requests, settings, now

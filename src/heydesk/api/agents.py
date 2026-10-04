@@ -3,21 +3,17 @@
 Edits are live from the next message. Problems come back per field.
 """
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 from pydantic import BaseModel
 
-from heydesk.api.deps import current_workspace, get_services
+from heydesk.api.deps import Svc, Workspace
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
-from heydesk.services import Services
 from heydesk.services.agents import AgentInfo
 
 router = APIRouter(tags=["agents"])
-
-type Svc = Annotated[Services, Depends(get_services)]
-type Workspace = Annotated[str, Depends(current_workspace)]
 
 
 class AgentIn(BaseModel):

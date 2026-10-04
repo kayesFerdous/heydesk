@@ -1,5 +1,6 @@
-"""`uv run heydesk` starts the dev server; `uv run heydesk create-user EMAIL PASSWORD`
-adds a login to the dev workspace, so the API can manage the dev agent."""
+"""`uv run heydesk` starts the dev server. `create-user EMAIL PASSWORD` adds an owner to the
+dev workspace, so the API can manage the dev agent. `create-admin EMAIL PASSWORD` makes a
+platform admin (the only way to make one, D23)."""
 
 import asyncio
 import sys
@@ -13,7 +14,7 @@ from heydesk.models import Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.users import UserService
 
-USAGE = "usage: heydesk [create-user EMAIL PASSWORD]"
+USAGE = "usage: heydesk [create-user EMAIL PASSWORD | create-admin EMAIL PASSWORD]"
 
 
 async def create_user(email: str, password: str) -> None:
@@ -29,6 +30,14 @@ async def create_user(email: str, password: str) -> None:
     print(f"Created {email} in the dev workspace. A token for the API (7 days):\n{token}")
 
 
+async def create_admin(email: str, password: str) -> None:
+    settings = Settings()
+    engine, sessions = make_engine(settings.DATABASE_URL)
+    await UserService(sessions, settings.jwt_secret, utcnow).create_admin(email, password)
+    await engine.dispose()
+    print(f"Created the admin {email}. Log in at POST /api/auth/login.")
+
+
 def main() -> None:
     match sys.argv[1:]:
         case []:
@@ -36,6 +45,11 @@ def main() -> None:
         case ["create-user", email, password]:
             try:
                 asyncio.run(create_user(email, password))
+            except HeyDeskError as error:
+                sys.exit(error.message)
+        case ["create-admin", email, password]:
+            try:
+                asyncio.run(create_admin(email, password))
             except HeyDeskError as error:
                 sys.exit(error.message)
         case _:

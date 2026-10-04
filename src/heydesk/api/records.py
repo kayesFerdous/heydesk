@@ -1,18 +1,15 @@
 """What the agents took: orders, messages for the team, and conversations (design §9)."""
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import current_workspace, get_services
-from heydesk.services import Services
+from heydesk.api.deps import Svc, Workspace
 
 router = APIRouter(tags=["records"])
 
-type Svc = Annotated[Services, Depends(get_services)]
-type Workspace = Annotated[str, Depends(current_workspace)]
 type OrderStatus = Literal["new", "ready", "collected", "cancelled"]
 
 

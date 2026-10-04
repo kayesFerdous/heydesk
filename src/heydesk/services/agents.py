@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.errors import Conflict, InvalidConfig, NotFound
+from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
 from heydesk.models import Agent, Workspace
 from heydesk.presets import Preset
 from heydesk.runtime.config import AgentConfig
@@ -155,8 +155,11 @@ class AgentService:
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:
             agent = await s.scalar(select(Agent).where(Agent.public_key == key))
-        if agent is None:
+            business = await s.get(Workspace, agent.workspace_id) if agent else None
+        if agent is None or business is None:
             raise NotFound("There's no agent with that key.")
+        if business.status != "active":
+            raise Unavailable("This assistant isn't available right now.")
         config = AgentConfig.model_validate(agent.config)
         preset = self.presets[config.preset]
         items = await self.items.all(agent.workspace_id, agent.id)

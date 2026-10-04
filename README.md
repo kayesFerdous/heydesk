@@ -74,7 +74,8 @@ Swagger is at <http://localhost:8000/docs>. Everything that belongs to a
 business needs a login token:
 
 ```bash
-uv run heydesk create-user you@example.com "a long password"   # a login for the dev workspace
+uv run heydesk create-user you@example.com "a long password"   # an owner of the dev business
+uv run heydesk create-admin you@example.com "a long password"  # a platform admin (no business)
 ```
 
 It prints a token. In Swagger, press **Authorize** and paste it. Then:
@@ -85,6 +86,7 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 | `PATCH /api/agent` | Edit the config: `{"faq": "…"}`. Live on the next message |
 | `PUT /api/agent/items` | Replace the items, for example a new price (in paisa) |
 | `POST /api/agent` | Create your agent from a preset (`GET /api/presets` lists them) |
+| `GET /api/admin/businesses` | Admins only: every business. Suspend one with `PATCH /api/admin/businesses/{id}`; act inside one with an `X-Business: <id>` header on the routes here |
 | `GET /api/orders`, `GET /api/requests` | What the agents took |
 | `PATCH /api/orders/{id}` | `{"status": "ready"}` |
 | `GET /api/conversations/{id}` | What was said, and the orders or messages it made |
