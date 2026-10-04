@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D26: one agent per business, owner and admin roles, one records inbox, owner-friendly setup). Demo rehearsals and the UI wait. **Next:** the data layer (item `attributes`, a `find_items` tool, CSV import) so clinics and shops fit; see the notes.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D26: one agent per business, owner and admin roles, one records inbox, owner-friendly setup). Demo rehearsals and the UI wait. **Data layer done (D27–D30):** item attributes, conditions in `search_items`, CSV import, the clinic preset. **Next:** a live check with a real model on the clinic, then real bookings or the shop preset.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -53,6 +53,7 @@ Taken from the production-grade `frontdesk-api`, one commit each:
 - **D24** orders and messages in one `records` table; `/api/inbox`, `/api/records`; status flows
 - **D25** owners write `notes`; `instructions` and `tools` are admin-only
 - **D26** start from just a preset; `GET /api/agent` lists what's `missing`
+- **D27** item `attributes`; **D28** `search_items` takes conditions, Python matches; **D29** items from a CSV; **D30** the clinic preset
 
 ## M1 — The agent takes an order
 

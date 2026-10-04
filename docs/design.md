@@ -10,7 +10,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 
 ## 1. What it is
 
-A business picks a **preset** (restaurant host, receptionist), fills in its
+A business picks a **preset** (restaurant host, receptionist, clinic front desk), fills in its
 details (menu, hours, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Visitors talk to it by **web chat** or **voice** in the
 browser. It answers questions, takes orders and messages, and hands over to a
@@ -61,7 +61,7 @@ src/heydesk/
 ├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, and fakes for tests
 ├── runtime/             the engine: loop, tool contract, items, config, prompt, tasks, state note, speech, trace
 ├── tools/               the tools; DB access only through ctx.services
-├── presets/             restaurant/, receptionist/: preset.yaml + knowledge.py
+├── presets/             restaurant/, receptionist/, clinic/: preset.yaml + knowledge.py
 │                        (a business's items are in the `items` table, D17)
 ├── models/              tables
 ├── services/            the only code that opens DB sessions
@@ -378,5 +378,5 @@ version handles them.
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Usage events, budgets, rate limits | Cost is in each turn's log line |
-| Bookings, the clinic preset, custom tasks | Restaurant + receptionist |
+| Real bookings (a free slot, a calendar), custom tasks | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |

@@ -1,0 +1,58 @@
+# A clinic agent (DEV_AGENT_PRESET=clinic, DEV_AGENT_SEED=this file).
+# Doctors are items: the speciality is the category, the fee is the price (in paisa:
+# 80000 = ৳800), and everything else about them is an attribute (D27).
+name: Lakeview Clinic front desk
+business_name: Lakeview Clinic
+timezone: Asia/Dhaka
+currency: BDT
+handoff:
+  message: Let me get someone from the clinic to help you. You can also call us.
+  phone: "+880 1900 000000"
+knowledge:
+  address: "House 7, Road 3, Banani, Dhaka"
+  hours:
+    sat: ["09:00", "21:00"]
+    sun: ["09:00", "21:00"]
+    mon: ["09:00", "21:00"]
+    tue: ["09:00", "21:00"]
+    wed: ["09:00", "21:00"]
+    thu: ["09:00", "17:00"]
+  emergency_phone: "999"
+  policies: |
+    Appointments are confirmed by a phone call from the front desk.
+    Please bring earlier reports and a photo ID. Fees are paid at the clinic, by cash or card.
+    We don't treat emergencies here: for those, call 999 or go to the nearest hospital.
+items:
+  - {code: dr-akter, name: Dr. Nasrin Akter, price: 80000, category: Cardiology, tags: [female],
+     description: "Heart and blood pressure. Sees adults.",
+     attributes: {days: [sat, sun, mon], hours: "5 pm to 9 pm", languages: [english, bangla], years: 12}}
+  - {code: dr-hasan, name: Dr. Imran Hasan, price: 90000, category: Cardiology, tags: [male],
+     description: "Heart rhythm and echo tests.",
+     attributes: {days: [tue, wed], hours: "6 pm to 9 pm", languages: [english, bangla], years: 18}}
+  - {code: dr-rahim, name: Dr. Farhana Rahim, price: 60000, category: Dermatology, tags: [female],
+     description: "Skin, hair and allergies.",
+     attributes: {days: [sat, mon, wed], hours: "4 pm to 8 pm", languages: [bangla, english], years: 9}}
+  - {code: dr-karim, name: Dr. Abdul Karim, price: 70000, category: Dermatology, tags: [male],
+     description: "Skin and nail conditions.",
+     attributes: {days: [sun, tue, thu], hours: "10 am to 2 pm", languages: [bangla], years: 15}}
+  - {code: dr-sultana, name: Dr. Rokeya Sultana, price: 50000, category: Pediatrics, tags: [female, children],
+     description: "Children from birth to 14: fever, growth, vaccines.",
+     attributes: {days: [sat, sun, mon, tue, wed], hours: "3 pm to 7 pm", languages: [bangla, english], years: 11}}
+  - {code: dr-chowdhury, name: Dr. Tanvir Chowdhury, price: 55000, category: Pediatrics, tags: [male, children],
+     description: "Children's lungs and allergies.",
+     attributes: {days: [thu], hours: "9 am to 1 pm", languages: [bangla, english], years: 8}}
+  - {code: dr-islam, name: Dr. Shafiqul Islam, price: 85000, category: Orthopedics, tags: [male],
+     description: "Bones, joints and sports injuries.",
+     attributes: {days: [sat, mon, wed], hours: "5 pm to 8 pm", languages: [bangla, english], years: 20}}
+  - {code: dr-begum, name: Dr. Salma Begum, price: 75000, category: Gynecology, tags: [female],
+     description: "Women's health and pregnancy care.",
+     attributes: {days: [sun, tue, thu], hours: "4 pm to 8 pm", languages: [bangla, english], years: 14}}
+  - {code: dr-ahmed, name: Dr. Kamal Ahmed, price: 40000, category: General Medicine, tags: [male, popular],
+     description: "Fever, cough, stomach trouble, general check-ups.",
+     attributes: {days: [sat, sun, mon, tue, wed, thu], hours: "9 am to 9 pm", languages: [bangla, english], years: 10}}
+  - {code: dr-noor, name: Dr. Nusrat Noor, price: 40000, category: General Medicine, tags: [female],
+     description: "General check-ups, diabetes and blood pressure follow-up.",
+     attributes: {days: [sun, mon, wed], hours: "2 pm to 8 pm", languages: [bangla, english], years: 7}}
+faq: |
+  We're a short walk from Banani Road 11, with parking in front. Blood tests are done at the
+  clinic between 8 am and 12 noon; no appointment is needed.

@@ -1,7 +1,7 @@
 # HeyDesk
 
 An AI front desk a business can build in minutes. It picks a preset
-(restaurant host, receptionist), fills in its menu, hours and FAQ, edits the
+(restaurant host, receptionist, clinic front desk), fills in its menu, hours and FAQ, edits the
 instructions. Visitors talk to the agent by web chat or by
 voice; it answers questions, takes orders and messages, and hands over to a
 person when needed.
@@ -11,7 +11,7 @@ nothing is saved without reading it back and hearing a yes.
 
 ## Status
 
-Web chat and voice orders, the restaurant and receptionist presets, and the
+Web chat and voice orders, the restaurant, receptionist and clinic presets, and the
 API with login all work. What's left is the demo (see **[PLAN.md](PLAN.md)**).
 
 ## Docs
@@ -56,8 +56,8 @@ scripts/check.sh   # tests, lint, format, types, import rules
 
 ## Switching presets
 
-The dev agent comes from a preset and a seed file. For the receptionist, set
-these in `.env` and restart:
+The dev agent comes from a preset and a seed file. For the receptionist (or
+`clinic` with `examples/agents/clinic.yaml`), set these in `.env` and restart:
 
 ```bash
 DEV_AGENT_PRESET=receptionist

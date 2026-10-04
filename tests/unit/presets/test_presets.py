@@ -17,7 +17,7 @@ def seed_config(**changes: Any) -> dict[str, Any]:
 
 def test_every_preset_loads_and_its_tools_are_built() -> None:
     presets = load_presets()
-    assert {"restaurant", "receptionist"} <= set(presets)
+    assert {"restaurant", "receptionist", "clinic"} <= set(presets)
     for preset in presets.values():
         assert set(preset.tools) <= set(TOOLS), preset.id
 

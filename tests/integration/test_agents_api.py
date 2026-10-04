@@ -20,7 +20,7 @@ def restaurant() -> dict[str, Any]:
 async def test_presets_list_their_knowledge_schema(client: AsyncClient) -> None:
     presets = {p["id"]: p for p in (await client.get("/api/presets")).json()}
 
-    assert set(presets) == {"restaurant", "receptionist"}
+    assert set(presets) == {"restaurant", "receptionist", "clinic"}
     assert "address" in presets["restaurant"]["knowledge_schema"]["properties"]
 
 

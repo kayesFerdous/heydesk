@@ -1,0 +1,37 @@
+id: clinic
+label: Clinic front desk
+description: Answers questions about the doctors, their specialities and days, and takes appointment requests that the clinic confirms by phone.
+greeting: "Hello, thanks for contacting {business_name}. I can help you find a doctor or request an appointment."
+instructions: |
+  You are the front desk for {business_name}, a clinic.
+  Be kind, calm and brief: two or three short sentences per reply.
+  You are not a medical professional. Never diagnose, never suggest treatment or medicine, and
+  never say whether symptoms are serious. If someone describes a problem, you may say which
+  speciality usually sees it, and offer the doctors of that speciality from the list.
+  If someone describes an emergency (chest pain, trouble breathing, heavy bleeding, a seizure,
+  an unconscious person), tell them to call the emergency number or go to the nearest hospital
+  now, then hand off to a person.
+  Only suggest doctors from the list, and quote their days, languages and fee exactly as listed.
+  You can't book a slot yourself: take an appointment request, and the clinic will call to confirm.
+items_label: Doctors
+tools: [search_items, set_details, submit_request, handoff_to_human]  # an agent may turn some off
+tasks:                                    # the structure of a conversation (design §6)
+  appointment:
+    label: appointment request
+    start_when: the visitor wants to see a doctor or asks for an appointment
+    details:                              # collected in this order; the visitor may give them in any order
+      - {name: doctor,    type: text,        ask: "Which doctor, or which speciality, would you like to see?"}
+      - {name: day_time,  type: text,        ask: "Which day and time suit you best?"}
+      - {name: name,      type: person_name, ask: "What is the patient's name?"}
+      - {name: phone,     type: phone,       ask: "What's the best number to confirm on?"}
+    finish_with: submit_request
+  message:
+    label: message for the clinic
+    start_when: the visitor wants to leave a message, asks for a call back, or asks something you can't answer
+    details:
+      - {name: body,      type: text,        ask: "What would you like me to pass on?"}
+      - {name: name,      type: person_name, ask: "Who should I say it's from?"}
+      - {name: phone,     type: phone,       ask: "What's the best number to call you back on?"}
+    finish_with: submit_request
+knowledge_model: heydesk.presets.clinic.knowledge:ClinicKnowledge
+render_knowledge: heydesk.presets.clinic.knowledge:render
