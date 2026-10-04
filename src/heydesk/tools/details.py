@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
+from heydesk.runtime.schedule import WeeklyHours
 from heydesk.runtime.tasks import display_detail, parse_detail
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult, fail
 
@@ -21,6 +22,7 @@ async def set_details(ctx: ToolContext, args: SetDetailsInput) -> ToolResult:
         return fail(f"There's no task {args.task!r}. Use one of: {', '.join(ctx.tasks)}.")
     kinds = {d.name: d.type for d in task.details}
     now = ctx.now.astimezone(ZoneInfo(ctx.agent.timezone))
+    hours = WeeklyHours.model_validate(ctx.agent.knowledge.get("hours") or {})
     details = dict(ctx.state.get("details", {}))  # a new dict: the old one stays as it was
     saved, problems = {}, {}
     for name, said in args.details.items():
@@ -28,7 +30,7 @@ async def set_details(ctx: ToolContext, args: SetDetailsInput) -> ToolResult:
             problems[name] = f"Not a detail of this task. Use: {', '.join(kinds)}."
             continue
         try:
-            details[name] = parse_detail(kinds[name], said, now)
+            details[name] = parse_detail(kinds[name], said, now, hours)
         except ValueError as error:
             problems[name] = str(error)
             continue

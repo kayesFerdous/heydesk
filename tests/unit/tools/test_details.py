@@ -3,7 +3,7 @@ from typing import Any
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.tool import ToolResult, run_tool
 from heydesk.tools import details
-from tests.conftest import make_ctx
+from tests.conftest import AGENT, make_ctx
 
 
 async def save(state: dict[str, Any], task: str = "order", **said: str) -> ToolResult:
@@ -38,3 +38,19 @@ async def test_an_unknown_task_is_refused() -> None:
     result = await save({}, task="booking", name="Kayes")
     assert not result.ok and "Use one of: order, message" in result.data["error"]
     assert result.state is None
+
+
+async def test_a_time_outside_the_business_hours_is_refused() -> None:
+    hours = {day: ["11:00", "22:00"] for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+    agent = AGENT.model_copy(update={"knowledge": {"hours": hours}})
+    call = ToolCall("1", "set_details", {"task": "order", "details": {"pickup_time": "11 pm"}})
+
+    late = await run_tool(details.TOOL, call, make_ctx(agent=agent))
+    ok = await run_tool(
+        details.TOOL,
+        ToolCall("2", "set_details", {"task": "order", "details": {"pickup_time": "9 pm"}}),
+        make_ctx(agent=agent),
+    )
+
+    assert not late.ok and "open 11:00–22:00" in late.data["problems"]["pickup_time"]
+    assert ok.ok and ok.data == {"saved": {"pickup_time": "today, 9:00 pm"}}

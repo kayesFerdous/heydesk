@@ -2,6 +2,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from heydesk.runtime.schedule import WeeklyHours
 from heydesk.runtime.tasks import (
     DetailType,
     current_task,
@@ -98,3 +99,67 @@ def test_the_task_is_set_by_set_details_or_started_by_a_cart() -> None:
     assert current_task(TASKS, {"cart": {"lines": [], "total": 0}}) is None
     assert current_task(TASKS, {"cart": CART}) == "order"
     assert current_task(TASKS, {"task": "message"}) == "message"
+
+
+CLINIC_HOURS = WeeklyHours.model_validate(  # open 9 am to 10 pm every day except Sunday
+    {day: ["09:00", "22:00"] for day in ("mon", "tue", "wed", "thu", "fri", "sat")}
+)
+
+
+@pytest.mark.parametrize(
+    ("said", "saved"),
+    [
+        ("tomorrow at 5 pm", "2026-09-30T17:00"),
+        ("Tomorrow 5pm", "2026-09-30T17:00"),
+        ("today at 8 pm", "2026-09-29T20:00"),
+        ("day after tomorrow at 9:30 am", "2026-10-01T09:30"),
+        ("saturday 5 pm", "2026-10-03T17:00"),
+        ("next Saturday at 17:00", "2026-10-03T17:00"),
+        ("tuesday at 6 pm", "2026-09-29T18:00"),  # today is Tuesday and 6 pm is still ahead
+        ("tuesday at 10 am", "2026-10-06T10:00"),  # 10 am has passed: next Tuesday
+        ("5 Oct 6:30 pm", "2026-10-05T18:30"),
+        ("October 6th, 4 pm", "2026-10-06T16:00"),
+        ("2026-10-02 3 pm", "2026-10-02T15:00"),
+    ],
+)
+def test_an_appointment_time_is_worked_out_by_python(said: str, saved: str) -> None:
+    assert parse_detail("appointment_time", said, NOW, CLINIC_HOURS) == saved
+
+
+@pytest.mark.parametrize(
+    ("said", "hint"),
+    [
+        ("tomorrow at 11 pm", "Wednesdays we're open 09:00–22:00"),  # the clinic shuts at 10
+        ("tomorrow at 8 am", "outside our hours"),
+        ("tomorrow at 10 pm", "outside our hours"),  # close is not inclusive
+        ("sunday at 5 pm", "closed on Sundays"),
+        ("today at 11 am", "has passed"),
+        ("tomorrow at 5", "am or pm"),  # never guessed
+        ("5 pm", "Which day"),
+        ("tomorrow", "Pass a day and a time"),
+        ("someday at 5 pm", "Pass the day as"),
+        ("31 Feb at 5 pm", "Pass the day as"),
+        ("15 Oct at 5 pm", "next 14 days"),
+        ("tomorrow at 25:00", "isn't a time of day"),
+    ],
+)
+def test_an_appointment_outside_the_hours_or_unclear_is_refused_with_a_hint(
+    said: str, hint: str
+) -> None:
+    with pytest.raises(ValueError, match=hint):
+        parse_detail("appointment_time", said, NOW, CLINIC_HOURS)
+
+
+def test_with_no_hours_set_only_the_clock_is_checked() -> None:
+    assert parse_detail("appointment_time", "tomorrow at 11 pm", NOW) == "2026-09-30T23:00"
+    assert parse_detail("time_today", "11 pm", NOW) == "23:00"
+
+
+def test_a_pickup_time_must_be_inside_the_opening_hours_too() -> None:
+    assert parse_detail("time_today", "9 pm", NOW, CLINIC_HOURS) == "21:00"
+    with pytest.raises(ValueError, match="outside our hours"):
+        parse_detail("time_today", "11 pm", NOW, CLINIC_HOURS)
+
+
+def test_an_appointment_time_is_shown_in_words() -> None:
+    assert display_detail("appointment_time", "2026-09-30T17:00", "BDT") == "Wed 30 Sep, 5:00 pm"

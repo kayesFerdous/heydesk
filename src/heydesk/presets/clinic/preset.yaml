@@ -21,7 +21,7 @@ tasks:                                    # the structure of a conversation (des
     start_when: the visitor wants to see a doctor or asks for an appointment
     details:                              # collected in this order; the visitor may give them in any order
       - {name: doctor,    type: text,        ask: "Which doctor, or which speciality, would you like to see?"}
-      - {name: day_time,  type: text,        ask: "Which day and time suit you best?"}
+      - {name: appointment_time, type: appointment_time, ask: "Which day and time suit you best?"}
       - {name: name,      type: person_name, ask: "What is the patient's name?"}
       - {name: phone,     type: phone,       ask: "What's the best number to confirm on?"}
     finish_with: submit_request

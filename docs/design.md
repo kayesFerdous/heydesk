@@ -257,9 +257,12 @@ its two probabilities (never the text). `OrderService.place()` accepts only
 detail is asked for, with no Jev call), and once placed clears the task.
 
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
-`person_name`, `phone`, `time_today`), each with a `parse` and a `display`
+`person_name`, `phone`, `time_today`, `appointment_time`), each with a `parse` and a `display`
 (spoken by `speakable()` on voice, D20). A bare "7:30" is the next 7:30 from now, and a time
-that has passed is refused. `next_step(task, filled)` returns the first missing
+that has passed is refused. A time must also be inside the business's opening hours (D31): "tomorrow at 11 pm"
+for a clinic that shuts at 10 is refused with the hours as the hint. `appointment_time` takes a day and
+a time ("tomorrow at 5 pm", "saturday 5pm", "5 Oct 6:30 pm"), Python works out the date, it must be in
+the next 14 days, and a time with no am/pm is asked again, never guessed. `next_step(task, filled)` returns the first missing
 required detail, or None: everything's there, so read it back. The state note and `place_order` both use
 it, so "what do we ask next?" and "can we save?" can't disagree.
 
