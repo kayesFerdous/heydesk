@@ -55,9 +55,9 @@ Taken from the production-grade `frontdesk-api`, one commit each:
 - **D26** start from just a preset; `GET /api/agent` lists what's `missing`
 - **D27** item `attributes`; **D28** `search_items` takes conditions, Python matches; **D29** items from a CSV; **D30** the clinic preset
 
-## Next: what the agent can do, and a knowledge base (RAG)
+## Built 4 Oct: what the agent can do (D32), and a knowledge base (D33–D35)
 
-Decided 4 Oct: Gemini embeddings, text/Markdown/PDF documents, a shared jobs library. One commit per step.
+Decided 4 Oct: Gemini embeddings, Qdrant (hybrid dense + sparse), text/Markdown/PDF documents, a shared jobs library. One commit per step. Built; the live check with Qdrant Cloud waits for `QDRANT_URL` and `QDRANT_API_KEY` in `.env`.
 
 1. **Jobs library (D32).** Order, appointment request and message become jobs in `presets/jobs.yaml`
    (label and a plain sentence for the owner, `start_when`, details, finishing tool, what it needs).

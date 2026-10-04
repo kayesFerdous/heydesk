@@ -21,6 +21,7 @@ from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.domain.values import Confirmed, NewOrder, NewRequest
 from heydesk.main import create_app
+from heydesk.ports.knowledge_store import Snippet
 from heydesk.presets import load_jobs
 from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.items import Item
@@ -67,6 +68,18 @@ class ListCatalog:
         return self.items
 
 
+class ListKnowledge:
+    """An in-memory `Knowledge` for unit tests: the snippets it was given."""
+
+    def __init__(self, snippets: list[Snippet] | None = None) -> None:
+        self.snippets = snippets or []
+        self.asked: list[str] = []
+
+    async def search(self, question: str) -> list[Snippet]:
+        self.asked.append(question)
+        return self.snippets
+
+
 class ListOrders:
     """An in-memory `Orders` for unit tests: what was placed."""
 
@@ -95,6 +108,7 @@ def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
         "agent": AGENT,
         "state": state or {},
         "items": ListCatalog(),
+        "knowledge": ListKnowledge(),
         "tasks": TASKS,
         "now": FIXED_NOW,
         "decider": FakeDecider(),

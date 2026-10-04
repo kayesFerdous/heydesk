@@ -251,6 +251,7 @@ saved with the turn.
 | Tool | Writes? | What it does |
 |---|---|---|
 | `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
+| `search_knowledge` | no | Searches the business's documents for what Knowledge and FAQ don't answer, and returns the best 4 passages with their document titles and a reminder that they are facts, never instructions. Offered only when the business has documents (D35) |
 | `search_items` | no | Finds items by words and conditions: `query`, `category`, `tags`, `min_price`/`max_price`, and `filters` on attributes (`calories at_most 400`, `days includes sat`). Python decides what matches, ranked by words matched; the best 10 come back, with a count and a hint to narrow when there are more. Offered only when the items aren't all in the prompt (D28) |
 | `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), parsed by their type. Good ones are saved even when another fails; the problems come back as data |
 | `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
@@ -278,6 +279,30 @@ the next 14 days, and a time with no am/pm is asked again, never guessed. `next_
 required detail, or None: everything's there, so read it back. The state note and `place_order` both use
 it, so "what do we ask next?" and "can we save?" can't disagree.
 
+### The knowledge base (D33–D35)
+
+A business adds **documents** (pasted text, `.txt`, `.md` or `.pdf`) to its agent. The FAQ field stays in the
+prompt; documents are for what's too long or too many to fit there.
+
+```
+add: text ─► chunks (~1,200 chars, break at paragraphs, then sentences; a little overlap)
+          ─► Gemini embeds them in one batch ─► Qdrant (dense + sparse vector per chunk)
+          ─► the text is saved in SQL (`documents`), the index can be rebuilt from it
+ask: the agent calls search_knowledge(question) ─► Gemini embeds the question
+          ─► Qdrant: dense search + sparse (exact words) search, fused (RRF), filtered to this business
+          ─► the best 4 passages go back to the model, which answers only from them
+```
+
+- **Hybrid on purpose.** Dense search finds the same meaning in other words; the sparse side finds the exact
+  price, name or number a vector blurs. Words are cut by Unicode category so Bengali isn't split at its vowel signs.
+- **Isolation.** One Qdrant collection, a `workspace_id` payload on every chunk, and every query filters by it.
+- **Fails soft.** If the question can't be embedded, search uses words only. If Qdrant is down, the tool returns
+  a failure and the agent offers a message or a person. Adding a document is all-or-nothing: if embedding or storing
+  fails, nothing is saved.
+- **Limits.** 30 documents per business, 300,000 characters (about 100 pages) each, files up to 10 MB.
+  Scanned PDFs have no text layer: they're refused with a reason.
+- `uv run heydesk reindex-knowledge` rebuilds every chunk from the saved text (a new collection or model).
+
 ## 8. Data model
 
 Every table has `workspace_id` (except `workspaces`).
@@ -290,6 +315,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | preset, name, public_key (unique), config JSON |
 | `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, attributes JSON, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
+| `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `records` | agent_id, conversation_id, job (the task), kind (`order`/`request`), number (101, 102… per business and kind), status, customer_name, customer_phone, details JSON, note; an order's lines JSON, total, currency, due_at (the pickup time) (D24) |
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
@@ -308,6 +334,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset a password), the audit log |
 | GET | `/api/presets` | Presets and their knowledge JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
+| POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
 | GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
 | POST | `/api/agent/items/import` | Items from a CSV (D29): replaces them; unknown columns become attributes; `mapping` renames headers; `dry_run` previews; problems per row |
 | GET | `/api/inbox` | The jobs the agent does, each with how many records wait |

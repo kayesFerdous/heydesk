@@ -28,7 +28,15 @@ from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.prompt import state_note
 from heydesk.runtime.tasks import Task
-from heydesk.runtime.tool import Catalog, Orders, Requests, Tool, ToolContext, run_tool
+from heydesk.runtime.tool import (
+    Catalog,
+    Knowledge,
+    Orders,
+    Requests,
+    Tool,
+    ToolContext,
+    run_tool,
+)
 from heydesk.runtime.trace import Trace
 
 MAX_MODEL_CALLS = 6  # rule 9
@@ -52,6 +60,7 @@ class TurnInput:
     channel: str
     agent: AgentConfig
     items: Catalog  # the agent's items, for the tools
+    knowledge: Knowledge  # the agent's documents, for search_knowledge
     orders: Orders  # where place_order saves
     requests: Requests  # where submit_request saves
     tasks: dict[str, Task]  # the preset's tasks
@@ -112,6 +121,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 turn.agent,
                 state,
                 turn.items,
+                turn.knowledge,
                 turn.tasks,
                 turn.now,
                 rt.decider,

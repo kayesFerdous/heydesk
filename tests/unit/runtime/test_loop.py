@@ -15,7 +15,16 @@ from heydesk.ports.llm import (
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
 from heydesk.tools import details, handoff, order
-from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog, ListOrders, ListRequests
+from tests.conftest import (
+    AGENT,
+    CART,
+    FIXED_NOW,
+    TASKS,
+    ListCatalog,
+    ListKnowledge,
+    ListOrders,
+    ListRequests,
+)
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -27,6 +36,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "channel": "web",
         "agent": AGENT,
         "items": ListCatalog(),
+        "knowledge": ListKnowledge(),
         "orders": ListOrders(),
         "requests": ListRequests(),
         "tools": [],

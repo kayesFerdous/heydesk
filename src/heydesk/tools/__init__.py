@@ -2,13 +2,22 @@
 
 from heydesk.runtime.tasks import Task
 from heydesk.runtime.tool import Tool
-from heydesk.tools import details, handoff, items, order, place_order, submit_request
+from heydesk.tools import (
+    details,
+    handoff,
+    items,
+    knowledge,
+    order,
+    place_order,
+    submit_request,
+)
 
 TOOLS: dict[str, Tool] = {
     tool.name: tool
     for tool in (
         order.TOOL,
         items.TOOL,
+        knowledge.TOOL,
         details.TOOL,
         place_order.TOOL,
         submit_request.TOOL,
@@ -17,10 +26,11 @@ TOOLS: dict[str, Tool] = {
 }
 
 
-def tools_for(tasks: dict[str, Task], *, search: bool) -> list[Tool]:
+def tools_for(tasks: dict[str, Task], *, search: bool, documents: bool = False) -> list[Tool]:
     """The tools an agent needs for its jobs (D32): each job's finishing tool, `update_order`
     for a job that takes a cart, `set_details` for any job, `search_items` when the items
-    aren't all in the prompt, and hand-off always. In `TOOLS` order."""
+    aren't all in the prompt, `search_knowledge` when there are documents (D35), and hand-off
+    always. In `TOOLS` order."""
     names = {"handoff_to_human"}
     if tasks:
         names.add("set_details")
@@ -30,4 +40,6 @@ def tools_for(tasks: dict[str, Task], *, search: bool) -> list[Tool]:
             names.add("update_order")
     if search:
         names.add("search_items")
+    if documents:
+        names.add("search_knowledge")
     return [tool for name, tool in TOOLS.items() if name in names]

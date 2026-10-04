@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
-from heydesk.models import Agent, Workspace
+from heydesk.models import Agent, Document, Workspace
 from heydesk.presets import Preset, load_jobs
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item, render_items
@@ -38,6 +38,7 @@ class LiveAgent:
     tasks: dict[str, Task]  # from the preset
     knowledge: str  # rendered for the prompt, items included
     items_in_prompt: bool  # every item is listed, so `search_items` isn't needed (D17)
+    documents: list[str]  # the titles of its documents; any means `search_knowledge` (D35)
 
     @property
     def greeting(self) -> str:
@@ -195,6 +196,14 @@ class AgentService:
         config = AgentConfig.model_validate(agent.config)
         preset = self.presets[config.preset]
         items = await self.items.all(agent.workspace_id, agent.id)
+        async with self.sessions() as s:
+            titles = list(
+                await s.scalars(
+                    select(Document.title)
+                    .where(Document.agent_id == agent.id)
+                    .order_by(Document.created_at)
+                )
+            )
         in_prompt = len(items) <= self.max_items_in_prompt
         knowledge = "\n\n".join(
             [
@@ -210,6 +219,7 @@ class AgentService:
             enabled_jobs(config),
             knowledge,
             in_prompt,
+            titles,
         )
 
     async def ensure_dev_agent(self, preset_id: str, seed_path: str | Path) -> LiveAgent:

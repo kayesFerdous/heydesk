@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.errors import ConversationFull, HeyDeskError, NotFound
 from heydesk.models import Conversation
+from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.events import Event, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -28,7 +29,18 @@ log = logging.getLogger(__name__)
 
 def enabled_tools(agent: LiveAgent) -> list[Tool]:
     """The tools the agent's jobs need. `search_items` only when the items aren't all listed."""
-    return tools_for(agent.tasks, search=not agent.items_in_prompt)
+    return tools_for(agent.tasks, search=not agent.items_in_prompt, documents=bool(agent.documents))
+
+
+@dataclass(frozen=True)
+class ConversationKnowledge:
+    """One business's documents, for `search_knowledge` (`runtime.tool.Knowledge`)."""
+
+    service: KnowledgeService
+    workspace_id: str
+
+    async def search(self, question: str) -> list[Snippet]:
+        return await self.service.search(self.workspace_id, question)
 
 
 @dataclass
@@ -87,7 +99,9 @@ class ConversationService:
         now = self.now()
         records = self.records.for_conversation(agent.workspace_id, agent.agent_id, conv.id)
         turn = TurnInput(
-            system=build_system_prompt(agent.config, agent.tasks, agent.knowledge, channel, now),
+            system=build_system_prompt(
+                agent.config, agent.tasks, agent.knowledge, channel, now, agent.documents
+            ),
             tools=enabled_tools(agent),
             model=self.settings.MODEL,
             history=conv.messages,
@@ -95,6 +109,7 @@ class ConversationService:
             channel=channel,
             agent=agent.config,
             items=self.items.catalog(agent.workspace_id, agent.agent_id),
+            knowledge=ConversationKnowledge(self.knowledge, agent.workspace_id),
             orders=records,
             requests=records,
             tasks=agent.tasks,

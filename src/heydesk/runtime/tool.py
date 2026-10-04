@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from heydesk.domain.values import Confirmed, NewOrder, NewRequest
 from heydesk.ports.decider import Decider
+from heydesk.ports.knowledge_store import Snippet
 from heydesk.ports.llm import ToolCall, ToolSpec
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
@@ -28,6 +29,12 @@ class Catalog(Protocol):
 
     async def get(self, codes: list[str]) -> dict[str, Item]: ...  # by code; unknown codes left out
     async def all(self) -> list[Item]: ...  # in the business's order
+
+
+class Knowledge(Protocol):
+    """One agent's documents, searched (D35). A service implements it over Qdrant."""
+
+    async def search(self, question: str) -> list[Snippet]: ...  # the best few, most relevant first
 
 
 class Orders(Protocol):
@@ -47,7 +54,8 @@ class ToolContext:
     agent: AgentConfig
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     items: Catalog
-    tasks: dict[str, Task]  # the preset's tasks
+    knowledge: Knowledge
+    tasks: dict[str, Task]  # the agent's jobs that are on
     now: datetime  # when the turn started, in UTC
     decider: Decider  # for the commit check
     orders: Orders
