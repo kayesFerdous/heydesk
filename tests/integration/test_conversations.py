@@ -92,14 +92,11 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
     assert "Next: ask for the pickup time." in world.llm.requests[1].system
 
 
-async def test_items_are_searched_in_the_database(world: World) -> None:
+async def test_a_catalog_only_gives_its_own_workspaces_items(world: World) -> None:
     agent = await world.services.agents.by_key(DEV_KEY)
-    catalog = world.services.items.catalog(DEV_WORKSPACE_ID, agent.agent_id)
-
-    # Borhani's description says "the classic with biryani"
-    assert [i.code for i in await catalog.search("biryanis")] == ["chk-biryani", "borhani"]
-    vegetarian = await catalog.search("Vegetarian")  # matches the tags too
-    assert len(vegetarian) == 6 and "chk-biryani" not in {i.code for i in vegetarian}
-    assert await catalog.search("pizza") == []
+    mine = world.services.items.catalog(DEV_WORKSPACE_ID, agent.agent_id)
     other = world.services.items.catalog("someone-else", agent.agent_id)
-    assert await other.get(["chk-biryani"]) == {}  # rule 6: workspace_id on every query
+
+    assert len(await mine.all()) == 10 and "chk-biryani" in await mine.get(["chk-biryani"])
+    assert await other.all() == []  # rule 6: workspace_id on every query
+    assert await other.get(["chk-biryani"]) == {}

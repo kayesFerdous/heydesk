@@ -27,7 +27,7 @@ class Catalog(Protocol):
     """One agent's items, as tools see them. A service implements it over the database."""
 
     async def get(self, codes: list[str]) -> dict[str, Item]: ...  # by code; unknown codes left out
-    async def search(self, query: str) -> list[Item]: ...
+    async def all(self) -> list[Item]: ...  # in the business's order
 
 
 class Orders(Protocol):

@@ -2,13 +2,11 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, String, cast, delete, func, or_, select
+from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.models import ItemRow
 from heydesk.runtime.items import Item
-
-SEARCH_LIMIT = 10
 
 
 def to_item(row: ItemRow) -> Item:
@@ -59,28 +57,7 @@ class AgentCatalog:
             rows = await s.scalars(select(ItemRow).where(*self._mine(), ItemRow.code.in_(codes)))
             return {row.code: to_item(row) for row in rows}
 
-    async def search(self, query: str) -> list[Item]:
-        """Items whose name, category, description or tags contain any of the words.
-
-        Plain word matching, no ranking (design §12). "biryanis" finds "biryani".
-        """
-        words = [w.removesuffix("s") if len(w) > 3 else w for w in query.lower().split()][:5]
-        if not words:
-            return []
-        text = func.lower(
-            ItemRow.name
-            + " "
-            + ItemRow.category
-            + " "
-            + ItemRow.description
-            + " "
-            + cast(ItemRow.tags, String)
-        )
+    async def all(self) -> list[Item]:
         async with self.sessions() as s:
-            rows = await s.scalars(
-                select(ItemRow)
-                .where(*self._mine(), or_(*(text.contains(w, autoescape=True) for w in words)))
-                .order_by(ItemRow.position)
-                .limit(SEARCH_LIMIT)
-            )
+            rows = await s.scalars(select(ItemRow).where(*self._mine()).order_by(ItemRow.position))
             return [to_item(row) for row in rows]

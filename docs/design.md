@@ -129,7 +129,7 @@ second is a 409.
 (validates; live from the next message), `get`, `by_key` (the config plus its
 rendered knowledge and items). There is no publish step and no versions (D15).
 **`ItemService`** (`services/items.py`) saves an agent's items and gives its
-tools a `Catalog`: `get(codes)` and `search(query)`, always scoped to one
+tools a `Catalog`: `get(codes)` and `all()`, always scoped to one
 workspace and agent.
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev`
@@ -209,7 +209,7 @@ service passes the built ones to the turn.
 class ToolContext:
     agent: AgentConfig
     state: dict                    # the conversation state so far
-    items: Catalog                 # this agent's items: get(codes), search(query)
+    items: Catalog                 # this agent's items: get(codes), all()
     tasks: dict[str, Task]         # the preset's tasks
     now: datetime                  # when the turn started, UTC
 
@@ -239,7 +239,7 @@ saved with the turn.
 | Tool | Writes? | What it does |
 |---|---|---|
 | `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
-| `search_items` | no | Finds items by words in their name, category, description or tags (up to 10). Offered only when the items aren't all in the prompt |
+| `search_items` | no | Finds items by words and conditions: `query`, `category`, `tags`, `min_price`/`max_price`, and `filters` on attributes (`calories at_most 400`, `days includes sat`). Python decides what matches, ranked by words matched; the best 10 come back, with a count and a hint to narrow when there are more. Offered only when the items aren't all in the prompt (D28) |
 | `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), parsed by their type. Good ones are saved even when another fails; the problems come back as data |
 | `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
 | `submit_request` | **yes** | Same for a message to the team (receptionist) |
@@ -371,7 +371,7 @@ version handles them.
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
-| Ranked or fuzzy item search | `search_items` matches words (`LIKE`), at most 10, in the business's order |
+| Fuzzy or semantic item search | `search_items` matches words and conditions exactly (no typos, no synonyms); "something light" finds nothing unless the business's words or tags say so |
 | Loading only the items a turn needs | Every turn reads all of an agent's items to build the prompt; fine for hundreds |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |

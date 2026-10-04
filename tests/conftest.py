@@ -60,8 +60,8 @@ class ListCatalog:
     async def get(self, codes: list[str]) -> dict[str, Item]:
         return {i.code: i for i in self.items if i.code in codes}
 
-    async def search(self, query: str) -> list[Item]:
-        return [i for i in self.items if query.lower() in i.name.lower()]
+    async def all(self) -> list[Item]:
+        return self.items
 
 
 class ListOrders:
