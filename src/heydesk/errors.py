@@ -41,6 +41,12 @@ class Conflict(HeyDeskError):
     code = "conflict"
 
 
+class InvalidTransition(Conflict):
+    """A status change a record doesn't allow, such as a collected order becoming ready."""
+
+    code = "invalid_transition"
+
+
 class ConversationFull(HeyDeskError):
     """A conversation reached MAX_TURNS: every turn sends the whole transcript (D21)."""
 

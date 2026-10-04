@@ -19,8 +19,7 @@ from heydesk.runtime.prompt import build_system_prompt
 from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
 from heydesk.services.items import ItemService
-from heydesk.services.orders import OrderService
-from heydesk.services.requests import RequestService
+from heydesk.services.records import RecordService
 from heydesk.tools import TOOLS
 
 log = logging.getLogger(__name__)
@@ -47,16 +46,14 @@ class ConversationService:
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
         items: ItemService,
-        orders: OrderService,
-        requests: RequestService,
+        records: RecordService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.runtime = runtime
         self.items = items
-        self.orders = orders
-        self.requests = requests
+        self.records = records
         self.settings = settings
         self.now = now
 
@@ -88,6 +85,7 @@ class ConversationService:
                 s.add(conv)
 
         now = self.now()
+        records = self.records.for_conversation(agent.workspace_id, agent.agent_id, conv.id)
         turn = TurnInput(
             system=build_system_prompt(agent.config, agent.tasks, agent.knowledge, channel, now),
             tools=enabled_tools(agent),
@@ -97,8 +95,8 @@ class ConversationService:
             channel=channel,
             agent=agent.config,
             items=self.items.catalog(agent.workspace_id, agent.agent_id),
-            orders=self.orders.for_conversation(agent.workspace_id, agent.agent_id, conv.id),
-            requests=self.requests.for_conversation(agent.workspace_id, agent.agent_id, conv.id),
+            orders=records,
+            requests=records,
             tasks=agent.tasks,
             now=now,
             state=conv.state,

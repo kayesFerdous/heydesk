@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from heydesk.models import VisitorRequest
+from heydesk.models import Record
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import SEED, World
@@ -29,9 +29,9 @@ async def message_then(world: World, reply: str) -> str:
     return turn.conversation_id
 
 
-async def requests(world: World) -> list[VisitorRequest]:
+async def requests(world: World) -> list[Record]:
     async with world.sessions() as s:
-        return list(await s.scalars(select(VisitorRequest)))
+        return list(await s.scalars(select(Record).where(Record.kind == "request")))
 
 
 async def test_a_yes_saves_the_message(world: World) -> None:
@@ -40,7 +40,12 @@ async def test_a_yes_saves_the_message(world: World) -> None:
 
     [saved] = await requests(world)
     assert (saved.workspace_id, saved.conversation_id) == (DEV_WORKSPACE_ID, conv_id)
-    assert (saved.task, saved.name, saved.phone) == ("message", "Kayes", "01712345678")
+    assert (saved.job, saved.customer_name, saved.customer_phone, saved.number) == (
+        "message",
+        "Kayes",
+        "01712345678",
+        101,
+    )
     assert saved.details == {"body": "Please call me about my tax return"}
 
 

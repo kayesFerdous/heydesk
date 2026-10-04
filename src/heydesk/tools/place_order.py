@@ -19,7 +19,7 @@ class PlaceOrderInput(BaseModel):
 async def place_order(ctx: ToolContext, args: PlaceOrderInput) -> ToolResult:
     task_id = current_task(ctx.tasks, ctx.state)
     task = ctx.tasks[task_id] if task_id else None
-    if task is None or task.finish_with != "place_order":
+    if task_id is None or task is None or task.finish_with != "place_order":
         return fail("There's no order yet. Take it with update_order first.")
     have = filled_details(task, ctx.state)
     missing = next_step(task, have)  # the same answer the state note gives
@@ -38,6 +38,7 @@ async def place_order(ctx: ToolContext, args: PlaceOrderInput) -> ToolResult:
         customer_name=have["name"],
         customer_phone=have["phone"],
         note=have.get("note", ""),
+        task=task_id,
     )
     details = "; ".join(describe(task, have, ctx.agent.currency))
     confirmed = await confirm(ctx.decider, order, details, ctx.agent_said, ctx.visitor_said)

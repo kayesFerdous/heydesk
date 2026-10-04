@@ -64,7 +64,7 @@ async def test_what_an_admin_changes_or_opens_is_in_the_audit_log(
     conv_id = await place_an_order(app, client)
     admin = await as_admin(app, DEV_WORKSPACE_ID)
 
-    await admin.get("/api/orders")  # a list: not logged
+    await admin.get("/api/records")  # a list: not logged
     await admin.get(f"/api/conversations/{conv_id}")  # one chat opened
     await admin.patch("/api/agent", json={"faq": "Open on Eid."})  # a write
 

@@ -33,6 +33,11 @@ class Task(BaseModel):
     details: list[Detail]  # asked in this order
     finish_with: str  # the tool that saves it: "place_order"
 
+    @property
+    def kind(self) -> str:
+        """What it leaves for the business: an `order` (place_order) or a `request`."""
+        return "order" if self.finish_with == "place_order" else "request"
+
 
 def current_task(tasks: dict[str, Task], state: dict[str, Any]) -> str | None:
     """The task `set_details` started; or, once there's a cart, the task that collects one."""

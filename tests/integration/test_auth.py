@@ -35,7 +35,7 @@ async def test_login_gives_a_token_that_works(app: FastAPI, client: AsyncClient)
 
     token = (await client.post("/api/auth/login", json=login)).json()["token"]
 
-    me = await second.get("/api/orders", headers={"Authorization": f"Bearer {token}"})
+    me = await second.get("/api/records", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     await second.aclose()
 
@@ -62,13 +62,14 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     app: FastAPI, client: AsyncClient
 ) -> None:
     conv_id = await place_an_order(app, client)
-    [order] = (await client.get("/api/orders")).json()
+    [order] = (await client.get("/api/records")).json()
     second = await as_second_account(app)
 
-    for path in ("/api/orders", "/api/requests", "/api/conversations"):
+    for path in ("/api/records", "/api/conversations"):
         assert (await second.get(path)).json() == [], path
     assert (await second.get(f"/api/conversations/{conv_id}")).status_code == 404
-    moved = await second.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
+    assert (await second.get(f"/api/records/{order['id']}")).status_code == 404
+    moved = await second.patch(f"/api/records/{order['id']}", json={"status": "cancelled"})
     assert moved.status_code == 404
-    assert (await client.get("/api/orders")).json()[0]["status"] == "new"
+    assert (await client.get("/api/records")).json()[0]["status"] == "new"
     await second.aclose()

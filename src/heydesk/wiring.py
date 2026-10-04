@@ -24,8 +24,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.items import ItemService
-from heydesk.services.orders import OrderService
-from heydesk.services.requests import RequestService
+from heydesk.services.records import RecordService
 from heydesk.services.users import UserService
 
 
@@ -72,16 +71,12 @@ def build_services(
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     items = ItemService(sessions)
-    orders = OrderService(sessions, now)
-    requests = RequestService(sessions, now)
+    records = RecordService(sessions, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
-        conversations=ConversationService(
-            sessions, runtime, items, orders, requests, settings, now
-        ),
+        conversations=ConversationService(sessions, runtime, items, records, settings, now),
         items=items,
-        orders=orders,
-        requests=requests,
+        records=records,
         users=UserService(sessions, settings.jwt_secret, now),
     )

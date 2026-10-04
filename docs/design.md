@@ -262,8 +262,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | preset, name, public_key (unique), config JSON |
 | `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
-| `orders` | agent_id, conversation_id, number (101, 102… per agent), lines JSON, total, currency, pickup_time, customer_name, customer_phone, note, status |
-| `requests` | conversation_id, task, details JSON, name, phone, status |
+| `records` | agent_id, conversation_id, job (the task), kind (`order`/`request`), number (101, 102… per business and kind), status, customer_name, customer_phone, details JSON, note; an order's lines JSON, total, currency, due_at (the pickup time) (D24) |
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
 business's timezone. JSON columns: assign a new value to change one, because
@@ -282,8 +281,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/presets` | Presets and their knowledge JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
 | GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
-| GET/PATCH | `/api/orders…` | Orders (newest first), and an order's status |
-| GET | `/api/requests` | Messages for the team |
+| GET | `/api/inbox` | The jobs the agent does, each with how many records wait |
+| GET/PATCH | `/api/records…` | Orders and messages, newest first (`?job=&status=&q=`); one record; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET | `/health` | DB reachable |
 
@@ -301,7 +300,9 @@ answers 404 `unavailable`; its owner can still log in.
 `uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
-for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21).
+for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21). A status
+change a record doesn't allow is a 409 `invalid_transition` (an order: new →
+ready → collected, or cancelled; a message: new → handled → archived).
 
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 `handoff {message, phone}`, `done {interrupted}`, `error {message}`.

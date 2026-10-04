@@ -152,6 +152,12 @@ class AgentService:
         async with self.sessions() as s:
             return _info(await self._get(s, ws))
 
+    async def tasks(self, ws: str) -> dict[str, Task]:
+        """The jobs the business's agent does: its preset's tasks."""
+        async with self.sessions() as s:
+            agent = await self._get(s, ws)
+        return self.presets[agent.preset].tasks
+
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:
             agent = await s.scalar(select(Agent).where(Agent.public_key == key))

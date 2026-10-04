@@ -27,6 +27,7 @@ class NewOrder:
     customer_name: str
     customer_phone: str
     note: str = ""
+    task: str = "order"  # the job it belongs to
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
-"""What the agents took: orders, messages for the team, and conversations (design §9)."""
+"""What the agent took (orders and messages, one inbox) and conversations (design §9)."""
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,41 +11,39 @@ from heydesk.api.deps import Svc, Workspace
 
 router = APIRouter(tags=["records"])
 
-type OrderStatus = Literal["new", "ready", "collected", "cancelled"]
 
-
-class OrderOut(BaseModel):
+class RecordOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     conversation_id: str
-    number: int
-    lines: list[dict[str, Any]]  # {code, name, quantity, price}
-    total: int  # minor units
-    currency: str
-    pickup_time: datetime  # UTC
+    job: str  # which task made it: "order", "message"
+    kind: Literal["order", "request"]
+    number: int  # what the visitor was told
+    status: str
     customer_name: str
     customer_phone: str
+    details: dict[str, Any]  # a request's: label → value
     note: str
-    status: str
+    # An order's; empty for a request
+    lines: list[dict[str, Any]] | None  # {code, name, quantity, price}
+    total: int | None  # minor units
+    currency: str | None
+    due_at: datetime | None  # the pickup time, UTC
     created_at: datetime
+    updated_at: datetime
 
 
 class StatusIn(BaseModel):
-    status: OrderStatus
+    status: str  # where it may go depends on its kind: see the 409 message
 
 
-class RequestOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    conversation_id: str
-    task: str
-    details: dict[str, str]
-    name: str
-    phone: str
-    status: str
-    created_at: datetime
+class InboxOut(BaseModel):
+    job: str
+    title: str
+    kind: Literal["order", "request"]
+    waiting: int  # new orders or messages
+    total: int
 
 
 class ConversationOut(BaseModel):
@@ -64,23 +63,37 @@ class Line(BaseModel):
 
 class ConversationWithMessages(ConversationOut):
     messages: list[Line]  # what was said; tool calls and results left out
-    orders: list[OrderOut]
-    requests: list[RequestOut]
+    records: list[RecordOut]
 
 
-@router.get("/api/orders")
-async def orders(services: Svc, ws: Workspace) -> list[OrderOut]:
-    return [OrderOut.model_validate(o) for o in await services.orders.list(ws)]
+@router.get("/api/inbox")
+async def inbox(services: Svc, ws: Workspace) -> list[InboxOut]:
+    """The sidebar: each job the agent does, with how many are waiting."""
+    tasks = await services.agents.tasks(ws)
+    return [InboxOut.model_validate(asdict(e)) for e in await services.records.inbox(ws, tasks)]
 
 
-@router.patch("/api/orders/{order_id}")
-async def set_order_status(order_id: str, body: StatusIn, services: Svc, ws: Workspace) -> OrderOut:
-    return OrderOut.model_validate(await services.orders.set_status(ws, order_id, body.status))
+@router.get("/api/records")
+async def records(
+    services: Svc,
+    ws: Workspace,
+    job: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> list[RecordOut]:
+    """Orders and messages, newest first. `q` matches the number, name or phone."""
+    found = await services.records.find(ws, job=job, status=status, q=q)
+    return [RecordOut.model_validate(r) for r in found]
 
 
-@router.get("/api/requests")
-async def requests(services: Svc, ws: Workspace) -> list[RequestOut]:
-    return [RequestOut.model_validate(r) for r in await services.requests.list(ws)]
+@router.get("/api/records/{record_id}")
+async def record(record_id: str, services: Svc, ws: Workspace) -> RecordOut:
+    return RecordOut.model_validate(await services.records.get(ws, record_id))
+
+
+@router.patch("/api/records/{record_id}")
+async def set_status(record_id: str, body: StatusIn, services: Svc, ws: Workspace) -> RecordOut:
+    return RecordOut.model_validate(await services.records.set_status(ws, record_id, body.status))
 
 
 @router.get("/api/conversations")
@@ -106,11 +119,9 @@ async def conversation(
         and m["content"].strip()
         and not m.get("tool_calls")
     ]
-    orders = await services.orders.list(ws, conversation_id=conv.id)
-    requests = await services.requests.list(ws, conversation_id=conv.id)
+    made = await services.records.find(ws, conversation_id=conv.id)
     return ConversationWithMessages(
         **ConversationOut.model_validate(conv).model_dump(),
         messages=said,
-        orders=[OrderOut.model_validate(o) for o in orders],
-        requests=[RequestOut.model_validate(r) for r in requests],
+        records=[RecordOut.model_validate(r) for r in made],
     )

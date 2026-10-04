@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from heydesk.models import Conversation, Order
+from heydesk.models import Conversation, Record
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY, World
@@ -34,9 +34,9 @@ async def order_then(world: World, reply: str) -> str:
     return conv_id
 
 
-async def orders(world: World) -> list[Order]:
+async def orders(world: World) -> list[Record]:
     async with world.sessions() as s:
-        return list(await s.scalars(select(Order)))
+        return list(await s.scalars(select(Record).where(Record.kind == "order")))
 
 
 async def test_a_yes_saves_one_order(world: World) -> None:
@@ -45,7 +45,12 @@ async def test_a_yes_saves_one_order(world: World) -> None:
 
     [order] = await orders(world)
     assert (order.workspace_id, order.conversation_id) == (DEV_WORKSPACE_ID, conv_id)
-    assert (order.number, order.total, order.customer_name) == (101, 103000, "Kayes")
+    assert (order.job, order.number, order.total, order.customer_name) == (
+        "order",
+        101,
+        103000,
+        "Kayes",
+    )
     # Jev saw the read-back and the yes
     [asked] = world.decider.asked
     assert (asked["agent_last_message"], asked["visitor_reply"]) == (READ_BACK, "yes")
