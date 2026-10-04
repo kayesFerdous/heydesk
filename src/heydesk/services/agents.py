@@ -51,6 +51,7 @@ class AgentInfo:
     id: str
     public_key: str
     config: AgentConfig
+    missing: list[str]  # what the owner still has to fill in, in plain words
 
 
 def config_from_preset(preset: Preset, overrides: dict[str, Any]) -> dict[str, Any]:
@@ -86,8 +87,19 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
     return config
 
 
-def _info(agent: Agent) -> AgentInfo:
-    return AgentInfo(agent.id, agent.public_key, AgentConfig.model_validate(agent.config))
+def missing_setup(config: AgentConfig, preset: Preset, item_count: int) -> list[str]:
+    """What's left before the agent can do its job well, in the owner's words. The agent
+    answers meanwhile (there's no publish step, D15); this is what the setup screen shows."""
+    missing = []
+    if not str(config.knowledge.get("address", "")).strip():
+        missing.append("Add your address.")
+    if not any(config.knowledge.get("hours", {}).values()):
+        missing.append("Add your opening hours.")
+    if item_count == 0:
+        missing.append(f"Add your {preset.items_label.lower()}.")
+    if not (config.handoff.phone or config.handoff.email):
+        missing.append("Add a phone number or email for when someone needs a person.")
+    return missing
 
 
 def _fields(error: ValidationError, prefix: str = "") -> dict[str, str]:
@@ -121,6 +133,11 @@ class AgentService:
         self, ws: str, preset_id: str, overrides: dict[str, Any], *, public_key: str | None = None
     ) -> str:
         """The business's agent. A business has only one (D22)."""
+        async with self.sessions() as s:
+            business = await s.get(Workspace, ws)
+        name = business.name if business else ws
+        # A business starts from just its preset: the name comes from signup (D26)
+        overrides = {"business_name": name, "name": f"{name} assistant", **overrides}
         config = validate(config_from_preset(self._preset(preset_id), overrides), self.presets)
         now = self.now()
         agent = Agent(
@@ -150,7 +167,11 @@ class AgentService:
 
     async def get(self, ws: str) -> AgentInfo:
         async with self.sessions() as s:
-            return _info(await self._get(s, ws))
+            agent = await self._get(s, ws)
+        config = AgentConfig.model_validate(agent.config)
+        count = len(await self.items.all(ws, agent.id))
+        missing = missing_setup(config, self.presets[config.preset], count)
+        return AgentInfo(agent.id, agent.public_key, config, missing)
 
     async def tasks(self, ws: str) -> dict[str, Task]:
         """The jobs the business's agent does: its preset's tasks."""

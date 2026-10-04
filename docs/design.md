@@ -81,6 +81,12 @@ and the owner's **notes**; plus `instructions` (the role text) and `tools` (a
 list of names), which come from the preset. One model serves every agent
 (`MODEL` in `.env`).
 
+**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"preset": "restaurant"}`:
+the business name comes from signup, and the knowledge starts empty. `GET /api/agent`
+then says what's `missing`, in plain words ("Add your address.", "Add your menu."); it's
+empty when the agent is set up. There's no publish step (D15): the agent answers from
+the start, and what's not filled in is simply not in its prompt.
+
 **Owners never meet a technical setting** (D25). An owner edits their business:
 greeting, knowledge, FAQ, items, hand-off, and `notes` (tone and rules in their
 own words, put in the prompt right after the role text). `instructions` and

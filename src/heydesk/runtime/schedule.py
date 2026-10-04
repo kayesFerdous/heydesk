@@ -23,6 +23,10 @@ class WeeklyHours(BaseModel):
     sat: Hours | None = None
     sun: Hours | None = None
 
+    def is_set(self) -> bool:
+        """False until at least one day has hours."""
+        return any(getattr(self, day) for day in DAYS)
+
     def render(self) -> str:
         """One entry per day: "Mon 11:00–22:00, Tue 11:00–22:00, …, Sun closed"."""
         parts = []

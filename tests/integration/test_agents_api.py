@@ -8,6 +8,8 @@ from httpx import ASGITransport, AsyncClient
 
 from tests.conftest import DEV_KEY, SEED, new_business
 
+ITEM = {"code": "tea", "name": "Tea", "price": 3000, "category": "Drinks"}
+
 
 def restaurant() -> dict[str, Any]:
     seed = yaml.safe_load(SEED.read_text(encoding="utf-8"))
@@ -56,7 +58,6 @@ async def test_a_business_has_one_agent(client: AsyncClient) -> None:
 
 async def test_problems_come_back_per_field(client: AsyncClient) -> None:
     body = restaurant()
-    del body["config"]["knowledge"]["address"]
     body["config"]["knowledge"]["hours"] = {"mon": "closed"}
 
     response = await client.post("/api/agent", json=body)
@@ -64,7 +65,7 @@ async def test_problems_come_back_per_field(client: AsyncClient) -> None:
     assert response.status_code == 422
     error = response.json()["error"]
     assert error["code"] == "invalid_config"
-    assert set(error["fields"]) == {"knowledge.address", "knowledge.hours.mon"}
+    assert set(error["fields"]) == {"knowledge.hours.mon"}
 
 
 async def test_a_new_price_is_quoted_on_the_next_message(app: FastAPI, client: AsyncClient) -> None:
@@ -116,3 +117,34 @@ async def test_an_admin_may_change_the_role_text(app: FastAPI) -> None:
 
     assert changed.json()["config"]["instructions"] == "You are the host."
     await admin.aclose()
+
+
+async def test_a_business_starts_from_just_a_preset_and_is_told_what_is_missing(
+    app: FastAPI,
+) -> None:
+    shop = await new_business(app)
+    try:
+        created = await shop.post("/api/agent", json={"preset": "restaurant"})
+        agent = created.json()
+
+        assert created.status_code == 201
+        assert agent["config"]["business_name"] == "Cafe"  # from signup
+        assert agent["config"]["name"] == "Cafe assistant"
+        assert agent["missing"] == [
+            "Add your address.",
+            "Add your opening hours.",
+            "Add your menu.",
+            "Add a phone number or email for when someone needs a person.",
+        ]
+        # It already answers; the menu and hours are simply not in its prompt yet
+        live = await app.state.services.agents.by_key(agent["public_key"])
+        assert "Address:" not in live.knowledge and "Opening hours" not in live.knowledge
+
+        knowledge = {"address": "1 Lake Road", "hours": {"mon": ["09:00", "17:00"]}}
+        await shop.patch("/api/agent", json={"knowledge": knowledge})
+        await shop.patch("/api/agent", json={"handoff": {"phone": "+880 1700 000000"}})
+        await shop.put("/api/agent/items", json=[ITEM])
+
+        assert (await shop.get("/api/agent")).json()["missing"] == []
+    finally:
+        await shop.aclose()

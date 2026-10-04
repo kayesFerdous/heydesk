@@ -51,9 +51,9 @@ def test_render_is_compact_and_deterministic() -> None:
 
 def test_problems_come_back_per_field() -> None:
     knowledge = seed_config()["knowledge"]
-    del knowledge["address"]
+    knowledge["hours"] = {"mon": "closed"}
     data = seed_config(knowledge=knowledge) | {"tools": ["create_booking"]}
 
     with pytest.raises(InvalidConfig) as caught:
         validate(data, load_presets())
-    assert set(caught.value.fields) == {"knowledge.address", "tools.create_booking"}
+    assert set(caught.value.fields) == {"knowledge.hours.mon", "tools.create_booking"}

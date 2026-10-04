@@ -30,17 +30,18 @@ def owners_may_set(who: User, fields: dict[str, Any]) -> None:
 
 class AgentIn(BaseModel):
     preset: str
-    config: dict[str, Any]  # AgentConfig fields; what's left out comes from the preset
+    config: dict[str, Any] = {}  # AgentConfig fields; what's left out comes from the preset
     items: list[Item] = []
 
 
 class AgentOut(BaseModel):
     public_key: str  # the chat URL: /api/chat/{public_key}
     config: AgentConfig
+    missing: list[str]  # what's still to fill in, in plain words; empty when set up
 
 
 def out(agent: AgentInfo) -> AgentOut:
-    return AgentOut(public_key=agent.public_key, config=agent.config)
+    return AgentOut(public_key=agent.public_key, config=agent.config, missing=agent.missing)
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
