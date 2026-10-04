@@ -6,13 +6,14 @@ Edits are live from the next message. Problems come back per field.
 from typing import Any
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, User, Workspace
 from heydesk.errors import Forbidden
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
 from heydesk.services.agents import AgentInfo
+from heydesk.services.item_import import parse_items
 
 router = APIRouter(tags=["agents"])
 
@@ -78,3 +79,34 @@ async def replace_items(body: list[Item], services: Svc, ws: Workspace) -> list[
     agent = await services.agents.get(ws)
     await services.items.replace(ws, agent.id, body)
     return body
+
+
+class ImportIn(BaseModel):
+    csv: str = Field(
+        max_length=2_000_000, description="The file's text: a header row, then one item per row"
+    )
+    mapping: dict[str, str] = Field(
+        default={}, description='Your header → ours: {"Product Title": "name", "MRP": "price"}'
+    )
+    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
+
+
+class ImportOut(BaseModel):
+    saved: bool
+    count: int
+    attributes: list[str]  # the columns that became the items' own facts
+    preview: list[Item]  # the first few items, as they'll be saved
+
+
+@router.post("/api/agent/items/import")
+async def import_items(body: ImportIn, services: Svc, ws: Workspace) -> ImportOut:
+    """Replaces the agent's items with the CSV's. Known columns (name, price, category, tags,
+    description, code, available) are the item's fields; every other column becomes a fact.
+    Problems come back per row and nothing is saved until the file is clean."""
+    agent = await services.agents.get(ws)
+    items, attributes = parse_items(body.csv, body.mapping)
+    if not body.dry_run:
+        await services.items.replace(ws, agent.id, items)
+    return ImportOut(
+        saved=not body.dry_run, count=len(items), attributes=attributes, preview=items[:5]
+    )

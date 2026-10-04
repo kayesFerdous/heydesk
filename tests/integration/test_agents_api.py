@@ -164,3 +164,37 @@ async def test_items_keep_their_own_facts(client: AsyncClient) -> None:
     saved = (await client.get("/api/agent/items")).json()
     assert saved[0]["attributes"] == {"days": ["sat", "sun"], "years": 12}
     assert saved[0]["tags"] == []
+
+
+CSV = "Product Title,MRP,Calories\nOat Bar,120,210\nSalted Chips,৳80,520\n"
+MAP = {"Product Title": "name", "MRP": "price"}
+
+
+async def test_a_csv_replaces_the_items_and_unknown_columns_become_facts(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    done = await client.post("/api/agent/items/import", json={"csv": CSV, "mapping": MAP})
+
+    assert done.status_code == 200
+    out = done.json()
+    assert (out["saved"], out["count"], out["attributes"]) == (True, 2, ["calories"])
+    saved = (await client.get("/api/agent/items")).json()
+    assert [(i["name"], i["price"], i["attributes"]) for i in saved] == [
+        ("Oat Bar", 12000, {"calories": 210}),
+        ("Salted Chips", 8000, {"calories": 520}),
+    ]
+    live = await app.state.services.agents.by_key(DEV_KEY)
+    assert "Oat Bar [oat-bar] ৳120 {calories: 210}" in live.knowledge
+
+
+async def test_a_dry_run_saves_nothing_and_a_bad_file_changes_nothing(client: AsyncClient) -> None:
+    before = (await client.get("/api/agent/items")).json()
+
+    dry = await client.post(
+        "/api/agent/items/import", json={"csv": CSV, "mapping": MAP, "dry_run": True}
+    )
+    bad = await client.post("/api/agent/items/import", json={"csv": "name,price\nTea,lots\n,5\n"})
+
+    assert dry.json()["saved"] is False and len(dry.json()["preview"]) == 2
+    assert bad.status_code == 422 and set(bad.json()["error"]["fields"]) == {"row 2", "row 3"}
+    assert (await client.get("/api/agent/items")).json() == before

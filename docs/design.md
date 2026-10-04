@@ -294,6 +294,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/presets` | Presets and their knowledge JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
 | GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
+| POST | `/api/agent/items/import` | Items from a CSV (D29): replaces them; unknown columns become attributes; `mapping` renames headers; `dry_run` previews; problems per row |
 | GET | `/api/inbox` | The jobs the agent does, each with how many records wait |
 | GET/PATCH | `/api/records…` | Orders and messages, newest first (`?job=&status=&q=`); one record; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
