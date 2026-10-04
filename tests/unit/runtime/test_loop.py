@@ -21,7 +21,6 @@ from tests.conftest import AGENT, CART, FIXED_NOW, TASKS, ListCatalog, ListOrder
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
     fields: dict[str, object] = {
         "system": "SYSTEM",
-        "tools": [],
         "model": "fake",
         "history": [{"role": "user", "content": "earlier"}],
         "user_text": text,
@@ -30,6 +29,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "items": ListCatalog(),
         "orders": ListOrders(),
         "requests": ListRequests(),
+        "tools": [],
         "tasks": TASKS,
         "now": FIXED_NOW,
     }

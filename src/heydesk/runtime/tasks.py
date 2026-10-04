@@ -30,6 +30,7 @@ class Detail(BaseModel):
 
 class Task(BaseModel):
     label: str  # "pickup order"
+    description: str = ""  # for the owner, in plain words
     start_when: str  # "the visitor wants to order food"
     details: list[Detail]  # asked in this order
     finish_with: str  # the tool that saves it: "place_order"

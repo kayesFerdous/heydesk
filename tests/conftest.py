@@ -18,7 +18,7 @@ from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.domain.values import Confirmed, NewOrder, NewRequest
 from heydesk.main import create_app
-from heydesk.presets import load_presets
+from heydesk.presets import load_jobs
 from heydesk.runtime.config import AgentConfig, Handoff
 from heydesk.runtime.items import Item
 from heydesk.runtime.tool import ToolContext
@@ -41,7 +41,7 @@ AGENT = AgentConfig(  # a small config for unit tests
     tools=[],
     handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
 )
-TASKS = load_presets()["restaurant"].tasks  # order and message
+TASKS = {job: load_jobs()[job] for job in ("order", "message")}
 CART = {  # what update_order saves for two biryanis and a borhani
     "lines": [
         {"code": "chk-biryani", "name": "Chicken Biryani", "quantity": 2, "price": 45000},

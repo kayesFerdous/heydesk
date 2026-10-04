@@ -21,8 +21,7 @@ class Preset(BaseModel):
     greeting: str
     instructions: str
     items_label: str = "Items"  # what the prompt calls the business's items: "Menu", "Services"
-    tools: list[str]  # the tools an agent of this kind may use; all on by default
-    tasks: dict[str, Task]
+    jobs: list[str]  # the jobs (from jobs.yaml) an agent of this kind starts with
     knowledge_model: type[BaseModel]  # "module:Class" in the YAML
     render_knowledge: Callable[[Any, str], str]  # "module:function": (knowledge, currency) → text
 
@@ -40,9 +39,19 @@ class Preset(BaseModel):
 
 
 @cache
+def load_jobs() -> dict[str, Task]:
+    """The jobs library: every job any agent can have (D32)."""
+    data = yaml.safe_load((HERE / "jobs.yaml").read_text(encoding="utf-8"))
+    return {job_id: Task.model_validate(job) for job_id, job in data.items()}
+
+
+@cache
 def load_presets() -> dict[str, Preset]:
     presets: dict[str, Preset] = {}
     for path in sorted(HERE.glob("*/preset.yaml")):
         preset = Preset.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        unknown = set(preset.jobs) - set(load_jobs())
+        if unknown:
+            raise ValueError(f"preset {preset.id} names jobs that don't exist: {sorted(unknown)}")
         presets[preset.id] = preset
     return presets

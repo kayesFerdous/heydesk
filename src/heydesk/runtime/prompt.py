@@ -51,14 +51,25 @@ def build_system_prompt(
 
 
 def tasks_section(tasks: dict[str, Task]) -> str:
+    has_cart = any(d.type == "cart" for task in tasks.values() for d in task.details)
+    save = (
+        "update_order for items (the whole order, every time it changes), set_details for "
+        "everything else"
+        if has_cart
+        else "set_details"
+    )
     lines = [
         "# Tasks",
         (
-            "What a visitor can get done here. Whenever the visitor gives you something, save it "
-            "with a tool first, before you reply: update_order for items (the whole order, every "
-            "time it changes), set_details for everything else. Then reply: say what changed "
-            "(after update_order, the order and its total exactly as the tool gave them), and "
-            "ask for the one thing # Conversation state, at the end, says is next."
+            "What a visitor can get done here, and nothing else: for anything else, offer to take "
+            "a message if you can, or a person. Whenever the visitor gives you something, save it "
+            f"with a tool first, before you reply: {save}. Then reply: say what changed"
+            + (
+                " (after update_order, the order and its total exactly as the tool gave them)"
+                if has_cart
+                else ""
+            )
+            + ", and ask for the one thing # Conversation state, at the end, says is next."
         ),
     ]
     for task_id, task in tasks.items():

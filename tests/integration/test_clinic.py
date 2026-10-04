@@ -9,7 +9,7 @@ from heydesk.services.agents import LiveAgent
 from tests.conftest import SEED, World
 
 DETAILS = {
-    "doctor": "Dr. Nasrin Akter",
+    "with": "Dr. Nasrin Akter",
     "appointment_time": "tomorrow at 5 pm",
     "name": "Kayes",
     "phone": "01712345678",
@@ -83,7 +83,7 @@ async def test_an_appointment_request_is_saved_only_after_a_yes(world: World) ->
     [record] = saved
     assert (record.kind, record.job, record.customer_name) == ("request", "appointment", "Kayes")
     assert record.details == {
-        "doctor": "Dr. Nasrin Akter",
+        "with": "Dr. Nasrin Akter",
         "appointment time": "Wed 30 Sep, 5:00 pm",
     }
 

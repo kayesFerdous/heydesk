@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
 from heydesk.models import Agent, Workspace
-from heydesk.presets import Preset
+from heydesk.presets import Preset, load_jobs
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item, render_items
 from heydesk.runtime.tasks import Task
@@ -59,7 +59,7 @@ def config_from_preset(preset: Preset, overrides: dict[str, Any]) -> dict[str, A
     return {
         "greeting": preset.greeting,
         "instructions": preset.instructions,
-        "tools": preset.tools,
+        "jobs": preset.jobs,
         **overrides,
         "preset": preset.id,
     }
@@ -79,12 +79,17 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
         preset.knowledge_model.model_validate(config.knowledge)
     except ValidationError as error:
         problems |= _fields(error, "knowledge")
-    for name in config.tools:
-        if name not in preset.tools:
-            problems[f"tools.{name}"] = f"not available to the {preset.id} preset"
+    for name in config.jobs:
+        if name not in load_jobs():
+            problems[f"jobs.{name}"] = f"there's no job called {name!r}"
     if problems:
         raise InvalidConfig(problems)
     return config
+
+
+def enabled_jobs(config: AgentConfig) -> dict[str, Task]:
+    """The jobs the business has switched on, in the library's order."""
+    return {job_id: job for job_id, job in load_jobs().items() if job_id in config.jobs}
 
 
 def missing_setup(config: AgentConfig, preset: Preset, item_count: int) -> list[str]:
@@ -174,10 +179,10 @@ class AgentService:
         return AgentInfo(agent.id, agent.public_key, config, missing)
 
     async def tasks(self, ws: str) -> dict[str, Task]:
-        """The jobs the business's agent does: its preset's tasks."""
+        """The jobs the business's agent does: the ones switched on."""
         async with self.sessions() as s:
             agent = await self._get(s, ws)
-        return self.presets[agent.preset].tasks
+        return enabled_jobs(AgentConfig.model_validate(agent.config))
 
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:
@@ -202,7 +207,7 @@ class AgentService:
             agent.id,
             agent.public_key,
             config,
-            preset.tasks,
+            enabled_jobs(config),
             knowledge,
             in_prompt,
         )

@@ -12,7 +12,6 @@ def agent(**kw: object) -> AgentConfig:
         "greeting": "Hi!",
         "instructions": "You are the host for {business_name}. Use {braces} as you like.",
         "knowledge": {},
-        "tools": [],
         "faq": "Parking: none.",
     }
     return AgentConfig.model_validate(fields | kw)
@@ -65,7 +64,7 @@ def test_right_now_has_the_channel_the_local_time_and_the_next_two_weeks() -> No
 def test_the_tasks_section_lists_each_task_and_its_details() -> None:
     section = prompt().split("# Tasks\n")[1].split("\n\n")[0]
     assert (
-        "- order (pickup order): when the visitor wants to order food. Details: items (with "
+        "- order (pickup order): when the visitor wants to order food or buy something. Details: items (with "
         "update_order), pickup time, name, phone, note (optional). Finish with place_order."
     ) in section
 

@@ -10,16 +10,6 @@ instructions: |
   You can't book appointments or quote for custom work: take a message instead, and the
   team will call back.
 items_label: Services
-tools: [search_items, set_details, submit_request, handoff_to_human]  # an agent may turn some off
-tasks:                                    # the structure of a conversation (design §6)
-  message:
-    label: message for the team
-    start_when: the visitor wants to leave a message, asks for a call back, or asks something you can't answer
-    details:                              # collected in this order; the visitor may give them in any order
-      - {name: body,      type: text,        ask: "What would you like me to pass on?"}
-      - {name: name,      type: person_name, ask: "Who should I say it's from?"}
-      - {name: phone,     type: phone,       ask: "What's the best number to call you back on?"}
-      - {name: best_time, type: text, required: false, ask: "Is there a good time to call?"}
-    finish_with: submit_request
+jobs: [message]                          # on by default; an owner can switch jobs on or off (D32)
 knowledge_model: heydesk.presets.receptionist.knowledge:ReceptionistKnowledge
 render_knowledge: heydesk.presets.receptionist.knowledge:render

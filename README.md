@@ -82,8 +82,9 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 
 | | |
 |---|---|
+| `GET /api/jobs` | What an agent can be set up to do: order, appointment, message |
 | `GET /api/agent` | Your agent (a business has one), with its `public_key` (the chat URL) |
-| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message. `instructions` and `tools` are for admins |
+| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message. Switch jobs with `{"jobs": ["order", "message"]}`. `instructions` is for admins |
 | `PUT /api/agent/items` | Replace the items, for example a new price (in paisa) |
 | `POST /api/agent/items/import` | Items from a spreadsheet saved as CSV: `{"csv": "…", "mapping": {"Product Title": "name"}}`. Columns we don't know become the items' own facts. Add `"dry_run": true` to check it first |
 | `POST /api/agent` | Create your agent from a preset: `{"preset": "restaurant"}` is enough (`GET /api/presets` lists them). `GET /api/agent` then lists what is `missing` |

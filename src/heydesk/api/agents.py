@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, User, Workspace
 from heydesk.errors import Forbidden
+from heydesk.presets import load_jobs
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.items import Item
 from heydesk.services.agents import AgentInfo
@@ -18,9 +19,9 @@ from heydesk.services.item_import import parse_items
 router = APIRouter(tags=["agents"])
 
 
-# What only an admin may change (D25): the role text and the tools come from the preset.
-# An owner writes `notes` for tone and rules, and edits everything about their business.
-ADMIN_ONLY = ("instructions", "tools", "preset")
+# What only an admin may change (D25): the role text comes from the preset. An owner writes
+# `notes` for tone and rules, switches jobs on and off (D32), and edits their business.
+ADMIN_ONLY = ("instructions", "preset")
 
 
 def owners_may_set(who: User, fields: dict[str, Any]) -> None:
@@ -35,14 +36,31 @@ class AgentIn(BaseModel):
     items: list[Item] = []
 
 
+class AbilityOut(BaseModel):
+    id: str
+    label: str
+    description: str
+    enabled: bool
+
+
 class AgentOut(BaseModel):
     public_key: str  # the chat URL: /api/chat/{public_key}
     config: AgentConfig
+    abilities: list[AbilityOut]  # every job there is, and whether this agent does it
     missing: list[str]  # what's still to fill in, in plain words; empty when set up
 
 
 def out(agent: AgentInfo) -> AgentOut:
-    return AgentOut(public_key=agent.public_key, config=agent.config, missing=agent.missing)
+    abilities = [
+        AbilityOut(id=i, label=j.label, description=j.description, enabled=i in agent.config.jobs)
+        for i, j in load_jobs().items()
+    ]
+    return AgentOut(
+        public_key=agent.public_key,
+        config=agent.config,
+        abilities=abilities,
+        missing=agent.missing,
+    )
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
@@ -61,7 +79,8 @@ async def read(services: Svc, ws: Workspace) -> AgentOut:
 @router.patch("/api/agent")
 async def edit(patch: dict[str, Any], who: User, services: Svc, ws: Workspace) -> AgentOut:
     """Top-level fields replace the config's: send the whole `knowledge`, not a part.
-    An owner can't change `instructions` or `tools` (403): they write `notes`."""
+    Switch jobs on or off with `{"jobs": ["order", "message"]}` (`GET /api/jobs` lists them).
+    An owner can't change `instructions` (403): they write `notes`."""
     owners_may_set(who, patch)
     await services.agents.update(ws, patch)
     return out(await services.agents.get(ws))

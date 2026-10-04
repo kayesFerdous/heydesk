@@ -24,7 +24,8 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Preset | A kind of agent: YAML (greeting, instructions, tools, tasks) + a knowledge model |
+| Preset | A kind of agent: YAML (greeting, instructions, the jobs it starts with) + a knowledge model |
+| Job | Something an agent can get a visitor done (`order`, `appointment`, `message`), from the shared library `presets/jobs.yaml`. An owner switches jobs on or off (D32). A job is a **task**: a list of details to collect |
 | Agent | A business's agent: one `AgentConfig` the business edits. Edits are live on the next message |
 | Item | Something a business sells: a dish, a service, a product. One shape for every preset (D17) |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
@@ -77,8 +78,8 @@ Imports point inwards: `api`/`voice` → `services` → `runtime` → `ports`.
 
 `AgentConfig` (`runtime/config.py`) is the agent's settings: name, business
 name, timezone, currency, greeting, knowledge, FAQ, hand-off message and phone,
-and the owner's **notes**; plus `instructions` (the role text) and `tools` (a
-list of names), which come from the preset. One model serves every agent
+the owner's **notes**, and the **jobs** it does (a list of ids); plus `instructions`
+(the role text), which comes from the preset. One model serves every agent
 (`MODEL` in `.env`).
 
 **Setup is one call and a list** (D26). `POST /api/agent` needs only `{"preset": "restaurant"}`:
@@ -89,15 +90,26 @@ the start, and what's not filled in is simply not in its prompt.
 
 **Owners never meet a technical setting** (D25). An owner edits their business:
 greeting, knowledge, FAQ, items, hand-off, and `notes` (tone and rules in their
-own words, put in the prompt right after the role text). `instructions` and
-`tools` are an admin's: an owner who sends them gets a 403.
+own words, put in the prompt right after the role text). `instructions` is an
+admin's: an owner who sends it gets a 403.
 
-A preset (`presets/<id>/preset.yaml`) gives the defaults and the **tasks**:
+**What the agent can do is the owner's choice** (D32). The **jobs library**
+(`presets/jobs.yaml`) holds every job, each with a plain sentence for the owner;
+`GET /api/jobs` lists them. A preset only says which jobs are on at first
+(`jobs: [order, message]`). The owner switches them with `PATCH /api/agent
+{"jobs": [...]}`, and `GET /api/agent` shows every job with `enabled`. The
+agent's **tools follow from its jobs** (`tools_for`): a job's finishing tool,
+`update_order` for a job with a cart, `set_details` for any job, `search_items`
+when the items don't all fit the prompt, and hand-off always. The prompt's Tasks
+section lists only the jobs that are on, and says to offer a message or a person
+for anything else.
+
+A job (`presets/jobs.yaml`) is a **task**:
 
 ```yaml
-tasks:
-  order:
+order:
     label: pickup order
+    description: Customers order from your menu and pick it up…   # for the owner
     start_when: the visitor wants to order food
     details:                       # asked in this order; the visitor may give them in any order
       - {name: items,       type: cart}
@@ -201,7 +213,7 @@ the task's `finish_with` tool.
 The contract lives in `runtime/tool.py` (the engine may not import `tools/`);
 the tools themselves are in `tools/`, registered in `TOOLS`. Tools are shared:
 one `update_order` serves every business, reaching its items through
-`ctx.items`. An agent's config lists the tools it uses; the conversation
+`ctx.items`. An agent gets the tools its jobs need; the conversation
 service passes the built ones to the turn.
 
 ```python
@@ -210,7 +222,7 @@ class ToolContext:
     agent: AgentConfig
     state: dict                    # the conversation state so far
     items: Catalog                 # this agent's items: get(codes), all()
-    tasks: dict[str, Task]         # the preset's tasks
+    tasks: dict[str, Task]         # the agent's jobs that are on
     now: datetime                  # when the turn started, UTC
 
 @dataclass(frozen=True)

@@ -20,17 +20,14 @@ from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
 from heydesk.services.items import ItemService
 from heydesk.services.records import RecordService
-from heydesk.tools import TOOLS
+from heydesk.tools import tools_for
 
 log = logging.getLogger(__name__)
 
 
 def enabled_tools(agent: LiveAgent) -> list[Tool]:
-    """The agent's tools that are built. `search_items` only when the items aren't all listed."""
-    names = [n for n in agent.config.tools if n in TOOLS]
-    if agent.items_in_prompt:
-        names = [n for n in names if n != "search_items"]
-    return [TOOLS[n] for n in names]
+    """The tools the agent's jobs need. `search_items` only when the items aren't all listed."""
+    return tools_for(agent.tasks, search=not agent.items_in_prompt)
 
 
 @dataclass
