@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 13–23 built (2 Oct). Days 13–18 wait for a live check by ear or with a real model (each says what). **Next:** the demo.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D26: one agent per business, owner and admin roles, one records inbox, owner-friendly setup). Demo rehearsals and the UI wait. **Next:** the data layer (item `attributes`, a `find_items` tool, CSV import) so clinics and shops fit; see the notes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -44,6 +44,15 @@ normal path; skip edge cases that aren't worth the code (design §12).
 - **Day 19:** orders, requests and conversations API; an order's status.
 - **Day 20:** signup, login, the workspace from the token; `heydesk create-user`.
 - **Days 21–23:** one error shape; `MAX_TURNS` (D21); isolation tests; the README.
+
+## After day 23: simpler and more real (4 Oct)
+
+Taken from the production-grade `frontdesk-api`, one commit each:
+- **D22** one agent per business: `/api/agent`, no ids in URLs
+- **D23** roles: owner and admin; `create-admin`; `X-Business`; audit log; suspend a business
+- **D24** orders and messages in one `records` table; `/api/inbox`, `/api/records`; status flows
+- **D25** owners write `notes`; `instructions` and `tools` are admin-only
+- **D26** start from just a preset; `GET /api/agent` lists what's `missing`
 
 ## M1 — The agent takes an order
 
