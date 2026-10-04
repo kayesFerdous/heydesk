@@ -127,3 +127,11 @@ def test_sparse_vectors_weigh_a_repeated_word_a_little_more_and_a_query_flat() -
     once, thrice = sorted(chunk.values)  # "fee" once, "taka" three times
     assert once < thrice < 2.2  # more mentions weigh more, but saturate
     assert query.values == [1.0, 1.0] and len(query.indices) == 2
+
+
+async def test_common_words_alone_match_nothing(store: QdrantKnowledgeStore) -> None:
+    await add(store, "w1", "d1", "Guide", "The clinic is open at nine and the fee is 400 taka.")
+
+    assert await store.search("w1", "write me a poem about the moon", None, 3) == []  # words only
+    assert await store.search("w1", "what is the fee", None, 3)  # "fee" is a real word
+    assert sparse_vector("is the of", query=True).indices == []

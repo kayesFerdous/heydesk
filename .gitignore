@@ -32,3 +32,6 @@ frontend/dist/
 
 # Personal notes and overviews (not part of the repo)
 notes/
+
+# Qdrant local mode (development, when QDRANT_URL is empty)
+qdrant_local/
