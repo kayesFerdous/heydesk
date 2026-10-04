@@ -148,3 +148,19 @@ async def test_a_business_starts_from_just_a_preset_and_is_told_what_is_missing(
         assert (await shop.get("/api/agent")).json()["missing"] == []
     finally:
         await shop.aclose()
+
+
+async def test_items_keep_their_own_facts(client: AsyncClient) -> None:
+    doctor = {
+        "code": "dr-akter",
+        "name": "Dr. Akter",
+        "price": 80000,
+        "category": "Cardiology",
+        "attributes": {"days": ["sat", "sun"], "years": 12},
+    }
+
+    await client.put("/api/agent/items", json=[doctor])
+
+    saved = (await client.get("/api/agent/items")).json()
+    assert saved[0]["attributes"] == {"days": ["sat", "sun"], "years": 12}
+    assert saved[0]["tags"] == []

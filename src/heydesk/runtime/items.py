@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 
 from heydesk.runtime.speech import money
 
+# A business's own facts about an item: a doctor's speciality and days, a snack's calories.
+# Plain values only, so they can be shown to the model and filtered on (D27).
+type AttrValue = str | int | float | bool | list[str]
+
 
 class Item(BaseModel):
     code: str = Field(min_length=1, max_length=50)  # the short id the model uses: "chk-biryani"
@@ -17,15 +21,24 @@ class Item(BaseModel):
     category: str
     tags: list[str] = []  # "vegetarian", "spicy", "popular", "contains-nuts"
     available: bool = True
+    attributes: dict[str, AttrValue] = {}  # "days": ["sat", "sun"], "calories": 220
+
+
+def attribute_text(value: AttrValue) -> str:
+    return ", ".join(value) if isinstance(value, list) else str(value).lower()
 
 
 def item_line(item: Item, currency: str) -> str:
-    """One item as a prompt line: `- Chicken Biryani [chk-biryani] ৳450 (spicy): Basmati…`"""
+    """One item as a prompt line: `- Chicken Biryani [chk-biryani] ৳450 (spicy): Basmati…`
+    With attributes: `… {calories: 220, days: sat, sun}`."""
     line = f"- {item.name} [{item.code}] {money(item.price, currency)}"
     if item.tags:
         line += f" ({', '.join(item.tags)})"
     if item.description:
         line += f": {item.description}"
+    if item.attributes:
+        facts = ", ".join(f"{k}: {attribute_text(v)}" for k, v in item.attributes.items())
+        line += f" {{{facts}}}"
     if not item.available:
         line += " NOT AVAILABLE"
     return line
@@ -39,7 +52,10 @@ def render_items(items: list[Item], label: str, currency: str, max_in_prompt: in
             f"{label}: {len(items)} items, too many to list here. Use search_items to find them.\n"
             f"Categories: {', '.join(categories)}"
         )
-    lines = [f"{label}. Each line: name [code] price (tags): description"]
+    header = f"{label}. Each line: name [code] price (tags): description"
+    if any(item.attributes for item in items):
+        header += " {extra facts}"
+    lines = [header]
     for category in categories:
         lines.append(f"{category}:")
         lines += [item_line(i, currency) for i in items if i.category == category]

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,5 +23,8 @@ class ItemRow(Base):
     category: Mapped[str] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     available: Mapped[bool] = mapped_column(default=True)
+    attributes: Mapped[dict[str, Any]] = mapped_column(
+        JSON, default=dict
+    )  # the business's own facts
     position: Mapped[int] = mapped_column(default=0)  # the business's order, for the prompt
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

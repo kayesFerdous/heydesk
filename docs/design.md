@@ -113,7 +113,8 @@ which writes the knowledge as short prompt lines.
 **Items** (D17). What a business sells is its **items**, in the `items` table,
 not in the config. Every preset uses one shape, `runtime/items.py`'s `Item`:
 `code` (the short id the model uses, `chk-biryani`), name, description, price,
-category, tags, available. So the tools that use them work for any business.
+category, tags, available, and `attributes`: the business's own facts about it
+(a doctor's days and languages, a snack's calories), plain values only (D27). So the tools that use them work for any business.
 The preset only names them for the prompt (`items_label: Menu`).
 
 - Up to `MAX_ITEMS_IN_PROMPT` (60) items: all listed in the knowledge, one line each.
@@ -272,7 +273,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | preset, name, public_key (unique), config JSON |
-| `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, position |
+| `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, attributes JSON, position |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
 | `records` | agent_id, conversation_id, job (the task), kind (`order`/`request`), number (101, 102… per business and kind), status, customer_name, customer_phone, details JSON, note; an order's lines JSON, total, currency, due_at (the pickup time) (D24) |
 
