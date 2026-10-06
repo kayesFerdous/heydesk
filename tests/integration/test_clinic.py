@@ -165,3 +165,27 @@ async def test_the_owner_sees_appointments_and_edits_doctors(
     assert backwards.status_code == 422
 
     assert (await client.get("/api/appointments")).json() == []
+
+
+async def test_doctors_come_from_a_csv_and_a_bad_row_saves_nothing(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await app.state.services.agents.ensure_dev_agent("clinic", SEEDS / "clinic.yaml")
+    csv = (
+        "Name,Speciality,Fee (৳),Days,Hours,Languages\n"
+        'Dr. Rina Das,Dentistry,"1,200","Sat; Sun",10:00-14:00,bangla|english\n'
+    )
+    checked = await client.post("/api/doctors/import", json={"csv": csv, "dry_run": True})
+    assert checked.json()["count"] == 1 and len((await client.get("/api/doctors")).json()) == 10
+
+    await client.post("/api/doctors/import", json={"csv": csv})
+    [doctor] = (await client.get("/api/doctors")).json()
+    assert (doctor["code"], doctor["fee"], doctor["days"]) == (
+        "dr-rina-das",
+        120000,
+        ["sat", "sun"],
+    )
+
+    bad = await client.post("/api/doctors/import", json={"csv": csv + "Dr. X,ENT,lots,Mon,9-5,\n"})
+    assert bad.status_code == 422 and "row 3" in bad.json()["error"]["fields"]
+    assert len((await client.get("/api/doctors")).json()) == 1

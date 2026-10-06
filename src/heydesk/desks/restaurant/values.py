@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from heydesk.desks import csv_import
 from heydesk.runtime.speech import money
 
 
@@ -58,3 +59,21 @@ class NewOrder:
     name: str
     phone: str
     note: str = ""
+
+
+def menu_from_csv(text: str) -> list[MenuItem]:
+    """Columns: name, price, and optionally category, description, tags ("spicy; popular"),
+    available (yes/no), code."""
+
+    def row(cells: dict[str, str]) -> MenuItem:
+        return MenuItem(
+            code=cells.get("code") or csv_import.slug(cells["name"]),
+            name=cells["name"],
+            description=cells.get("description", ""),
+            price=csv_import.money(cells["price"]),
+            category=cells.get("category") or "Menu",
+            tags=csv_import.items(cells.get("tags", "")),
+            available=csv_import.available(cells.get("available", "")),
+        )
+
+    return csv_import.parse(text, {"name", "price"}, row)

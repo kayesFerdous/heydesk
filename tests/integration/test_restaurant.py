@@ -164,3 +164,13 @@ async def test_the_owner_edits_the_menu_and_moves_orders_along(
     assert (await client.put("/api/menu", json=[dish])).status_code == 200
     assert [d["code"] for d in (await client.get("/api/menu")).json()] == ["dal"]
     assert (await client.get("/api/doctors")).status_code == 404  # a restaurant has none
+
+
+async def test_the_menu_comes_from_a_csv(client: AsyncClient) -> None:
+    csv = "Item,Price,Category,Tags\nDal,80,Curry,vegetarian; mild\n"
+    bad = await client.post("/api/menu/import", json={"csv": csv})
+    assert bad.status_code == 422  # no "name" column: "Item" isn't it
+
+    await client.post("/api/menu/import", json={"csv": csv.replace("Item", "Name")})
+    [dal] = (await client.get("/api/menu")).json()
+    assert (dal["code"], dal["price"], dal["tags"]) == ("dal", 8000, ["vegetarian", "mild"])

@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from heydesk.desks import csv_import
 from heydesk.runtime.schedule import DAYS
 from heydesk.runtime.speech import clock_time, money
 
@@ -105,3 +106,30 @@ class AppointmentChange:
 
     number: int
     new_at: datetime | None = None
+
+
+def doctors_from_csv(text: str) -> list[Doctor]:
+    """Columns: name, speciality, fee, days ("sat; sun; mon"), and either start and end
+    ("17:00", "21:00") or hours ("17:00-21:00"); optionally languages, description,
+    available (yes/no), code."""
+
+    def row(cells: dict[str, str]) -> Doctor:
+        start, end = cells.get("start", ""), cells.get("end", "")
+        if not (start and end):
+            start, _, end = cells.get("hours", "").partition("-")
+        return Doctor.model_validate(
+            {
+                "code": cells.get("code") or csv_import.slug(cells["name"]),
+                "name": cells["name"],
+                "speciality": cells["speciality"],
+                "fee": csv_import.money(cells["fee"]),
+                "days": csv_import.items(cells["days"]),
+                "start": start.strip(),
+                "end": end.strip(),
+                "languages": csv_import.items(cells.get("languages", "")),
+                "description": cells.get("description", ""),
+                "available": csv_import.available(cells.get("available", "")),
+            }
+        )
+
+    return csv_import.parse(text, {"name", "speciality", "fee", "days"}, row)
