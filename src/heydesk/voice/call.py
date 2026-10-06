@@ -181,4 +181,12 @@ async def run_call(
     async def on_disconnected(transport: SmallWebRTCTransport, client: object) -> None:
         await task.cancel()
 
-    await PipelineRunner(handle_sigint=False).run(task)
+    async def hang_up_later() -> None:
+        await asyncio.sleep(settings.MAX_CALL_SECONDS)
+        await task.cancel()
+
+    limit = asyncio.create_task(hang_up_later())
+    try:
+        await PipelineRunner(handle_sigint=False).run(task)
+    finally:
+        limit.cancel()

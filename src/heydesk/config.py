@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # often, lower it if answerable questions get nothing. Exact-word matches ignore it.
     KNOWLEDGE_MIN_SIMILARITY: float = 0.6
 
+    # Voice from far away: Cloudflare's free TURN relay carries the audio (dash.cloudflare.com ->
+    # Realtime -> TURN). Empty: no relay, which only works on the same network.
+    CLOUDFLARE_TURN_KEY_ID: str = ""
+    CLOUDFLARE_TURN_API_TOKEN: str = ""
+    MAX_CALL_SECONDS: int = 300  # a call hangs up after this long
+
     DEV_AGENT_PRESET: str = "restaurant"
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"
 

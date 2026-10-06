@@ -11,7 +11,8 @@ const hangUp = () => {
 
 const call = async () => {
   button.textContent = "Connecting…";
-  pc = new RTCPeerConnection();
+  const iceServers = await (await fetch("/api/voice/ice")).json();  // the relay for far-away callers
+  pc = new RTCPeerConnection({ iceServers });
   const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
   pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv" });  // must be first
   const speaker = new Audio();
