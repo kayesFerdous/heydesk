@@ -161,5 +161,14 @@ def test_a_pickup_time_must_be_inside_the_opening_hours_too() -> None:
         parse_detail("time_today", "11 pm", NOW, CLINIC_HOURS)
 
 
+def test_closed_every_day_refuses_every_time() -> None:
+    # The editor saves all seven days; every one off is closed, not "no hours yet"
+    all_off = WeeklyHours.model_validate(
+        dict.fromkeys(("mon", "tue", "wed", "thu", "fri", "sat", "sun"))
+    )
+    with pytest.raises(ValueError, match="closed on Tuesdays"):
+        parse_detail("time_today", "4:05 pm", NOW, all_off)
+
+
 def test_an_appointment_time_is_shown_in_words() -> None:
     assert display_detail("appointment_time", "2026-09-30T17:00", "BDT") == "Wed 30 Sep, 5:00 pm"

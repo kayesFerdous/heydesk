@@ -32,6 +32,7 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.piper.tts import PiperTTSService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
@@ -155,7 +156,11 @@ async def run_call(
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
-    stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY)
+    stt: FrameProcessor
+    if settings.STT_PROVIDER == "deepgram":
+        stt = DeepgramSTTService(api_key=settings.DEEPGRAM_API_KEY)
+    else:
+        stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY)
     tts = PiperTTSService(
         settings=PiperTTSService.Settings(voice=VOICE), text_filters=[Speakable()]
     )

@@ -1,7 +1,10 @@
 """`update_order`: the visitor's whole order in, the total out. Python adds it up (rule 1)."""
 
+from zoneinfo import ZoneInfo
+
 from pydantic import BaseModel, Field
 
+from heydesk.runtime.schedule import WeeklyHours
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult, fail
 
@@ -18,6 +21,12 @@ class UpdateOrderInput(BaseModel):
 
 
 async def update_order(ctx: ToolContext, args: UpdateOrderInput) -> ToolResult:
+    hours = WeeklyHours.model_validate(ctx.agent.knowledge.get("hours") or {})
+    today = ctx.now.astimezone(ZoneInfo(ctx.agent.timezone)).date()
+    if hours.is_set() and hours.on(today) is None:  # pickup is today only, so no order
+        return fail(
+            f"We're closed today. Our hours: {hours.render()}. Tell the visitor; take no order."
+        )
     wanted: dict[str, int] = {}  # code → quantity; the same item twice is added up
     for line in args.lines:
         wanted[line.code] = wanted.get(line.code, 0) + line.quantity

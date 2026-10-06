@@ -170,10 +170,11 @@ visitor message ─► start_turn: load the conversation (or start one), build t
 listener (the SSE response, or the voice pipeline) reads the turn's events;
 the turn is saved when it ends.
 
-**What the model sees on every call**, in this order:
+**What the model sees on every call**, in this order (each rule and why: [prompt-rules.md](prompt-rules.md)):
 
 1. System prompt: platform rules → role text → owner's notes → tasks → knowledge →
-   FAQ → **right now** (channel style, date and time, the next 14 days) → the
+   FAQ → **right now** (channel style, date and time, open or closed today, the next
+   14 days with the closed ones marked, D40) → the
    **state note** (day 6), rebuilt before every model call and never stored
 2. Tool specs: the agent's enabled tools
 3. The conversation: the **greeting** first (D8), then every message so far
@@ -282,7 +283,8 @@ detail is asked for, with no Jev call), and once placed clears the task.
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
 `person_name`, `phone`, `time_today`, `appointment_time`, `doctor`), each with a `parse` and a `display`
 (spoken by `speakable()` on voice, D20). A bare "7:30" is the next 7:30 from now, and a time
-that has passed is refused. A time must also be inside the business's opening hours (D31): "tomorrow at 11 pm"
+that has passed is refused. A time must also be inside the business's opening hours (D31; seven closed days
+are closed all week, D40, and `update_order` refuses on a closed day): "tomorrow at 11 pm"
 for a clinic that shuts at 10 is refused with the hours as the hint. `appointment_time` takes a day and
 a time ("tomorrow at 5 pm", "saturday 5pm", "5 Oct 6:30 pm"), Python works out the date, it must be in
 the next 14 days, and a time with no am/pm is asked again, never guessed. A `doctor` must be one of the
@@ -383,8 +385,9 @@ tokens, cost, error (rule 7). There is no trace table (D15).
 
 A `voice/` package turns speech into `start_turn(channel="voice")` calls and
 the turn's events back into speech, with Pipecat (D18): the browser's audio over
-WebRTC (`POST /api/voice/offer`), Silero VAD, Chorus for speech-to-text (one
-upload per utterance, after 0.5s of silence) and Piper for text-to-speech until
+WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
+(streamed; `STT_PROVIDER=chorus` switches to Chorus, one upload per utterance
+after 0.5s of silence, D39) and Piper for text-to-speech until
 the real one is added.
 
 - **Sentences:** the reply's tokens go straight to Pipecat's TTS, which speaks them

@@ -55,7 +55,7 @@ def test_the_prompt_lists_the_documents_and_says_when_to_look() -> None:
 
     section = text.split("# Documents\n")[1].split("\n\n")[0]
     assert "documents: Policies, Fee list." in section
-    assert "call search_knowledge before you say you don't know" in section
+    assert "call search_knowledge FIRST" in section
     assert text.index("# Knowledge") < text.index("# Documents") < text.index("# Right now")
     assert "# Documents" not in build_system_prompt(AGENT, TASKS, "MENU", "web", FIXED_NOW)
 

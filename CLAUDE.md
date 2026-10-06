@@ -23,6 +23,10 @@ When the user says "do today's work" (or similar):
 
 Read [docs/decisions.md](docs/decisions.md) only when changing a design.
 
+**Prompt rules live in [docs/prompt-rules.md](docs/prompt-rules.md).** Any change
+to what the model is told (platform rules, prompt sections, the state note) updates
+that file in the same change.
+
 If the code and design.md disagree, stop and say so. A design change updates
 design.md **and** adds a line to decisions.md, in the same change.
 

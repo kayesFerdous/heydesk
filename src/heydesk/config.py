@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # often, lower it if answerable questions get nothing. Exact-word matches ignore it.
     KNOWLEDGE_MIN_SIMILARITY: float = 0.6
 
+    # Speech-to-text for voice calls: Deepgram streams the words as they're spoken, Chorus uploads
+    # each utterance (D18, D39)
+    STT_PROVIDER: Literal["deepgram", "chorus"] = "deepgram"
+    DEEPGRAM_API_KEY: str = ""
+
     # Voice from far away: Cloudflare's free TURN relay carries the audio (dash.cloudflare.com ->
     # Realtime -> TURN). Empty: no relay, which only works on the same network.
     CLOUDFLARE_TURN_KEY_ID: str = ""

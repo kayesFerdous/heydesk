@@ -71,9 +71,14 @@ class UserService:
 
     def principal(self, token: str) -> Principal:
         try:
-            claims = jwt.decode(token, self.secret, algorithms=["HS256"])
+            # Expiry is checked against our clock, not the machine's, so tests' fixed clock works
+            claims = jwt.decode(
+                token, self.secret, algorithms=["HS256"], options={"verify_exp": False}
+            )
         except jwt.InvalidTokenError:
-            raise Unauthorized("Log in again: the token is missing, wrong or expired.") from None
+            claims = {}
+        if not claims or claims.get("exp", 0) <= self.now().timestamp():
+            raise Unauthorized("Log in again: the token is missing, wrong or expired.")
         return Principal(str(claims["sub"]), str(claims["role"]), claims["ws"])
 
     async def still_admin(self, principal: Principal) -> bool:

@@ -3,7 +3,7 @@ from typing import Any
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.tool import ToolResult, run_tool
 from heydesk.tools import order
-from tests.conftest import make_ctx
+from tests.conftest import AGENT, make_ctx
 
 CTX = make_ctx()
 
@@ -48,3 +48,13 @@ async def test_unknown_or_unavailable_items_are_refused() -> None:
     sold_out = await update(("mango-lassi", 1))
     assert not sold_out.ok and "Not available right now: Mango Lassi" in sold_out.data["error"]
     assert unknown.state is None and sold_out.state is None  # the cart stays as it was
+
+
+async def test_no_order_on_a_closed_day() -> None:
+    closed_tuesday = AGENT.model_copy(update={"knowledge": {"hours": {"tue": None}}})
+    ctx = make_ctx(agent=closed_tuesday)  # FIXED_NOW is a Tuesday
+
+    result = await run_tool(order.TOOL, ToolCall("1", "update_order", {"lines": []}), ctx)
+
+    assert not result.ok and "We're closed today" in result.data["error"]
+    assert result.state is None

@@ -39,8 +39,8 @@ TOOL = Tool(
     name="search_knowledge",
     description=(
         "Search the business's documents (policies, price lists, guides) for the answer to a "
-        "question the Knowledge and FAQ sections don't cover. Returns the best passages with "
-        "the document each came from."
+        "question the Knowledge and FAQ sections don't plainly answer. Call this before saying "
+        "you don't know. Returns the best passages with the document each came from."
     ),
     input_model=SearchKnowledgeInput,
     run=search_knowledge,

@@ -61,6 +61,18 @@ def test_right_now_has_the_channel_the_local_time_and_the_next_two_weeks() -> No
     ]
 
 
+def test_right_now_says_if_we_are_open_today_and_marks_the_closed_days() -> None:
+    hours = {"mon": None, "tue": ["11:00", "22:00"], "wed": None}  # Thu–Sun left out: closed
+    section = prompt(knowledge={"hours": hours}).split("# Right now\n")[1]
+
+    assert "Today: open 11:00–22:00" in section
+    assert "Wed 30 Sep (closed), Thu 1 Oct (closed)" in section
+    assert "Tue 6 Oct, Wed 7 Oct (closed)" in section
+
+    closed = prompt(knowledge={"hours": {"tue": None}}).split("# Right now\n")[1]
+    assert "Today: closed" in closed
+
+
 def test_the_tasks_section_lists_each_task_and_its_details() -> None:
     section = prompt().split("# Tasks\n")[1].split("\n\n")[0]
     assert (
