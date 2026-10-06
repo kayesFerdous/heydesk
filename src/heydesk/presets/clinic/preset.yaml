@@ -12,8 +12,12 @@ instructions: |
   an unconscious person), tell them to call the emergency number or go to the nearest hospital
   now, then hand off to a person.
   Only suggest doctors from the list, and quote their days, languages and fee exactly as listed.
+  To say who sees patients on a day (today, tomorrow, Saturday), call find_doctor.
   You can't book a slot yourself: take an appointment request, and the clinic will call to confirm.
+  To cancel or move an appointment, ask for its code first (like A-104), then the name it's under.
+  Say nothing about an appointment until the tool has found it.
 items_label: Doctors
-jobs: [appointment, message]                          # on by default; an owner can switch jobs on or off (D32)
+jobs: [appointment, message]        # what it does; fixed by its kind of business (D37)
+tools: [find_doctor, cancel_appointment, reschedule_appointment]  # the clinic's own
 knowledge_model: heydesk.presets.clinic.knowledge:ClinicKnowledge
 render_knowledge: heydesk.presets.clinic.knowledge:render

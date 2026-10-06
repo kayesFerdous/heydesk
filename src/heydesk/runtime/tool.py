@@ -13,7 +13,13 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from heydesk.domain.values import Confirmed, NewOrder, NewRequest
+from heydesk.domain.values import (
+    Appointment,
+    AppointmentChange,
+    Confirmed,
+    NewOrder,
+    NewRequest,
+)
 from heydesk.ports.decider import Decider
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.ports.llm import ToolCall, ToolSpec
@@ -46,7 +52,14 @@ class Orders(Protocol):
 class Requests(Protocol):
     """Where one conversation's messages for the team are saved. Only confirmed ones (rule 2)."""
 
-    async def submit(self, request: Confirmed[NewRequest]) -> str: ...  # the request's id
+    async def submit(self, request: Confirmed[NewRequest]) -> str: ...  # its code: "A-104"
+
+
+class Appointments(Protocol):
+    """A business's appointment requests, found by number; changed only when confirmed."""
+
+    async def find(self, number: int) -> Appointment | None: ...
+    async def change(self, change: Confirmed[AppointmentChange]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -60,6 +73,7 @@ class ToolContext:
     decider: Decider  # for the commit check
     orders: Orders
     requests: Requests
+    appointments: Appointments
     agent_said: str  # the agent's last message before this turn: the read-back, if there was one
     visitor_said: str  # this turn's message: the yes, if there was one
 

@@ -12,7 +12,14 @@ from datetime import datetime
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.domain.values import Confirmed, NewOrder, NewRequest
+from heydesk.domain.values import (
+    Appointment,
+    AppointmentChange,
+    Confirmed,
+    NewOrder,
+    NewRequest,
+    parse_code,
+)
 from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
 from heydesk.models import Record
 from heydesk.models.record import FIRST_STATUS
@@ -51,7 +58,7 @@ class RecordService:
         q: str | None = None,
         conversation_id: str | None = None,
     ) -> list[Record]:
-        """Newest first. `q` matches the number, name or phone."""
+        """Newest first. `q` matches the number or code ("A-104"), name or phone."""
         query = select(Record).where(Record.workspace_id == ws)
         if job:
             query = query.where(Record.job == job)
@@ -61,11 +68,13 @@ class RecordService:
             query = query.where(Record.conversation_id == conversation_id)
         if q := (q or "").strip():
             like = f"%{q}%"
+            code = parse_code(q)
             query = query.where(
                 or_(
                     Record.customer_name.ilike(like),
                     Record.customer_phone.ilike(like),
                     cast(Record.number, String).like(like),
+                    Record.number == (code[1] if code else -1),
                 )
             )
         async with self.sessions() as s:
@@ -146,7 +155,7 @@ class RecordService:
     async def submit(
         self, ws: str, agent_id: str, conversation_id: str, request: Confirmed[NewRequest]
     ) -> str:
-        """Saves the message for the team and returns its id."""
+        """Saves the message for the team and returns its code: "A-104"."""
         r = request.value
         record = await self._add(
             ws,
@@ -158,7 +167,43 @@ class RecordService:
             customer_phone=r.phone,
             details=r.details,
         )
-        return record.id
+        return record.code
+
+    async def appointment(self, ws: str, number: int) -> Appointment | None:
+        async with self.sessions() as s:
+            record = await self._appointment(s, ws, number)
+        if record is None:
+            return None
+        return Appointment(
+            record.number,
+            record.customer_name,
+            str(record.details.get("doctor", "")),
+            str(record.details.get("appointment time", "")),
+            record.status,
+        )
+
+    async def change_appointment(self, ws: str, change: Confirmed[AppointmentChange]) -> None:
+        """Cancels it, or moves it to the new time; a moved one is new again, for the
+        clinic to confirm by phone."""
+        c = change.value
+        async with self.sessions() as s, s.begin():
+            record = await self._appointment(s, ws, c.number)
+            if record is None:
+                raise NotFound("There's no such appointment.")
+            if c.new_time is None:
+                record.move("cancelled", self.now())
+                return
+            record.details = {**record.details, "appointment time": c.new_time}  # a new dict
+            if record.status != FIRST_STATUS:
+                record.move(FIRST_STATUS, self.now())
+            record.updated_at = self.now()
+
+    async def _appointment(self, s: AsyncSession, ws: str, number: int) -> Record | None:
+        return await s.scalar(
+            select(Record).where(
+                Record.workspace_id == ws, Record.job == "appointment", Record.number == number
+            )
+        )
 
     async def _add(self, ws: str, agent_id: str, conversation_id: str, **fields: object) -> Record:
         kind = str(fields["kind"])
@@ -185,7 +230,8 @@ class RecordService:
 
 @dataclass(frozen=True)
 class ConversationRecords:
-    """One conversation's records, for `place_order` and `submit_request`."""
+    """One conversation's records, for `place_order` and `submit_request`, and the business's
+    appointments, for the clinic's cancel and reschedule tools."""
 
     service: RecordService
     workspace_id: str
@@ -201,3 +247,11 @@ class ConversationRecords:
         return await self.service.submit(
             self.workspace_id, self.agent_id, self.conversation_id, request
         )
+
+    # An appointment can be changed from any conversation: the code and name are the key
+
+    async def find(self, number: int) -> Appointment | None:
+        return await self.service.appointment(self.workspace_id, number)
+
+    async def change(self, change: Confirmed[AppointmentChange]) -> None:
+        await self.service.change_appointment(self.workspace_id, change)

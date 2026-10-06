@@ -27,7 +27,6 @@ class AgentConfig(BaseModel):
     notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
     knowledge: dict[str, Any] = Field(default_factory=dict)  # checked by the preset's model
     faq: str = Field(default="", max_length=20000)
-    jobs: list[str] = []  # what it can get a visitor done: ids from the jobs library (D32)
     handoff: Handoff = Handoff()
 
     def fill(self, text: str) -> str:

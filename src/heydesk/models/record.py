@@ -5,6 +5,7 @@ from sqlalchemy import JSON, CheckConstraint, ForeignKey, String, UniqueConstrai
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id, utcnow
+from heydesk.domain.values import record_code
 
 # Two kinds, because there are two guarantees: an order's prices and total, a request's
 # confirmed details. Every job a business offers (a task in its preset) is one of them.
@@ -20,9 +21,10 @@ FLOWS: dict[str, dict[str, set[str]]] = {
         "cancelled": set(),
     },
     "request": {
-        "new": {"handled", "archived"},
-        "handled": {"archived", "new"},
+        "new": {"handled", "archived", "cancelled"},
+        "handled": {"archived", "new", "cancelled"},
         "archived": {"new"},
+        "cancelled": set(),
     },
 }
 
@@ -69,6 +71,11 @@ class Record(Base):
     due_at: Mapped[datetime | None]  # the pickup time, UTC
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    @property
+    def code(self) -> str:
+        """What the visitor is told and the business sees: "A-104" (D38)."""
+        return record_code(self.job, self.number)
 
     def move(self, status: str, now: datetime) -> None:
         """One status change. Raises LookupError for an unknown status, ValueError for a

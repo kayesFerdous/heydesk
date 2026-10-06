@@ -10,6 +10,6 @@ instructions: |
   You can't book appointments or quote for custom work: take a message instead, and the
   team will call back.
 items_label: Services
-jobs: [message]                          # on by default; an owner can switch jobs on or off (D32)
+jobs: [message]                     # what it does; fixed by its kind of business (D37)
 knowledge_model: heydesk.presets.receptionist.knowledge:ReceptionistKnowledge
 render_knowledge: heydesk.presets.receptionist.knowledge:render

@@ -29,6 +29,7 @@ from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStar
 from heydesk.runtime.prompt import state_note
 from heydesk.runtime.tasks import Task
 from heydesk.runtime.tool import (
+    Appointments,
     Catalog,
     Knowledge,
     Orders,
@@ -63,6 +64,7 @@ class TurnInput:
     knowledge: Knowledge  # the agent's documents, for search_knowledge
     orders: Orders  # where place_order saves
     requests: Requests  # where submit_request saves
+    appointments: Appointments  # what the clinic's cancel and reschedule tools change
     tasks: dict[str, Task]  # the preset's tasks
     now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
@@ -127,6 +129,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 rt.decider,
                 turn.orders,
                 turn.requests,
+                turn.appointments,
                 agent_said=agent_said,
                 visitor_said=turn.user_text,
             )

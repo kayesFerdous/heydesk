@@ -10,6 +10,6 @@ instructions: |
   Only suggest dishes that are on the menu and available.
   To take an order, keep the order up to date with update_order after every change.
 items_label: Menu
-jobs: [order, message]                          # on by default; an owner can switch jobs on or off (D32)
+jobs: [order, message]              # what it does; fixed by its kind of business (D37)
 knowledge_model: heydesk.presets.restaurant.knowledge:RestaurantKnowledge
 render_knowledge: heydesk.presets.restaurant.knowledge:render

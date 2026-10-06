@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D26: one agent per business, owner and admin roles, one records inbox, owner-friendly setup). Demo rehearsals and the UI wait. **Data layer done (D27–D30):** item attributes, conditions in `search_items`, CSV import, the clinic preset. **Next:** a live check with a real model on the clinic, then real bookings or the shop preset.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D36). **6 Oct, D37: a few kinds of business, each with its jobs and tools fixed by us; the clinic first** (`find_doctor`, appointments checked against the doctor's days and hours). Live-checked on Maira. **Next:** the restaurant (reservations), then the others.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -81,6 +81,19 @@ Decided 4 Oct: Gemini embeddings, Qdrant (hybrid dense + sparse), text/Markdown/
 **Done when:** an owner uploads a PDF policy, asks about it in the chat and gets the right answer; a
 question the documents don't answer leads to "I don't know" and a message offer; another business never
 sees the document.
+
+## 6 Oct: a few kinds of business, the clinic first (D37)
+
+Each kind of business gets the jobs and tools we choose for it; owners no longer switch jobs. Shared
+tools (documents search, item search, message, hand-off) stay on for every kind.
+
+- [x] Presets name their jobs and their own tools; `jobs` leaves the config and `/api/jobs` goes
+- [x] Clinic: `find_doctor` (speciality, day, language); a `doctor` detail that must be a real doctor;
+      the appointment time must fit the doctor's `days` and `hours`
+- [x] Live check on the clinic with a real model: "a heart doctor tomorrow evening" → the right doctor,
+      a time outside their hours refused, a request saved after a yes (6 Oct, Maira + Jev: all three)
+- [x] Appointment codes (`A-104`); cancel and reschedule with the code and the name, after a yes (D38)
+- [ ] Next kinds: restaurant (reservations as well as orders), then the others
 
 ## M1 — The agent takes an order
 

@@ -19,7 +19,8 @@ class RecordOut(BaseModel):
     conversation_id: str
     job: str  # which task made it: "order", "message"
     kind: Literal["order", "request"]
-    number: int  # what the visitor was told
+    number: int
+    code: str  # what the visitor was told: "A-104"
     status: str
     customer_name: str
     customer_phone: str

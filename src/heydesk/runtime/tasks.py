@@ -14,7 +14,9 @@ from pydantic import BaseModel
 from heydesk.runtime.schedule import WeeklyHours
 from heydesk.runtime.speech import clock_time, money
 
-type DetailType = Literal["cart", "text", "person_name", "phone", "time_today", "appointment_time"]
+type DetailType = Literal[
+    "cart", "text", "person_name", "phone", "time_today", "appointment_time", "doctor"
+]
 
 
 class Detail(BaseModel):
@@ -93,6 +95,8 @@ def parse_detail(
     match kind:
         case "cart":
             raise ValueError("The items are set with update_order, not here.")
+        case "doctor":
+            raise ValueError("A doctor is matched against the clinic's list, not here.")
         case "text":
             if len(text) > 1000:
                 raise ValueError("That's too long. Ask for a shorter version.")

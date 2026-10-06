@@ -102,6 +102,16 @@ class ListRequests:
         return f"req-{len(self.sent)}"
 
 
+class NoAppointments:
+    """An `Appointments` with none, for unit tests."""
+
+    async def find(self, number: int) -> None:
+        return None
+
+    async def change(self, change: object) -> None:
+        raise AssertionError("nothing to change")
+
+
 def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
     """A `ToolContext` for unit tests; pass any field to change it."""
     fields: dict[str, Any] = {
@@ -114,6 +124,7 @@ def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
         "decider": FakeDecider(),
         "orders": ListOrders(),
         "requests": ListRequests(),
+        "appointments": NoAppointments(),
         "agent_said": "",
         "visitor_said": "",
     }

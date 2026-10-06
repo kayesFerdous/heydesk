@@ -1,8 +1,11 @@
-"""The tools, shared by every agent (design §7). An agent gets the ones its jobs need (D32)."""
+"""The tools (design §7). An agent gets what its jobs need, its preset's own tools, and the shared ones (D37)."""
+
+from collections.abc import Sequence
 
 from heydesk.runtime.tasks import Task
 from heydesk.runtime.tool import Tool
 from heydesk.tools import (
+    clinic,
     details,
     handoff,
     items,
@@ -17,6 +20,9 @@ TOOLS: dict[str, Tool] = {
     for tool in (
         order.TOOL,
         items.TOOL,
+        clinic.FIND_DOCTOR,
+        clinic.CANCEL_APPOINTMENT,
+        clinic.RESCHEDULE_APPOINTMENT,
         knowledge.TOOL,
         details.TOOL,
         place_order.TOOL,
@@ -26,12 +32,14 @@ TOOLS: dict[str, Tool] = {
 }
 
 
-def tools_for(tasks: dict[str, Task], *, search: bool, documents: bool = False) -> list[Tool]:
-    """The tools an agent needs for its jobs (D32): each job's finishing tool, `update_order`
-    for a job that takes a cart, `set_details` for any job, `search_items` when the items
-    aren't all in the prompt, `search_knowledge` when there are documents (D35), and hand-off
-    always. In `TOOLS` order."""
-    names = {"handoff_to_human"}
+def tools_for(
+    tasks: dict[str, Task], own: Sequence[str] = (), *, search: bool, documents: bool = False
+) -> list[Tool]:
+    """An agent's tools (D37): each job's finishing tool, `update_order` for a job that takes
+    a cart, `set_details` for any job, the preset's `own` tools, and the shared ones:
+    `search_items` when the items aren't all in the prompt, `search_knowledge` when there are
+    documents (D35), and hand-off always. In `TOOLS` order."""
+    names = {"handoff_to_human", *own}
     if tasks:
         names.add("set_details")
     for task in tasks.values():

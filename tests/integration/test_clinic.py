@@ -9,13 +9,13 @@ from heydesk.services.agents import LiveAgent
 from tests.conftest import SEED, World
 
 DETAILS = {
-    "with": "Dr. Nasrin Akter",
-    "appointment_time": "tomorrow at 5 pm",
+    "doctor": "Dr. Hasan",  # Tue and Wed, 18:00-21:00; tomorrow is Wed 30 Sep
+    "appointment_time": "tomorrow at 7 pm",
     "name": "Kayes",
     "phone": "01712345678",
 }
 READ_BACK = (
-    "An appointment request with Dr. Akter, Wed 30 Sep at 5:00 pm, for Kayes. Shall I send it?"
+    "An appointment request with Dr. Hasan, Wed 30 Sep at 7:00 pm, for Kayes. Shall I send it?"
 )
 
 
@@ -34,7 +34,7 @@ async def test_the_doctors_are_in_the_prompt_with_their_own_facts(world: World) 
     )
     assert (
         "- Dr. Nasrin Akter [dr-akter] ৳800 (female): Heart and blood pressure. Sees adults. "
-        "{days: sat, sun, mon, hours: 5 pm to 9 pm, languages: english, bangla, years: 12}"
+        "{days: sat, sun, mon, hours: 17:00-21:00, languages: english, bangla, years: 12}"
     ) in agent.knowledge
 
 
@@ -63,7 +63,7 @@ async def test_an_appointment_request_is_saved_only_after_a_yes(world: World) ->
     conversations = world.services.conversations
     conv_id: str | None = None
     for text, reply in (
-        ("I need a heart doctor on Saturday evening, I'm Kayes, 01712345678", READ_BACK),
+        ("Dr. Hasan tomorrow at 7 pm please, I'm Kayes, 01712345678", READ_BACK),
         ("hmm, maybe", READ_BACK),
         ("yes please", "Sent! The clinic will call you to confirm."),
     ):
@@ -83,8 +83,8 @@ async def test_an_appointment_request_is_saved_only_after_a_yes(world: World) ->
     [record] = saved
     assert (record.kind, record.job, record.customer_name) == ("request", "appointment", "Kayes")
     assert record.details == {
-        "with": "Dr. Nasrin Akter",
-        "appointment time": "Wed 30 Sep, 5:00 pm",
+        "doctor": "Dr. Imran Hasan",
+        "appointment time": "Wed 30 Sep, 7:00 pm",
     }
 
 
@@ -107,3 +107,121 @@ async def test_the_clinic_cant_be_booked_after_it_closes(world: World) -> None:
     assert conv is not None
     assert "appointment_time" not in conv.state["details"]  # not saved: the hours said no
     assert "Wednesdays we're open 09:00–21:00" in conv.messages[-2]["content"]
+
+
+async def test_a_doctor_is_booked_only_when_they_see_patients(world: World) -> None:
+    agent = await clinic(world)
+
+    async def details(said: dict[str, str]) -> dict[str, object]:
+        world.llm.script = [
+            ToolCall("c1", "set_details", {"task": "appointment", "details": said}),
+            "Let me suggest another time.",
+        ]
+        turn = await world.services.conversations.start_turn(agent, None, "book it", "web")
+        [_ async for _ in turn.events]
+        async with world.sessions() as s:
+            conv = await s.get(Conversation, turn.conversation_id)
+        assert conv is not None
+        return {"state": conv.state["details"], "tool": conv.messages[-2]["content"]}
+
+    akter_on_wednesday = await details({"doctor": "Akter", "appointment_time": "tomorrow at 6 pm"})
+    assert akter_on_wednesday["state"] == {"doctor": "Dr. Nasrin Akter"}  # the doctor is kept
+    assert "sees patients on sat, sun, mon, not on Wednesdays" in str(akter_on_wednesday["tool"])
+
+    hasan_too_early = await details({"doctor": "dr-hasan", "appointment_time": "tomorrow at 5 pm"})
+    assert "from 6:00 pm to 9:00 pm" in str(hasan_too_early["tool"])
+
+    nobody = await details({"doctor": "Dr. Who"})
+    assert nobody["state"] == {} and "isn't one of our doctors" in str(nobody["tool"])
+
+
+async def test_find_doctor_works_out_the_day_in_python(world: World) -> None:
+    agent = await clinic(world)
+    world.llm.script = [
+        ToolCall("c1", "find_doctor", {"speciality": "Cardiology", "day": "tomorrow"}),
+        "Tomorrow, Dr. Hasan sees heart patients from 6 to 9 pm.",
+    ]
+
+    turn = await world.services.conversations.start_turn(
+        agent, None, "heart doctor tomorrow?", "web"
+    )
+    [_ async for _ in turn.events]
+
+    async with world.sessions() as s:
+        conv = await s.get(Conversation, turn.conversation_id)
+    assert conv is not None
+    found = conv.messages[-2]["content"]
+    assert "Wednesday 30 Sep" in found and "Dr. Imran Hasan" in found
+    assert "Dr. Nasrin Akter" not in found  # she doesn't work on Wednesdays
+
+
+async def say(world: World, agent: LiveAgent, conv: str | None, script: list[object]) -> str:
+    """One turn with a scripted model; returns the conversation id."""
+    world.llm.script = script
+    turn = await world.services.conversations.start_turn(agent, conv, "…", "web")
+    [_ async for _ in turn.events]
+    return turn.conversation_id
+
+
+async def book(world: World, agent: LiveAgent) -> Record:
+    world.decider.script = [{"read_back": 0.95, "said_yes": 0.95}]
+    details = ToolCall("c1", "set_details", {"task": "appointment", "details": DETAILS})
+    conv = await say(world, agent, None, [details, READ_BACK])
+    await say(world, agent, conv, [ToolCall("c2", "submit_request", {}), "Sent."])
+    async with world.sessions() as s:
+        return (await s.scalars(select(Record))).one()
+
+
+async def tool_said(world: World, conv: str) -> str:
+    async with world.sessions() as s:
+        c = await s.get(Conversation, conv)
+    assert c is not None
+    return str(c.messages[-2]["content"])
+
+
+async def test_an_appointment_is_cancelled_with_its_code_and_name_after_a_yes(
+    world: World,
+) -> None:
+    agent = await clinic(world)
+    record = await book(world, agent)
+    assert record.code == "A-101"
+
+    def cancel(code: str, name: str) -> list[object]:
+        return [ToolCall("c", "cancel_appointment", {"code": code, "name": name}), "…"]
+
+    world.decider.script = [
+        {"read_back": 0.1, "said_yes": 0.1},
+        {"read_back": 0.95, "said_yes": 0.95},
+    ]
+    wrong = await say(world, agent, None, cancel("a101", "Someone Else"))
+    assert "No appointment matches that code and name" in await tool_said(world, wrong)
+    assert "Hasan" not in await tool_said(world, wrong)  # nothing about it leaks
+
+    conv = await say(world, agent, None, cancel("a 101", "kayes"))  # no read-back yet
+    assert "Cancel appointment A-101 with Dr. Imran Hasan on Wed 30 Sep, 7:00 pm" in (
+        await tool_said(world, conv)
+    )
+    async with world.sessions() as s:
+        assert (await s.get(Record, record.id)).status == "new"  # type: ignore[union-attr]
+
+    await say(world, agent, conv, cancel("A-101", "Kayes"))  # after the yes
+    async with world.sessions() as s:
+        assert (await s.get(Record, record.id)).status == "cancelled"  # type: ignore[union-attr]
+
+
+async def test_an_appointment_moves_only_to_a_time_the_doctor_works(world: World) -> None:
+    agent = await clinic(world)
+    record = await book(world, agent)
+
+    def move(when: str) -> list[object]:
+        args = {"code": "A-101", "name": "Kayes", "new_time": when}
+        return [ToolCall("c", "reschedule_appointment", args), "…"]
+
+    conv = await say(world, agent, None, move("monday at 7 pm"))  # Dr. Hasan: Tue and Wed
+    assert "not on Mondays" in await tool_said(world, conv)
+
+    world.decider.script = [{"read_back": 0.95, "said_yes": 0.95}]
+    await say(world, agent, conv, move("tuesday at 8 pm"))
+    async with world.sessions() as s:
+        moved = await s.get(Record, record.id)
+    assert moved is not None and moved.details["appointment time"] == "Tue 29 Sep, 8:00 pm"  # today

@@ -42,11 +42,16 @@ async def submit_request(ctx: ToolContext, args: SubmitRequestInput) -> ToolResu
             "back, ask for a clear yes, and call submit_request only after it."
         )
 
-    await ctx.requests.submit(confirmed)
+    code = await ctx.requests.submit(confirmed)
     left = {k: v for k, v in ctx.state.get("details", {}).items() if k not in have}
     return ToolResult(
         ok=True,
-        data={"sent": True, "next": "Tell the visitor the team will get back to them."},
+        data={
+            "sent": True,
+            "code": code,
+            "next": f"Tell the visitor the team will get back to them, and give them the code "
+            f"{code}: they need it to change or cancel.",
+        },
         state={"task": None, "details": left},  # an order in progress keeps its details
     )
 

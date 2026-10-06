@@ -28,8 +28,13 @@ log = logging.getLogger(__name__)
 
 
 def enabled_tools(agent: LiveAgent) -> list[Tool]:
-    """The tools the agent's jobs need. `search_items` only when the items aren't all listed."""
-    return tools_for(agent.tasks, search=not agent.items_in_prompt, documents=bool(agent.documents))
+    """The agent's tools. `search_items` only when the items aren't all listed."""
+    return tools_for(
+        agent.tasks,
+        agent.tools,
+        search=not agent.items_in_prompt,
+        documents=bool(agent.documents),
+    )
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,7 @@ class ConversationService:
             knowledge=ConversationKnowledge(self.knowledge, agent.workspace_id),
             orders=records,
             requests=records,
+            appointments=records,
             tasks=agent.tasks,
             now=now,
             state=conv.state,

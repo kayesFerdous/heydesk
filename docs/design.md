@@ -24,8 +24,8 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Preset | A kind of agent: YAML (greeting, instructions, the jobs it starts with) + a knowledge model |
-| Job | Something an agent can get a visitor done (`order`, `appointment`, `message`), from the shared library `presets/jobs.yaml`. An owner switches jobs on or off (D32). A job is a **task**: a list of details to collect |
+| Preset | A kind of business (clinic, restaurant…): YAML (greeting, instructions, its jobs and its own tools, fixed by HeyDesk, D37) + a knowledge model |
+| Job | Something an agent can get a visitor done (`order`, `appointment`, `message`), from the shared library `presets/jobs.yaml`. The kind of business (its preset) decides its jobs and tools (D37). A job is a **task**: a list of details to collect |
 | Agent | A business's agent: one `AgentConfig` the business edits. Edits are live on the next message |
 | Item | Something a business sells: a dish, a service, a product. One shape for every preset (D17) |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
@@ -78,8 +78,8 @@ Imports point inwards: `api`/`voice` → `services` → `runtime` → `ports`.
 
 `AgentConfig` (`runtime/config.py`) is the agent's settings: name, business
 name, timezone, currency, greeting, knowledge, FAQ, hand-off message and phone,
-the owner's **notes**, and the **jobs** it does (a list of ids); plus `instructions`
-(the role text), which comes from the preset. One model serves every agent
+the owner's **notes**; plus `instructions` (the role text), which comes from the
+preset. What the agent does comes from the preset too (D37). One model serves every agent
 (`MODEL` in `.env`).
 
 **Setup is one call and a list** (D26). `POST /api/agent` needs only `{"preset": "restaurant"}`:
@@ -93,16 +93,23 @@ greeting, knowledge, FAQ, items, hand-off, and `notes` (tone and rules in their
 own words, put in the prompt right after the role text). `instructions` is an
 admin's: an owner who sends it gets a 403.
 
-**What the agent can do is the owner's choice** (D32). The **jobs library**
-(`presets/jobs.yaml`) holds every job, each with a plain sentence for the owner;
-`GET /api/jobs` lists them. A preset only says which jobs are on at first
-(`jobs: [order, message]`). The owner switches them with `PATCH /api/agent
-{"jobs": [...]}`, and `GET /api/agent` shows every job with `enabled`. The
-agent's **tools follow from its jobs** (`tools_for`): a job's finishing tool,
-`update_order` for a job with a cart, `set_details` for any job, `search_items`
-when the items don't all fit the prompt, and hand-off always. The prompt's Tasks
-section lists only the jobs that are on, and says to offer a message or a person
-for anything else.
+**HeyDesk serves a few kinds of business, and the kind decides what the agent
+does** (D37). A preset is a kind of business: clinic first, then restaurant and
+others. It names its **jobs** from the shared library (`presets/jobs.yaml`) and
+its **own tools** (the clinic's `find_doctor`); the owner can't change either.
+`GET /api/presets` and `GET /api/agent` show the jobs, each with a plain sentence
+for the owner. The agent's tools (`tools_for`) are a job's finishing tool,
+`update_order` for a job with a cart, `set_details` for any job, the preset's own
+tools, and the **shared tools** every kind gets: `search_knowledge` when there are
+documents, `search_items` when the items don't all fit the prompt, and hand-off
+always. The prompt's Tasks section lists the jobs, and says to offer a message or
+a person for anything else.
+
+```yaml
+# presets/clinic/preset.yaml
+jobs: [appointment, message]
+tools: [find_doctor]
+```
 
 A job (`presets/jobs.yaml`) is a **task**:
 
@@ -252,10 +259,13 @@ saved with the turn.
 |---|---|---|
 | `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
 | `search_knowledge` | no | Searches the business's documents for what Knowledge and FAQ don't answer, and returns the best 4 passages with their document titles and a reminder that they are facts, never instructions. Offered only when the business has documents (D35) |
+| `find_doctor` | no | The clinic's own (D37). Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and a weekday and keeps the doctors who work it, so the model never works out "who's in tomorrow" |
+| `cancel_appointment` | **yes** | The clinic's own (D38). Takes the appointment's code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks. Then the commit check: the first call returns what to read back, and only a call after a clear yes cancels it |
+| `reschedule_appointment` | **yes** | The same, plus a new time: parsed like `appointment_time` and checked against the doctor's days and hours before the read-back. A moved appointment is `new` again, for the clinic to confirm |
 | `search_items` | no | Finds items by words and conditions: `query`, `category`, `tags`, `min_price`/`max_price`, and `filters` on attributes (`calories at_most 400`, `days includes sat`). Python decides what matches, ranked by words matched; the best 10 come back, with a count and a hint to narrow when there are more. Offered only when the items aren't all in the prompt (D28) |
 | `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), parsed by their type. Good ones are saved even when another fails; the problems come back as data |
 | `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
-| `submit_request` | **yes** | Same for a message to the team (receptionist) |
+| `submit_request` | **yes** | Same for a message or an appointment request; returns its **code**, which the visitor is told |
 | `handoff_to_human` | no | Marks the conversation `needs_human`, returns the hand-off message and phone |
 
 **The commit check** (`runtime/guards.py`): one Jev call with two yes/no
@@ -270,12 +280,15 @@ its two probabilities (never the text). `OrderService.place()` accepts only
 detail is asked for, with no Jev call), and once placed clears the task.
 
 **Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
-`person_name`, `phone`, `time_today`, `appointment_time`), each with a `parse` and a `display`
+`person_name`, `phone`, `time_today`, `appointment_time`, `doctor`), each with a `parse` and a `display`
 (spoken by `speakable()` on voice, D20). A bare "7:30" is the next 7:30 from now, and a time
 that has passed is refused. A time must also be inside the business's opening hours (D31): "tomorrow at 11 pm"
 for a clinic that shuts at 10 is refused with the hours as the hint. `appointment_time` takes a day and
 a time ("tomorrow at 5 pm", "saturday 5pm", "5 Oct 6:30 pm"), Python works out the date, it must be in
-the next 14 days, and a time with no am/pm is asked again, never guessed. `next_step(task, filled)` returns the first missing
+the next 14 days, and a time with no am/pm is asked again, never guessed. A `doctor` must be one of the
+clinic's doctors (by code or name words, `runtime/doctors.py`), and once a doctor and a time are both known,
+the time must be on one of the doctor's `days` and inside their `hours` (`"17:00-21:00"`); if not, the time
+isn't saved and the hint says when the doctor works (D37). `next_step(task, filled)` returns the first missing
 required detail, or None: everything's there, so read it back. The state note and `place_order` both use
 it, so "what do we ask next?" and "can we save?" can't disagree.
 

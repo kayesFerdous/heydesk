@@ -35,7 +35,8 @@ class LiveAgent:
     agent_id: str
     public_key: str
     config: AgentConfig
-    tasks: dict[str, Task]  # from the preset
+    tasks: dict[str, Task]  # its preset's jobs
+    tools: list[str]  # its preset's own tools (D37)
     knowledge: str  # rendered for the prompt, items included
     items_in_prompt: bool  # every item is listed, so `search_items` isn't needed (D17)
     documents: list[str]  # the titles of its documents; any means `search_knowledge` (D35)
@@ -52,6 +53,7 @@ class AgentInfo:
     id: str
     public_key: str
     config: AgentConfig
+    jobs: dict[str, Task]  # what it does: its preset's (D37)
     missing: list[str]  # what the owner still has to fill in, in plain words
 
 
@@ -60,7 +62,6 @@ def config_from_preset(preset: Preset, overrides: dict[str, Any]) -> dict[str, A
     return {
         "greeting": preset.greeting,
         "instructions": preset.instructions,
-        "jobs": preset.jobs,
         **overrides,
         "preset": preset.id,
     }
@@ -80,17 +81,14 @@ def validate(data: dict[str, Any], presets: dict[str, Preset]) -> AgentConfig:
         preset.knowledge_model.model_validate(config.knowledge)
     except ValidationError as error:
         problems |= _fields(error, "knowledge")
-    for name in config.jobs:
-        if name not in load_jobs():
-            problems[f"jobs.{name}"] = f"there's no job called {name!r}"
     if problems:
         raise InvalidConfig(problems)
     return config
 
 
-def enabled_jobs(config: AgentConfig) -> dict[str, Task]:
-    """The jobs the business has switched on, in the library's order."""
-    return {job_id: job for job_id, job in load_jobs().items() if job_id in config.jobs}
+def preset_jobs(preset: Preset) -> dict[str, Task]:
+    """What this kind of business does (D37), in the library's order."""
+    return {job_id: job for job_id, job in load_jobs().items() if job_id in preset.jobs}
 
 
 def missing_setup(config: AgentConfig, preset: Preset, item_count: int) -> list[str]:
@@ -176,14 +174,15 @@ class AgentService:
             agent = await self._get(s, ws)
         config = AgentConfig.model_validate(agent.config)
         count = len(await self.items.all(ws, agent.id))
-        missing = missing_setup(config, self.presets[config.preset], count)
-        return AgentInfo(agent.id, agent.public_key, config, missing)
+        preset = self.presets[config.preset]
+        missing = missing_setup(config, preset, count)
+        return AgentInfo(agent.id, agent.public_key, config, preset_jobs(preset), missing)
 
     async def tasks(self, ws: str) -> dict[str, Task]:
-        """The jobs the business's agent does: the ones switched on."""
+        """The jobs the business's agent does: its preset's."""
         async with self.sessions() as s:
             agent = await self._get(s, ws)
-        return enabled_jobs(AgentConfig.model_validate(agent.config))
+        return preset_jobs(self.presets[agent.preset])
 
     async def by_key(self, key: str) -> LiveAgent:
         async with self.sessions() as s:
@@ -216,7 +215,8 @@ class AgentService:
             agent.id,
             agent.public_key,
             config,
-            enabled_jobs(config),
+            preset_jobs(preset),
+            preset.tools,
             knowledge,
             in_prompt,
             titles,

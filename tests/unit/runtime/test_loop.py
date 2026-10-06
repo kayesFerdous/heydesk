@@ -24,6 +24,7 @@ from tests.conftest import (
     ListKnowledge,
     ListOrders,
     ListRequests,
+    NoAppointments,
 )
 
 
@@ -39,6 +40,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "knowledge": ListKnowledge(),
         "orders": ListOrders(),
         "requests": ListRequests(),
+        "appointments": NoAppointments(),
         "tools": [],
         "tasks": TASKS,
         "now": FIXED_NOW,

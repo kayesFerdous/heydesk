@@ -21,7 +21,8 @@ class Preset(BaseModel):
     greeting: str
     instructions: str
     items_label: str = "Items"  # what the prompt calls the business's items: "Menu", "Services"
-    jobs: list[str]  # the jobs (from jobs.yaml) an agent of this kind starts with
+    jobs: list[str]  # what this kind of business does, from jobs.yaml; fixed, not the owner's (D37)
+    tools: list[str] = []  # this kind's own tools, on top of what its jobs need: `find_doctor`
     knowledge_model: type[BaseModel]  # "module:Class" in the YAML
     render_knowledge: Callable[[Any, str], str]  # "module:function": (knowledge, currency) → text
 
@@ -40,7 +41,7 @@ class Preset(BaseModel):
 
 @cache
 def load_jobs() -> dict[str, Task]:
-    """The jobs library: every job any agent can have (D32)."""
+    """The jobs library: every job a preset can name (D32, D37)."""
     data = yaml.safe_load((HERE / "jobs.yaml").read_text(encoding="utf-8"))
     return {job_id: Task.model_validate(job) for job_id, job in data.items()}
 

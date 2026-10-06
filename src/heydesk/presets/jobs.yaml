@@ -1,5 +1,5 @@
-# The jobs library (D32): what an agent can get a visitor done. A preset says which are on by
-# default; an owner switches them on or off. The agent's tools follow from the jobs it has.
+# The jobs library (D32): what an agent can get a visitor done. Each kind of business (a preset)
+# names the jobs it does, and the owner doesn't change them (D37). The tools follow from the jobs.
 # `description` is for the owner, in plain words. Detail types: design §7.
 order:
   label: pickup order
@@ -14,10 +14,10 @@ order:
   finish_with: place_order
 appointment:
   label: appointment request
-  description: Customers ask for an appointment on a day and time inside your opening hours. Your team calls to confirm.
-  start_when: the visitor wants to see someone or asks for an appointment
+  description: Patients ask to see a doctor on a day the doctor works, inside the doctor's hours. Your team calls to confirm.
+  start_when: the visitor wants to see a doctor or asks for an appointment
   details:
-    - {name: with,             type: text,             ask: "Who would you like to see, or what is it for?"}
+    - {name: doctor,           type: doctor,           ask: "Which doctor would you like to see?"}
     - {name: appointment_time, type: appointment_time, ask: "Which day and time suit you best?"}
     - {name: name,             type: person_name,      ask: "What is the name for the appointment?"}
     - {name: phone,            type: phone,            ask: "What's the best number to confirm on?"}
