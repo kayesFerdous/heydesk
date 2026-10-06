@@ -1,9 +1,10 @@
 # CLAUDE.md
 
-HeyDesk is an **MVP**: a business creates an AI front-desk agent from a preset
-(restaurant, receptionist), edits it, and visitors talk to it by
-web chat or voice. Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira
-(the default) or Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for
+HeyDesk is an **MVP**: a business creates an AI front-desk agent of one kind (a
+restaurant, a clinic, a receptionist), edits it, and visitors talk to it by
+web chat or voice. Each kind is a **desk**: one folder in `src/heydesk/desks/` with its own
+prompt, tools, tables and routes (D41). A new kind is a new folder, not a new setting.
+Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for
 the commit check. Maira has no native tool calls, so its adapter asks for them
 as JSON in the reply (D16).
 
@@ -55,7 +56,7 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 ## The rules (design.md §3)
 
 1. **Python does facts**: prices, totals, dates, times. The model only talks.
-2. **Read back, then a yes, then save.** Writing services take only
+2. **Read back, then a yes, then save.** A store's writing methods take only
    `Confirmed[T]`, made only by `confirm()` (Jev). It fails closed.
 3. **Platform rules come first** in the prompt and aren't editable.
 4. **The system prompt is built every turn** from the agent's config, with the
@@ -79,9 +80,10 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 
 ## Testing
 
-- Unit tests for `runtime/`, `tools/`, `domain/` with `FakeLLM`, `FakeDecider`
+- Unit tests for `runtime/` and `domain/` with `FakeLLM`, `FakeDecider`
   and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
-- Integration tests on in-memory SQLite: the `world` and `client` fixtures in `tests/conftest.py`.
+- A desk's tools are tested against its real store on in-memory SQLite: the `world` and
+  `client` fixtures in `tests/conftest.py`, one test file per desk.
 - Test the normal path and the failures that matter (no yes → no order), not every edge.
 
 ## Gotchas

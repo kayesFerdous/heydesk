@@ -2,12 +2,12 @@
 
 A step is one model call. If it asks for tools, they run and their results go
 back to the model in the next step; a step with no tool calls is the reply.
-Before every step the state note is added to the system prompt, so the model
-always sees what's known and what to ask next.
+Before every step the desk's note on the conversation state (the restaurant's
+current order) is added to the system prompt, so the model sees it up to date.
 """
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -26,18 +26,7 @@ from heydesk.ports.llm import (
 )
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
-from heydesk.runtime.prompt import state_note
-from heydesk.runtime.tasks import Task
-from heydesk.runtime.tool import (
-    Appointments,
-    Catalog,
-    Knowledge,
-    Orders,
-    Requests,
-    Tool,
-    ToolContext,
-    run_tool,
-)
+from heydesk.runtime.tool import Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
 MAX_MODEL_CALLS = 6  # rule 9
@@ -53,21 +42,17 @@ class Runtime:
 
 @dataclass
 class TurnInput:
-    system: str  # built for this turn; the state note is added before every model call
-    tools: list[Tool]  # the agent's enabled tools
+    system: str  # built for this turn; the desk's note is added before every model call
+    tools: list[Tool]  # the desk's tools
     model: str
     history: list[Message]  # the transcript so far
     user_text: str
     channel: str
     agent: AgentConfig
-    items: Catalog  # the agent's items, for the tools
-    knowledge: Knowledge  # the agent's documents, for search_knowledge
-    orders: Orders  # where place_order saves
-    requests: Requests  # where submit_request saves
-    appointments: Appointments  # what the clinic's cancel and reschedule tools change
-    tasks: dict[str, Task]  # the preset's tasks
+    store: Any  # the desk's data, for its tools
     now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
+    note: Callable[[dict[str, Any]], str] = lambda state: ""  # the desk's note on the state
     is_first: bool = False  # the conversation's first turn: the greeting goes in first (D8)
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
 
@@ -88,7 +73,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
         for n in range(MAX_MODEL_CALLS):
             finished: Finished | None = None
             calls: list[ToolCall] = []
-            system = turn.system + state_note(turn.tasks, state, turn.agent.currency)
+            system = turn.system + turn.note(state)
             request = ChatRequest(system, specs, [*turn.history, *added], turn.model)
             with trace.step("model", n=n) as step:
                 async with aclosing(rt.llm.stream(request)) as stream:
@@ -121,15 +106,10 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
 
             ctx = ToolContext(
                 turn.agent,
+                turn.store,
                 state,
-                turn.items,
-                turn.knowledge,
-                turn.tasks,
                 turn.now,
                 rt.decider,
-                turn.orders,
-                turn.requests,
-                turn.appointments,
                 agent_said=agent_said,
                 visitor_said=turn.user_text,
             )

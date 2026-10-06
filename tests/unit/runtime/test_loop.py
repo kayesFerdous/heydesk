@@ -3,6 +3,9 @@ from collections.abc import AsyncGenerator
 
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.llm.fake import FakeLLM
+from heydesk.desks.restaurant import RESTAURANT
+from heydesk.desks.restaurant.tools import UPDATE_ORDER
+from heydesk.desks.shared import HANDOFF
 from heydesk.ports.llm import (
     ChatRequest,
     Finished,
@@ -14,18 +17,7 @@ from heydesk.ports.llm import (
 )
 from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
-from heydesk.tools import details, handoff, order
-from tests.conftest import (
-    AGENT,
-    CART,
-    FIXED_NOW,
-    TASKS,
-    ListCatalog,
-    ListKnowledge,
-    ListOrders,
-    ListRequests,
-    NoAppointments,
-)
+from tests.conftest import AGENT, FIXED_NOW, MenuStore
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -36,13 +28,8 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "user_text": text,
         "channel": "web",
         "agent": AGENT,
-        "items": ListCatalog(),
-        "knowledge": ListKnowledge(),
-        "orders": ListOrders(),
-        "requests": ListRequests(),
-        "appointments": NoAppointments(),
+        "store": MenuStore(),
         "tools": [],
-        "tasks": TASKS,
         "now": FIXED_NOW,
     }
     return TurnInput(**(fields | kw))  # type: ignore[arg-type]
@@ -123,7 +110,7 @@ ORDER = ToolCall(
 
 async def test_a_tool_runs_and_its_result_goes_back_to_the_model() -> None:
     llm = FakeLLM([ORDER, "That's ৳1,030 for the two of them."])
-    events = await collect(make_turn("two biryanis and a borhani", tools=[order.TOOL]), llm)
+    events = await collect(make_turn("two biryanis and a borhani", tools=[UPDATE_ORDER]), llm)
 
     assert ToolStarted("update_order", "Updating your order…") in events
     assert ToolFinished("update_order", ok=True) in events
@@ -141,7 +128,7 @@ async def test_a_tool_runs_and_its_result_goes_back_to_the_model() -> None:
 
 async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
     llm = FakeLLM([ORDER] * MAX_MODEL_CALLS)
-    end = (await collect(make_turn(tools=[order.TOOL]), llm))[-1]
+    end = (await collect(make_turn(tools=[UPDATE_ORDER]), llm))[-1]
 
     assert isinstance(end, TurnEnded) and end.handed_off
     assert len(llm.requests) == MAX_MODEL_CALLS
@@ -151,7 +138,7 @@ async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
 
 async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
     llm = FakeLLM([ToolCall("call_1", "handoff_to_human", {}), "Of course. Please call us."])
-    events = await collect(make_turn("can I talk to a person?", tools=[handoff.TOOL]), llm)
+    events = await collect(make_turn("can I talk to a person?", tools=[HANDOFF]), llm)
 
     *_, card, end = events
     assert card == HandOff("Please call us.", "+880 1700 000000", None)
@@ -161,20 +148,16 @@ async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
     assert json.loads(end.added[-2]["content"])["phone"] == "+880 1700 000000"
 
 
-async def test_the_state_note_is_rebuilt_before_every_model_call() -> None:
-    said = {"pickup_time": "7:30", "name": "Kayes"}
-    call = ToolCall("call_2", "set_details", {"task": "order", "details": said})
-    llm = FakeLLM([call, "And the best number to reach you?"])
-    turn = make_turn("for 7:30, I'm Kayes", tools=[details.TOOL], state={"cart": CART})
-    end = (await collect(turn, llm))[-1]
+async def test_the_desks_note_is_rebuilt_before_every_model_call() -> None:
+    llm = FakeLLM([ORDER, "That's ৳1,030."])
+    turn = make_turn(tools=[UPDATE_ORDER], note=lambda state: RESTAURANT.note(AGENT, state))
+    await collect(turn, llm)
 
     first, second = (request.system for request in llm.requests)
-    assert first.startswith("SYSTEM\n# Conversation state\nTask: pickup order\n")
-    assert "Next: ask for the pickup time." in first
-    assert "pickup time = today, 7:30 pm; name = Kayes\n" in second
-    assert "Still needed: phone\nNext: ask for the phone." in second
-    assert isinstance(end, TurnEnded)
-    assert end.state["details"] == {"pickup_time": "19:30", "name": "Kayes"}
+    assert first == "SYSTEM"  # no order yet
+    assert second == (
+        "SYSTEM\n# The order so far\n2 × Chicken Biryani, 1 × Borhani, total ৳1,030\n"
+    )
 
 
 class EndsWith(FakeLLM):
@@ -205,7 +188,7 @@ async def test_a_refusal_or_a_lost_stream_is_a_failure() -> None:
 
 async def test_a_provider_failure_after_a_tool_keeps_the_transcript_valid() -> None:
     llm = FakeLLM([ORDER, LLMUnavailable("timeout")])
-    end = (await collect(make_turn(tools=[order.TOOL]), llm))[-1]
+    end = (await collect(make_turn(tools=[UPDATE_ORDER]), llm))[-1]
 
     assert isinstance(end, TurnEnded) and end.handed_off
     assert [m["role"] for m in end.added] == ["user", "assistant", "tool", "assistant"]
@@ -214,7 +197,7 @@ async def test_a_provider_failure_after_a_tool_keeps_the_transcript_valid() -> N
 
 
 async def test_a_barge_in_during_a_tool_stops_before_the_next_model_call() -> None:
-    turn = make_turn(tools=[order.TOOL])
+    turn = make_turn(tools=[UPDATE_ORDER])
     llm = FakeLLM([ORDER, "never said"])
     events: list[Event] = []
     async for event in run_turn(turn, Runtime(llm, FakeDecider())):

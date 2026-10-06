@@ -77,26 +77,23 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         conv = await s.get(Conversation, conv_id)
     assert conv is not None and conv.state["cart"]["total"] == 103000
     assert '"total": "৳1,030"' in conv.messages[3]["content"]  # the tool result the model read
-    # The menu is short, so it's in the prompt and search_items isn't offered
+    # The menu is in the prompt; the order so far is added once there is one
     request = world.llm.requests[0]
     assert "Chicken Biryani [chk-biryani] ৳450" in request.system
     assert [t.name for t in request.tools] == [
         "update_order",
-        "set_details",
         "place_order",
-        "submit_request",
+        "take_message",
         "handoff_to_human",
     ]
-    # After the order, the state note says what to ask next
-    assert "Task: pickup order" not in request.system
-    assert "Next: ask for the pickup time." in world.llm.requests[1].system
+    assert "# The order so far" not in request.system
+    assert "# The order so far\n2 × Chicken Biryani" in world.llm.requests[1].system
 
 
-async def test_a_catalog_only_gives_its_own_workspaces_items(world: World) -> None:
+async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
     agent = await world.services.agents.by_key(DEV_KEY)
-    mine = world.services.items.catalog(DEV_WORKSPACE_ID, agent.agent_id)
-    other = world.services.items.catalog("someone-else", agent.agent_id)
+    mine = world.store(agent)
+    other = agent.desk.store(world.sessions, "someone-else", world.clock)
 
-    assert len(await mine.all()) == 10 and "chk-biryani" in await mine.get(["chk-biryani"])
-    assert await other.all() == []  # rule 6: workspace_id on every query
-    assert await other.get(["chk-biryani"]) == {}
+    assert len(await mine.menu()) == 10
+    assert await other.menu() == []  # rule 6: workspace_id on every query

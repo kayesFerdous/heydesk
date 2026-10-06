@@ -52,10 +52,10 @@ In Swagger, `GET /api/conversations?status=needs_human` shows that conversation.
 
 In Swagger:
 
-1. `GET /api/records` → orders 101 and 102, with what was said in
+1. `GET /api/orders` → orders 101 and 102, with what was said in
    `GET /api/conversations/{conversation_id}`.
-2. `GET /api/agent/items`, change Chicken Biryani's `price` to `47500`,
-   and send it back with `PUT /api/agent/items`.
+2. `GET /api/menu`, change Chicken Biryani's `price` to `47500`,
+   and send it back with `PUT /api/menu`.
 3. Back in the chat, a new conversation: *how much is the chicken biryani?* → **৳475**.
 
 Say: an edit is live on the next message. There's no publish step.

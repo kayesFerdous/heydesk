@@ -23,15 +23,12 @@ from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
-from heydesk.presets import load_presets
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
-from heydesk.services.items import ItemService
 from heydesk.services.knowledge import KnowledgeService
-from heydesk.services.records import RecordService
 from heydesk.services.users import UserService
 
 
@@ -106,17 +103,11 @@ def build_services(
     now: Callable[[], datetime],
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
-    items = ItemService(sessions)
-    records = RecordService(sessions, now)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     return Services(
         admin=AdminService(sessions, now),
-        agents=AgentService(sessions, load_presets(), items, settings.MAX_ITEMS_IN_PROMPT, now),
-        conversations=ConversationService(
-            sessions, runtime, items, records, knowledge, settings, now
-        ),
-        items=items,
+        agents=AgentService(sessions, knowledge, now),
+        conversations=ConversationService(sessions, runtime, knowledge, settings, now),
         knowledge=knowledge,
-        records=records,
         users=UserService(sessions, settings.jwt_secret, now),
     )

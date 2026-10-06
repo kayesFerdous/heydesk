@@ -7,7 +7,7 @@ from sqlalchemy import update
 from heydesk.models import User
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY
-from tests.integration.test_records_api import place_an_order
+from tests.integration.test_restaurant import place_an_order
 
 ADMIN = {"email": "admin@heydesk.test", "password": "an admin password"}
 
@@ -64,7 +64,7 @@ async def test_what_an_admin_changes_or_opens_is_in_the_audit_log(
     conv_id = await place_an_order(app, client)
     admin = await as_admin(app, DEV_WORKSPACE_ID)
 
-    await admin.get("/api/records")  # a list: not logged
+    await admin.get("/api/orders")  # a list: not logged
     await admin.get(f"/api/conversations/{conv_id}")  # one chat opened
     await admin.patch("/api/agent", json={"faq": "Open on Eid."})  # a write
 
@@ -96,9 +96,7 @@ async def test_a_suspended_business_is_unavailable_but_its_owner_can_log_in(
     await admin.patch(f"/api/admin/businesses/{DEV_WORKSPACE_ID}", json={"status": "active"})
     assert (await client.get(f"/api/chat/{DEV_KEY}")).status_code == 200
     rows = (await admin.get("/api/admin/businesses")).json()
-    assert [(r["name"], r["status"], r["preset"]) for r in rows] == [
-        ("Dev", "active", "restaurant")
-    ]
+    assert [(r["name"], r["status"], r["kind"]) for r in rows] == [("Dev", "active", "restaurant")]
     await admin.aclose()
 
 

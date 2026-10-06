@@ -18,7 +18,7 @@ class BusinessRowOut(BaseModel):
     id: str
     name: str
     status: Literal["active", "suspended"]
-    preset: str | None
+    kind: str | None  # its desk
     owner_email: str | None
     conversations: int
     last_activity_at: datetime | None

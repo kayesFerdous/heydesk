@@ -1,11 +1,11 @@
-"""An agent's config: what a business edits (design §5)."""
+"""What every business edits about its agent (design §5). Each desk adds its own fields."""
 
-from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
+from heydesk.runtime.schedule import WeeklyHours
 
 # The only names customer text may use. Filled with str.replace, never str.format:
-# a customer's instructions may contain braces.
+# a customer's notes may contain braces.
 PLACEHOLDERS = ("business_name",)
 
 
@@ -16,16 +16,20 @@ class Handoff(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    preset: str
+    """The fields every kind of business has. A desk's config subclasses this: the clinic adds
+    `emergency_phone`, the restaurant `policies`, and each sets its own `greeting`."""
+
+    model_config = ConfigDict(extra="forbid")  # a field this desk doesn't have is a 422
+
     name: str
     business_name: str
     timezone: str = "Asia/Dhaka"
     country: str = "BD"  # for phone numbers
     currency: str = "BDT"
-    greeting: str
-    instructions: str = Field(max_length=8000)  # the role text: HeyDesk's, from the preset (D25)
+    greeting: str = "Hello, thanks for contacting {business_name}. How can I help you today?"
+    address: str = ""  # left empty at first: the setup list says what's missing
+    hours: WeeklyHours = WeeklyHours()
     notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
-    knowledge: dict[str, Any] = Field(default_factory=dict)  # checked by the preset's model
     faq: str = Field(default="", max_length=20000)
     handoff: Handoff = Handoff()
 

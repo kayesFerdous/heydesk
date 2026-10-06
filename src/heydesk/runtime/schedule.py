@@ -1,4 +1,4 @@
-"""Opening hours, shared by every preset's knowledge."""
+"""Opening hours, shared by every desk."""
 
 from datetime import date, datetime, time
 

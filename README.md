@@ -1,8 +1,8 @@
 # HeyDesk
 
-An AI front desk a business can build in minutes. It picks a preset
-(restaurant host, receptionist, clinic front desk), fills in its menu, hours and FAQ, edits the
-instructions. Visitors talk to the agent by web chat or by
+An AI front desk a business can build in minutes. It picks its kind of business (a restaurant,
+a clinic, a receptionist for an office), fills in its menu or doctors, hours and FAQ, and adds
+its own notes. Each kind has its own prompt and tools. Visitors talk to the agent by web chat or by
 voice; it answers questions, takes orders and messages, and hands over to a
 person when needed.
 
@@ -11,7 +11,7 @@ nothing is saved without reading it back and hearing a yes.
 
 ## Status
 
-Web chat and voice orders, the restaurant, receptionist and clinic presets, and the
+Web chat and voice orders, the restaurant, clinic and receptionist desks, and the
 API with login all work. What's left is the demo (see **[PLAN.md](PLAN.md)**).
 
 ## Docs
@@ -57,18 +57,18 @@ Tests are offline and free:
 scripts/check.sh   # tests, lint, format, types, import rules
 ```
 
-## Switching presets
+## Switching the kind of business
 
-The dev agent comes from a preset and a seed file. For the receptionist (or
-`clinic` with `examples/agents/clinic.yaml`), set these in `.env` and restart:
+The dev agent is one desk (`restaurant`, `clinic` or `receptionist`) and a seed file. For the
+clinic, set these in `.env` and restart:
 
 ```bash
-DEV_AGENT_PRESET=receptionist
-DEV_AGENT_SEED=examples/agents/receptionist.yaml
+DEV_AGENT_KIND=clinic
+DEV_AGENT_SEED=examples/agents/clinic.yaml
 ```
 
 Edit the seed (`examples/agents/*.yaml`) and restart to change the dev agent:
-its name, knowledge, FAQ and items. Any agent can be opened on the dev page
+its name, address, hours, FAQ, and its menu or doctors. Any agent can be opened on the dev page
 with `http://localhost:8000/?key=<public_key>`.
 
 ## Using the API
@@ -85,17 +85,18 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 
 | | |
 |---|---|
+| `GET /api/desks` | The kinds of business, and the fields each one's agent has |
+| `POST /api/agent` | Create your agent: `{"kind": "restaurant"}` is enough. `GET /api/agent` then lists what is `missing` |
 | `GET /api/agent` | Your agent (a business has one), with its `public_key` (the chat URL) |
-| `PATCH /api/agent` | Edit the config: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message. `instructions` is for admins |
-| `PUT /api/agent/items` | Replace the items, for example a new price (in paisa) |
+| `PATCH /api/agent` | Edit it: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message |
 | `POST /api/agent/documents` | Add pasted text to the agent's knowledge: `{"title": "Policies", "text": "…"}`. `POST /api/agent/documents/file` takes a `.txt`, `.md` or `.pdf`. `GET` lists them and `DELETE /api/agent/documents/{id}` removes one. The agent searches them when a question isn't answered elsewhere |
-| `POST /api/agent/items/import` | Items from a spreadsheet saved as CSV: `{"csv": "…", "mapping": {"Product Title": "name"}}`. Columns we don't know become the items' own facts. Add `"dry_run": true` to check it first |
-| `POST /api/agent` | Create your agent from a preset: `{"preset": "restaurant"}` is enough (`GET /api/presets` lists them). `GET /api/agent` then lists what is `missing` |
+| `GET/PUT /api/menu` | A restaurant's menu, replaced whole (prices in paisa) |
+| `GET /api/orders` | A restaurant's orders, newest first; `?status=`, `?q=` (number, name or phone). `PATCH /api/orders/{id}` with `{"status": "ready"}`: new → ready → collected (or cancelled) |
+| `GET/PUT /api/doctors` | A clinic's doctors, with their `days`, `start` and `end` |
+| `GET /api/appointments` | A clinic's appointment requests (`A-101`). `PATCH` moves them: new → confirmed → done (or cancelled) |
+| `GET /api/messages` | Messages for the team, from any kind of agent (`M-101`). `PATCH` with `{"status": "handled"}` |
+| `GET /api/conversations/{id}` | What was said |
 | `GET /api/admin/businesses` | Admins only: every business. Suspend one with `PATCH /api/admin/businesses/{id}`; act inside one with an `X-Business: <id>` header on the routes here |
-| `GET /api/inbox` | The sidebar: each job the agent does, and how many are waiting |
-| `GET /api/records` | What the agent took, orders and messages together. Filter with `?job=`, `?status=`, `?q=` (number, name or phone) |
-| `PATCH /api/records/{id}` | `{"status": "ready"}`. An order goes new → ready → collected (or cancelled); a message new → handled → archived |
-| `GET /api/conversations/{id}` | What was said, and the records it made |
 
 A new business signs up with `POST /api/auth/signup` and gets its own
 workspace; it never sees another's agents. Errors always look like

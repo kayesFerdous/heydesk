@@ -8,6 +8,7 @@ import logging
 
 from heydesk.domain.values import Confirmed
 from heydesk.ports.decider import Decider, DeciderUnavailable, Question, YesNo
+from heydesk.runtime.tool import ToolResult
 
 log = logging.getLogger(__name__)
 
@@ -43,3 +44,15 @@ async def confirm[T](
     if read_back.likely(THRESHOLD) and said_yes.likely(THRESHOLD):
         return Confirmed(value)
     return None
+
+
+def ask_for_yes(read_back: str, tool: str) -> ToolResult:
+    """What a writing tool returns until the visitor has said yes to its read-back."""
+    return ToolResult(
+        ok=False,
+        data={
+            "read_back": read_back,
+            "next": f"Read this back and ask for a clear yes. Only after the yes, call {tool} "
+            "again with the same details.",
+        },
+    )

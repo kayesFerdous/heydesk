@@ -1,5 +1,6 @@
-# The dev agent's business (DEV_AGENT_SEED). Any AgentConfig field may be set here;
-# what's left out comes from the preset. Prices are in paisa: 45000 = ৳450.
+# A restaurant agent (DEV_AGENT_KIND=restaurant, DEV_AGENT_SEED=this file). Any field of the
+# restaurant's config may be set here (desks/restaurant/__init__.py); what's left out has a
+# default. Prices are in paisa: 45000 = ৳450.
 name: Spice Garden assistant
 business_name: Spice Garden
 timezone: Asia/Dhaka
@@ -7,21 +8,20 @@ currency: BDT
 handoff:
   message: Let me get a member of our team to help you. You can also call us.
   phone: "+880 1700 000000"
-knowledge:
-  address: "House 12, Road 5, Dhanmondi, Dhaka"
-  hours:
-    mon: ["11:00", "22:00"]
-    tue: ["11:00", "22:00"]
-    wed: ["11:00", "22:00"]
-    thu: ["11:00", "22:00"]
-    fri: ["14:00", "23:00"]
-    sat: ["11:00", "23:00"]
-    sun: ["11:00", "23:00"]
-  policies: |
-    Pickup only for now. Prices include VAT.
-    Dishes may contain nuts, dairy and gluten. Ask the team about allergens before ordering.
-# The menu: saved in the items table, not the config (D17)
-items:
+address: "House 12, Road 5, Dhanmondi, Dhaka"
+hours:
+  mon: ["11:00", "22:00"]
+  tue: ["11:00", "22:00"]
+  wed: ["11:00", "22:00"]
+  thu: ["11:00", "22:00"]
+  fri: ["14:00", "23:00"]
+  sat: ["11:00", "23:00"]
+  sun: ["11:00", "23:00"]
+policies: |
+  Pickup only for now. Prices include VAT.
+  Dishes may contain nuts, dairy and gluten. Ask the team about allergens before ordering.
+# The menu: saved in the menu_items table, not the config
+menu:
   - {code: chk-biryani, name: Chicken Biryani, price: 45000, category: Rice, tags: [popular, spicy],
      description: "Basmati rice slow-cooked with chicken, potato and egg."}
   - {code: mutton-kacchi, name: Mutton Kacchi, price: 55000, category: Rice, tags: [popular],

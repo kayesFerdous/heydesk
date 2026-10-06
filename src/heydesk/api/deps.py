@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 
 from heydesk.errors import HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
@@ -75,3 +76,7 @@ type Svc = Annotated[Services, Depends(get_services)]
 type Workspace = Annotated[str, Depends(current_workspace)]
 type User = Annotated[Principal, Depends(current_user)]
 type Admin = Annotated[Principal, Depends(admin_only)]
+
+
+class StatusIn(BaseModel):
+    status: str  # where it may go depends on what it is: see the 409 message

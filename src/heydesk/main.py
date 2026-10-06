@@ -57,7 +57,7 @@ def create_app(
         if dev:
             try:
                 agent = await app.state.services.agents.ensure_dev_agent(
-                    settings.DEV_AGENT_PRESET, settings.DEV_AGENT_SEED
+                    settings.DEV_AGENT_KIND, settings.DEV_AGENT_SEED
                 )
             except OperationalError as error:
                 raise RuntimeError(

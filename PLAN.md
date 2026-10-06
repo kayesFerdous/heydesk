@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D36). **6 Oct, D37: a few kinds of business, each with its jobs and tools fixed by us; the clinic first** (`find_doctor`, appointments checked against the doctor's days and hours). Live-checked on Maira. **Next:** the restaurant (reservations), then the others.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -231,3 +231,20 @@ preset (day 17) → barge-in (day 14). Never cut: the commit check, voice, and t
 | Q2 | ~~TypeSafe (Jev) API key~~ in `.env` (Frontdesk's), `DECIDER=jev` | Day 7 |
 | Q3 | ~~Voice framework~~: Pipecat with SmallWebRTC (D18) | Day 10 |
 | Q4 | ~~Speech-to-text~~: Gigalogy Chorus (D18). Text-to-speech: Piper (free, local) until the owner adds theirs | Day 10 |
+
+## 6 Oct: one folder per kind of business (D41)
+
+The preset engine (YAML presets, a jobs library, a generic tasks engine, `set_details`, the state
+note, generic `items` and `records`) made every business a combination of shared parts. Replaced
+by desks; built and checked offline:
+
+- [x] `desks/base.py` (`Desk`, `Store`), `desks/shared.py` (`take_message`, hand-off, documents search)
+- [x] Clinic: `doctors` and `appointments` tables, `request_appointment(doctor, time, name, phone)`
+- [x] Restaurant: `menu_items` and `orders` tables, `place_order(pickup_time, name, phone)`, its order note
+- [x] Receptionist: its own fields (`about`, `services`), shared tools only
+- [x] Routes: `/api/desks`, `/api/menu`, `/api/orders`, `/api/doctors`, `/api/appointments`, `/api/messages`
+- [x] One fresh migration; seeds rewritten; `DEV_AGENT_KIND` replaces `DEV_AGENT_PRESET`
+- [x] Cut: `search_items`, item attributes, the CSV import, admin-only `instructions`
+- [ ] **Done when:** each desk, live on Maira, takes its booking or order only after a yes
+- [ ] `../heydesk-frontend` uses the new routes
+

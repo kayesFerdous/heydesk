@@ -20,7 +20,9 @@ class Conversation(Base):
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
     channel: Mapped[str] = mapped_column(String(20))  # web / voice
     status: Mapped[str] = mapped_column(String(20), default="active")  # active / needs_human
-    state: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # open tasks, the cart
+    state: Mapped[dict[str, Any]] = mapped_column(
+        JSON, default=dict
+    )  # what a desk keeps between turns: the cart
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)

@@ -19,7 +19,7 @@ class BusinessRow:
     id: str
     name: str
     status: str
-    preset: str | None  # None: no agent yet
+    kind: str | None  # its desk; None: no agent yet
     owner_email: str | None
     conversations: int
     last_activity_at: datetime | None
@@ -69,7 +69,7 @@ class AdminService:
             .subquery()
         )
         query = (
-            select(Workspace, Agent.preset, owner.c.email, chats.c.n, chats.c.last)
+            select(Workspace, Agent.kind, owner.c.email, chats.c.n, chats.c.last)
             .outerjoin(Agent, Agent.workspace_id == Workspace.id)
             .outerjoin(owner, owner.c.workspace_id == Workspace.id)
             .outerjoin(chats, chats.c.workspace_id == Workspace.id)
@@ -79,8 +79,8 @@ class AdminService:
         async with self.sessions() as s:
             rows = (await s.execute(query)).all()
         return [
-            BusinessRow(ws.id, ws.name, ws.status, preset, email, n or 0, last, ws.created_at)
-            for ws, preset, email, n, last in rows
+            BusinessRow(ws.id, ws.name, ws.status, kind, email, n or 0, last, ws.created_at)
+            for ws, kind, email, n, last in rows
         ]
 
     async def set_business_status(self, workspace_id: str, status: str) -> None:

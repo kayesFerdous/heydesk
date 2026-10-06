@@ -12,40 +12,37 @@ from httpx import ASGITransport, AsyncClient
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-import heydesk.models  # noqa: F401  (registers the tables)
+import heydesk.desks  # noqa: F401  (registers every desk's tables)
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
-from heydesk.domain.values import Confirmed, NewOrder, NewRequest
+from heydesk.desks.restaurant import RestaurantConfig
+from heydesk.desks.restaurant.values import MenuItem
 from heydesk.main import create_app
-from heydesk.ports.knowledge_store import Snippet
-from heydesk.presets import load_jobs
-from heydesk.runtime.config import AgentConfig, Handoff
-from heydesk.runtime.items import Item
+from heydesk.models import Conversation
+from heydesk.runtime.config import Handoff
 from heydesk.runtime.tool import ToolContext
 from heydesk.services import Services
-from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.wiring import build_services
 
 FIXED_NOW = datetime(2026, 9, 29, 8, 0, tzinfo=UTC)  # Tuesday, 14:00 in Dhaka
-SEED = Path(__file__).parents[1] / "examples" / "agents" / "restaurant.yaml"
+SEEDS = Path(__file__).parents[1] / "examples" / "agents"
+SEED = SEEDS / "restaurant.yaml"
 DEV_KEY = "dev-restaurant"
-MENU = [Item.model_validate(i) for i in yaml.safe_load(SEED.read_text(encoding="utf-8"))["items"]]
-AGENT = AgentConfig(  # a small config for unit tests
-    preset="restaurant",
+AGENT = RestaurantConfig(  # a small config for unit tests
     name="Test assistant",
     business_name="Spice Garden",
     timezone="Asia/Dhaka",
     greeting="Hi, welcome to {business_name}!",
-    instructions="Be brief.",
-    knowledge={},
-    tools=[],
     handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
 )
-TASKS = {job: load_jobs()[job] for job in ("order", "message")}
+MENU = [
+    MenuItem.model_validate(i) for i in yaml.safe_load(SEED.read_text(encoding="utf-8"))["menu"]
+]
 CART = {  # what update_order saves for two biryanis and a borhani
     "lines": [
         {"code": "chk-biryani", "name": "Chicken Biryani", "quantity": 2, "price": 45000},
@@ -55,76 +52,21 @@ CART = {  # what update_order saves for two biryanis and a borhani
 }
 
 
-class ListCatalog:
-    """An in-memory `Catalog` for unit tests: the seed's menu."""
+class MenuStore:
+    """Just enough of a `RestaurantStore` for unit tests: the seed's menu."""
 
-    def __init__(self, items: list[Item] = MENU) -> None:
-        self.items = items
-
-    async def get(self, codes: list[str]) -> dict[str, Item]:
-        return {i.code: i for i in self.items if i.code in codes}
-
-    async def all(self) -> list[Item]:
-        return self.items
+    async def menu(self) -> list[MenuItem]:
+        return MENU
 
 
-class ListKnowledge:
-    """An in-memory `Knowledge` for unit tests: the snippets it was given."""
-
-    def __init__(self, snippets: list[Snippet] | None = None) -> None:
-        self.snippets = snippets or []
-        self.asked: list[str] = []
-
-    async def search(self, question: str) -> list[Snippet]:
-        self.asked.append(question)
-        return self.snippets
-
-
-class ListOrders:
-    """An in-memory `Orders` for unit tests: what was placed."""
-
-    def __init__(self) -> None:
-        self.placed: list[NewOrder] = []
-
-    async def place(self, order: Confirmed[NewOrder]) -> int:
-        self.placed.append(order.value)
-        return 100 + len(self.placed)
-
-
-class ListRequests:
-    """An in-memory `Requests` for unit tests: what was sent."""
-
-    def __init__(self) -> None:
-        self.sent: list[NewRequest] = []
-
-    async def submit(self, request: Confirmed[NewRequest]) -> str:
-        self.sent.append(request.value)
-        return f"req-{len(self.sent)}"
-
-
-class NoAppointments:
-    """An `Appointments` with none, for unit tests."""
-
-    async def find(self, number: int) -> None:
-        return None
-
-    async def change(self, change: object) -> None:
-        raise AssertionError("nothing to change")
-
-
-def make_ctx(state: dict[str, Any] | None = None, **kw: Any) -> ToolContext:
+def make_ctx(store: Any = None, state: dict[str, Any] | None = None, **kw: Any) -> ToolContext[Any]:
     """A `ToolContext` for unit tests; pass any field to change it."""
     fields: dict[str, Any] = {
         "agent": AGENT,
+        "store": store,
         "state": state or {},
-        "items": ListCatalog(),
-        "knowledge": ListKnowledge(),
-        "tasks": TASKS,
         "now": FIXED_NOW,
         "decider": FakeDecider(),
-        "orders": ListOrders(),
-        "requests": ListRequests(),
-        "appointments": NoAppointments(),
         "agent_said": "",
         "visitor_said": "",
     }
@@ -178,6 +120,35 @@ class World:
     decider: FakeDecider  # says no unless a test scripts it
     clock: Clock
     embedder: FakeEmbedder
+
+    async def agent(self, kind: str = "restaurant") -> LiveAgent:
+        """The dev agent as a `kind` of desk, from its seed file."""
+        return await self.services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
+
+    def store(self, agent: LiveAgent, conversation_id: str | None = None) -> Any:
+        """The agent's desk store, as its tools get it."""
+        return agent.desk.store(
+            self.sessions, agent.workspace_id, self.clock, conversation_id=conversation_id
+        )
+
+    async def say(
+        self, agent: LiveAgent, conversation_id: str | None, script: list[Any], text: str = "…"
+    ) -> str:
+        """One turn with a scripted model; returns the conversation id."""
+        self.llm.script = script
+        turn = await self.services.conversations.start_turn(agent, conversation_id, text, "web")
+        [_ async for _ in turn.events]
+        return turn.conversation_id
+
+    async def conversation(self, conversation_id: str) -> Conversation:
+        async with self.sessions() as s:
+            conv = await s.get(Conversation, conversation_id)
+        assert conv is not None
+        return conv
+
+    async def tool_said(self, conversation_id: str) -> str:
+        """What the last tool returned, as the model saw it."""
+        return str((await self.conversation(conversation_id)).messages[-2]["content"])
 
 
 @pytest.fixture

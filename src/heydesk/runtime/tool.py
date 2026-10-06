@@ -1,4 +1,4 @@
-"""The tool contract (design §7). The tools themselves live in `tools/`.
+"""The tool contract (design §7). The tools themselves live in each desk's `tools.py`.
 
 `run_tool` never raises: bad arguments, a timeout or a bug all come back as
 `ok=False` with a hint, so the model can recover or offer the hand-off.
@@ -9,80 +9,42 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
-from heydesk.domain.values import (
-    Appointment,
-    AppointmentChange,
-    Confirmed,
-    NewOrder,
-    NewRequest,
-)
 from heydesk.ports.decider import Decider
-from heydesk.ports.knowledge_store import Snippet
 from heydesk.ports.llm import ToolCall, ToolSpec
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.items import Item
-from heydesk.runtime.tasks import Task
 
 log = logging.getLogger(__name__)
 
 
-class Catalog(Protocol):
-    """One agent's items, as tools see them. A service implements it over the database."""
-
-    async def get(self, codes: list[str]) -> dict[str, Item]: ...  # by code; unknown codes left out
-    async def all(self) -> list[Item]: ...  # in the business's order
-
-
-class Knowledge(Protocol):
-    """One agent's documents, searched (D35). A service implements it over Qdrant."""
-
-    async def search(self, question: str) -> list[Snippet]: ...  # the best few, most relevant first
-
-
-class Orders(Protocol):
-    """Where one conversation's orders are saved. Only a confirmed order gets in (rule 2)."""
-
-    async def place(self, order: Confirmed[NewOrder]) -> int: ...  # the order number
-
-
-class Requests(Protocol):
-    """Where one conversation's messages for the team are saved. Only confirmed ones (rule 2)."""
-
-    async def submit(self, request: Confirmed[NewRequest]) -> str: ...  # its code: "A-104"
-
-
-class Appointments(Protocol):
-    """A business's appointment requests, found by number; changed only when confirmed."""
-
-    async def find(self, number: int) -> Appointment | None: ...
-    async def change(self, change: Confirmed[AppointmentChange]) -> None: ...
-
-
 @dataclass(frozen=True)
-class ToolContext:
-    agent: AgentConfig
+class ToolContext[S]:
+    """What a tool gets. `store` is its desk's data (a `ClinicStore`, a `RestaurantStore`):
+    the only way a tool reaches the database, always scoped to one business."""
+
+    agent: AgentConfig  # the desk's own config class
+    store: S
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
-    items: Catalog
-    knowledge: Knowledge
-    tasks: dict[str, Task]  # the agent's jobs that are on
     now: datetime  # when the turn started, in UTC
     decider: Decider  # for the commit check
-    orders: Orders
-    requests: Requests
-    appointments: Appointments
     agent_said: str  # the agent's last message before this turn: the read-back, if there was one
     visitor_said: str  # this turn's message: the yes, if there was one
+
+    @property
+    def local_now(self) -> datetime:
+        """Now in the business's timezone: what "today" and "7 pm" mean."""
+        return self.now.astimezone(ZoneInfo(self.agent.timezone))
 
 
 @dataclass(frozen=True)
 class ToolResult:
     ok: bool
     data: dict[str, Any]  # short JSON the model reads
-    state: dict[str, Any] | None = None  # changes to the conversation state (the cart, details)
+    state: dict[str, Any] | None = None  # changes to the conversation state (the cart)
     handoff: bool = False  # the turn ends with the hand-off card; the conversation needs a person
 
 
@@ -91,12 +53,43 @@ def fail(hint: str) -> ToolResult:
     return ToolResult(ok=False, data={"error": hint})
 
 
+class Checks:
+    """Checks a tool's details one by one and remembers what's missing or wrong, so the model
+    hears about all of it at once and knows what to ask next. A tool takes each detail with
+    `take`, and if any came back None, returns `result()`."""
+
+    def __init__(self) -> None:
+        self.missing: list[str] = []
+        self.problems: dict[str, str] = {}
+
+    def take[T](self, detail: str, said: str, parse: Callable[[str], T]) -> T | None:
+        """`parse(said)`, or None if `said` is empty (missing) or `parse` refused it."""
+        if not said.strip():
+            self.missing.append(detail.replace("_", " "))
+            return None
+        try:
+            return parse(said)
+        except ValueError as error:
+            self.problems[detail.replace("_", " ")] = str(error)
+            return None
+
+    def result(self) -> ToolResult:
+        first = next(iter(self.problems), None) or self.missing[0]
+        data: dict[str, Any] = {}
+        if self.problems:
+            data["problems"] = self.problems
+        if self.missing:
+            data["still_needed"] = self.missing
+        data["next"] = f"Ask for the {first}, one question at a time."
+        return ToolResult(ok=False, data=data)
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
     description: str  # for the model: when to use it, what it returns
     input_model: type[BaseModel]  # becomes the JSON Schema the model sees
-    run: Callable[[ToolContext, Any], Awaitable[ToolResult]]  # gets an `input_model` instance
+    run: Callable[[ToolContext[Any], Any], Awaitable[ToolResult]]  # gets an `input_model` instance
     label: str = ""  # web status line while it runs: "Checking the menu…"
     filler: str = ""  # voice line at the start: "Let me check that."
     timeout_s: float = 5.0
@@ -127,7 +120,7 @@ def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-async def run_tool(tool: Tool | None, call: ToolCall, ctx: ToolContext) -> ToolResult:
+async def run_tool(tool: Tool | None, call: ToolCall, ctx: ToolContext[Any]) -> ToolResult:
     if tool is None:
         return fail(f"There's no tool called {call.name!r}. Use only the tools you were given.")
     try:

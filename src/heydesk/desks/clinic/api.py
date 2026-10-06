@@ -1,0 +1,69 @@
+"""A clinic's own routes: its doctors, and the appointment requests the agent took."""
+
+from datetime import datetime
+from typing import Annotated, cast
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict
+
+from heydesk.api.deps import StatusIn, Svc, Workspace
+from heydesk.desks.clinic.models import Appointment
+from heydesk.desks.clinic.store import ClinicStore
+from heydesk.desks.clinic.values import Doctor
+
+router = APIRouter(tags=["clinic"])
+
+
+async def clinic_store(services: Svc, ws: Workspace) -> ClinicStore:
+    """404 unless the business's agent is a clinic."""
+    return cast(ClinicStore, await services.agents.store(ws, "clinic"))
+
+
+type Clinic = Annotated[ClinicStore, Depends(clinic_store)]
+
+
+class AppointmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    conversation_id: str | None
+    code: str  # what the patient was told: "A-104"
+    status: str  # new → confirmed → done, or cancelled
+    name: str
+    phone: str
+    doctor_code: str
+    doctor_name: str
+    at: datetime  # UTC
+    created_at: datetime
+    updated_at: datetime
+
+
+@router.get("/api/doctors")
+async def doctors(store: Clinic) -> list[Doctor]:
+    return await store.doctors()
+
+
+@router.put("/api/doctors")
+async def replace_doctors(body: list[Doctor], store: Clinic) -> list[Doctor]:
+    """The clinic's doctors become exactly these, in this order. Live from the next message."""
+    await store.replace_doctors(body)
+    return body
+
+
+@router.get("/api/appointments")
+async def appointments(
+    store: Clinic, status: str | None = None, q: str | None = None
+) -> list[AppointmentOut]:
+    """Newest first. `q` matches the code ("A-104"), the name or the phone."""
+    return [AppointmentOut.model_validate(a) for a in await store.find(Appointment, status, q)]
+
+
+@router.get("/api/appointments/{appointment_id}")
+async def appointment(appointment_id: str, store: Clinic) -> AppointmentOut:
+    return AppointmentOut.model_validate(await store.get(Appointment, appointment_id))
+
+
+@router.patch("/api/appointments/{appointment_id}")
+async def set_status(appointment_id: str, body: StatusIn, store: Clinic) -> AppointmentOut:
+    found = await store.set_status(Appointment, appointment_id, body.status)
+    return AppointmentOut.model_validate(found)

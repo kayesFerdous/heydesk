@@ -10,11 +10,11 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 
 ## 1. What it is
 
-A business picks a **preset** (restaurant host, receptionist, clinic front desk), fills in its
-details (menu, hours, FAQ) and adds its own notes, and it has an AI
-front-desk agent. Visitors talk to it by **web chat** or **voice** in the
+A business picks its **kind** (a restaurant, a clinic, a receptionist for an office), fills in
+its details (address, hours, its menu or doctors, FAQ) and adds its own notes, and it has an AI
+front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
 browser. It answers questions, takes orders and messages, and hands over to a
-person when needed. The business sees orders and messages through the API.
+person when needed. The business sees orders, appointments and messages through the API.
 
 **The model talks; code guarantees.** The model writes the words. Python
 decides prices, totals, times, what to ask next and when something may be
@@ -24,15 +24,13 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Preset | A kind of business (clinic, restaurant…): YAML (greeting, instructions, its jobs and its own tools, fixed by HeyDesk, D37) + a knowledge model |
-| Job | Something an agent can get a visitor done (`order`, `appointment`, `message`), from the shared library `presets/jobs.yaml`. The kind of business (its preset) decides its jobs and tools (D37). A job is a **task**: a list of details to collect |
-| Agent | A business's agent: one `AgentConfig` the business edits. Edits are live on the next message |
-| Item | Something a business sells: a dish, a service, a product. One shape for every preset (D17) |
+| Desk | A kind of business (`restaurant`, `clinic`, `receptionist`): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
+| Agent | A business's agent: one desk's config, which the business edits. Edits are live on the next message |
+| Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
-| Tool | Something the model can call: `update_order`, `place_order`… |
-| Task | Something a visitor gets done (an order, a message): a list of **details** to collect |
-| State note | The end of the system prompt, rebuilt before every model call: what's known, what's next |
+| Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human` and `search_knowledge` |
+| Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
 | Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
 
 ## 3. The rules
@@ -57,104 +55,73 @@ saved. Nothing is saved without reading it back and hearing a yes.
 ```
 src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
-├── domain/values.py     Confirmed[T] (only the commit check makes one), NewOrder
-├── ports/               Protocols: LanguageModel, Decider
-├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, and fakes for tests
-├── runtime/             the engine: loop, tool contract, items, config, prompt, tasks, state note, speech, trace
-├── tools/               the tools; DB access only through ctx.services
-├── presets/             restaurant/, receptionist/, clinic/: preset.yaml + knowledge.py
-│                        (a business's items are in the `items` table, D17)
-├── models/              tables
-├── services/            the only code that opens DB sessions
-├── api/                 routes: read the request, call one service, return
+├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
+├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore
+├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, Gemini, Qdrant, and fakes
+├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
+├── desks/               one folder per kind of business (D41)
+│   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search)
+│   ├── shared.py        take_message, handoff_to_human, search_knowledge
+│   ├── restaurant/      __init__ (config, prompt) · tools · values · models · store · api
+│   ├── clinic/          the same
+│   └── receptionist/    __init__ only: no tools or tables of its own
+├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
+├── services/            agents, conversations, users, admin, knowledge
+├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
 └── web/static/          the dev chat page
 ```
 
-Imports point inwards: `api`/`voice` → `services` → `runtime` → `ports`.
+Imports point inwards: `api`/`voice` → `services` → `desks` → `runtime` → `ports`. A desk's
+tools reach the database only through its store, and only its `api.py` knows HTTP.
 `scripts/check_imports.sh` checks it.
 
-## 5. Agents and presets
+## 5. Agents and desks
 
-`AgentConfig` (`runtime/config.py`) is the agent's settings: name, business
-name, timezone, currency, greeting, knowledge, FAQ, hand-off message and phone,
-the owner's **notes**; plus `instructions` (the role text), which comes from the
-preset. What the agent does comes from the preset too (D37). One model serves every agent
-(`MODEL` in `.env`).
+**A desk is a kind of business, written as plain Python** (D41). Each folder in `desks/` has:
 
-**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"preset": "restaurant"}`:
-the business name comes from signup, and the knowledge starts empty. `GET /api/agent`
-then says what's `missing`, in plain words ("Add your address.", "Add your menu."); it's
-empty when the agent is set up. There's no publish step (D15): the agent answers from
-the start, and what's not filled in is simply not in its prompt.
+| File | What's in it |
+|---|---|
+| `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
+| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment` |
+| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`; `Doctor` (with `works_at`), `NewAppointment` |
+| `models.py` | Its tables: `menu_items` and `orders`; `doctors` and `appointments` |
+| `store.py` | Its data access, for its tools and its owner routes, always one workspace |
+| `api.py` | Its owner routes: `/api/menu`, `/api/orders`; `/api/doctors`, `/api/appointments` |
 
-**Owners never meet a technical setting** (D25). An owner edits their business:
-greeting, knowledge, FAQ, items, hand-off, and `notes` (tone and rules in their
-own words, put in the prompt right after the role text). `instructions` is an
-admin's: an owner who sends it gets a 403.
+`desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, has_documents)` is a desk's tools
+then the shared ones: `take_message` and `handoff_to_human` always, `search_knowledge` when the
+business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
 
-**HeyDesk serves a few kinds of business, and the kind decides what the agent
-does** (D37). A preset is a kind of business: clinic first, then restaurant and
-others. It names its **jobs** from the shared library (`presets/jobs.yaml`) and
-its **own tools** (the clinic's `find_doctor`); the owner can't change either.
-`GET /api/presets` and `GET /api/agent` show the jobs, each with a plain sentence
-for the owner. The agent's tools (`tools_for`) are a job's finishing tool,
-`update_order` for a job with a cart, `set_details` for any job, the preset's own
-tools, and the **shared tools** every kind gets: `search_knowledge` when there are
-documents, `search_items` when the items don't all fit the prompt, and hand-off
-always. The prompt's Tasks section lists the jobs, and says to offer a message or
-a person for anything else.
+**The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
+name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
+subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
+`services`, and each sets its own default greeting. A field the desk doesn't have is a 422, so
+there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
+so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
-```yaml
-# presets/clinic/preset.yaml
-jobs: [appointment, message]
-tools: [find_doctor]
-```
+**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"kind": "restaurant"}`:
+the business name comes from signup. `GET /api/agent` then says what's `missing`, in plain words
+("Add your address.", "Add your menu."); it's empty when the agent is set up. There's no publish
+step (D15): the agent answers from the start, and what's not filled in is simply not in its prompt.
 
-A job (`presets/jobs.yaml`) is a **task**:
+**The menu and the doctors are tables, and they're all in the prompt.** A restaurant's
+`menu_items` (code, name, description, price, category, tags, available) and a clinic's `doctors`
+(code, name, speciality, fee, `days`, `start`, `end`, languages, description, available) are
+replaced whole with `PUT`. The prompt lists them all, one line each; there's no search for a
+long list (D41).
 
-```yaml
-order:
-    label: pickup order
-    description: Customers order from your menu and pick it up…   # for the owner
-    start_when: the visitor wants to order food
-    details:                       # asked in this order; the visitor may give them in any order
-      - {name: items,       type: cart}
-      - {name: pickup_time, type: time_today,  ask: "What time would you like to pick it up?"}
-      - {name: name,        type: person_name, ask: "What name should I put the order under?"}
-      - {name: phone,       type: phone,       ask: "What's the best number to reach you?"}
-    finish_with: place_order
-```
+**One agent per business** (D22). `agents.workspace_id` is unique and `agents.kind` names its
+desk, so a business's agent is just "the agent": no ids in the URLs. Creating a second is a 409.
+A desk's routes answer 404 for another kind (a restaurant has no doctors).
 
-`knowledge.py` holds the preset's pydantic knowledge model and `render()`,
-which writes the knowledge as short prompt lines.
+**`AgentService`** (`services/agents.py`): `create`, `update` (validates; live from the next
+message), `get` (with `missing`), `by_key` (a `LiveAgent`: its desk, config and document titles),
+`store(ws, kind)` for the owner routes. There is no publish step and no versions (D15).
 
-**Items** (D17). What a business sells is its **items**, in the `items` table,
-not in the config. Every preset uses one shape, `runtime/items.py`'s `Item`:
-`code` (the short id the model uses, `chk-biryani`), name, description, price,
-category, tags, available, and `attributes`: the business's own facts about it
-(a doctor's days and languages, a snack's calories), plain values only (D27). So the tools that use them work for any business.
-The preset only names them for the prompt (`items_label: Menu`).
-
-- Up to `MAX_ITEMS_IN_PROMPT` (60) items: all listed in the knowledge, one line each.
-- More: the prompt gives the count and the categories, and the agent gets
-  `search_items` to find them.
-
-**One agent per business** (D22). `agents.workspace_id` is unique, so a
-business's agent is just "the agent": no ids in the URLs, no list. Creating a
-second is a 409.
-
-**`AgentService`** (`services/agents.py`): `create_from_preset`, `update`
-(validates; live from the next message), `get`, `by_key` (the config plus its
-rendered knowledge and items). There is no publish step and no versions (D15).
-**`ItemService`** (`services/items.py`) saves an agent's items and gives its
-tools a `Catalog`: `get(codes)` and `all()`, always scoped to one
-workspace and agent.
-
-**Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev`
-workspace and the agent `dev-<preset>` from `DEV_AGENT_PRESET` +
-`DEV_AGENT_SEED`, and its `items:`. Edit the seed and restart, and the agent
-and its items are updated.
+**Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev` workspace and the
+agent `dev-<kind>` from `DEV_AGENT_KIND` + `DEV_AGENT_SEED`; the desk's `seed()` takes its own
+list (`menu:`, `doctors:`) out of the seed file. Edit the seed and restart, and the agent is updated.
 
 ## 6. One turn
 
@@ -172,11 +139,11 @@ the turn is saved when it ends.
 
 **What the model sees on every call**, in this order (each rule and why: [prompt-rules.md](prompt-rules.md)):
 
-1. System prompt: platform rules → role text → owner's notes → tasks → knowledge →
-   FAQ → **right now** (channel style, date and time, open or closed today, the next
-   14 days with the closed ones marked, D40) → the
-   **state note** (day 6), rebuilt before every model call and never stored
-2. Tool specs: the agent's enabled tools
+1. System prompt: platform rules → the desk's own sections (its role, what it can do, its facts)
+   → owner's notes → FAQ → documents → **right now** (channel style, date and time, open or
+   closed today, the next 14 days with the closed ones marked, D40) → the desk's **note**
+   (the restaurant's order so far), rebuilt before every model call and never stored
+2. Tool specs: the desk's tools and the shared ones
 3. The conversation: the **greeting** first (D8), then every message so far
 
 **Providers** (`LLM_PROVIDER`, D14). Every adapter keeps the transcript in the
@@ -204,34 +171,28 @@ with no tool calls is the reply. At most 6 model calls; still calling tools
 after that, or a step with neither words nor tools, is a hand-off.
 
 ```
-# Conversation state
-Task: pickup order
-Have: items = 2 × Chicken Biryani, 1 × Borhani, total ৳1,030; pickup time = today, 7:30 pm
-Still needed: name, phone
-Next: ask for the name. Suggested: "What name should I put the order under?"
+# The order so far
+2 × Chicken Biryani, 1 × Borhani, total ৳1,030
 ```
 
-The note is empty until a task starts: `set_details` names the task, or a cart
-starts the task that collects one. When everything is there, **Still needed**
-is `nothing` and **Next** says to read it all back and get a clear yes before
-the task's `finish_with` tool.
+That's the restaurant's note, empty until there's an order. The other desks have none: what's
+still needed comes back from the writing tool itself (§7).
 
 ## 7. Tools
 
-The contract lives in `runtime/tool.py` (the engine may not import `tools/`);
-the tools themselves are in `tools/`, registered in `TOOLS`. Tools are shared:
-one `update_order` serves every business, reaching its items through
-`ctx.items`. An agent gets the tools its jobs need; the conversation
-service passes the built ones to the turn.
+The contract lives in `runtime/tool.py`; the tools live in their desk (`desks/clinic/tools.py`)
+or in `desks/shared.py`. A tool reaches the database only through `ctx.store`, its desk's store.
 
 ```python
 @dataclass(frozen=True)
-class ToolContext:
-    agent: AgentConfig
-    state: dict                    # the conversation state so far
-    items: Catalog                 # this agent's items: get(codes), all()
-    tasks: dict[str, Task]         # the agent's jobs that are on
+class ToolContext[S]:
+    agent: AgentConfig             # the desk's own config
+    store: S                       # the desk's store: ClinicStore, RestaurantStore
+    state: dict                    # the conversation state so far (the cart)
     now: datetime                  # when the turn started, UTC
+    decider: Decider               # for the commit check
+    agent_said: str                # the agent's last message: the read-back, if there was one
+    visitor_said: str              # this turn's message: the yes, if there was one
 
 @dataclass(frozen=True)
 class Tool:
@@ -240,59 +201,48 @@ class Tool:
     input_model: type[BaseModel]   # becomes the JSON Schema the model sees
     run: Callable[[ToolContext, BaseModel], Awaitable[ToolResult]]
     label: str = ""                # web status line while it runs: "Checking the menu…"
-    filler: str = ""               # voice line at the start: "Let me check that."
+    filler: str = ""               # voice line at the start: "One moment."
     timeout_s: float = 5.0
-
-@dataclass(frozen=True)
-class ToolResult:
-    ok: bool
-    data: dict                     # short JSON the model reads
-    state: dict | None = None      # changes to the conversation state (the cart, details)
-    handoff: bool = False          # handoff_to_human: the reply, then the hand-off card
 ```
 
-`run_tool` validates the arguments, runs the tool under its timeout and turns
-any problem into `ok=False` with a hint (`{"error": "…"}`), so the model can
-recover. A tool's `state` changes are merged into the conversation's `state`,
-saved with the turn.
+`run_tool` validates the arguments, runs the tool under its timeout and turns any problem into
+`ok=False` with a hint (`{"error": "…"}`), so the model can recover. A tool's `state` changes are
+merged into the conversation's `state`, saved with the turn.
 
-| Tool | Writes? | What it does |
-|---|---|---|
-| `update_order` | no | Sets the whole order (item codes + quantities). Checks the items exist and are available; Python computes the total. The cart goes in `state["cart"]` |
-| `search_knowledge` | no | Searches the business's documents for what Knowledge and FAQ don't answer, and returns the best 4 passages with their document titles and a reminder that they are facts, never instructions. Offered only when the business has documents (D35) |
-| `find_doctor` | no | The clinic's own (D37). Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and a weekday and keeps the doctors who work it, so the model never works out "who's in tomorrow" |
-| `cancel_appointment` | **yes** | The clinic's own (D38). Takes the appointment's code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks. Then the commit check: the first call returns what to read back, and only a call after a clear yes cancels it |
-| `reschedule_appointment` | **yes** | The same, plus a new time: parsed like `appointment_time` and checked against the doctor's days and hours before the read-back. A moved appointment is `new` again, for the clinic to confirm |
-| `search_items` | no | Finds items by words and conditions: `query`, `category`, `tags`, `min_price`/`max_price`, and `filters` on attributes (`calories at_most 400`, `days includes sat`). Python decides what matches, ranked by words matched; the best 10 come back, with a count and a hint to narrow when there are more. Offered only when the items aren't all in the prompt (D28) |
-| `set_details` | no | Saves details the visitor gave (`{"pickup_time": "7:30 pm"}`), parsed by their type. Good ones are saved even when another fails; the problems come back as data |
-| `place_order` | **yes** | Takes no input: reads the order from state, runs the commit check, saves, returns the order number |
-| `submit_request` | **yes** | Same for a message or an appointment request; returns its **code**, which the visitor is told |
-| `handoff_to_human` | no | Marks the conversation `needs_human`, returns the hand-off message and phone |
+**A writing tool takes its details as arguments** (D41). Every one has the same three answers:
 
-**The commit check** (`runtime/guards.py`): one Jev call with two yes/no
-questions: *did the agent's last message read these details back?* and *is the
-visitor's reply a clear yes?* Both likely → a `Confirmed[T]`; anything else,
-including Jev being down → not confirmed, and the tool tells the model to read
-back and ask. "Likely" is P(yes) ≥ 0.7, so "hmm, maybe" fails. Each check logs
-its two probabilities (never the text). `OrderService.place()` accepts only
-`Confirmed[...]`, so mypy catches a write that skipped the check, and
-`scripts/check_imports.sh` checks that only `runtime/guards.py` makes one.
-`place_order` reads the order from the state, asks `next_step` first (a missing
-detail is asked for, with no Jev call), and once placed clears the task.
+1. **Something's missing or wrong**: `{"problems": {...}, "still_needed": [...], "next": "Ask for
+   the name…"}`. Each detail is checked by Python as it's taken (`Checks.take`); the model may call
+   as soon as it has a part, so a closed hour or a doctor's day off is caught early.
+2. **Everything's there, no yes yet**: `{"read_back": "...", "next": "Read this back and ask for a
+   clear yes…"}` (`ask_for_yes`).
+3. **A call after a clear yes**: saved, with its number or code.
 
-**Tasks.** `runtime/tasks.py` has the detail types (`cart`, `text`,
-`person_name`, `phone`, `time_today`, `appointment_time`, `doctor`), each with a `parse` and a `display`
-(spoken by `speakable()` on voice, D20). A bare "7:30" is the next 7:30 from now, and a time
-that has passed is refused. A time must also be inside the business's opening hours (D31; seven closed days
-are closed all week, D40, and `update_order` refuses on a closed day): "tomorrow at 11 pm"
-for a clinic that shuts at 10 is refused with the hours as the hint. `appointment_time` takes a day and
-a time ("tomorrow at 5 pm", "saturday 5pm", "5 Oct 6:30 pm"), Python works out the date, it must be in
-the next 14 days, and a time with no am/pm is asked again, never guessed. A `doctor` must be one of the
-clinic's doctors (by code or name words, `runtime/doctors.py`), and once a doctor and a time are both known,
-the time must be on one of the doctor's `days` and inside their `hours` (`"17:00-21:00"`); if not, the time
-isn't saved and the hint says when the doctor works (D37). `next_step(task, filled)` returns the first missing
-required detail, or None: everything's there, so read it back. The state note and `place_order` both use
-it, so "what do we ask next?" and "can we save?" can't disagree.
+| Tool | Desk | Writes? | What it does |
+|---|---|---|---|
+| `update_order` | restaurant | no | Sets the whole order (codes and quantities). Checks the dishes exist and are available; Python adds up the total. Refuses on a closed day (pickup is today only, D40). The cart goes in `state["cart"]` |
+| `place_order` | restaurant | **yes** | `pickup_time`, `name`, `phone`, `note`. The time must be later today and inside the hours. Returns the order number |
+| `find_doctor` | clinic | no | Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and keeps the doctors who work it |
+| `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`; the clinic phones to confirm |
+| `cancel_appointment` | clinic | **yes** | The code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks (D38) |
+| `reschedule_appointment` | clinic | **yes** | The same, plus a new time checked like a new request. A moved appointment is `new` again |
+| `take_message` | every desk | **yes** | `message`, `name`, `phone`, `best_time`. Returns its code, `M-104` |
+| `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
+| `handoff_to_human` | every desk | no | Marks the conversation `needs_human`, returns the hand-off message and phone |
+
+**The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
+agent's last message read these details back?* and *is the visitor's reply a clear yes?* Both
+likely → a `Confirmed[T]`; anything else, including Jev being down → not confirmed, and the tool
+returns its read-back. "Likely" is P(yes) ≥ 0.7, so "hmm, maybe" fails. Each check logs its two
+probabilities (never the text). A store's writing methods accept only `Confirmed[...]`, so mypy
+catches a write that skipped the check, and `scripts/check_imports.sh` checks that only
+`runtime/guards.py` makes one.
+
+**Parsing** (`runtime/parse.py`): `name`, `phone`, `text`, `time_today` (a bare "7:30" is the next
+7:30 from now; a time that has passed is refused) and `day_and_time` ("tomorrow at 5 pm",
+"saturday 5pm", "5 Oct 6:30 pm"; within 14 days; a time with no am/pm is asked again, never
+guessed). Both times must be inside the business's opening hours (D31; seven closed days are
+closed all week, D40), and a refusal's hint says the hours.
 
 ### The knowledge base (D33–D35)
 
@@ -327,11 +277,18 @@ Every table has `workspace_id` (except `workspaces`).
 | `workspaces` | id, name, status (`active`/`suspended`) |
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
-| `agents` | preset, name, public_key (unique), config JSON |
-| `items` | agent_id, code (unique per agent), name, description, price, category, tags JSON, available, attributes JSON, position |
+| `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
-| `records` | agent_id, conversation_id, job (the task), kind (`order`/`request`), number (101, 102… per business and kind), status, customer_name, customer_phone, details JSON, note; an order's lines JSON, total, currency, due_at (the pickup time) (D24) |
+| `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
+| `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
+| `orders` | the shared columns, lines JSON, total, currency, pickup_at, note. Shown by number; new → ready → collected, or cancelled |
+| `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
+| `appointments` | the shared columns, doctor_code, doctor_name, at. Code `A-104`; new → confirmed → done, or cancelled |
+
+The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
+number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
+change the table's `FLOW` doesn't allow is a 409 `invalid_transition`.
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
 business's timezone. JSON columns: assign a new value to change one, because
@@ -347,17 +304,18 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset a password), the audit log |
-| GET | `/api/presets` | Presets and their knowledge JSON Schema |
-| GET/POST/PATCH | `/api/agent` | The business's one agent: create from a preset, read, edit; problems per field |
+| GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
+| GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
-| GET/PUT | `/api/agent/items` | The agent's items, replaced whole |
-| POST | `/api/agent/items/import` | Items from a CSV (D29): replaces them; unknown columns become attributes; `mapping` renames headers; `dry_run` previews; problems per row |
-| GET | `/api/inbox` | The jobs the agent does, each with how many records wait |
-| GET/PATCH | `/api/records…` | Orders and messages, newest first (`?job=&status=&q=`); one record; move its status |
+| GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
+| GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status |
+| GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
+| GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
+| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET | `/health` | DB reachable |
 
-Everything under `/api` except chat, presets and auth needs
+Everything under `/api` except chat, desks and auth needs
 `Authorization: Bearer <token>`.
 
 **Two roles** (D23). An **owner** belongs to one business: the token says which
@@ -372,8 +330,7 @@ answers 404 `unavailable`; its owner can still log in.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
 for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21). A status
-change a record doesn't allow is a 409 `invalid_transition` (an order: new →
-ready → collected, or cancelled; a message: new → handled → archived).
+change a table's flow doesn't allow is a 409 `invalid_transition` (§8).
 
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 `handoff {message, phone}`, `done {interrupted}`, `error {message}`.
@@ -408,13 +365,12 @@ the real one is added.
 
 ## 11. Testing
 
-- Unit tests for `runtime/`, `tools/` and `domain/` with `FakeLLM`,
-  `FakeDecider` and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC =
-  14:00 in Dhaka).
-- Integration tests on in-memory SQLite through the `world` and `client`
-  fixtures (`tests/conftest.py`).
-- A few whole conversations scripted with `FakeLLM`: an order placed only after
-  a yes, a message taken, a hand-off.
+- Unit tests for `runtime/` and `domain/` with `FakeLLM`, `FakeDecider` and the fixed clock
+  (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
+- A test file per desk (`tests/integration/test_restaurant.py`, `test_clinic.py`,
+  `test_messages.py`): its tools against its real store on in-memory SQLite, its prompt, its
+  routes, and whole conversations scripted with `FakeLLM` (an order or appointment saved only
+  after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
 - Live runs against Groq and Jev only with `-m live`, and only when asked: they cost quota.
 
 ## 12. Left out on purpose
@@ -430,11 +386,11 @@ version handles them.
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
-| Fuzzy or semantic item search | `search_items` matches words and conditions exactly (no typos, no synonyms); "something light" finds nothing unless the business's words or tags say so |
-| Loading only the items a turn needs | Every turn reads all of an agent's items to build the prompt; fine for hundreds |
+| Searching a long menu or doctor list | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41) |
+| Importing a menu from a spreadsheet | `PUT /api/menu` with JSON (D41 cut the CSV import) |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Usage events, budgets, rate limits | Cost is in each turn's log line |
-| Real bookings (a free slot, a calendar), custom tasks | The clinic takes an appointment *request*; the clinic phones to confirm |
+| Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |

@@ -11,41 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
+from heydesk.desks import tools_for
 from heydesk.errors import ConversationFull, HeyDeskError, NotFound
 from heydesk.models import Conversation
-from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.events import Event, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
-from heydesk.runtime.tool import Tool
 from heydesk.services.agents import LiveAgent
-from heydesk.services.items import ItemService
 from heydesk.services.knowledge import KnowledgeService
-from heydesk.services.records import RecordService
-from heydesk.tools import tools_for
 
 log = logging.getLogger(__name__)
-
-
-def enabled_tools(agent: LiveAgent) -> list[Tool]:
-    """The agent's tools. `search_items` only when the items aren't all listed."""
-    return tools_for(
-        agent.tasks,
-        agent.tools,
-        search=not agent.items_in_prompt,
-        documents=bool(agent.documents),
-    )
-
-
-@dataclass(frozen=True)
-class ConversationKnowledge:
-    """One business's documents, for `search_knowledge` (`runtime.tool.Knowledge`)."""
-
-    service: KnowledgeService
-    workspace_id: str
-
-    async def search(self, question: str) -> list[Snippet]:
-        return await self.service.search(self.workspace_id, question)
 
 
 @dataclass
@@ -60,16 +35,12 @@ class ConversationService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
-        items: ItemService,
-        records: RecordService,
         knowledge: KnowledgeService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.runtime = runtime
-        self.items = items
-        self.records = records
         self.knowledge = knowledge
         self.settings = settings
         self.now = now
@@ -102,25 +73,28 @@ class ConversationService:
                 s.add(conv)
 
         now = self.now()
-        records = self.records.for_conversation(agent.workspace_id, agent.agent_id, conv.id)
+        desk, config = agent.desk, agent.config
+        store = desk.store(
+            self.sessions,
+            agent.workspace_id,
+            self.now,
+            conversation_id=conv.id,
+            knowledge=self.knowledge,
+        )
         turn = TurnInput(
             system=build_system_prompt(
-                agent.config, agent.tasks, agent.knowledge, channel, now, agent.documents
+                config, await desk.prompt(config, store), channel, now, agent.documents
             ),
-            tools=enabled_tools(agent),
+            tools=tools_for(desk, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
             history=conv.messages,
             user_text=text,
             channel=channel,
-            agent=agent.config,
-            items=self.items.catalog(agent.workspace_id, agent.agent_id),
-            knowledge=ConversationKnowledge(self.knowledge, agent.workspace_id),
-            orders=records,
-            requests=records,
-            appointments=records,
-            tasks=agent.tasks,
+            agent=config,
+            store=store,
             now=now,
             state=conv.state,
+            note=lambda state: desk.note(config, state),
             is_first=not conv.messages,
         )
         return RunningTurn(conv.id, self._run(turn, conv), turn.interrupt)

@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from tests.integration.test_records_api import place_an_order
+from tests.integration.test_restaurant import place_an_order
 
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
 
@@ -24,7 +24,7 @@ async def test_a_second_account_cant_see_the_first_accounts_agent(
     # Each account's /api/agent is its own, and the second has none
     assert (await second.get("/api/agent")).status_code == 404
     assert (await second.patch("/api/agent", json={"faq": "x"})).status_code == 404
-    assert (await second.get("/api/agent/items")).status_code == 404
+    assert (await second.get("/api/menu")).status_code == 404
     assert (await client.get("/api/agent")).json()["config"]["faq"] != "x"
     await second.aclose()
 
@@ -35,7 +35,7 @@ async def test_login_gives_a_token_that_works(app: FastAPI, client: AsyncClient)
 
     token = (await client.post("/api/auth/login", json=login)).json()["token"]
 
-    me = await second.get("/api/records", headers={"Authorization": f"Bearer {token}"})
+    me = await second.get("/api/conversations", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     await second.aclose()
 
@@ -62,14 +62,15 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     app: FastAPI, client: AsyncClient
 ) -> None:
     conv_id = await place_an_order(app, client)
-    [order] = (await client.get("/api/records")).json()
+    [order] = (await client.get("/api/orders")).json()
     second = await as_second_account(app)
 
-    for path in ("/api/records", "/api/conversations"):
+    await second.post("/api/agent", json={"kind": "restaurant"})  # a restaurant too
+    for path in ("/api/orders", "/api/messages", "/api/conversations"):
         assert (await second.get(path)).json() == [], path
     assert (await second.get(f"/api/conversations/{conv_id}")).status_code == 404
-    assert (await second.get(f"/api/records/{order['id']}")).status_code == 404
-    moved = await second.patch(f"/api/records/{order['id']}", json={"status": "cancelled"})
+    assert (await second.get(f"/api/orders/{order['id']}")).status_code == 404
+    moved = await second.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
     assert moved.status_code == 404
-    assert (await client.get("/api/records")).json()[0]["status"] == "new"
+    assert (await client.get("/api/orders")).json()[0]["status"] == "new"
     await second.aclose()
