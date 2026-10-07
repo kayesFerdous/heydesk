@@ -111,7 +111,9 @@ The agent can answer on the business's own Telegram bot.
 2. Put your ngrok domain in `.env` as `PUBLIC_URL=https://….ngrok-free.app`, and start
    everything with `scripts/dev.sh`: the frontend opens on that link, and its dev server passes
    `/api` on to the backend, so Telegram reaches it there too.
-3. `PUT /api/agent/telegram` with `{"token": "…"}` in Swagger.
+3. In the frontend, open **Your agent** → **Where customers reach you** → **Set up Telegram**, and
+   paste BotFather's whole reply: the token is found in it and the bot connects. (Or
+   `PUT /api/agent/telegram` with `{"token": "…"}` in Swagger.)
 4. Open the `link` it returns and press **Start**.
 
 ## Voice latency
