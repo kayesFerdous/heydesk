@@ -108,12 +108,10 @@ workspace; it never sees another's agents. Errors always look like
 The agent can answer on the business's own Telegram bot.
 
 1. In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token.
-2. Give Telegram a way to reach your server, and put the link in `.env` as `PUBLIC_URL`:
-   ```bash
-   cloudflared tunnel --url http://localhost:8000
-   ```
-   The quick tunnel's link changes each time, so connect the bot again after a restart.
-3. Restart the server, then `PUT /api/agent/telegram` with `{"token": "…"}` in Swagger.
+2. Put your ngrok domain in `.env` as `PUBLIC_URL=https://….ngrok-free.app`, and start
+   everything with `scripts/dev.sh`: the frontend opens on that link, and its dev server passes
+   `/api` on to the backend, so Telegram reaches it there too.
+3. `PUT /api/agent/telegram` with `{"token": "…"}` in Swagger.
 4. Open the `link` it returns and press **Start**.
 
 ## Voice latency
