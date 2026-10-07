@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,7 +14,7 @@ from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.errors import ConversationFull, HeyDeskError, NotFound
 from heydesk.models import Conversation
-from heydesk.runtime.events import Event, TurnEnded
+from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
@@ -28,6 +28,14 @@ class RunningTurn:
     conversation_id: str
     events: AsyncGenerator[Event]  # the listener reads these; the turn is saved at the end
     interrupt: asyncio.Event  # set it to stop the turn at the next token (a barge-in)
+
+
+@dataclass(frozen=True)
+class Reply:
+    """A whole turn's reply, for a channel that sends messages, not a stream (Telegram)."""
+
+    text: str  # empty when the turn failed: the hand-off says what to do
+    handoff: HandOff | None
 
 
 class ConversationService:
@@ -46,30 +54,27 @@ class ConversationService:
         self.now = now
 
     async def start_turn(
-        self, agent: LiveAgent, conversation_id: str | None, text: str, channel: str
+        self,
+        agent: LiveAgent,
+        conversation_id: str | None,
+        text: str,
+        channel: str,
+        contact: str | None = None,
     ) -> RunningTurn:
-        """Loads the conversation (or starts one), then runs the turn as the listener reads it."""
+        """Loads the conversation (or starts one), then runs the turn as the listener reads it.
+        A messaging app passes its `contact` (the chat id) for a new conversation."""
         text = text.strip()
         if not text or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
         async with self.sessions() as s, s.begin():
             if conversation_id:
                 conv = await self._get(s, agent, conversation_id)
-                turns = sum(1 for m in conv.messages if m.get("role") == "user")
-                if turns >= self.settings.MAX_TURNS:
+                if self._is_full(conv):
                     raise ConversationFull(
                         "This conversation is very long. Please start a new one."
                     )
             else:
-                conv = Conversation(
-                    workspace_id=agent.workspace_id,
-                    agent_id=agent.agent_id,
-                    channel=channel,
-                    state={},
-                    messages=[],
-                    created_at=self.now(),
-                    updated_at=self.now(),
-                )
+                conv = self._new(agent, channel, contact)
                 s.add(conv)
 
         now = self.now()
@@ -98,6 +103,42 @@ class ConversationService:
             is_first=not conv.messages,
         )
         return RunningTurn(conv.id, self._run(turn, conv), turn.interrupt)
+
+    async def reply(self, agent: LiveAgent, channel: str, contact: str, text: str) -> Reply:
+        """For a messaging app (D42): continues the contact's conversation, or starts one, and
+        returns the whole reply. A conversation that is full, or quiet for
+        CONVERSATION_IDLE_HOURS, is left behind: yesterday's half-order shouldn't come back."""
+        async with self.sessions() as s:
+            latest = await s.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.workspace_id == agent.workspace_id,
+                    Conversation.agent_id == agent.agent_id,
+                    Conversation.channel == channel,
+                    Conversation.contact == contact,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+        idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
+        if latest and (self._is_full(latest) or self.now() - latest.updated_at > idle):
+            latest = None
+        turn = await self.start_turn(agent, latest.id if latest else None, text, channel, contact)
+        parts: list[str] = []
+        handoff = None
+        async with aclosing(turn.events) as events:
+            async for event in events:
+                if isinstance(event, Token):
+                    parts.append(event.text)
+                elif isinstance(event, HandOff):
+                    handoff = event
+        return Reply("".join(parts).strip(), handoff)
+
+    async def restart(self, agent: LiveAgent, channel: str, contact: str) -> None:
+        """A new, empty conversation for the contact (Telegram's /start); their next message
+        goes into it, after the greeting."""
+        async with self.sessions() as s, s.begin():
+            s.add(self._new(agent, channel, contact))
 
     async def list(self, ws: str, status: str | None = None) -> list[Conversation]:
         """Newest activity first."""
@@ -135,6 +176,22 @@ class ConversationService:
                 saved.status = "needs_human"
             saved.updated_at = self.now()
         log.info("turn finished", extra={"conversation_id": conv.id, "trace": ended.trace})
+
+    def _new(self, agent: LiveAgent, channel: str, contact: str | None) -> Conversation:
+        return Conversation(
+            workspace_id=agent.workspace_id,
+            agent_id=agent.agent_id,
+            channel=channel,
+            contact=contact,
+            state={},
+            messages=[],
+            created_at=self.now(),
+            updated_at=self.now(),
+        )
+
+    def _is_full(self, conv: Conversation) -> bool:
+        turns = sum(1 for m in conv.messages if m.get("role") == "user")
+        return turns >= self.settings.MAX_TURNS
 
     async def _get(self, s: AsyncSession, agent: LiveAgent, conversation_id: str) -> Conversation:
         conv = await self._get_by_id(s, agent.workspace_id, conversation_id)

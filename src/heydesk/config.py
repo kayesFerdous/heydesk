@@ -57,6 +57,11 @@ class Settings(BaseSettings):
 
     MAX_MESSAGE_CHARS: int = 2000
     MAX_TURNS: int = 60  # visitor messages per conversation; each turn resends the transcript (D21)
+    CONVERSATION_IDLE_HOURS: int = 12  # on a messaging app, a message after this starts afresh
+
+    # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
+    # development). Needed to connect a business's Telegram bot (D42)
+    PUBLIC_URL: str = ""
 
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines

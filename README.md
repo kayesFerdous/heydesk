@@ -96,11 +96,25 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 | `GET /api/appointments` | A clinic's appointment requests (`A-101`). `PATCH` moves them: new → confirmed → done (or cancelled) |
 | `GET /api/messages` | Messages for the team, from any kind of agent (`M-101`). `PATCH` with `{"status": "handled"}` |
 | `GET /api/conversations/{id}` | What was said |
+| `PUT /api/agent/telegram` | Put the agent on Telegram: `{"token": "…"}` from @BotFather. `GET` gives the `t.me` link to share; `DELETE` disconnects it. Needs `PUBLIC_URL` (below) |
 | `GET /api/admin/businesses` | Admins only: every business. Suspend one with `PATCH /api/admin/businesses/{id}`; act inside one with an `X-Business: <id>` header on the routes here |
 
 A new business signs up with `POST /api/auth/signup` and gets its own
 workspace; it never sees another's agents. Errors always look like
 `{"error": {"code": "…", "message": "…"}}`, with `fields` when a field is wrong.
+
+## Telegram
+
+The agent can answer on the business's own Telegram bot.
+
+1. In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token.
+2. Give Telegram a way to reach your server, and put the link in `.env` as `PUBLIC_URL`:
+   ```bash
+   cloudflared tunnel --url http://localhost:8000
+   ```
+   The quick tunnel's link changes each time, so connect the bot again after a restart.
+3. Restart the server, then `PUT /api/agent/telegram` with `{"token": "…"}` in Swagger.
+4. Open the `link` it returns and press **Start**.
 
 ## Voice latency
 

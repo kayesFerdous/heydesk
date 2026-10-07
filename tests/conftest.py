@@ -17,6 +17,7 @@ from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
+from heydesk.adapters.telegram.fake import FakeTelegram
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.desks.restaurant import RestaurantConfig
@@ -81,6 +82,7 @@ def make_test_settings() -> Settings:
         EMBEDDER="fake",
         EMBEDDING_DIMENSIONS=64,
         QDRANT_LOCAL_PATH=":memory:",
+        PUBLIC_URL="https://heydesk.test",
         _env_file=None,
     )  # type: ignore[call-arg]
 
@@ -173,6 +175,7 @@ async def app() -> AsyncIterator[FastAPI]:
         decider=FakeDecider(),
         embedder=embedder,
         knowledge_store=store,
+        telegram=FakeTelegram(),
         now=Clock(),
     )
     async with LifespanManager(app):

@@ -71,7 +71,8 @@ Today: open 11:00–22:00
 Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
 ```
 
-- **Channel:** the reply style for web or voice (`CHANNEL_STYLE`).
+- **Channel:** the reply style for web, voice or Telegram (`CHANNEL_STYLE`). Telegram is sent as
+  plain text, so it asks for no markdown: `**bold**` would show its asterisks (D42).
 - **Today** and **(closed)** appear only once the owner has set hours (D40).
   When every day is closed, every day is marked closed.
 

@@ -18,7 +18,9 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
-    channel: Mapped[str] = mapped_column(String(20))  # web / voice
+    channel: Mapped[str] = mapped_column(String(20))  # web / voice / telegram
+    # who it is on a messaging app (their Telegram chat id), so their next message continues it
+    contact: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     status: Mapped[str] = mapped_column(String(20), default="active")  # active / needs_human
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict

@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -231,6 +231,16 @@ preset (day 17) → barge-in (day 14). Never cut: the commit check, voice, and t
 | Q2 | ~~TypeSafe (Jev) API key~~ in `.env` (Frontdesk's), `DECIDER=jev` | Day 7 |
 | Q3 | ~~Voice framework~~: Pipecat with SmallWebRTC (D18) | Day 10 |
 | Q4 | ~~Speech-to-text~~: Gigalogy Chorus (D18). Text-to-speech: Piper (free, local) until the owner adds theirs | Day 10 |
+
+## 7 Oct: Telegram (D42)
+
+A business connects its own Telegram bot and visitors talk to the agent there. Alerts to the
+owner come later.
+
+- [x] `TelegramApi` port, `TelegramBot` adapter (httpx), `FakeTelegram`; `channels` table, `conversations.contact`
+- [x] `PUT/GET/DELETE /api/agent/telegram`; the webhook `POST /api/telegram/{id}`, checked by its secret
+- [x] `ConversationService.reply` (a whole reply, for any messaging app), `/start`, a quiet conversation starts afresh
+- [ ] **Done when:** with a real bot and a tunnel, an order placed in Telegram is saved only after a yes
 
 ## 6 Oct: one folder per kind of business (D41)
 

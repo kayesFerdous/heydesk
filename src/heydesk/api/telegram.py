@@ -1,0 +1,58 @@
+"""Telegram (D42): the owner connects their bot, and Telegram posts its messages here.
+
+The webhook answers at once and the turn runs after, so Telegram never waits on the model.
+"""
+
+from typing import Annotated, Any
+
+from fastapi import APIRouter, BackgroundTasks, Body, Header, status
+from pydantic import BaseModel, Field
+
+from heydesk.api.deps import Svc, Workspace
+from heydesk.models import Channel
+
+router = APIRouter(tags=["telegram"])
+
+
+class TelegramIn(BaseModel):
+    token: str = Field(
+        min_length=20, max_length=200, description="The bot's token, from @BotFather's /newbot"
+    )
+
+
+class TelegramOut(BaseModel):
+    username: str
+    link: str  # share it with customers: it opens a chat with the bot
+
+
+def telegram_out(channel: Channel) -> TelegramOut:
+    return TelegramOut(username=channel.address, link=f"https://t.me/{channel.address}")
+
+
+@router.get("/api/agent/telegram")
+async def get_telegram(ws: Workspace, services: Svc) -> TelegramOut:
+    return telegram_out(await services.channels.telegram_of(ws))
+
+
+@router.put("/api/agent/telegram")
+async def connect_telegram(body: TelegramIn, ws: Workspace, services: Svc) -> TelegramOut:
+    """Connects the business's Telegram bot: from now on the agent answers its messages."""
+    return telegram_out(await services.channels.connect_telegram(ws, body.token.strip()))
+
+
+@router.delete("/api/agent/telegram", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_telegram(ws: Workspace, services: Svc) -> None:
+    await services.channels.disconnect_telegram(ws)
+
+
+@router.post("/api/telegram/{channel_id}", include_in_schema=False)
+async def telegram_webhook(
+    channel_id: str,
+    update: Annotated[dict[str, Any], Body()],
+    background: BackgroundTasks,
+    services: Svc,
+    secret: Annotated[str, Header(alias="X-Telegram-Bot-Api-Secret-Token")] = "",
+) -> dict[str, bool]:
+    channel = await services.channels.telegram_webhook(channel_id, secret)  # 404 if not Telegram
+    background.add_task(services.channels.answer_telegram, channel, update)
+    return {"ok": True}

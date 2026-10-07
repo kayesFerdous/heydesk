@@ -1,0 +1,144 @@
+"""Telegram (D42): an owner connects their bot, and visitors talk to the agent there."""
+
+from typing import Any
+
+from fastapi import FastAPI
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from heydesk.models import Conversation
+from tests.conftest import new_business
+
+TOKEN = "123456:a-token-from-botfather"
+CHAT = 555
+
+
+def message(text: str | None = "hi", chat_type: str = "private") -> dict[str, Any]:
+    msg: dict[str, Any] = {"message_id": 1, "chat": {"id": CHAT, "type": chat_type}}
+    if text is not None:
+        msg["text"] = text
+    return {"update_id": 1, "message": msg}
+
+
+async def connect(app: FastAPI, client: AsyncClient) -> tuple[str, str]:
+    """Connects the dev business's bot; returns the webhook's path and secret."""
+    res = await client.put("/api/agent/telegram", json={"token": TOKEN})
+    assert res.status_code == 200
+    url, secret = app.state.services.channels.telegram.webhooks[TOKEN]
+    return url.removeprefix("https://heydesk.test"), secret
+
+
+async def send(client: AsyncClient, path: str, secret: str, update: dict[str, Any]) -> int:
+    headers = {"X-Telegram-Bot-Api-Secret-Token": secret}
+    res = await client.post(path, json=update, headers=headers)
+    return res.status_code
+
+
+def sent(app: FastAPI) -> list[tuple[str, str]]:
+    fake: Any = app.state.services.channels.telegram
+    return list(fake.sent)
+
+
+async def telegram_conversations(app: FastAPI) -> list[Conversation]:
+    async with app.state.sessions() as s:
+        query = select(Conversation).where(Conversation.channel == "telegram")
+        return list(await s.scalars(query.order_by(Conversation.created_at)))
+
+
+async def test_an_owner_connects_their_bot_and_gets_its_link(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    path, secret = await connect(app, client)
+    assert path.startswith("/api/telegram/") and secret
+
+    res = await client.get("/api/agent/telegram")
+    assert res.json() == {
+        "username": "spice_garden_bot",
+        "link": "https://t.me/spice_garden_bot",
+    }
+    assert TOKEN not in res.text  # the token never leaves the server
+
+
+async def test_a_wrong_token_is_a_problem_on_the_field(client: AsyncClient) -> None:
+    res = await client.put("/api/agent/telegram", json={"token": "bad"})
+    assert res.status_code == 422  # too short for a token
+
+    res = await client.put("/api/agent/telegram", json={"token": "bad" + "x" * 20})
+    assert res.status_code == 200  # the fake only refuses "bad" itself
+
+
+async def test_the_agent_answers_and_the_next_message_continues(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    path, secret = await connect(app, client)
+
+    assert await send(client, path, secret, message("hi")) == 200
+    assert await send(client, path, secret, message("again")) == 200
+
+    assert sent(app) == [
+        (str(CHAT), "(fake model) You said: hi"),
+        (str(CHAT), "(fake model) You said: again"),
+    ]
+    [conv] = await telegram_conversations(app)
+    assert conv.contact == str(CHAT)
+    assert [m["content"] for m in conv.messages if m["role"] == "user"] == ["hi", "again"]
+
+
+async def test_start_sends_the_greeting_and_starts_afresh(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    path, secret = await connect(app, client)
+    await send(client, path, secret, message("hi"))
+
+    app.state.services.conversations.now.advance(minutes=1)
+    await send(client, path, secret, message("/start"))
+    await send(client, path, secret, message("hello"))
+
+    assert sent(app)[1][1].startswith("Hi, welcome to Spice Garden!")
+    _, second = await telegram_conversations(app)
+    assert second.messages[0]["role"] == "assistant"  # the greeting they saw comes first (D8)
+    assert [m["content"] for m in second.messages if m["role"] == "user"] == ["hello"]
+
+
+async def test_a_quiet_conversation_is_left_behind(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await connect(app, client)
+    await send(client, path, secret, message("two biryanis"))
+
+    app.state.services.conversations.now.advance(hours=13)
+    await send(client, path, secret, message("hi"))
+
+    assert len(await telegram_conversations(app)) == 2
+
+
+async def test_a_wrong_secret_is_a_404_and_nothing_is_answered(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    path, _ = await connect(app, client)
+    assert await send(client, path, "not-the-secret", message("hi")) == 404
+    assert await send(client, "/api/telegram/nope", "", message("hi")) == 404
+    assert sent(app) == []
+
+
+async def test_photos_and_group_chats(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await connect(app, client)
+    await send(client, path, secret, message(None))  # a photo: no text
+    await send(client, path, secret, message("hi", chat_type="group"))
+
+    assert sent(app) == [
+        (str(CHAT), "I can only read text messages for now. Please type your question.")
+    ]
+
+
+async def test_another_business_has_no_bot(app: FastAPI, client: AsyncClient) -> None:
+    await connect(app, client)
+    other = await new_business(app)
+    assert (await other.get("/api/agent/telegram")).status_code == 404
+    assert (await other.delete("/api/agent/telegram")).status_code == 404
+
+
+async def test_disconnecting_stops_the_bot(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await connect(app, client)
+    assert (await client.delete("/api/agent/telegram")).status_code == 204
+
+    assert app.state.services.channels.telegram.webhooks == {}
+    assert await send(client, path, secret, message("hi")) == 404

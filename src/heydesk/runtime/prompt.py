@@ -36,6 +36,8 @@ conversation.
 CHANNEL_STYLE = {
     "web": "web chat. Keep replies to two or three short sentences; a short list is fine.",
     "voice": "a phone call. Speak in one or two short sentences: no lists, symbols or markdown.",
+    "telegram": "a Telegram chat, read on a phone. Keep replies to two or three short "
+    "sentences, in plain text: no markdown, bold or tables.",
 }
 
 

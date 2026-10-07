@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks import DESKS
@@ -137,8 +137,15 @@ class AgentService:
         return DESKS[agent.kind].store(self.sessions, ws, self.now)
 
     async def by_key(self, key: str) -> LiveAgent:
+        return await self._live(Agent.public_key == key)
+
+    async def by_id(self, agent_id: str) -> LiveAgent:
+        """For a messaging app, which knows its agent by id (D42)."""
+        return await self._live(Agent.id == agent_id)
+
+    async def _live(self, where: ColumnElement[bool]) -> LiveAgent:
         async with self.sessions() as s:
-            agent = await s.scalar(select(Agent).where(Agent.public_key == key))
+            agent = await s.scalar(select(Agent).where(where))
             business = await s.get(Workspace, agent.workspace_id) if agent else None
         if agent is None or business is None:
             raise NotFound("There's no agent with that key.")

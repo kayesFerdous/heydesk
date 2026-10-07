@@ -13,7 +13,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 A business picks its **kind** (a restaurant, a clinic, a receptionist for an office), fills in
 its details (address, hours, its menu or doctors, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
-browser. It answers questions, takes orders and messages, and hands over to a
+browser, or on **Telegram** with the business's own bot (D42). It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders, appointments and messages through the API.
 
 **The model talks; code guarantees.** The model writes the words. Python
@@ -29,6 +29,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
+| Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`). A messaging app's link to the business is a row in `channels` (D42) |
 | Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human` and `search_knowledge` |
 | Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
 | Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
@@ -69,6 +70,7 @@ src/heydesk/
 ├── services/            agents, conversations, users, admin, knowledge
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
+├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
 └── web/static/          the dev chat page
 ```
 
@@ -278,7 +280,8 @@ Every table has `workspace_id` (except `workspaces`).
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, status (`active`/`needs_human`), state JSON, messages JSON |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`), state JSON, messages JSON |
+| `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username). One per agent and kind (D42) |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
@@ -313,9 +316,11 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
+| GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username and `t.me` link; connect it with its token; disconnect it (D42) |
+| POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/health` | DB reachable |
 
-Everything under `/api` except chat, desks and auth needs
+Everything under `/api` except chat, desks, auth and the Telegram webhook needs
 `Authorization: Bearer <token>`.
 
 **Two roles** (D23). An **owner** belongs to one business: the token says which
@@ -337,6 +342,29 @@ SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 
 Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
 tokens, cost, error (rule 7). There is no trace table (D15).
+
+### Telegram (D42)
+
+A business connects **its own bot**: it makes one with @BotFather and sends the token to
+`PUT /api/agent/telegram`. `ChannelService` checks the token (`getMe`), then sets the bot's
+webhook to `PUBLIC_URL/api/telegram/{channel id}` with a random secret, and saves the row.
+`GET /api/agent/telegram` gives the `t.me` link the business shares with its customers.
+
+```
+Telegram ─► POST /api/telegram/{id}  (secret header checked, else 404) ─► 200 at once
+         then: /start      ─► a new conversation, and the greeting is sent
+               text        ─► "typing…" ─► ConversationService.reply(agent, "telegram", chat id, text)
+                               ─► the whole reply as one message, then the hand-off line if any
+               anything else (a photo, a voice note) ─► "I can only read text messages for now."
+```
+
+- **Which conversation:** `conversations.contact` is the chat id. A message continues the
+  chat's latest conversation, unless it's full (`MAX_TURNS`) or quiet for
+  `CONVERSATION_IDLE_HOURS` (12): then a new one starts, so yesterday's half-order doesn't return.
+- **Another messaging app** (WhatsApp) is the same shape: its port and adapter, a webhook
+  route, and `ConversationService.reply` for the turn.
+- Only private chats are answered. The token is never returned by a route, and httpx's
+  request log is off because Telegram's URLs carry it.
 
 ## 10. Voice (M2)
 
@@ -394,3 +422,6 @@ version handles them.
 | Usage events, budgets, rate limits | Cost is in each turn's log line |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
+| Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
+| Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
+| Encrypting bot tokens at rest | Stored as they are; no route returns them |

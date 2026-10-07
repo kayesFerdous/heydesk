@@ -18,15 +18,18 @@ from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
+from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.telegram import TelegramApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
+from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.users import UserService
@@ -101,13 +104,18 @@ def build_services(
     store: KnowledgeStore,
     settings: Settings,
     now: Callable[[], datetime],
+    telegram: TelegramApi | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
+    agents = AgentService(sessions, knowledge, now)
+    conversations = ConversationService(sessions, runtime, knowledge, settings, now)
+    telegram = telegram or TelegramBot()
     return Services(
         admin=AdminService(sessions, now),
-        agents=AgentService(sessions, knowledge, now),
-        conversations=ConversationService(sessions, runtime, knowledge, settings, now),
+        agents=agents,
+        channels=ChannelService(sessions, agents, conversations, telegram, settings, now),
+        conversations=conversations,
         knowledge=knowledge,
         users=UserService(sessions, settings.jwt_secret, now),
     )
