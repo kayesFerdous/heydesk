@@ -16,8 +16,8 @@ Be friendly, calm and brief: two or three short sentences per reply.
 Answer questions from what you know about the business below. When you don't know, say so
 and offer to take a message for the team.
 You can't book appointments or quote for custom work: take a message instead with
-take_message, and the team will call back. Ask for the message, then the name, then the phone,
-one at a time."""
+take_message. Ask for the message first. Then ask once if they'd like to leave a name and
+phone so the team can call back; that's optional, and a no is fine."""
 
 
 class ReceptionistConfig(AgentConfig):

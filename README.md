@@ -1,7 +1,7 @@
 # HeyDesk
 
 An AI front desk a business can build in minutes. It picks its kind of business (a restaurant,
-a clinic, a receptionist for an office), fills in its menu or doctors, hours and FAQ, and adds
+a clinic, a receptionist for an office, an online shop), fills in its menu or doctors, hours and FAQ, and adds
 its own notes. Each kind has its own prompt and tools. Visitors talk to the agent by web chat or by
 voice; it answers questions, takes orders and messages, and hands over to a
 person when needed.
@@ -11,7 +11,7 @@ nothing is saved without reading it back and hearing a yes.
 
 ## Status
 
-Web chat and voice orders, the restaurant, clinic and receptionist desks, and the
+Web chat and voice orders, the restaurant, clinic, receptionist and shop desks, and the
 API with login all work. What's left is the demo (see **[PLAN.md](PLAN.md)**).
 
 ## Docs
@@ -59,7 +59,7 @@ scripts/check.sh   # tests, lint, format, types, import rules
 
 ## Switching the kind of business
 
-The dev agent is one desk (`restaurant`, `clinic` or `receptionist`) and a seed file. For the
+The dev agent is one desk (`restaurant`, `clinic`, `receptionist` or `shop`) and a seed file. For the
 clinic, set these in `.env` and restart:
 
 ```bash
@@ -93,6 +93,8 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 | `GET/PUT /api/menu` | A restaurant's menu, replaced whole (prices in paisa) |
 | `GET /api/orders` | A restaurant's orders, newest first; `?status=`, `?q=` (number, name or phone). `PATCH /api/orders/{id}` with `{"status": "ready"}`: new → ready → collected (or cancelled) |
 | `GET/PUT /api/doctors` | A clinic's doctors, with their `days`, `start` and `end` |
+| `GET/PUT /api/products` | A shop's products, with `sizes`, `colours` and `stock` (empty: not counted). `POST /api/products/import` takes a CSV |
+| `GET /api/shop/orders` | A shop's cash-on-delivery orders (`O-101`). `PATCH` with `{"status": "confirmed"}` after calling the buyer, then `{"status": "shipped", "tracking": "Steadfast 12345678"}`: new → confirmed → shipped → delivered or returned (or cancelled, back in stock) |
 | `GET /api/appointments` | A clinic's appointment requests (`A-101`). `PATCH` moves them: new → confirmed → done (or cancelled) |
 | `GET /api/messages` | Messages for the team, from any kind of agent (`M-101`). `PATCH` with `{"status": "handled"}` |
 | `GET /api/conversations/{id}` | What was said |

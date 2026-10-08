@@ -21,6 +21,7 @@ from heydesk.models import Channel
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.team import TeamService
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class ChannelService:
         sessions: async_sessionmaker[AsyncSession],
         agents: AgentService,
         conversations: ConversationService,
+        team: TeamService,
         telegram: TelegramApi,
         settings: Settings,
         now: Callable[[], datetime],
@@ -42,6 +44,7 @@ class ChannelService:
         self.sessions = sessions
         self.agents = agents
         self.conversations = conversations
+        self.team = team
         self.telegram = telegram
         self.settings = settings
         self.now = now
@@ -76,6 +79,7 @@ class ChannelService:
                 )
                 s.add(channel)
             channel.token, channel.secret, channel.address = token, secret, username
+            channel.owner_chat_id = None  # a new bot: the owner links their chat with it again
         log.info("telegram connected", extra={"channel_id": channel_id})
         return channel
 
@@ -111,6 +115,12 @@ class ChannelService:
             return  # groups and edits aren't a visitor talking to the desk
         chat_id, text = str(chat["id"]), message.get("text")
         try:
+            if text and text.startswith("/start owner_"):  # the owner's link (D43)
+                await self.team.link_owner(channel, chat_id, text.removeprefix("/start owner_"))
+                return
+            if chat_id == channel.owner_chat_id:  # the owner answering a visitor
+                await self.team.owner_wrote(channel, message)
+                return
             agent = await self.agents.by_id(channel.agent_id)
             if text is None:  # a photo, a sticker, a voice note
                 await self._send(channel, chat_id, NOT_TEXT)

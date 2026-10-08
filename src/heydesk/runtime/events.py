@@ -1,6 +1,6 @@
 """What a turn yields to its listeners (the SSE response, later the voice pipeline)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from heydesk.ports.llm import Message
@@ -49,6 +49,7 @@ class TurnEnded:
     trace: dict[str, Any]
     handed_off: bool = False
     interrupted: bool = False
+    alerts: list[str] = field(default_factory=list)  # tools' alerts for the owner (D43)
 
 
 type Event = Token | Progress | ToolStarted | ToolFinished | HandOff | TurnEnded

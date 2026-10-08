@@ -85,11 +85,11 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | File | What's in it |
 |---|---|
 | `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
-| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment` |
-| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`; `Doctor` (with `works_at`), `NewAppointment` |
-| `models.py` | Its tables: `menu_items` and `orders`; `doctors` and `appointments` |
+| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `update_cart`, `place_order`, `track_order`, `cancel_order` |
+| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`; `Doctor` (with `works_at`), `NewAppointment`; `Product`, `Zone`, `ShopConfig`, `mobile()` |
+| `models.py` | Its tables: `menu_items` and `orders`; `doctors` and `appointments`; `products` and `shop_orders` |
 | `store.py` | Its data access, for its tools and its owner routes, always one workspace |
-| `api.py` | Its owner routes: `/api/menu`, `/api/orders`; `/api/doctors`, `/api/appointments` |
+| `api.py` | Its owner routes: `/api/menu`, `/api/orders`; `/api/doctors`, `/api/appointments`; `/api/products`, `/api/shop/orders` |
 
 `desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, has_documents)` is a desk's tools
 then the shared ones: `take_message` and `handoff_to_human` always, `search_knowledge` when the
@@ -98,7 +98,7 @@ business has documents (D35). To add a kind of business: a new folder, and a lin
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, and each sets its own default greeting. A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas and charges), `free_delivery_over` and `policies`; each sets its own default greeting. A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -223,14 +223,18 @@ merged into the conversation's `state`, saved with the turn.
 | Tool | Desk | Writes? | What it does |
 |---|---|---|---|
 | `update_order` | restaurant | no | Sets the whole order (codes and quantities). Checks the dishes exist and are available; Python adds up the total. Refuses on a closed day (pickup is today only, D40). The cart goes in `state["cart"]` |
-| `place_order` | restaurant | **yes** | `pickup_time`, `name`, `phone`, `note`. The time must be later today and inside the hours. Returns the order number |
+| `place_order` | restaurant | **yes** | `pickup_time`, `name`, `phone`, `note`. The time must be later today and inside the hours. Returns the order number, and an alert for the owner (D43) |
 | `find_doctor` | clinic | no | Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and keeps the doctors who work it |
 | `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`; the clinic phones to confirm |
 | `cancel_appointment` | clinic | **yes** | The code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks (D38) |
 | `reschedule_appointment` | clinic | **yes** | The same, plus a new time checked like a new request. A moved appointment is `new` again |
-| `take_message` | every desk | **yes** | `message`, `name`, `phone`, `best_time`. Returns its code, `M-104` |
+| `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
-| `handoff_to_human` | every desk | no | Marks the conversation `needs_human`, returns the hand-off message and phone |
+| `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock and adds up the subtotal. The cart goes in `state["cart"]` (D45) |
+| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock as it saves. Returns its code, `O-101`, and an alert |
+| `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, how long delivery usually takes and the courier the owner gave. A wrong code and a wrong number get the same answer |
+| `cancel_order` | shop | **yes** | The same code and mobile; only while `new` or `confirmed` (not once the courier has it). The items go back in stock |
+| `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 
 **The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
 agent's last message read these details back?* and *is the visitor's reply a clear yes?* Both
@@ -280,14 +284,16 @@ Every table has `workspace_id` (except `workspaces`).
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`), state JSON, messages JSON |
-| `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username). One per agent and kind (D42) |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
+| `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
 | `orders` | the shared columns, lines JSON, total, currency, pickup_at, note. Shown by number; new → ready → collected, or cancelled |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, doctor_code, doctor_name, at. Code `A-104`; new → confirmed → done, or cancelled |
+| `products` | code (unique per business), name, description, price, category, sizes JSON, colours JSON, stock (empty: not counted), position |
+| `shop_orders` | the shared columns, lines JSON, subtotal, delivery_charge, total, currency, zone, address, note, tracking. Code `O-101`; new → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -304,6 +310,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/` | Dev chat page (development only) |
 | GET | `/api/chat/{key}` | Agent name and greeting |
 | POST | `/api/chat/{key}` | `{message, conversation_id?}` → Server-Sent Events |
+| GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset a password), the audit log |
@@ -316,7 +323,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
-| GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username and `t.me` link; connect it with its token; disconnect it (D42) |
+| GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/health` | DB reachable |
 
@@ -365,6 +372,32 @@ Telegram ─► POST /api/telegram/{id}  (secret header checked, else 404) ─�
   route, and `ConversationService.reply` for the turn.
 - Only private chats are answered. The token is never returned by a route, and httpx's
   request log is off because Telegram's URLs carry it.
+
+### The team on Telegram (D43)
+
+The owner gets alerts, and can answer any web or Telegram visitor, in their own chat with the
+business's bot. `services/team.py` (`TeamService`) does it.
+
+- **Linking:** `GET /api/agent/telegram` gives `owner_link`, `t.me/<bot>?start=owner_<code>`.
+  The code is made from the webhook secret, so connecting the bot again changes it. Opening
+  it sends `/start owner_<code>`, and the chat id is saved as `channels.owner_chat_id`.
+- **Alerts:** a tool returns `ToolResult.alert` (Python writes it: `place_order`'s order and
+  read-back, and `take_message`'s) and the turn passes it on in `TurnEnded.alerts`; a hand-off (asked for, or a
+  failure) is an alert with the last four lines said. After saving the turn,
+  `ConversationService` hands them to the team. Every alert ends with `Ref: <conversation id>`.
+  Alerts come from every channel; nothing is sent until the owner has linked their chat.
+
+```
+owner replies to an alert ─► Ref found in the quoted text ─► their words added to the
+    transcript as the agent's, marked "by": "team"; the conversation becomes `human`
+    ─► a Telegram visitor gets it from the bot; a web visitor's page fetches it (/team)
+visitor writes while `human` ─► saved, forwarded to the owner with its Ref; no model call
+owner replies /done ─► `active` again: the agent answers, and sees what the team said
+```
+
+- After a hand-off the agent keeps answering until the owner replies, so no one waits in
+  silence. A phone call can't be answered this way; the owner is told to call back.
+- The `by` mark is taken off before the transcript goes to the model.
 
 ## 10. Voice (M2)
 
@@ -423,5 +456,8 @@ version handles them.
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
+| Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
+| Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
+| Shop: photos of a product, stock per size and colour, checking a bKash advance | The agent asks for the product's name; stock is per product; an advance payment is a policy the owner writes |

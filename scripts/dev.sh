@@ -16,12 +16,13 @@ stop() {
 }
 trap stop INT TERM EXIT
 
-FRONTEND=../../vue/heydesk-frontend
+FRONTEND=../heydesk-frontend
 PUBLIC_URL=$(uv run python -c "from heydesk.config import Settings; print(Settings().PUBLIC_URL)")
 
 uv run alembic upgrade head
 uv run uvicorn heydesk.main:app --reload &
-(cd "$FRONTEND" && pnpm run serve) &
+# the frontend builds its chat links on PUBLIC_URL, so they work from any phone
+(cd "$FRONTEND" && VUE_APP_PUBLIC_URL="$PUBLIC_URL" pnpm run serve) &
 
 if [[ "${1:-}" == "--tunnel" ]]; then
   sleep 8  # let the frontend come up first

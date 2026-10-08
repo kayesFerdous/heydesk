@@ -67,6 +67,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     tools = {tool.name: tool for tool in turn.tools}
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
+    alerts: list[str] = []  # for the owner: an order placed
     failed = asked_for_person = interrupted = False
 
     try:
@@ -127,6 +128,8 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 yield ToolFinished(call.name, result.ok)
                 state |= result.state or {}
                 asked_for_person |= result.handoff  # the model still replies; the card follows
+                if result.alert:
+                    alerts.append(result.alert)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
             added += rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
             if turn.interrupt.is_set():
@@ -147,7 +150,9 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     if handoff:
         yield HandOff(contact.message, contact.phone, contact.email)
     trace.data["interrupted"] = interrupted
-    yield TurnEnded(added, state, trace.to_dict(), handed_off=handoff, interrupted=interrupted)
+    yield TurnEnded(
+        added, state, trace.to_dict(), handed_off=handoff, interrupted=interrupted, alerts=alerts
+    )
 
 
 def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:

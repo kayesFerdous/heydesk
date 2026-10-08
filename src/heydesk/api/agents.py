@@ -23,7 +23,7 @@ class DeskOut(BaseModel):
 
 
 class AgentIn(BaseModel):
-    kind: str  # restaurant, clinic or receptionist: see GET /api/desks
+    kind: str  # restaurant, clinic, receptionist or shop: see GET /api/desks
     config: dict[str, Any] = {}  # its fields; what's left out has a default
 
 

@@ -4,19 +4,54 @@
     {
       "name": "heydesk",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "heydesk.main:app", "--reload", "--port", "8000"],
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "heydesk-groq",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["LLM_PROVIDER=groq", "uv", "run", "uvicorn", "heydesk.main:app", "--reload", "--port", "8001"],
+      "runtimeArgs": [
+        "LLM_PROVIDER=groq",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--reload",
+        "--port",
+        "8001"
+      ],
       "port": 8001
+    },
+    {
+      "name": "heydesk-fake",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "../../vue/heydesk-frontend", "run", "serve"],
+      "runtimeArgs": [
+        "--dir",
+        "../heydesk-frontend",
+        "run",
+        "serve"
+      ],
       "port": 8080
     }
   ]

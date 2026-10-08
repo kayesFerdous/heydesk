@@ -52,10 +52,11 @@ async def test_an_owner_connects_their_bot_and_gets_its_link(
     assert path.startswith("/api/telegram/") and secret
 
     res = await client.get("/api/agent/telegram")
-    assert res.json() == {
-        "username": "spice_garden_bot",
-        "link": "https://t.me/spice_garden_bot",
-    }
+    body = res.json()
+    assert body["username"] == "spice_garden_bot"
+    assert body["link"] == "https://t.me/spice_garden_bot"
+    assert body["owner_link"].startswith("https://t.me/spice_garden_bot?start=owner_")
+    assert body["owner_linked"] is False
     assert TOKEN not in res.text  # the token never leaves the server
 
 

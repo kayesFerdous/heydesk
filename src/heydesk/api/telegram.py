@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, Workspace
 from heydesk.models import Channel
+from heydesk.services.team import owner_link
 
 router = APIRouter(tags=["telegram"])
 
@@ -23,10 +24,17 @@ class TelegramIn(BaseModel):
 class TelegramOut(BaseModel):
     username: str
     link: str  # share it with customers: it opens a chat with the bot
+    owner_link: str  # only for the owner: opening it sends them alerts there (D43)
+    owner_linked: bool  # the owner has opened it
 
 
 def telegram_out(channel: Channel) -> TelegramOut:
-    return TelegramOut(username=channel.address, link=f"https://t.me/{channel.address}")
+    return TelegramOut(
+        username=channel.address,
+        link=f"https://t.me/{channel.address}",
+        owner_link=owner_link(channel),
+        owner_linked=channel.owner_chat_id is not None,
+    )
 
 
 @router.get("/api/agent/telegram")

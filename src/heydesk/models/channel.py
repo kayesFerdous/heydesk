@@ -22,4 +22,6 @@ class Channel(Base):
     token: Mapped[str] = mapped_column(String(200))  # from @BotFather
     secret: Mapped[str] = mapped_column(String(64))  # Telegram sends it with every message
     address: Mapped[str] = mapped_column(String(100))  # the bot's username: spice_garden_bot
+    # the owner's own chat with the bot, for alerts and answering visitors (D43)
+    owner_chat_id: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

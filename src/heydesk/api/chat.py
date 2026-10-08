@@ -38,5 +38,20 @@ async def chat(
     return StreamingResponse(
         to_sse(turn),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        # no-transform: a proxy (the frontend's dev server, ngrok) mustn't compress the stream,
+        # or it holds the words back and the reply arrives cut off
+        headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+class TeamOut(BaseModel):
+    replies: list[str]  # oldest first; the page shows the ones it hasn't yet
+
+
+@router.get("/api/chat/{public_key}/{conversation_id}/team")
+async def team_replies(
+    public_key: str, conversation_id: str, services: Annotated[Services, Depends(get_services)]
+) -> TeamOut:
+    """What the team wrote from Telegram (D43). The chat page asks every few seconds."""
+    agent = await services.agents.by_key(public_key)  # 404 if unknown
+    return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

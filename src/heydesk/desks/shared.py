@@ -35,40 +35,55 @@ HANDOFF = Tool(
 
 class TakeMessageInput(BaseModel):
     message: str = Field(default="", description="What to pass on, in the visitor's words")
-    name: str = Field(default="", description="Who it's from")
-    phone: str = Field(default="", description="The number to call back on")
+    name: str = Field(default="", description="Optional: who it's from")
+    phone: str = Field(default="", description="Optional: the number to call back on")
     best_time: str = Field(default="", description="Optional: when to call back")
 
 
+OFFER_CONTACT = (
+    "If you haven't yet, ask once whether they'd like to leave a name and phone for a call "
+    "back; it's optional. If they say no, read this back as it is."
+)
+
+
 async def take_message(ctx: ToolContext[Store], args: TakeMessageInput) -> ToolResult:
+    """Only the message is needed. A name and phone are optional, but checked when given."""
     check = Checks()
     body = check.take("message", args.message, parse.text)
-    name = check.take("name", args.name, parse.name)
-    phone = check.take("phone", args.phone, parse.phone)
+    name = check.take("name", args.name, parse.name) if args.name.strip() else ""
+    phone = check.take("phone", args.phone, parse.phone) if args.phone.strip() else ""
     if body is None or name is None or phone is None:
         return check.result()
-    best_time = " ".join(args.best_time.split())[:100]
+    best_time = " ".join(args.best_time.split())[:100] if phone else ""
 
     message = NewMessage(body, name, phone, best_time)
-    read_back = f"Message: {body}; from {name}; phone {phone}" + (
-        f"; best time {best_time}" if best_time else ""
+    read_back = f"Message: {body}" + "".join(
+        f"; {label} {value}"
+        for label, value in (("from", name), ("phone", phone), ("best time", best_time))
+        if value
     )
     confirmed = await confirm(ctx.decider, message, read_back, ctx.agent_said, ctx.visitor_said)
     if confirmed is None:
-        return ask_for_yes(read_back, "take_message")
+        result = ask_for_yes(read_back, "take_message")
+        if not phone:
+            result.data["contact"] = OFFER_CONTACT
+        return result
     code = await ctx.store.save_message(confirmed)
-    return ToolResult(
-        ok=True,
-        data={"sent": True, "code": code, "next": "Tell them the team will get back to them."},
+    next_step = (
+        "Tell them the team will call them back."
+        if phone
+        else "Tell them the team will read it. With no phone number, the team can't call back."
     )
+    alert = f"✉️ New message {code}\n{read_back}"
+    return ToolResult(ok=True, data={"sent": True, "code": code, "next": next_step}, alert=alert)
 
 
 TAKE_MESSAGE = Tool(
     name="take_message",
     description=(
-        "Take a message for the team, or a call-back request: the message, the visitor's name "
-        "and phone. Call it as soon as you have the message; it says what's still needed. When "
-        "it has everything it gives you what to read back; call it again after a clear yes."
+        "Take a message for the team. Only the message is needed; a name and phone are "
+        "optional, for a call back. Call it as soon as you have the message. It gives you what "
+        "to read back; call it again with the same details after a clear yes."
     ),
     input_model=TakeMessageInput,
     run=take_message,

@@ -1,0 +1,38 @@
+# An online shop agent, a Facebook-page clothing shop (DEV_AGENT_KIND=shop, DEV_AGENT_SEED=this
+# file). Any field of the shop's config may be set here (desks/shop/values.py: ShopConfig); what's
+# left out has a default. Money is in paisa: 185000 = ৳1,850.
+name: Nakshi Threads assistant
+business_name: Nakshi Threads
+timezone: Asia/Dhaka
+currency: BDT
+handoff:
+  message: Let me get someone from our team. You can also call or WhatsApp us.
+  phone: "+880 1800 000000"
+delivery:
+  - {name: Inside Dhaka, charge: 6000, days: "1–2 days"}
+  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days"}
+  - {name: Outside Dhaka, charge: 12000, days: "3–5 days"}
+free_delivery_over: 300000
+policies: |
+  Check the parcel in front of the rider before paying. If something is wrong, don't take it.
+  Exchange within 3 days for a different size, if the tag is on. No refunds on sale items.
+# The products: saved in the products table, not the config. No stock: not counted.
+products:
+  - {code: panjabi-cotton, name: Cotton Panjabi, price: 185000, category: Men,
+     sizes: [M, L, XL, XXL], colours: [White, Cream, Navy], stock: 12,
+     description: "Soft cotton, embroidered collar. Fits true to size."}
+  - {code: panjabi-silk, name: Silk Panjabi, price: 320000, category: Men,
+     sizes: [M, L, XL], colours: [Maroon, Gold], stock: 2}
+  - {code: three-piece, name: Lawn Three-Piece, price: 245000, category: Women,
+     colours: [Peach, Mint, Sky Blue], stock: 8,
+     description: "Unstitched kameez, salwar and dupatta, printed lawn."}
+  - {code: jamdani-saree, name: Jamdani Saree, price: 650000, category: Women,
+     colours: [Off-white, Red], stock: 0,
+     description: "Handwoven in Narayanganj, 6 yards, with blouse piece."}
+  - {code: kurti, name: Cotton Kurti, price: 95000, category: Women,
+     sizes: [S, M, L, XL], colours: [Black, Mustard]}
+  - {code: kids-panjabi, name: Kids Panjabi, price: 89000, category: Kids,
+     sizes: ["2-3y", "4-5y", "6-7y", "8-9y"], colours: [White, Sky Blue]}
+faq: |
+  We are an online shop: no showroom. Orders placed before 5 pm inside Dhaka usually go out the
+  same day.

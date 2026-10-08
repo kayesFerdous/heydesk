@@ -46,6 +46,7 @@ class ToolResult:
     data: dict[str, Any]  # short JSON the model reads
     state: dict[str, Any] | None = None  # changes to the conversation state (the cart)
     handoff: bool = False  # the turn ends with the hand-off card; the conversation needs a person
+    alert: str | None = None  # for the owner, on Telegram (D43): what was just saved
 
 
 def fail(hint: str) -> ToolResult:

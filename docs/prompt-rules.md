@@ -15,7 +15,7 @@ sections come in this order:
 | 4 | `# FAQ` | `agent.faq` (left out when empty) | yes |
 | 5 | `# Documents` | `documents_section()`, only when there are documents | no |
 | 6 | `# Right now` | `right_now()` | no |
-| 7 | The desk's note | the desk's `note()`, before every model call, never stored. Only the restaurant has one | no |
+| 7 | The desk's note | the desk's `note()`, before every model call, never stored. The restaurant and the shop have one: the order so far | no |
 
 On Gigalogy, the adapter adds a `# Tools` section that asks for tool calls as
 JSON (D16, `adapters/llm/gigalogy.py`).
@@ -46,11 +46,14 @@ or a person.
 |---|---|---|
 | Restaurant | `# Your role`, `# Taking a pickup order`, `# The restaurant`, `# Menu` | Recommend from the menu only, after asking about taste, diet and budget. Call `update_order` after every change and quote its total. Ask for pickup time, name, phone one at a time; call `place_order` once there's a time (it checks the hours) |
 | Clinic | `# Your role`, `# What you can do`, `# The clinic`, `# Doctors` | Never diagnose or suggest treatment; send emergencies to the emergency number and hand off. Quote doctors exactly as listed; ask `find_doctor` who works on a day. Call `request_appointment` once there's a doctor and a time (it checks the doctor's days and hours). Find an appointment by code then name |
-| Receptionist | `# Your role`, `# The business` | Answer from the business's fields; take a message for anything it can't do |
+| Receptionist | `# Your role`, `# The business` | Answer from the business's fields; take a message for anything it can't do. Ask for the message first, then offer once to take a name and phone for a call back: optional, and a no is fine (D44) |
+| Shop | `# Your role`, `# Taking an order`, `# After an order`, `# The shop`, `# Delivery`, `# Products` | Reply in the visitor's language (Bangla, English, Banglish). Say prices openly, never "inbox for price". Offer only listed products; a sold-out one gets a similar suggestion. Ask for a product's name when it can't tell which (a photo). Call `update_cart` after every change and quote its subtotal. Ask for the area, then the full address with a landmark, the name, the mobile, one at a time; call `place_order` once there's an area (it gives the delivery charge). Track or cancel with the code then the mobile; say nothing about an order until the tool found it. Returns and exchanges are a message (D45) |
 
 A writing tool (`place_order`, `request_appointment`, `take_message`, cancel and reschedule) can
 be called as soon as part of it is known: it answers with what's missing or wrong and what to ask
 next, then with a read-back, and saves only on a call after a clear yes.
+`take_message` needs only the message (D44). With no phone, its read-back step adds a
+`contact` hint: offer once to take a name and phone, and read back as it is if they say no.
 
 ## 5. Documents
 
@@ -75,6 +78,13 @@ Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
   plain text, so it asks for no markdown: `**bold**` would show its asterisks (D42).
 - **Today** and **(closed)** appear only once the owner has set hours (D40).
   When every day is closed, every day is marked closed.
+
+## 6b. What the team said (D43)
+
+When the owner answers a visitor from Telegram, their words go into the transcript as plain
+agent messages, so after `/done` the model reads them as its own earlier replies and carries
+on from there. Nothing in the prompt mentions the team; the `"by": "team"` mark is removed
+before the history is sent.
 
 ## 7. The desk's note
 

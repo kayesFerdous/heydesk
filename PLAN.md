@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -94,6 +94,29 @@ tools (documents search, item search, message, hand-off) stay on for every kind.
       a time outside their hours refused, a request saved after a yes (6 Oct, Maira + Jev: all three)
 - [x] Appointment codes (`A-104`); cancel and reschedule with the code and the name, after a yes (D38)
 - [ ] Next kinds: restaurant (reservations as well as orders), then the others
+
+## 8 Oct: the online shop desk (D45)
+
+Chosen from a survey of Bangladeshi businesses where an agent can take over people's work: the
+f-commerce shops whose Facebook inbox is their shop. Cash on delivery, delivery charges by area,
+a confirmation call and a courier's parcel id, as they already work.
+
+- [x] `desks/shop/`: products with sizes, colours and stock; delivery areas and charges, free over
+      an amount; a Bangladeshi mobile (Bangla digits, +880)
+- [x] `update_cart`, `place_order` (charge as soon as the area is known; out of stock on save),
+      `track_order` and `cancel_order` with the code and mobile (back in stock)
+- [x] `/api/products` (+ CSV import), `/api/shop/orders` with status and `tracking`; the seed
+      `examples/agents/shop.yaml`; `tests/integration/test_shop.py`
+- [ ] Live check on Maira with `DEV_AGENT_KIND=shop`: a question in Banglish gets the price; a
+      kurti in the wrong size is asked again; an order outside Dhaka is read back with ৳120
+      delivery and saved after a yes; "where is O-101?" with the mobile gets its status
+      (costs quota: ask first)
+- [ ] Facebook Messenger as a channel, like Telegram (D42): a page connects, Meta posts messages
+      to a webhook, replies go back through the Send API. Needs a Meta app with page messaging
+      approved
+
+**Done when:** the live check above passes, and the owner sees the order in `/api/shop/orders`
+and gets its Telegram alert.
 
 ## M1 — The agent takes an order
 
@@ -231,6 +254,17 @@ preset (day 17) → barge-in (day 14). Never cut: the commit check, voice, and t
 | Q2 | ~~TypeSafe (Jev) API key~~ in `.env` (Frontdesk's), `DECIDER=jev` | Day 7 |
 | Q3 | ~~Voice framework~~: Pipecat with SmallWebRTC (D18) | Day 10 |
 | Q4 | ~~Speech-to-text~~: Gigalogy Chorus (D18). Text-to-speech: Piper (free, local) until the owner adds theirs | Day 10 |
+
+## 8 Oct: the team on Telegram (D43)
+
+The owner gets an alert for each order and hand-off, and answers visitors by replying to it.
+
+- [x] `ToolResult.alert` → `TurnEnded.alerts`; `place_order`'s alert; a hand-off alert with the last lines said
+- [x] `channels.owner_chat_id` (migration); `owner_link` on `GET /api/agent/telegram`; `/start owner_<code>`
+- [x] `TeamService`: a reply with a `Ref:` reaches the visitor and makes the chat `human`; the visitor's messages are forwarded; `/done` gives it back
+- [x] `GET /api/chat/{key}/{id}/team` for the web page; tests in `tests/integration/test_team.py`
+- [ ] `../heydesk-frontend`: the owner's alerts link next to the bot; the chat page shows the team's replies
+- [ ] **Done when:** with a real bot, an order alert arrives, and the owner's reply reaches a web and a Telegram visitor
 
 ## 7 Oct: Telegram (D42)
 

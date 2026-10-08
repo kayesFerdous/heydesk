@@ -19,6 +19,7 @@ from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +45,14 @@ class ConversationService:
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
         knowledge: KnowledgeService,
+        team: TeamService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.runtime = runtime
         self.knowledge = knowledge
+        self.team = team
         self.settings = settings
         self.now = now
 
@@ -76,6 +79,8 @@ class ConversationService:
             else:
                 conv = self._new(agent, channel, contact)
                 s.add(conv)
+        if conv.status == HUMAN:  # the team is answering: the agent stays quiet (D43)
+            return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
 
         now = self.now()
         desk, config = agent.desk, agent.config
@@ -92,7 +97,7 @@ class ConversationService:
             ),
             tools=tools_for(desk, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
-            history=conv.messages,
+            history=[{k: v for k, v in m.items() if k != "by"} for m in conv.messages],
             user_text=text,
             channel=channel,
             agent=config,
@@ -140,6 +145,12 @@ class ConversationService:
         async with self.sessions() as s, s.begin():
             s.add(self._new(agent, channel, contact))
 
+    async def team_replies(self, agent: LiveAgent, conversation_id: str) -> list[str]:
+        """What the team has written in a web chat, oldest first; the page shows the new ones."""
+        async with self.sessions() as s:
+            conv = await self._get(s, agent, conversation_id)
+        return [m["content"] for m in conv.messages if m.get("by") == TEAM]
+
     async def list(self, ws: str, status: str | None = None) -> list[Conversation]:
         """Newest activity first."""
         query = (
@@ -165,7 +176,23 @@ class ConversationService:
             async for event in events:
                 if isinstance(event, TurnEnded):
                     await self._save(conv, event)
+                    await self._alert(conv, event)
                 yield event
+
+    async def _to_team(self, conv: Conversation, text: str, channel: str) -> AsyncGenerator[Event]:
+        """A turn with no agent: the message is saved and passed to the team."""
+        message = self.runtime.llm.user_message(text)
+        ended = TurnEnded([message], conv.state, {"channel": channel, "to_team": True})
+        await self._save(conv, ended)
+        await self.team.forward(conv, text)
+        yield ended
+
+    async def _alert(self, conv: Conversation, ended: TurnEnded) -> None:
+        """Tells the owner what the turn saved, and if the visitor wants a person."""
+        for alert in ended.alerts:
+            await self.team.alert(conv, alert)
+        if ended.handed_off:
+            await self.team.alert(conv, handoff_alert([*conv.messages, *ended.added]))
 
     async def _save(self, conv: Conversation, ended: TurnEnded) -> None:
         async with self.sessions() as s, s.begin():

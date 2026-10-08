@@ -21,7 +21,8 @@ class Conversation(Base):
     channel: Mapped[str] = mapped_column(String(20))  # web / voice / telegram
     # who it is on a messaging app (their Telegram chat id), so their next message continues it
     contact: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active / needs_human
+    # active, needs_human (the agent handed off), or human (the team is answering: D43)
+    status: Mapped[str] = mapped_column(String(20), default="active")
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
     )  # what a desk keeps between turns: the cart

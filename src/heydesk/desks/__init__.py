@@ -6,9 +6,10 @@ from heydesk.desks.clinic import CLINIC
 from heydesk.desks.receptionist import RECEPTIONIST
 from heydesk.desks.restaurant import RESTAURANT
 from heydesk.desks.shared import HANDOFF, SEARCH_KNOWLEDGE, TAKE_MESSAGE
+from heydesk.desks.shop import SHOP
 from heydesk.runtime.tool import Tool
 
-DESKS: dict[str, Desk] = {desk.kind: desk for desk in (RESTAURANT, CLINIC, RECEPTIONIST)}
+DESKS: dict[str, Desk] = {desk.kind: desk for desk in (RESTAURANT, CLINIC, RECEPTIONIST, SHOP)}
 
 
 def tools_for(desk: Desk, has_documents: bool) -> list[Tool]:

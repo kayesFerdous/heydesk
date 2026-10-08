@@ -44,6 +44,26 @@ async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:
     assert (saved.code, saved.body, saved.conversation_id) == ("M-101", MESSAGE["message"], conv)
 
 
+async def test_a_name_and_phone_are_optional(world: World) -> None:
+    agent = await world.agent()
+    take = ToolCall("c", "take_message", {"message": "Loved the biryani!"})
+    world.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
+
+    conv = await world.say(agent, None, [take, "Shall I pass that on?"])
+    said = await world.tool_said(conv)
+    assert '"read_back": "Message: Loved the biryani!"' in said
+    assert "ask once whether they'd like to leave a name and phone" in said
+
+    await world.say(agent, conv, [take, "Done."], "yes, no number needed")
+    [saved] = await messages(world)
+    assert (saved.body, saved.name, saved.phone) == ("Loved the biryani!", "", "")
+    assert "can't call back" in await world.tool_said(conv)
+
+    bad = ToolCall("c", "take_message", {"message": "Call me", "phone": "12"})
+    conv = await world.say(agent, None, [bad, "What's your number?"])
+    assert "doesn't look like a phone number" in await world.tool_said(conv)
+
+
 async def test_the_receptionist_answers_from_its_own_fields(world: World) -> None:
     agent = await world.agent("receptionist")
     text = await RECEPTIONIST.prompt(agent.config, world.store(agent))

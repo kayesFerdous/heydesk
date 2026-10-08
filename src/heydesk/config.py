@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     CLOUDFLARE_TURN_API_TOKEN: str = ""
     MAX_CALL_SECONDS: int = 300  # a call hangs up after this long
 
-    DEV_AGENT_KIND: str = "restaurant"  # its desk: restaurant, clinic or receptionist
+    DEV_AGENT_KIND: str = "restaurant"  # its desk: restaurant, clinic, receptionist or shop
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"
 
     MAX_MESSAGE_CHARS: int = 2000

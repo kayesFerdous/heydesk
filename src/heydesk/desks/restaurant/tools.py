@@ -112,7 +112,8 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         "total": money(order.total, currency),
         "pickup_time": f"today, {clock_time(pickup)}",
     }
-    return ToolResult(ok=True, data=data, state={"cart": {}})
+    alert = f"🛒 New order #{number}\n{read_back}"
+    return ToolResult(ok=True, data=data, state={"cart": {}}, alert=alert)
 
 
 PLACE_ORDER = Tool(

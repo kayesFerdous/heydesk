@@ -32,6 +32,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 
 
@@ -109,12 +110,13 @@ def build_services(
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     agents = AgentService(sessions, knowledge, now)
-    conversations = ConversationService(sessions, runtime, knowledge, settings, now)
     telegram = telegram or TelegramBot()
+    team = TeamService(sessions, llm, telegram, now)
+    conversations = ConversationService(sessions, runtime, knowledge, team, settings, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
-        channels=ChannelService(sessions, agents, conversations, telegram, settings, now),
+        channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
         conversations=conversations,
         knowledge=knowledge,
         users=UserService(sessions, settings.jwt_secret, now),

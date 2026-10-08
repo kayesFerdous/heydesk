@@ -11,7 +11,8 @@ DISH = {"code": "tea", "name": "Tea", "price": 3000, "category": "Drinks"}
 async def test_the_desks_list_their_own_fields(client: AsyncClient) -> None:
     desks = {d["kind"]: d for d in (await client.get("/api/desks")).json()}
 
-    assert set(desks) == {"restaurant", "clinic", "receptionist"}
+    assert set(desks) == {"restaurant", "clinic", "receptionist", "shop"}
+    assert "delivery" in desks["shop"]["config_schema"]["properties"]
     assert "policies" in desks["restaurant"]["config_schema"]["properties"]
     assert "emergency_phone" in desks["clinic"]["config_schema"]["properties"]
     assert "emergency_phone" not in desks["restaurant"]["config_schema"]["properties"]
