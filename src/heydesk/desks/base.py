@@ -61,6 +61,11 @@ class Store:
         self.knowledge = knowledge
         self.public_url = public_url  # where a link in a reply points: the payment page
 
+    def pay_link(self, record_id: str) -> str:
+        """The visitor's link to pay for something saved unpaid (D47). It starts a new payment
+        each time, so it doesn't run out; the id is long and random, so no one guesses another."""
+        return f"{self.public_url}/pay/{record_id}"
+
     async def search_knowledge(self, question: str) -> list[Snippet]:
         if self.knowledge is None:
             return []

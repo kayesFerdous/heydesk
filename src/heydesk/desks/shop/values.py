@@ -85,7 +85,7 @@ class ShopConfig(AgentConfig):
     policies: str = Field(default="", max_length=4000)  # returns, exchanges
     # The buyer pays the delivery charge online first (SSLCommerz), and the rest on delivery.
     # The order is placed only when the payment comes in (D47)
-    delivery_paid_first: bool = False
+    pay_first: bool = False
 
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:
         if self.free_delivery_over and subtotal >= self.free_delivery_over:

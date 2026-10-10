@@ -13,7 +13,7 @@ from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import NewOrder, OrderCancel, Product
 from heydesk.domain.values import Confirmed
 from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
-from heydesk.models.taken import next_number
+from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
 
 
 class OutOfStock(ValueError):
@@ -53,7 +53,7 @@ class ShopStore(Store):
                 number=await next_number(s, ShopOrder, self.workspace_id),
                 created_at=now,
                 updated_at=now,
-                status="unpaid" if o.pay_first else "new",
+                status=UNPAID if o.pay_first else FIRST_STATUS,
                 name=o.name,
                 phone=o.phone,
                 lines=o.lines,
@@ -67,11 +67,6 @@ class ShopStore(Store):
             )
             s.add(saved)
         return saved
-
-    def pay_link(self, order: ShopOrder) -> str:
-        """The buyer's link to pay its delivery charge. It opens a fresh payment each time, so
-        it doesn't run out; the order's id is long and random, so no one can guess another's."""
-        return f"{self.public_url}/pay/{order.id}"
 
     async def order(self, number: int) -> ShopOrder | None:
         return await self.by_number(ShopOrder, number)

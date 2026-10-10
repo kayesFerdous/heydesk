@@ -34,6 +34,10 @@ class OrderOut(BaseModel):
     lines: list[dict[str, Any]]  # {code, name, quantity, price}
     total: int  # minor units
     currency: str
+    address: str  # empty: pickup
+    delivery_charge: int  # in `total`
+    paid: int  # paid online first (D48)
+    payment_ref: str  # the payment gateway's id for it
     pickup_at: datetime  # UTC
     note: str
     created_at: datetime

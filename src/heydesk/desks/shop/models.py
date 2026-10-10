@@ -4,7 +4,9 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.taken import Taken
+from heydesk.desks.shop.values import lines_text
+from heydesk.models.taken import Payable, Taken
+from heydesk.runtime.speech import money
 
 
 class ProductRow(Base):
@@ -26,15 +28,16 @@ class ProductRow(Base):
     position: Mapped[int] = mapped_column(default=0)  # the shop's order, for the prompt
 
 
-class ShopOrder(Taken, Base):
+class ShopOrder(Taken, Payable, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
-    When the shop has the delivery charge paid first, the order starts `unpaid` (its items
-    held) and only the payment check makes it `new` (D47); no tool can."""
+    When the shop takes payment first, the order starts `unpaid` (its items held) and only
+    the payment check makes it `new` (D47); no tool can."""
 
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
     LETTER: ClassVar[str] = "O"
+    PAY_FOR: ClassVar[str] = "the delivery charge"
     FLOW: ClassVar[dict[str, set[str]]] = {
         "unpaid": {"new", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "cancelled"},  # the shop calls the buyer to confirm
@@ -49,10 +52,21 @@ class ShopOrder(Taken, Base):
     subtotal: Mapped[int]  # minor units
     delivery_charge: Mapped[int]
     total: Mapped[int]  # the whole order; the rider collects `total - paid`
-    paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first (D47)
-    payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
-    currency: Mapped[str] = mapped_column(String(3))
     zone: Mapped[str] = mapped_column(String(100))
     address: Mapped[str] = mapped_column(String(300))
     note: Mapped[str] = mapped_column(default="")
     tracking: Mapped[str] = mapped_column(String(200), default="")  # the courier and its parcel id
+
+    @property
+    def due(self) -> int:
+        return self.delivery_charge
+
+    def about(self) -> str:
+        return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
+
+    def after(self) -> str:
+        cod = money(self.total - self.paid, self.currency)
+        return (
+            f"The rest, {cod}, is paid in cash on delivery. The shop will call you to confirm "
+            "before sending it."
+        )

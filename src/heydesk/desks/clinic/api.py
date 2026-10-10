@@ -34,6 +34,10 @@ class AppointmentOut(BaseModel):
     doctor_code: str
     doctor_name: str
     at: datetime  # UTC
+    deposit: int  # the clinic's when it was booked; minor units
+    currency: str
+    paid: int  # paid online first (D47)
+    payment_ref: str  # the payment gateway's id for it
     created_at: datetime
     updated_at: datetime
 

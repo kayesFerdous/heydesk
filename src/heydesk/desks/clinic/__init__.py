@@ -8,8 +8,9 @@ from pydantic import TypeAdapter
 from heydesk.desks.base import Desk, missing_basics
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.tools import TOOLS
-from heydesk.desks.clinic.values import Doctor
-from heydesk.runtime.config import AgentConfig
+from heydesk.desks.clinic.values import ClinicConfig, Doctor
+from heydesk.desks.shared import pay_first_rule
+from heydesk.runtime.speech import money
 
 ROLE = """\
 # Your role
@@ -36,15 +37,6 @@ now, then hand off to a person.
 For anything else, offer to take a message or get a person."""
 
 
-class ClinicConfig(AgentConfig):
-    greeting: str = (
-        "Hello, thanks for contacting {business_name}. "
-        "I can help you find a doctor or request an appointment."
-    )
-    emergency_phone: str = ""  # where to send someone who needs help now
-    policies: str = ""  # insurance, what to bring, how fees are paid
-
-
 class ClinicDesk(Desk):
     kind = "clinic"
     label = "Clinic front desk"
@@ -68,6 +60,9 @@ class ClinicDesk(Desk):
             about.append(f"Emergency number: {config.emergency_phone.strip()}")
         if config.policies.strip():
             about += ["Policies:", config.policies.strip()]
+        if config.pay_first:
+            deposit = money(config.deposit, config.currency)
+            about.append(pay_first_rule(f"a deposit of {deposit}", "request_appointment"))
 
         doctors = await store.doctors()
         listed = ["# Doctors"]

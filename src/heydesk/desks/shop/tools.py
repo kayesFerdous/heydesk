@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
+from heydesk.desks.shared import awaiting_payment
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
@@ -156,7 +157,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         name=name,
         phone=phone,
         note=" ".join(args.note.split())[:500],
-        pay_first=config.delivery_paid_first and charge > 0,
+        pay_first=config.pay_first and charge > 0,
     )
     how = (
         f"the delivery charge {data['delivery']} paid online first, then "
@@ -177,18 +178,9 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     except OutOfStock as error:
         return fail(f"Sold out since the order was made: {error}. Tell the visitor.")
     code = saved.code
-    if saved.status == "unpaid":  # the owner hears about it once it's paid (D47)
-        return ToolResult(
-            ok=True,
-            data={
-                "code": code,
-                "pay_link": ctx.store.pay_link(saved),
-                "next": f"Send them the link to pay the delivery charge {data['delivery']}. "
-                f"The order is placed only once it's paid; until then don't say it's placed "
-                f"or confirmed. A message will appear here when the payment comes in.",
-            },
-            state={"cart": {}},
-        )
+    if order.pay_first:  # the owner hears about it once it's paid (D47)
+        link = ctx.store.pay_link(saved.id)
+        return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}})
     alert = f"🛍️ New order {code}\n{read_back}"
     return ToolResult(
         ok=True,
@@ -257,7 +249,7 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     if found.paid:
         data["paid_online"] = money(found.paid, found.currency)
     if found.status == "unpaid":
-        data["pay_link"] = ctx.store.pay_link(found)
+        data["pay_link"] = ctx.store.pay_link(found.id)
     zones = cast(ShopConfig, ctx.agent).delivery
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:

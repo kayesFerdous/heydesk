@@ -1,5 +1,8 @@
 """The tools every desk gets: hand off to a person, take a message for the team, and search
-the business's documents (only when it has some, D35)."""
+the business's documents (only when it has some, D35). And what a desk's writing tool and
+prompt say when the business takes payment first (D47)."""
+
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +10,33 @@ from heydesk.desks.base import NewMessage, Store
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult
+
+
+def pay_first_rule(pay_for: str, tool: str) -> str:
+    """The prompt's line for a business that takes payment first (D47)."""
+    return (
+        f"{pay_for[0].upper()}{pay_for[1:]} is paid online first, by the link {tool} gives. "
+        "Nothing is placed or confirmed until that payment comes in: never say it is before a "
+        "message says the payment came in."
+    )
+
+
+def awaiting_payment(
+    code: str, link: str, amount: str, pay_for: str, state: dict[str, Any] | None = None
+) -> ToolResult:
+    """What a writing tool returns once it saved something unpaid (D47): a link to pay, no
+    alert. Only the payment check places it; no tool can."""
+    return ToolResult(
+        ok=True,
+        data={
+            "code": code,
+            "pay_link": link,
+            "next": f"Send them the link to pay {pay_for}, {amount}. It isn't placed or "
+            "confirmed until it's paid: don't say it is. A message will appear here when the "
+            "payment comes in.",
+        },
+        state=state,
+    )
 
 
 class HandoffInput(BaseModel):

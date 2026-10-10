@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk
+from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import Product, ShopConfig, cart_text
@@ -63,12 +64,9 @@ class ShopDesk(Desk):
             about += ["Policies:", config.policies.strip()]
 
         delivery = ["# Delivery"]
-        if config.delivery_paid_first:
-            delivery.append(
-                "The delivery charge is paid online first, by the link place_order gives; the "
-                "rest is cash on delivery. An order is placed only when that payment comes in: "
-                "never say it's placed or confirmed before a message says the payment came in."
-            )
+        if config.pay_first:
+            delivery.append(pay_first_rule("the delivery charge", "place_order"))
+            delivery.append("The rest is paid in cash on delivery.")
         else:
             delivery.append("Orders are paid in cash on delivery.")
         delivery.append("The charge depends on the area:")

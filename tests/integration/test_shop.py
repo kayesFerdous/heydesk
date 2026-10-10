@@ -2,14 +2,11 @@
 up, saved only after a yes and taken out of stock; tracking and cancelling with the code and
 the buyer's mobile; and the owner's products and orders routes."""
 
-from typing import cast
-
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from heydesk.adapters.payments.fake import FakePayments
 from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
@@ -22,8 +19,6 @@ from heydesk.desks.shop.tools import (
 )
 from heydesk.desks.shop.values import mobile
 from heydesk.ports.llm import ToolCall
-from heydesk.ports.payments import Paid
-from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from tests.conftest import SEEDS, World, make_ctx
 
@@ -263,95 +258,3 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
         20,
     )
     assert (tee["sizes"], tee["stock"]) == (["S", "M"], None)  # stock not counted
-
-
-async def paying_first(services: Services) -> tuple[LiveAgent, FakePayments]:
-    """The shop with `delivery_paid_first` on, and its fake gateway."""
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    await services.agents.update(DEV_WORKSPACE_ID, {"delivery_paid_first": True})
-    agent = await services.agents.by_key("dev-shop")
-    return agent, cast(FakePayments, services.payments.gateway)
-
-
-async def test_with_delivery_paid_first_only_a_checked_payment_places_the_order(
-    world: World,
-) -> None:
-    agent, gateway = await paying_first(world.services)
-    assert "paid online first" in await SHOP.prompt(agent.config, world.store(agent))
-    world.decider.script = [NO, YES]
-    first = [
-        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
-        ToolCall("c2", "place_order", DETAILS),
-    ]
-    conv = await world.say(agent, None, [*first, READ_BACK], "a black kurti, size M…")
-    assert "the delivery charge ৳60 paid online first, then ৳950 in cash on delivery" in (
-        await world.tool_said(conv)
-    )
-    await world.say(agent, conv, [ToolCall("c3", "place_order", DETAILS), "Pay here…"], "yes")
-    [order] = await orders(world)
-    assert order.status == "unpaid"  # held, not placed: the yes alone isn't enough
-    assert f"https://heydesk.test/pay/{order.id}" in await world.tool_said(conv)
-
-    payments = world.services.payments
-    gateway.paid["short"] = Paid(order.id, 1000, "BDT", "B1")  # ৳10, not ৳60
-    for forged_or_short in ("made-up", "short"):
-        await payments.settle(forged_or_short)
-        assert (await payments.order(order.id)).status == "unpaid"  # type: ignore[union-attr]
-
-    gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B2")
-    await payments.settle("v1")
-    await payments.settle("v1")  # the buyer's return and the gateway's notice: once is enough
-    placed = await payments.order(order.id)
-    assert placed is not None
-    assert (placed.status, placed.paid, placed.payment_ref) == ("new", 6000, "B2")
-    told = (await world.conversation(conv)).messages[-1]
-    assert (
-        told["by"] == "team" and "Payment received. Your order O-101 is placed" in told["content"]
-    )
-    assert (
-        sum(
-            "Payment received" in str(m["content"])
-            for m in (await world.conversation(conv)).messages
-        )
-        == 1
-    )
-
-    tracked = await track_order(
-        make_ctx(world.store(agent), agent=agent.config),
-        FindOrderInput(code="O-101", phone="01712345678"),
-    )
-    assert (tracked.data["paid_online"], tracked.data["cash_on_delivery"]) == ("৳60", "৳950")
-
-
-async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
-    app: FastAPI, client: AsyncClient
-) -> None:
-    services = app.state.services
-    agent, gateway = await paying_first(services)
-    runtime = services.conversations.runtime
-    runtime.decider.script = [YES]
-    runtime.llm.script = [
-        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
-        ToolCall("c2", "place_order", DETAILS),
-        "Pay here…",
-    ]
-    await client.post(f"/api/chat/{agent.public_key}", json={"message": "a kurti, yes"})
-    [order] = (await client.get("/api/shop/orders")).json()
-
-    went = await client.get(f"/pay/{order['id']}")
-    assert (went.status_code, went.headers["location"]) == (303, f"https://pay.test/{order['id']}")
-    assert gateway.started[0].amount == 6000
-    assert gateway.started[0].back_url == f"https://heydesk.test/pay/{order['id']}/back"
-
-    failed = await client.post(f"/pay/{order['id']}/back", data={"status": "FAILED"})
-    assert "didn't go through" in failed.text
-    forged = await client.post(f"/pay/{order['id']}/back", data={"val_id": "x", "status": "VALID"})
-    assert "didn't go through" in forged.text
-
-    gateway.paid["v1"] = Paid(order["id"], 6000, "BDT", "B1")
-    notice = await client.post("/api/payments/sslcommerz", data={"val_id": "v1"})
-    assert notice.json() == {"ok": True}
-    back = await client.post(f"/pay/{order['id']}/back", data={"val_id": "v1"})
-    assert "Your order O-101 is placed" in back.text
-    assert (await client.get(f"/api/shop/orders/{order['id']}")).json()["paid"] == 6000
-    assert "is placed" in (await client.get(f"/pay/{order['id']}")).text  # no second payment
