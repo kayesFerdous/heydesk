@@ -157,7 +157,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         name=name,
         phone=phone,
         note=" ".join(args.note.split())[:500],
-        pay_first=config.pay_first and charge > 0,
+        pay_first=charge > 0 and await ctx.store.pays_first(config),
     )
     how = (
         f"the delivery charge {data['delivery']} paid online first, then "

@@ -63,12 +63,9 @@ class Settings(BaseSettings):
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""
 
-    # A shop can have the buyer pay the delivery charge online before an order is placed (D47).
-    # fake: the link goes nowhere (tests and development without an account)
-    PAYMENTS: Literal["sslcommerz", "fake"] = "fake"
-    SSLCOMMERZ_STORE_ID: str = ""
-    SSLCOMMERZ_STORE_PASSWORD: str = ""
-    SSLCOMMERZ_SANDBOX: bool = True  # sandbox.sslcommerz.com: test cards, no real money
+    # Paying online before an order is placed (D47), into each business's own SSLCommerz store
+    # (D49), which the owner connects on the frontend. fake: tests, no network
+    PAYMENTS: Literal["sslcommerz", "fake"] = "sslcommerz"
 
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines

@@ -286,6 +286,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
+| `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
@@ -329,7 +330,8 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
-| POST | `/api/payments/sslcommerz` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
+| POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
+| GET/PUT/DELETE | `/api/agent/sslcommerz` | The business's own SSLCommerz store: its id and test mode; connect it (checked with SSLCommerz first); disconnect it (D49). The password never comes back |
 | GET | `/health` | DB reachable |
 
 Lists that grow (orders, appointments, shop orders, messages, conversations, the
@@ -410,10 +412,10 @@ owner replies /done ─► `active` again: the agent answers, and sees what the 
   silence. A phone call can't be answered this way; the owner is told to call back.
 - The `by` mark is taken off before the transcript goes to the model.
 
-### Paying first (D47, D48)
+### Paying first (D47–D49)
 
-A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz
-before anything is placed. What's paid is the table's `Payable.due`:
+A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz,
+into the business's **own** store, before anything is placed. What's paid is the table's `Payable.due`:
 
 | Desk | Pays first (`PAY_FOR`) | Then |
 |---|---|---|
@@ -422,7 +424,14 @@ before anything is placed. What's paid is the table's `Payable.due`:
 | Clinic | a deposit the owner sets, copied onto the appointment | the clinic phones to confirm |
 
 Nothing to pay (free delivery, a pickup) saves it `new` as before. The owner turns it on and
-off, and sets the amounts, on the frontend's Agent → Payments section.
+off, sets the amounts and connects the store on the frontend's Agent → Payments section.
+
+**Each business's own store (D49).** `payment_accounts` holds its SSLCommerz store id,
+store password and test mode; `PUT /api/agent/sslcommerz` checks them with SSLCommerz first
+(it opens a ৳10 session no one pays; a 400 carries SSLCommerz's reason) and no route returns
+the password. The agent asks for payment only when `pay_first` is on **and** a store is
+connected (`Store.pays_first`): without one, the prompt says nothing about paying, the tools
+place orders as before, and `missing` says "Connect your SSLCommerz account…".
 `services/payments.py` (`PaymentService`, its `PAYABLE` tables), `api/payments.py` (the
 pages) and the `PaymentGateway` port (`adapters/payments/sslcommerz.py`; `PAYMENTS=fake` for
 tests) do it. `desks/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
@@ -432,16 +441,18 @@ line (`pay_first_rule`).
 yes to the read-back ─► the tool saves it `unpaid` (a shop's items held), returns
     pay_link = PUBLIC_URL/pay/<id>; no alert yet
 visitor opens the link ─► a new SSLCommerz session for `due` ─► its page
-SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN)
-    ─► settle(val_id): SSLCommerz's validation API says VALID, for this row, this amount
+SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
+    /api/payments/sslcommerz/<id>)
+    ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
+       for this row (its tran_id), this amount
     ─► UPDATE … WHERE status = 'unpaid' → new, paid, payment_ref (only the first post wins)
     ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
        the bot sends it on Telegram) and the owner's alert
 ```
 
 - The agent can't mark anything paid: no tool moves `unpaid` (moving an unpaid appointment
-  keeps it unpaid), and the prompt says nothing is placed until a message says so. What the browser posts is never trusted; only `val_id`,
-  asked about with SSLCommerz.
+  keeps it unpaid), and the prompt says nothing is placed until a message says so. What the
+  browser posts is never trusted; only `val_id`, asked about with the business's own store.
 - The link opens a fresh session each time, so it doesn't run out. The row's id is long and
   random: the link is its own key, like the Telegram webhook's channel id.
 - The owner can still move `unpaid` → `new` (paid some other way) or cancel it.
@@ -508,4 +519,4 @@ version handles them.
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
 | Shop: photos of a product, stock per size and colour | The agent asks for the product's name; stock is per product |
-| Payments: each business's own SSLCommerz account, refunds, a restaurant's charge per area, an unpaid order that expires | One account for the platform, in `.env` (`SSLCOMMERZ_*`); the owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |
+| Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |

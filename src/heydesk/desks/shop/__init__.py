@@ -64,7 +64,7 @@ class ShopDesk(Desk):
             about += ["Policies:", config.policies.strip()]
 
         delivery = ["# Delivery"]
-        if config.pay_first:
+        if await store.pays_first(config):
             delivery.append(pay_first_rule("the delivery charge", "place_order"))
             delivery.append("The rest is paid in cash on delivery.")
         else:

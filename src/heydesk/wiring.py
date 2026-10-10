@@ -103,12 +103,8 @@ def build_knowledge_store(settings: Settings) -> KnowledgeStore:
 
 def build_payments(settings: Settings) -> PaymentGateway:
     if settings.PAYMENTS == "sslcommerz":
-        return SslCommerz(
-            _required(settings, "SSLCOMMERZ_STORE_ID", "PAYMENTS=sslcommerz"),
-            _required(settings, "SSLCOMMERZ_STORE_PASSWORD", "PAYMENTS=sslcommerz"),
-            sandbox=settings.SSLCOMMERZ_SANDBOX,
-        )
-    return FakePayments()  # the payment link goes nowhere; no order is ever paid
+        return SslCommerz()  # each business's own store comes with every call (D49)
+    return FakePayments()  # no network; no order is paid unless a test says so
 
 
 def build_services(

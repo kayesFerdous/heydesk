@@ -115,7 +115,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         note=note,
         address=address,
         delivery_charge=charge,
-        pay_first=config.pay_first and charge > 0,
+        pay_first=charge > 0 and await ctx.store.pays_first(config),
     )
     total = money(order.total, currency)
     if not args.delivery:

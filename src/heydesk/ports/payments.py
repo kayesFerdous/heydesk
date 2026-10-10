@@ -1,7 +1,8 @@
 """The `PaymentGateway` port: taking a payment online (D47). SSLCommerz is the one we use.
 
-The gateway's word is the only proof a payment happened: what a visitor's browser posts
-back is checked with the gateway before anything changes.
+Every call takes the business's own `Account` (D49): each business is paid into its own
+store, so there's no one account for the platform. The gateway's word is the only proof a
+payment happened: what a visitor's browser posts back is checked with it first.
 """
 
 from dataclasses import dataclass
@@ -9,7 +10,16 @@ from typing import Protocol
 
 
 class PaymentUnavailable(Exception):
-    """The gateway said no or couldn't be reached."""
+    """The gateway said no or couldn't be reached. Never carries the password."""
+
+
+@dataclass(frozen=True)
+class Account:
+    """A business's store with the gateway."""
+
+    store_id: str
+    password: str
+    sandbox: bool  # the gateway's test mode: test cards, no real money
 
 
 @dataclass(frozen=True)
@@ -38,10 +48,14 @@ class Paid:
 
 
 class PaymentGateway(Protocol):
-    async def start(self, checkout: Checkout) -> str:
+    async def verify(self, account: Account) -> None:
+        """Raises PaymentUnavailable, with the gateway's reason, unless it accepts the account."""
+        ...
+
+    async def start(self, account: Account, checkout: Checkout) -> str:
         """The gateway's payment page, to send the buyer to."""
         ...
 
-    async def check(self, payment_id: str) -> Paid | None:
+    async def check(self, account: Account, payment_id: str) -> Paid | None:
         """Asks the gateway about a payment it posted back. None unless it went through."""
         ...

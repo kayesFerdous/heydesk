@@ -60,7 +60,7 @@ class ClinicDesk(Desk):
             about.append(f"Emergency number: {config.emergency_phone.strip()}")
         if config.policies.strip():
             about += ["Policies:", config.policies.strip()]
-        if config.pay_first:
+        if await store.pays_first(config):
             deposit = money(config.deposit, config.currency)
             about.append(pay_first_rule(f"a deposit of {deposit}", "request_appointment"))
 

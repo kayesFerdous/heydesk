@@ -87,7 +87,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
         return check.result()
 
     config = cast(ClinicConfig, ctx.agent)
-    deposit = config.deposit if config.pay_first else 0
+    deposit = config.deposit if await ctx.store.pays_first(config) else 0
     appointment = NewAppointment(
         doctor, when, name, phone, config.currency, deposit, pay_first=deposit > 0
     )

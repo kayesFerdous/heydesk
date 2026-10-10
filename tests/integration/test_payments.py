@@ -35,9 +35,11 @@ SHOP_DETAILS = {
 async def paying_first(
     services: Services, kind: str, **settings: object
 ) -> tuple[LiveAgent, FakePayments]:
-    """The dev agent as a `kind` with `pay_first` on (and `settings`), and its fake gateway."""
+    """The dev agent as a `kind` with `pay_first` on (and `settings`) and an SSLCommerz store
+    connected, and its fake gateway."""
     await services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
     await services.agents.update(DEV_WORKSPACE_ID, {"pay_first": True, **settings})
+    await services.payments.connect(DEV_WORKSPACE_ID, "nakshi-test", "store-password", True)
     agent = await services.agents.by_key(f"dev-{kind}")
     return agent, cast(FakePayments, services.payments.gateway)
 
@@ -78,13 +80,16 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
 
     payments = world.services.payments
     gateway.paid["short"] = Paid(order.id, 1000, "BDT", "B1")  # ৳10, not ৳60
-    for forged_or_short in ("made-up", "short"):
-        await payments.settle(forged_or_short)
+    gateway.paid["elsewhere"] = Paid("another-order", 6000, "BDT", "B0")  # paid, but not this
+    for forged_or_short in ("made-up", "short", "elsewhere"):
+        await payments.settle(order.id, forged_or_short)
         assert (await found(world, conv)).status == "unpaid"
 
     gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B2")
-    await payments.settle("v1")
-    await payments.settle("v1")  # the visitor's return and the gateway's notice: once is enough
+    await payments.settle(order.id, "v1")
+    await payments.settle(
+        order.id, "v1"
+    )  # the visitor's return and the gateway's notice: once is enough
     placed = await found(world, conv)
     assert (placed.status, placed.paid, placed.payment_ref) == ("new", 6000, "B2")
     said = (await world.conversation(conv)).messages
@@ -122,7 +127,7 @@ async def test_the_restaurant_takes_the_delivery_charge_first_but_not_for_pickup
     assert (saved.status, saved.due, saved.total) == ("unpaid", 6000, 109000)
 
     gateway.paid["v1"] = Paid(saved.id, 6000, "BDT", "B1")
-    await world.services.payments.settle("v1")
+    await world.services.payments.settle(saved.id, "v1")
     assert (await found(world, conv)).status == "new"
     told = (await world.conversation(conv)).messages[-1]["content"]
     assert told == (
@@ -153,7 +158,7 @@ async def test_the_clinic_request_waits_for_its_deposit_even_when_moved(world: W
     assert (await found(world, conv)).status == "unpaid"  # moving it doesn't pay for it
 
     gateway.paid["v1"] = Paid(appointment.id, 50000, "BDT", "B1")
-    await world.services.payments.settle("v1")
+    await world.services.payments.settle(appointment.id, "v1")
     assert (await found(world, conv)).status == "new"
     told = (await world.conversation(conv)).messages[-1]["content"]
     assert told.startswith("✅ Payment received: ৳500 for the deposit. Your appointment request")
@@ -176,11 +181,11 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
 
     went = await client.get(f"/pay/{order['id']}")
     assert (went.status_code, went.headers["location"]) == (303, f"https://pay.test/{order['id']}")
-    assert (gateway.started[0].amount, gateway.started[0].what) == (
+    assert (gateway.started[0][1].amount, gateway.started[0][1].what) == (
         6000,
         "Delivery charge for O-101",
     )
-    assert gateway.started[0].back_url == f"https://heydesk.test/pay/{order['id']}/back"
+    assert gateway.started[0][1].back_url == f"https://heydesk.test/pay/{order['id']}/back"
 
     failed = await client.post(f"/pay/{order['id']}/back", data={"status": "FAILED"})
     assert "didn't go through" in failed.text
@@ -188,10 +193,50 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
     assert "didn't go through" in forged.text
 
     gateway.paid["v1"] = Paid(order["id"], 6000, "BDT", "B1")
-    notice = await client.post("/api/payments/sslcommerz", data={"val_id": "v1"})
+    notice = await client.post(f"/api/payments/sslcommerz/{order['id']}", data={"val_id": "v1"})
     assert notice.json() == {"ok": True}
     back = await client.post(f"/pay/{order['id']}/back", data={"val_id": "v1"})
     assert "Payment received. The rest, ৳950" in back.text
     assert (await client.get(f"/api/shop/orders/{order['id']}")).json()["paid"] == 6000
     assert "Payment received" in (await client.get(f"/pay/{order['id']}")).text  # not again
     assert (await client.get("/pay/nothing-here")).status_code == 404
+
+
+async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world: World) -> None:
+    services = world.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.update(DEV_WORKSPACE_ID, {"pay_first": True})  # but no store yet
+    agent = await services.agents.by_key("dev-shop")
+    assert "paid online first" not in await SHOP.prompt(agent.config, world.store(agent))
+    assert (
+        "Connect your SSLCommerz account to take payments first."
+        in (await services.agents.get(DEV_WORKSPACE_ID)).missing
+    )
+
+    first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
+    conv = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
+    assert "pay_link" not in await world.tool_said(conv)
+    assert '"code": "O-101"' in await world.tool_said(conv)  # placed, cash on delivery
+
+
+async def test_the_owner_connects_the_business_s_own_store(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    assert (await client.get("/api/agent/sslcommerz")).status_code == 404
+
+    refused = await client.put(
+        "/api/agent/sslcommerz", json={"store_id": "bad", "password": "x", "sandbox": True}
+    )
+    assert refused.status_code == 400
+    assert "SSLCommerz didn't accept these: Store Credential Error" in refused.text
+
+    body = {"store_id": "nakshi-test", "password": "the-api-password", "sandbox": True}
+    connected = await client.put("/api/agent/sslcommerz", json=body)
+    assert connected.status_code == 200
+    shown = (await client.get("/api/agent/sslcommerz")).json()
+    assert (shown["store_id"], shown["sandbox"]) == ("nakshi-test", True)
+    assert "password" not in shown and "the-api-password" not in str(shown)
+
+    assert (await client.delete("/api/agent/sslcommerz")).status_code == 204
+    assert (await client.get("/api/agent/sslcommerz")).status_code == 404

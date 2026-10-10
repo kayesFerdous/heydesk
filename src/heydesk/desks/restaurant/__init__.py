@@ -74,7 +74,7 @@ class RestaurantDesk(Desk):
                 if config.delivery_charge
                 else "Delivery is free."
             )
-        if config.pay_first:
+        if await store.pays_first(config):
             about.append(pay_first_rule("the delivery charge", "place_order"))
             about.append("The rest is paid on delivery. Pickup orders pay nothing first.")
         menu = "# Menu\n" + menu_text(await store.menu(), config.currency)

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import TeamMessage
+from heydesk.models import PaymentAccount, TeamMessage
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -60,6 +60,18 @@ class Store:
         self.conversation_id = conversation_id
         self.knowledge = knowledge
         self.public_url = public_url  # where a link in a reply points: the payment page
+
+    async def pays_first(self, config: AgentConfig) -> bool:
+        """Whether the agent asks for payment before placing anything: the owner turned it on
+        (`pay_first`) and connected the business's SSLCommerz store (D49). Without the store,
+        the agent takes orders as if it were off."""
+        if not getattr(config, "pay_first", False):
+            return False
+        async with self.sessions() as s:
+            found = await s.scalar(
+                select(PaymentAccount.id).where(PaymentAccount.workspace_id == self.workspace_id)
+            )
+        return found is not None
 
     def pay_link(self, record_id: str) -> str:
         """The visitor's link to pay for something saved unpaid (D47). It starts a new payment
