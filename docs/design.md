@@ -321,11 +321,17 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
-| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
+| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/health` | DB reachable |
+
+Lists that grow (orders, appointments, shop orders, messages, conversations, the
+audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, default
+100) and `?before=` the last row's time (`created_at`; `updated_at` for
+conversations; `at` for the audit log). Fewer than `limit` rows means it was the
+last page.
 
 Everything under `/api` except chat, desks, auth and the Telegram webhook needs
 `Authorization: Bearer <token>`.

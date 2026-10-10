@@ -9,6 +9,7 @@ from heydesk.desks import DESKS, tools_for
 from heydesk.desks.receptionist import RECEPTIONIST
 from heydesk.models import TeamMessage
 from heydesk.ports.llm import ToolCall
+from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY, World
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
@@ -95,3 +96,19 @@ async def test_the_owner_sees_messages_and_marks_them_handled(
     assert handled.json()["status"] == "handled"
     unknown = await client.patch(f"/api/messages/{message['id']}", json={"status": "lost"})
     assert unknown.status_code == 400
+
+
+async def test_the_owner_pages_through_messages(app: FastAPI, client: AsyncClient) -> None:
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID)
+    for body in ["first", "second", "third"]:
+        store.now.advance(seconds=1)
+        await store.add(TeamMessage, name="", phone="", body=body, best_time="")
+
+    newest = (await client.get("/api/messages", params={"limit": 2})).json()
+    assert [m["body"] for m in newest] == ["third", "second"]
+    before = newest[-1]["created_at"]
+    older = (await client.get("/api/messages", params={"limit": 2, "before": before})).json()
+    assert [m["body"] for m in older] == ["first"]
+    one = await client.get(f"/api/messages/{older[0]['id']}")
+    assert one.json() == older[0]
+    assert (await client.get("/api/messages", params={"limit": 101})).status_code == 422

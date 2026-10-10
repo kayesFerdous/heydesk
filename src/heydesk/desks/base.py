@@ -25,7 +25,7 @@ from heydesk.runtime.tool import Tool
 if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.knowledge import KnowledgeService
 
-PAGE = 100  # newest first
+PAGE = 100  # the most rows a list returns at once (newest first)
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,15 @@ class Store:
         )
         return saved.code
 
-    async def messages(self, status: str | None = None, q: str | None = None) -> list[TeamMessage]:
-        return await self.find(TeamMessage, status, q)
+    async def messages(
+        self,
+        status: str | None = None,
+        q: str | None = None,
+        *,
+        limit: int = PAGE,
+        before: datetime | None = None,
+    ) -> list[TeamMessage]:
+        return await self.find(TeamMessage, status, q, limit=limit, before=before)
 
     # Shared by every table of things taken (`models.taken`)
 
@@ -100,9 +107,18 @@ class Store:
         status: str | None = None,
         q: str | None = None,
         conversation_id: str | None = None,
+        *,
+        limit: int = PAGE,
+        before: datetime | None = None,
     ) -> list[T]:
-        """Newest first. `q` matches the number or code ("A-104"), the name or the phone."""
+        """Newest first. `q` matches the number or code ("A-104"), the name or the phone.
+
+        One page at a time: up to `limit` rows made before `before`. The next page is
+        `before=` the last row's `created_at`. Two rows made in the same microsecond, split
+        across a page edge, would hide one of them: not worth a second cursor field."""
         query = select(table).where(table.workspace_id == self.workspace_id)
+        if before:
+            query = query.where(table.created_at < before)
         if status:
             query = query.where(table.status == status)
         if conversation_id:
@@ -119,7 +135,7 @@ class Store:
                 )
             )
         async with self.sessions() as s:
-            return list(await s.scalars(query.order_by(table.created_at.desc()).limit(PAGE)))
+            return list(await s.scalars(query.order_by(table.created_at.desc()).limit(limit)))
 
     async def get[T: Taken](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:

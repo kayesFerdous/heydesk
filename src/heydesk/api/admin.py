@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from heydesk.api.deps import Admin, Svc
+from heydesk.api.deps import Admin, Paged, Svc
 from heydesk.services.users import temporary_password
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -90,7 +90,10 @@ async def reset_password(user_id: str, admin: Admin, services: Svc) -> Temporary
 
 
 @router.get("/audit")
-async def audit(admin: Admin, services: Svc, workspace_id: str | None = None) -> list[AuditOut]:
+async def audit(
+    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
+) -> list[AuditOut]:
+    """Newest first, a page at a time (`limit`, `before` an `at`)."""
     return [
         AuditOut(
             id=event.id,
@@ -100,5 +103,7 @@ async def audit(admin: Admin, services: Svc, workspace_id: str | None = None) ->
             target=event.target,
             at=event.at,
         )
-        for event, email in await services.admin.audit_log(workspace_id)
+        for event, email in await services.admin.audit_log(
+            workspace_id, limit=page.limit, before=page.before
+        )
     ]

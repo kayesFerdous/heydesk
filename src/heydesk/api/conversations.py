@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import StatusIn, Svc, Workspace
+from heydesk.api.deps import Paged, StatusIn, Svc, Workspace
 from heydesk.models import TeamMessage
 
 router = APIRouter(tags=["conversations"])
@@ -50,9 +50,13 @@ class MessageOut(BaseModel):
 async def conversations(
     services: Svc,
     ws: Workspace,
+    page: Paged,
     status: Literal["active", "needs_human"] | None = None,
 ) -> list[ConversationOut]:
-    found = await services.conversations.list(ws, status=status)
+    """Newest activity first, a page at a time (`limit`, `before` an `updated_at`)."""
+    found = await services.conversations.list(
+        ws, status=status, limit=page.limit, before=page.before
+    )
     return [ConversationOut.model_validate(c) for c in found]
 
 
@@ -76,11 +80,19 @@ async def conversation(
 
 @router.get("/api/messages")
 async def messages(
-    services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+    services: Svc, ws: Workspace, page: Paged, status: str | None = None, q: str | None = None
 ) -> list[MessageOut]:
-    """Messages for the team, newest first. `q` matches the code, the name or the phone."""
+    """Messages for the team, newest first, a page at a time (`limit`, `before`). `q`
+    matches the code, the name or the phone."""
     store = await services.agents.store(ws)
-    return [MessageOut.model_validate(m) for m in await store.messages(status, q)]
+    found = await store.messages(status, q, limit=page.limit, before=page.before)
+    return [MessageOut.model_validate(m) for m in found]
+
+
+@router.get("/api/messages/{message_id}")
+async def message(message_id: str, services: Svc, ws: Workspace) -> MessageOut:
+    store = await services.agents.store(ws)
+    return MessageOut.model_validate(await store.get(TeamMessage, message_id))
 
 
 @router.patch("/api/messages/{message_id}")

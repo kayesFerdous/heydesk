@@ -6,7 +6,7 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import StatusIn, Svc, Workspace
+from heydesk.api.deps import Paged, StatusIn, Svc, Workspace
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.values import Doctor, doctors_from_csv
@@ -65,10 +65,12 @@ async def replace_doctors(body: list[Doctor], store: Clinic) -> list[Doctor]:
 
 @router.get("/api/appointments")
 async def appointments(
-    store: Clinic, status: str | None = None, q: str | None = None
+    store: Clinic, page: Paged, status: str | None = None, q: str | None = None
 ) -> list[AppointmentOut]:
-    """Newest first. `q` matches the code ("A-104"), the name or the phone."""
-    return [AppointmentOut.model_validate(a) for a in await store.find(Appointment, status, q)]
+    """Newest first, a page at a time (`limit`, `before`). `q` matches the code ("A-104"),
+    the name or the phone."""
+    found = await store.find(Appointment, status, q, limit=page.limit, before=page.before)
+    return [AppointmentOut.model_validate(a) for a in found]
 
 
 @router.get("/api/appointments/{appointment_id}")

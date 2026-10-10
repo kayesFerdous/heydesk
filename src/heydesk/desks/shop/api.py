@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Paged, Svc, Workspace
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import Product, products_from_csv
@@ -89,10 +89,12 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut:
 
 @router.get("/api/shop/orders")
 async def orders(
-    store: Shop, status: str | None = None, q: str | None = None
+    store: Shop, page: Paged, status: str | None = None, q: str | None = None
 ) -> list[ShopOrderOut]:
-    """Newest first. `q` matches the code or number, the name or the phone."""
-    return [ShopOrderOut.model_validate(o) for o in await store.find(ShopOrder, status, q)]
+    """Newest first, a page at a time (`limit`, `before`). `q` matches the code or number,
+    the name or the phone."""
+    found = await store.find(ShopOrder, status, q, limit=page.limit, before=page.before)
+    return [ShopOrderOut.model_validate(o) for o in found]
 
 
 @router.get("/api/shop/orders/{order_id}")
