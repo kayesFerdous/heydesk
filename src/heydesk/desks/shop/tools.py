@@ -1,5 +1,8 @@
 """The shop's tools: keep the cart up to date (Python adds it up, rule 1), place a
-cash-on-delivery order, and track or cancel one with its code and the buyer's mobile."""
+cash-on-delivery order, and track or cancel one with its code and the buyer's mobile.
+
+A shop can take the delivery charge online first (D47): then `place_order` saves the order
+`unpaid` and returns a payment link. No tool can mark it paid: only the payment check can."""
 
 from typing import Any, cast
 
@@ -153,19 +156,39 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         name=name,
         phone=phone,
         note=" ".join(args.note.split())[:500],
+        pay_first=config.delivery_paid_first and charge > 0,
+    )
+    how = (
+        f"the delivery charge {data['delivery']} paid online first, then "
+        f"{money(cart['subtotal'], currency)} in cash on delivery"
+        if order.pay_first
+        else "paid in cash on delivery"
     )
     read_back = (
         f"{cart_text(cart, currency)}; delivery {zone.name} {data['delivery']}; "
-        f"total {data['total']}, paid in cash on delivery; to {address}; "
+        f"total {data['total']}, {how}; to {address}; "
         f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
     )
     confirmed = await confirm(ctx.decider, order, read_back, ctx.agent_said, ctx.visitor_said)
     if confirmed is None:
         return ask_for_yes(read_back, "place_order")
     try:
-        code = await ctx.store.place_order(confirmed)
+        saved = await ctx.store.place_order(confirmed)
     except OutOfStock as error:
         return fail(f"Sold out since the order was made: {error}. Tell the visitor.")
+    code = saved.code
+    if saved.status == "unpaid":  # the owner hears about it once it's paid (D47)
+        return ToolResult(
+            ok=True,
+            data={
+                "code": code,
+                "pay_link": ctx.store.pay_link(saved),
+                "next": f"Send them the link to pay the delivery charge {data['delivery']}. "
+                f"The order is placed only once it's paid; until then don't say it's placed "
+                f"or confirmed. A message will appear here when the payment comes in.",
+            },
+            state={"cart": {}},
+        )
     alert = f"🛍️ New order {code}\n{read_back}"
     return ToolResult(
         ok=True,
@@ -187,7 +210,8 @@ PLACE_ORDER = Tool(
         "mobile number. Call it as soon as you have the area: it gives the delivery charge and "
         "the total, and says what's still needed. When it has everything it gives you what to "
         "read back; call it again with the same details after a clear yes. Returns the order "
-        "code; tell it to the visitor."
+        "code; tell it to the visitor. If the shop takes the delivery charge first, it returns "
+        "a payment link instead, and the order waits for the payment."
     ),
     input_model=PlaceOrderInput,
     run=place_order,
@@ -226,9 +250,14 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
         "order": found.code,
         "status": STATUS_WORDS[found.status],
         "items": lines_text(found.lines),
-        "total": money(found.total, found.currency) + ", cash on delivery",
+        "total": money(found.total, found.currency),
+        "cash_on_delivery": money(found.total - found.paid, found.currency),
         "delivery_area": found.zone,
     }
+    if found.paid:
+        data["paid_online"] = money(found.paid, found.currency)
+    if found.status == "unpaid":
+        data["pay_link"] = ctx.store.pay_link(found)
     zones = cast(ShopConfig, ctx.agent).delivery
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:

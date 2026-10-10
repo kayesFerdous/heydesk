@@ -87,6 +87,20 @@ class TeamService:
         """A visitor wrote while the team is answering: pass it on, for the owner to reply to."""
         await self.alert(conv, f"💬 Customer: {text}")
 
+    async def tell_visitor(self, conversation_id: str, text: str) -> None:
+        """The business tells the visitor something the agent couldn't know (a payment came
+        in). Added to the transcript like a team reply, so the web page shows it and the model
+        sees it; sent by the bot on Telegram. The conversation stays with the agent."""
+        async with self.sessions() as s, s.begin():
+            conv = await s.get_one(Conversation, conversation_id)
+            said = {**self.llm.assistant_message(text), "by": TEAM}
+            conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
+            conv.updated_at = self.now()
+        if conv.channel == "telegram":
+            channel = await self._channel(conv.workspace_id)
+            if channel is not None:
+                await self._send(channel, str(conv.contact), text)
+
     async def link_owner(self, channel: Channel, chat_id: str, code: str) -> None:
         if code != owner_code(channel):
             await self._send(channel, chat_id, OLD_LINK)

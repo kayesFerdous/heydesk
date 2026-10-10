@@ -98,7 +98,7 @@ business has documents (D35). To add a kind of business: a new folder, and a lin
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas and charges), `free_delivery_over` and `policies`; each sets its own default greeting. A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas and charges), `free_delivery_over`, `policies` and `delivery_paid_first` (D47); each sets its own default greeting. A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -231,9 +231,9 @@ merged into the conversation's `state`, saved with the turn.
 | `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock and adds up the subtotal. The cart goes in `state["cart"]` (D45) |
-| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock as it saves. Returns its code, `O-101`, and an alert |
-| `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, how long delivery usually takes and the courier the owner gave. A wrong code and a wrong number get the same answer |
-| `cancel_order` | shop | **yes** | The same code and mobile; only while `new` or `confirmed` (not once the courier has it). The items go back in stock |
+| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock as it saves. Returns its code, `O-101`, and an alert. With `delivery_paid_first` (and a charge), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment places it (D47) |
+| `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, the courier the owner gave, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
+| `cancel_order` | shop | **yes** | The same code and mobile; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 
 **The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
@@ -293,7 +293,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, doctor_code, doctor_name, at. Code `A-104`; new → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, category, sizes JSON, colours JSON, stock (empty: not counted), position |
-| `shop_orders` | the shared columns, lines JSON, subtotal, delivery_charge, total, currency, zone, address, note, tracking. Code `O-101`; new → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, lines JSON, subtotal, delivery_charge, total, paid (online, D47), payment_ref, currency, zone, address, note, tracking. Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -325,6 +325,9 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
+| GET | `/pay/{order_id}` | The buyer's payment link: off to SSLCommerz to pay an unpaid order's delivery charge (D47) |
+| POST | `/pay/{order_id}/back` | SSLCommerz sends the buyer back here (paid, failed or cancelled); a page says which |
+| POST | `/api/payments/sslcommerz` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
 | GET | `/health` | DB reachable |
 
 Lists that grow (orders, appointments, shop orders, messages, conversations, the
@@ -405,6 +408,30 @@ owner replies /done ─► `active` again: the agent answers, and sees what the 
   silence. A phone call can't be answered this way; the owner is told to call back.
 - The `by` mark is taken off before the transcript goes to the model.
 
+### Delivery charge paid first (D47)
+
+A shop can set `delivery_paid_first`: the buyer pays the delivery charge online through
+SSLCommerz, and the rest in cash on delivery. `services/payments.py` (`PaymentService`) and the
+`PaymentGateway` port (`adapters/payments/sslcommerz.py`; `PAYMENTS=fake` for tests) do it.
+
+```
+yes to the read-back ─► place_order saves the order `unpaid` (its items held), returns
+    pay_link = PUBLIC_URL/pay/<order id>; no alert yet
+buyer opens the link ─► a new SSLCommerz session for the delivery charge ─► its page
+SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN)
+    ─► settle(val_id): SSLCommerz's validation API says VALID, for this order, this amount
+    ─► UPDATE … WHERE status = 'unpaid' → new, paid, payment_ref (only the first post wins)
+    ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
+       the bot sends it on Telegram) and the owner's new-order alert
+```
+
+- The agent can't mark an order paid: no tool moves `unpaid`, and the prompt says it isn't
+  placed until a message says so. What the browser posts is never trusted; only `val_id`,
+  asked about with SSLCommerz.
+- The link opens a fresh session each time, so it doesn't run out. The order's id is long and
+  random: the link is its own key, like the Telegram webhook's channel id.
+- The owner can still move `unpaid` → `new` (paid some other way) or cancel it (items back).
+
 ## 10. Voice (M2)
 
 A `voice/` package turns speech into `start_turn(channel="voice")` calls and
@@ -466,4 +493,5 @@ version handles them.
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
-| Shop: photos of a product, stock per size and colour, checking a bKash advance | The agent asks for the product's name; stock is per product; an advance payment is a policy the owner writes |
+| Shop: photos of a product, stock per size and colour | The agent asks for the product's name; stock is per product |
+| Payments: each shop's own SSLCommerz account, refunds, paying the whole order first, an unpaid order that expires | One account for the platform, in `.env` (`SSLCOMMERZ_*`); the owner refunds in SSLCommerz's panel (a payment for a cancelled order is an alert saying so); only the delivery charge; the owner cancels an order that was never paid, and its items go back |

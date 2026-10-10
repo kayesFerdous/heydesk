@@ -82,7 +82,10 @@ class ShopConfig(AgentConfig):
         default_factory=list
     )  # where the shop delivers, and the charge for each
     free_delivery_over: int = Field(default=0, ge=0)  # minor units; 0: never free
-    policies: str = Field(default="", max_length=4000)  # advance payment, returns, exchanges
+    policies: str = Field(default="", max_length=4000)  # returns, exchanges
+    # The buyer pays the delivery charge online first (SSLCommerz), and the rest on delivery.
+    # The order is placed only when the payment comes in (D47)
+    delivery_paid_first: bool = False
 
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:
         if self.free_delivery_over and subtotal >= self.free_delivery_over:
@@ -121,6 +124,7 @@ def lines_text(lines: list[dict[str, Any]]) -> str:
 
 
 STATUS_WORDS = {  # what track_order says about each status
+    "unpaid": "not placed yet: it's waiting for the delivery charge to be paid online",
     "new": "received: the shop will call to confirm it before sending it",
     "confirmed": "confirmed, and being packed",
     "shipped": "handed to the courier, on its way",
@@ -128,7 +132,7 @@ STATUS_WORDS = {  # what track_order says about each status
     "returned": "returned to the shop",
     "cancelled": "cancelled",
 }
-CANCELLABLE = {"new", "confirmed"}  # not once the courier has it
+CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
 
 
 @dataclass(frozen=True)
@@ -144,6 +148,7 @@ class NewOrder:
     name: str
     phone: str
     note: str = ""
+    pay_first: bool = False  # saved as unpaid until the delivery charge is paid online (D47)
 
     @property
     def total(self) -> int:

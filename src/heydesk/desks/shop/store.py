@@ -39,9 +39,10 @@ class ShopStore(Store):
                 for n, product in enumerate(products)
             )
 
-    async def place_order(self, order: Confirmed[NewOrder]) -> str:
-        """Takes the items out of stock and saves the order; returns its code, "O-101".
-        Raises OutOfStock, and saves nothing, if there aren't enough left."""
+    async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
+        """Takes the items out of stock and saves the order: `new`, or `unpaid` when its
+        delivery charge is paid first (D47). Raises OutOfStock, and saves nothing, if there
+        aren't enough left."""
         o = order.value
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
@@ -52,6 +53,7 @@ class ShopStore(Store):
                 number=await next_number(s, ShopOrder, self.workspace_id),
                 created_at=now,
                 updated_at=now,
+                status="unpaid" if o.pay_first else "new",
                 name=o.name,
                 phone=o.phone,
                 lines=o.lines,
@@ -64,7 +66,12 @@ class ShopStore(Store):
                 note=o.note,
             )
             s.add(saved)
-        return saved.code
+        return saved
+
+    def pay_link(self, order: ShopOrder) -> str:
+        """The buyer's link to pay its delivery charge. It opens a fresh payment each time, so
+        it doesn't run out; the order's id is long and random, so no one can guess another's."""
+        return f"{self.public_url}/pay/{order.id}"
 
     async def order(self, number: int) -> ShopOrder | None:
         return await self.by_number(ShopOrder, number)

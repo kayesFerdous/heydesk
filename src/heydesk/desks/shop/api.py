@@ -1,15 +1,21 @@
-"""A shop's own routes: its products, and the orders the agent took."""
+"""A shop's own routes: its products, and the orders the agent took. And the buyer's
+payment pages (D47), which need no login: the order's id is the key."""
 
+import html
+from contextlib import suppress
 from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Paged, Svc, Workspace
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import Product, products_from_csv
+from heydesk.ports.payments import PaymentUnavailable
+from heydesk.services.payments import NOTIFY_PATH
 
 router = APIRouter(tags=["shop"])
 
@@ -34,7 +40,9 @@ class ShopOrderOut(BaseModel):
     lines: list[dict[str, Any]]  # {code, name, size, colour, quantity, price}
     subtotal: int  # minor units
     delivery_charge: int
-    total: int  # what the rider collects
+    total: int  # the whole order
+    paid: int  # paid online first (D47); the rider collects `total - paid`
+    payment_ref: str  # the payment gateway's id for it
     currency: str
     zone: str
     address: str
@@ -110,3 +118,60 @@ async def change_order(order_id: str, body: OrderChange, store: Shop) -> ShopOrd
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status, body.tracking)
     return ShopOrderOut.model_validate(moved)
+
+
+# The buyer's payment pages (D47)
+
+PAID = "Payment received. Your order {code} is placed: the shop will call you to confirm it."
+NOT_PAID = "The payment didn't go through. Open the payment link again to try once more."
+
+
+def page(text: str, status_code: int = 200) -> HTMLResponse:
+    body = (
+        '<!doctype html><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Payment</title>"
+        '<p style="font: 18px system-ui; max-width: 32em; margin: 3em auto; padding: 0 1em">'
+        f"{html.escape(text, quote=False)}<br><br>You can close this page and go back to the chat.</p>"
+    )
+    return HTMLResponse(body, status_code)
+
+
+def order_page(order: ShopOrder | None) -> HTMLResponse:
+    if order is None:
+        return page("There's no such order.", 404)
+    if order.status == "unpaid":
+        return page(NOT_PAID)
+    if order.status == "cancelled":
+        return page(f"Order {order.code} was cancelled.")
+    return page(PAID.replace("{code}", order.code))
+
+
+@router.get("/pay/{order_id}", include_in_schema=False, response_model=None)
+async def pay(order_id: str, services: Svc) -> HTMLResponse | RedirectResponse:
+    """The link the agent sends: off to the gateway to pay the delivery charge."""
+    order = await services.payments.order(order_id)
+    if order is None or order.status != "unpaid":
+        return order_page(order)
+    try:
+        return RedirectResponse(await services.payments.start(order), status_code=303)
+    except PaymentUnavailable:
+        return page("The payment page isn't answering. Please try the link again in a minute.")
+
+
+@router.post("/pay/{order_id}/back", include_in_schema=False)
+async def paid(order_id: str, services: Svc, val_id: Annotated[str, Form()] = "") -> HTMLResponse:
+    """The gateway sends the buyer back here, paid, failed or cancelled. Only `val_id`, checked
+    with the gateway, counts; what else it posts could be forged."""
+    if val_id:
+        with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
+            await services.payments.settle(val_id)
+    return order_page(await services.payments.order(order_id))
+
+
+@router.post(NOTIFY_PATH, include_in_schema=False)
+async def payment_notice(services: Svc, val_id: Annotated[str, Form()] = "") -> dict[str, bool]:
+    """The gateway's notice (SSLCommerz's IPN), even if the buyer closed the tab."""
+    if val_id:
+        await services.payments.settle(val_id)
+    return {"ok": True}

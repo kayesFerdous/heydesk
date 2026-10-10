@@ -27,12 +27,16 @@ class ProductRow(Base):
 
 
 class ShopOrder(Taken, Base):
-    """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it."""
+    """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
+
+    When the shop has the delivery charge paid first, the order starts `unpaid` (its items
+    held) and only the payment check makes it `new` (D47); no tool can."""
 
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
     LETTER: ClassVar[str] = "O"
     FLOW: ClassVar[dict[str, set[str]]] = {
+        "unpaid": {"new", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "cancelled"},  # the shop calls the buyer to confirm
         "confirmed": {"shipped", "cancelled"},
         "shipped": {"delivered", "returned"},  # with the courier
@@ -44,7 +48,9 @@ class ShopOrder(Taken, Base):
     lines: Mapped[list[Any]] = mapped_column(JSON)  # {code, name, size, colour, quantity, price}
     subtotal: Mapped[int]  # minor units
     delivery_charge: Mapped[int]
-    total: Mapped[int]  # what the buyer pays the rider
+    total: Mapped[int]  # the whole order; the rider collects `total - paid`
+    paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first (D47)
+    payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
     currency: Mapped[str] = mapped_column(String(3))
     zone: Mapped[str] = mapped_column(String(100))
     address: Mapped[str] = mapped_column(String(300))

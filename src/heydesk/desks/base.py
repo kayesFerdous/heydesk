@@ -52,12 +52,14 @@ class Store:
         *,
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
+        public_url: str = "",
     ) -> None:
         self.sessions = sessions
         self.workspace_id = workspace_id
         self.now = now
         self.conversation_id = conversation_id
         self.knowledge = knowledge
+        self.public_url = public_url  # where a link in a reply points: the payment page
 
     async def search_knowledge(self, question: str) -> list[Snippet]:
         if self.knowledge is None:
@@ -185,10 +187,16 @@ class Desk:
         *,
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
+        public_url: str = "",
     ) -> Store:
         """Its data. A desk with tables of its own returns its own store."""
         return Store(
-            sessions, workspace_id, now, conversation_id=conversation_id, knowledge=knowledge
+            sessions,
+            workspace_id,
+            now,
+            conversation_id=conversation_id,
+            knowledge=knowledge,
+            public_url=public_url,
         )
 
     async def prompt(self, config: Any, store: Any) -> str:

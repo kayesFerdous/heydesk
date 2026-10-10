@@ -22,7 +22,6 @@ Only offer products from the list. If one is sold out, say so and suggest a simi
 If you can't tell which product they mean (a photo, "this one"), ask for its name.
 
 # Taking an order
-Orders are paid in cash on delivery, to the visitor's address.
 1. Whenever the order changes, call update_cart with the whole order: each product's code and
    quantity, and its size and colour when it has them. Then tell the visitor each line and the
    subtotal exactly as the tool gave them.
@@ -63,7 +62,16 @@ class ShopDesk(Desk):
         if config.policies.strip():
             about += ["Policies:", config.policies.strip()]
 
-        delivery = ["# Delivery", "Cash on delivery. The charge depends on the area:"]
+        delivery = ["# Delivery"]
+        if config.delivery_paid_first:
+            delivery.append(
+                "The delivery charge is paid online first, by the link place_order gives; the "
+                "rest is cash on delivery. An order is placed only when that payment comes in: "
+                "never say it's placed or confirmed before a message says the payment came in."
+            )
+        else:
+            delivery.append("Orders are paid in cash on delivery.")
+        delivery.append("The charge depends on the area:")
         delivery += [zone.line(config.currency) for zone in config.delivery]
         if config.free_delivery_over:
             free = money(config.free_delivery_over, config.currency)

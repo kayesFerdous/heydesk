@@ -18,12 +18,15 @@ from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
+from heydesk.adapters.payments.fake import FakePayments
+from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.telegram import TelegramApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
@@ -32,6 +35,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.payments import PaymentService
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 
@@ -97,6 +101,16 @@ def build_knowledge_store(settings: Settings) -> KnowledgeStore:
     )
 
 
+def build_payments(settings: Settings) -> PaymentGateway:
+    if settings.PAYMENTS == "sslcommerz":
+        return SslCommerz(
+            _required(settings, "SSLCOMMERZ_STORE_ID", "PAYMENTS=sslcommerz"),
+            _required(settings, "SSLCOMMERZ_STORE_PASSWORD", "PAYMENTS=sslcommerz"),
+            sandbox=settings.SSLCOMMERZ_SANDBOX,
+        )
+    return FakePayments()  # the payment link goes nowhere; no order is ever paid
+
+
 def build_services(
     sessions: async_sessionmaker[AsyncSession],
     llm: LanguageModel,
@@ -106,6 +120,7 @@ def build_services(
     settings: Settings,
     now: Callable[[], datetime],
     telegram: TelegramApi | None = None,
+    payments: PaymentGateway | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
@@ -119,5 +134,8 @@ def build_services(
         channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
         conversations=conversations,
         knowledge=knowledge,
+        payments=PaymentService(
+            sessions, payments or build_payments(settings), team, settings, now
+        ),
         users=UserService(sessions, settings.jwt_secret, now),
     )

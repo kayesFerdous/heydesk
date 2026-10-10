@@ -90,6 +90,7 @@ class ConversationService:
             self.now,
             conversation_id=conv.id,
             knowledge=self.knowledge,
+            public_url=self.settings.public_url,
         )
         turn = TurnInput(
             system=build_system_prompt(
