@@ -21,6 +21,13 @@ class BusinessRequired(HeyDeskError):
     code = "business_required"
 
 
+def client_ip(request: Request) -> str:
+    """The caller's address, for the rate limits (D52). Behind a proxy (Cloudflare, nginx), run
+    uvicorn with `--proxy-headers --forwarded-allow-ips=<the proxy>`, or every caller looks like
+    the proxy."""
+    return request.client.host if request.client else "unknown"
+
+
 def get_services(request: Request) -> Services:
     services: Services = request.app.state.services
     return services
@@ -97,6 +104,7 @@ type Workspace = Annotated[str, Depends(current_workspace)]
 type User = Annotated[Principal, Depends(current_user)]
 type Admin = Annotated[Principal, Depends(admin_only)]
 type Paged = Annotated[Page, Depends(page)]
+type ClientIp = Annotated[str, Depends(client_ip)]
 
 
 class StatusIn(BaseModel):

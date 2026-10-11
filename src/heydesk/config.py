@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     OFF_TOPIC_STRIKES: int = 5  # off-topic turns in a row before a visitor is blocked
     BLOCK_HOURS: int = 24
 
+    # How fast anyone can call the public routes and log in (D52), as "<count>/<period>". The
+    # counts live in RATE_LIMIT_STORAGE: in memory for one server process; with more than one,
+    # Redis ("async+redis://host:6379", needs the `coredis` package) so they share the counts.
+    # An IP limit is generous: on mobile data many people share one address.
+    RATE_LIMIT_STORAGE: str = "async+memory://"
+    RATE_CHAT_PER_VISITOR: str = "6/minute"  # web chat by visitor_id, Telegram by chat
+    RATE_CHAT_PER_IP: str = "60/minute"
+    RATE_CALL_PER_IP: str = "5/minute"  # each call starts the voice pipeline and a TURN relay
+    RATE_POLL_PER_CONVERSATION: str = "30/minute"  # the chat page asking for team replies
+    RATE_LOGIN: str = "10/15 minutes"  # per IP and email
+    RATE_SIGNUP_PER_IP: str = "10/hour"
+
     # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""

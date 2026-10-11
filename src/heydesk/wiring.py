@@ -36,6 +36,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
+from heydesk.services.rate_limits import RateLimiter
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
@@ -123,11 +124,14 @@ def build_services(
     telegram = telegram or TelegramBot()
     team = TeamService(sessions, llm, telegram, now)
     visitors = VisitorService(sessions, settings, now)
+    rate_limits = RateLimiter(settings)
     conversations = ConversationService(sessions, runtime, knowledge, team, visitors, settings, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
-        channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
+        channels=ChannelService(
+            sessions, agents, conversations, team, telegram, rate_limits, settings, now
+        ),
         conversations=conversations,
         knowledge=knowledge,
         payments=PaymentService(
@@ -135,4 +139,5 @@ def build_services(
         ),
         users=UserService(sessions, settings.jwt_secret, now),
         visitors=visitors,
+        rate_limits=rate_limits,
     )

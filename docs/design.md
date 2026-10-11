@@ -394,6 +394,27 @@ utterance is a turn like any other; a limited one is said out loud. On Telegram 
 sent as a message. The day is the business's local day. The IP address isn't used: on mobile data
 in Bangladesh many people share one.
 
+### Rate limits (D52)
+
+The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
+(`services/rate_limits.py`, on the `limits` library) counts hits over a sliding window and raises
+`TooFast`, a 429 `rate_limited`, before anything else runs:
+
+| Route | Key | Default (`RATE_*` settings) |
+|---|---|---|
+| `POST /api/chat/{key}` | visitor_id; and the IP, for a script making new visitor ids | 6 a minute; 60 a minute |
+| Telegram message | the bot and the chat | 6 a minute; over it, no reply at all, so a burst isn't answered |
+| `POST /api/voice/offer` | IP | 5 a minute |
+| `GET /api/chat/{key}/{id}/team` | the conversation, not the IP | 30 a minute |
+| `POST /api/auth/login` | IP and email | 10 in 15 minutes |
+| `POST /api/auth/signup` | IP | 10 an hour |
+
+The counts are in memory (`RATE_LIMIT_STORAGE=async+memory://`), which is right for one server
+process. With more than one, point it at Redis (`async+redis://host:6379`, and add `coredis`):
+no code changes. Behind a proxy (Cloudflare, nginx), run uvicorn with `--proxy-headers
+--forwarded-allow-ips=<the proxy>`, or every caller has the proxy's IP. A Cloudflare rate-limit
+rule and Turnstile in front of `/api/*` come with the deploy.
+
 ### Telegram (D42)
 
 A business connects **its own bot**: it makes one with @BotFather and sends the token to
@@ -540,7 +561,7 @@ version handles them.
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
-| Usage shown to the owner, limits per plan, Cloudflare Turnstile, an IP limit | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns |
+| Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |

@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, User
+from heydesk.api.deps import ClientIp, Svc, User
 
 router = APIRouter(tags=["auth"])
 
@@ -38,15 +38,17 @@ class MeOut(BaseModel):
 
 
 @router.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupIn, services: Svc) -> TokenOut:
+async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> TokenOut:
     """A new business and its owner. Admins are made from the command line, never here."""
+    await services.rate_limits.signup(ip)  # 429: mass signups (D52)
     return TokenOut(
         token=await services.users.signup(body.email, body.password, body.workspace_name)
     )
 
 
 @router.post("/api/auth/login")
-async def login(body: LoginIn, services: Svc) -> TokenOut:
+async def login(body: LoginIn, services: Svc, ip: ClientIp) -> TokenOut:
+    await services.rate_limits.login(ip, body.email)  # 429: password guessing (D52)
     return TokenOut(token=await services.users.login(body.email, body.password))
 
 

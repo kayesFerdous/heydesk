@@ -6,6 +6,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
+from heydesk.services.rate_limits import RateLimiter
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
 
@@ -18,5 +19,6 @@ class Services:
     conversations: ConversationService
     knowledge: KnowledgeService
     payments: PaymentService
+    rate_limits: RateLimiter
     users: UserService
     visitors: VisitorService

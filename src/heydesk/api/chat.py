@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc
+from heydesk.api.deps import ClientIp, Svc
 from heydesk.api.sse import to_sse
 
 router = APIRouter()
@@ -27,7 +27,8 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
 
 
 @router.post("/api/chat/{public_key}")
-async def chat(public_key: str, body: ChatIn, services: Svc) -> StreamingResponse:
+async def chat(public_key: str, body: ChatIn, services: Svc, ip: ClientIp) -> StreamingResponse:
+    await services.rate_limits.chat(body.visitor_id, ip)  # 429 for a burst (D52)
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
         agent, body.conversation_id, body.message, "web", f"web:{body.visitor_id}"
@@ -48,5 +49,6 @@ class TeamOut(BaseModel):
 @router.get("/api/chat/{public_key}/{conversation_id}/team")
 async def team_replies(public_key: str, conversation_id: str, services: Svc) -> TeamOut:
     """What the team wrote from Telegram (D43). The chat page asks every few seconds."""
+    await services.rate_limits.poll(conversation_id)
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

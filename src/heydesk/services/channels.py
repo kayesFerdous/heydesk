@@ -16,11 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.db import new_id
-from heydesk.errors import HeyDeskError, InvalidConfig, NotFound
+from heydesk.errors import HeyDeskError, InvalidConfig, NotFound, TooFast
 from heydesk.models import Channel
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.rate_limits import RateLimiter
 from heydesk.services.team import TeamService, send
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class ChannelService:
         conversations: ConversationService,
         team: TeamService,
         telegram: TelegramApi,
+        rate_limits: RateLimiter,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -46,6 +48,7 @@ class ChannelService:
         self.conversations = conversations
         self.team = team
         self.telegram = telegram
+        self.rate_limits = rate_limits
         self.settings = settings
         self.now = now
 
@@ -128,6 +131,7 @@ class ChannelService:
                 await self.conversations.restart(agent, TELEGRAM, chat_id)
                 await self._send(channel, chat_id, agent.greeting)
             else:
+                await self.rate_limits.telegram(channel.id, chat_id)
                 typing = asyncio.create_task(self._keep_typing(channel, chat_id))
                 try:
                     reply = await self.conversations.reply(agent, TELEGRAM, chat_id, text)
@@ -140,6 +144,8 @@ class ChannelService:
                     await self._send(
                         channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
                     )
+        except TooFast:
+            return  # a burst: answering each message would only add to it (D52)
         except HeyDeskError as error:  # too long, or a suspended business: it says why
             await self._send(channel, chat_id, error.message)
         except Exception:

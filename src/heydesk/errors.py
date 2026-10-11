@@ -81,6 +81,13 @@ class VisitorLimited(HeyDeskError):
     code = "visitor_limited"
 
 
+class TooFast(HeyDeskError):
+    """Too many requests in a short time from one visitor, chat or address (D52)."""
+
+    status_code = 429
+    code = "rate_limited"
+
+
 class InvalidConfig(HeyDeskError):
     """An agent config that fails validation. `fields` maps a path to what's wrong with it."""
 
