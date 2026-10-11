@@ -22,11 +22,15 @@ async def test_a_full_conversation_asks_for_a_new_one(app: FastAPI, client: Asyn
     app.state.settings.MAX_TURNS = 2
     app.state.services.conversations.runtime.llm.script = ["One.", "Two."]
     url = f"/api/chat/{DEV_KEY}"
-    first = await client.post(url, json={"message": "hi"})
+    first = await client.post(url, json={"visitor_id": "test-visitor", "message": "hi"})
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
-    await client.post(url, json={"message": "and?", "conversation_id": conv_id})
+    await client.post(
+        url, json={"visitor_id": "test-visitor", "message": "and?", "conversation_id": conv_id}
+    )
 
-    third = await client.post(url, json={"message": "more", "conversation_id": conv_id})
+    third = await client.post(
+        url, json={"visitor_id": "test-visitor", "message": "more", "conversation_id": conv_id}
+    )
 
     assert third.status_code == 409
     assert third.json()["error"]["code"] == "conversation_full"

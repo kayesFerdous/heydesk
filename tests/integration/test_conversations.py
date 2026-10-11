@@ -11,7 +11,9 @@ from tests.conftest import DEV_KEY, World
 
 async def start(world: World, text: str, conversation_id: str | None = None) -> RunningTurn:
     agent = await world.services.agents.by_key(DEV_KEY)
-    return await world.services.conversations.start_turn(agent, conversation_id, text, "web")
+    return await world.services.conversations.start_turn(
+        agent, conversation_id, text, "web", "web:test-visitor"
+    )
 
 
 async def say(world: World, text: str, conversation_id: str | None = None) -> str:
@@ -85,6 +87,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "place_order",
         "take_message",
         "handoff_to_human",
+        "off_topic",
     ]
     assert "# The order so far" not in request.system
     assert "# The order so far\n2 × Chicken Biryani" in world.llm.requests[1].system

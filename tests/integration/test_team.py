@@ -60,9 +60,14 @@ async def test_a_message_for_the_team_is_an_alert_too(app: FastAPI, client: Asyn
     take = ToolCall("c", "take_message", {"message": "Do you cater weddings?"})
     runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
     runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
-    first = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "a message please"})
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
+    )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
-    await client.post(f"/api/chat/{DEV_KEY}", json={"message": "yes", "conversation_id": conv_id})
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
+    )
 
     alert = to(app, OWNER)[-1]
     assert alert.startswith("✉️ New message M-101\nMessage: Do you cater weddings?")
@@ -105,7 +110,9 @@ async def test_a_web_visitor_gets_the_team_reply_on_the_page(
     app: FastAPI, client: AsyncClient
 ) -> None:
     path, secret = await link_owner(app, client)
-    first = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "hello"})
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hello"}
+    )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
     team = f"/api/chat/{DEV_KEY}/{conv_id}/team"
     assert (await client.get(team)).json() == {"replies": []}
@@ -113,7 +120,7 @@ async def test_a_web_visitor_gets_the_team_reply_on_the_page(
     await send(client, path, secret, from_owner("Hello from the team!", f"…\nRef: {conv_id}"))
     assert (await client.get(team)).json() == {"replies": ["Hello from the team!"]}
 
-    body = {"message": "great", "conversation_id": conv_id}
+    body = {"visitor_id": "test-visitor", "message": "great", "conversation_id": conv_id}
     quiet = await client.post(f"/api/chat/{DEV_KEY}", json=body)
     assert "event: token" not in quiet.text and "event: done" in quiet.text
     assert to(app, OWNER)[-1].startswith("💬 Customer: great")

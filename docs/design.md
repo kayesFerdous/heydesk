@@ -30,7 +30,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`). A messaging app's link to the business is a row in `channels` (D42) |
-| Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human` and `search_knowledge` |
+| Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
 | Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
 | Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
 
@@ -62,14 +62,14 @@ src/heydesk/
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
-│   ├── shared.py        take_message, handoff_to_human, search_knowledge
+│   ├── shared.py        take_message, handoff_to_human, off_topic, search_knowledge
 │   ├── restaurant/      __init__ (config, prompt) · tools · values · models · store · api
 │   ├── clinic/          the same
 │   ├── shop/            the same
 │   ├── receptionist/    __init__ only: no tools or tables of its own
 │   └── csv_import.py    reading a CSV file into a desk's list (D50)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
-├── services/            agents, conversations, users, admin, knowledge
+├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
 ├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
@@ -94,8 +94,8 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | `api.py` | Its owner routes: `/api/menu`, `/api/orders`; `/api/doctors`, `/api/appointments`; `/api/products`, `/api/shop/orders` |
 
 `desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, has_documents)` is a desk's tools
-then the shared ones: `take_message` and `handoff_to_human` always, `search_knowledge` when the
-business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
+then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
+`search_knowledge` when the business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
@@ -172,7 +172,9 @@ tell Gigalogy from Groq.
 **The tool loop.** A step is one model call. If it asks for tools, they run
 and every call gets its result, then the next step goes to the model. A step
 with no tool calls is the reply. At most 6 model calls; still calling tools
-after that, or a step with neither words nor tools, is a hand-off.
+after that, or a step with neither words nor tools, is a hand-off. A tool can
+also end the turn with its own `reply`, said as it is (`off_topic`, D51).
+`TurnEnded.tools` lists the tools that ran.
 
 ```
 # The order so far
@@ -237,6 +239,7 @@ merged into the conversation's `state`, saved with the turn.
 | `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, the courier the owner gave, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
 | `cancel_order` | shop | **yes** | The same code and mobile; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
+| `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 
 **The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
 agent's last message read these details back?* and *is the visitor's reply a clear yes?* Both
@@ -287,6 +290,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
+| `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
 | `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
 | `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
@@ -367,6 +371,28 @@ SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 
 Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
 tokens, cost, error (rule 7). There is no trace table (D15).
+
+### Limits on a public chat (D51)
+
+The chat needs no login, so `VisitorService` (`services/visitors.py`) stops timepass from
+spending a business's turns. Every turn names its **visitor**: the web page keeps a random token
+in the browser (`visitor_id` in the chat body, `?visitor=` on a call's offer; a 422 without it),
+and Telegram's is the chat id.
+
+```
+start_turn ─► visitors.admit: blocked? the visitor's turns today ≥ VISITOR_DAILY_TURNS (30)?
+                              the business's turns today ≥ WORKSPACE_DAILY_TURNS (500)?
+                 yes ─► 429 visitor_limited: "…Please contact us at <hand-off phone>." No model call
+                 no  ─► count the turn, run it
+turn ended ─► visitors.after_turn: off_topic ran ─► a strike; OFF_TOPIC_STRIKES (5) in a row
+                                                    ─► blocked for BLOCK_HOURS (24)
+                                   another tool ran ─► strikes back to 0
+```
+
+A turn the team answers (D43) isn't counted. A call is checked before it connects, then each
+utterance is a turn like any other; a limited one is said out loud. On Telegram the refusal is
+sent as a message. The day is the business's local day. The IP address isn't used: on mobile data
+in Bangladesh many people share one.
 
 ### Telegram (D42)
 
@@ -514,7 +540,7 @@ version handles them.
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
-| Usage events, budgets, rate limits | Cost is in each turn's log line |
+| Usage shown to the owner, limits per plan, Cloudflare Turnstile, an IP limit | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |

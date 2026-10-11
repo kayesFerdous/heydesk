@@ -31,9 +31,14 @@ async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
         "Done! Your order number is 101.",
     ]
     runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
-    first = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "two biryanis…"})
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "two biryanis…"}
+    )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
-    await client.post(f"/api/chat/{DEV_KEY}", json={"message": "yes", "conversation_id": conv_id})
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
+    )
     return conv_id
 
 

@@ -176,7 +176,10 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
         ToolCall("c2", "place_order", SHOP_DETAILS),
         "Pay here…",
     ]
-    await client.post(f"/api/chat/{agent.public_key}", json={"message": "a kurti, yes"})
+    await client.post(
+        f"/api/chat/{agent.public_key}",
+        json={"visitor_id": "test-visitor", "message": "a kurti, yes"},
+    )
     [order] = (await client.get("/api/shop/orders")).json()
 
     went = await client.get(f"/pay/{order['id']}")

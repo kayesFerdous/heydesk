@@ -14,7 +14,9 @@ ANSWER = "Refunds are possible within seven days if you have the receipt."
 
 
 async def chat(app: FastAPI, client: AsyncClient, key: str, text: str) -> str:
-    response = await client.post(f"/api/chat/{key}", json={"message": text})
+    response = await client.post(
+        f"/api/chat/{key}", json={"visitor_id": "test-visitor", "message": text}
+    )
     return response.text
 
 

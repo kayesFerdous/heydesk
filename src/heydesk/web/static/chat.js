@@ -1,5 +1,7 @@
 // The dev chat page: POST a message, read the SSE reply from the response body
 // (EventSource only does GET). Retired when the Vue app lands.
+import { visitorId } from "./visitor.js";
+
 const $ = (id) => document.getElementById(id);
 const AGENT_KEY = document.querySelector('meta[name="agent-key"]').content;  // baked in by GET /
 let conversationId = null;
@@ -56,7 +58,7 @@ async function send(message) {
     const res = await fetch(`/api/chat/${AGENT_KEY}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message, conversation_id: conversationId }),
+      body: JSON.stringify({ message, conversation_id: conversationId, visitor_id: visitorId }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

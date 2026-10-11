@@ -21,10 +21,10 @@ async def messages(world: World) -> list[TeamMessage]:
         return list(await s.scalars(select(TeamMessage)))
 
 
-async def test_every_desk_takes_messages_and_hands_off(world: World) -> None:
+async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: World) -> None:
     for desk in DESKS.values():
         names = [t.name for t in tools_for(desk, has_documents=False)]
-        assert names[-2:] == ["take_message", "handoff_to_human"], desk.kind
+        assert names[-3:] == ["take_message", "handoff_to_human", "off_topic"], desk.kind
         assert "search_knowledge" in [t.name for t in tools_for(desk, has_documents=True)]
 
 
@@ -74,6 +74,7 @@ async def test_the_receptionist_answers_from_its_own_fields(world: World) -> Non
     assert [t.name for t in tools_for(agent.desk, has_documents=False)] == [
         "take_message",
         "handoff_to_human",
+        "off_topic",
     ]
 
 
@@ -84,9 +85,14 @@ async def test_the_owner_sees_messages_and_marks_them_handled(
     take = ToolCall("c", "take_message", MESSAGE)
     runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
     runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
-    first = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "a message please"})
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
+    )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
-    await client.post(f"/api/chat/{DEV_KEY}", json={"message": "yes", "conversation_id": conv_id})
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
+    )
 
     [message] = (await client.get("/api/messages")).json()
     assert (message["code"], message["name"], message["status"]) == ("M-101", "Kayes", "new")

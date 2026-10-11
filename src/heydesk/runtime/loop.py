@@ -68,6 +68,8 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
     alerts: list[str] = []  # for the owner: an order placed
+    used: list[str] = []  # the tools that ran, for the visitor limits (D51)
+    said: str | None = None  # a tool's own reply, which ends the turn
     failed = asked_for_person = interrupted = False
 
     try:
@@ -125,12 +127,18 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 with trace.step("tool", tool=call.name) as step:
                     result = await run_tool(tool, call, ctx)
                     step["ok"] = result.ok
+                used.append(call.name)
+                said = said or result.reply
                 state |= result.state or {}
                 asked_for_person |= result.handoff  # the model still replies; the card follows
                 if result.alert:
                     alerts.append(result.alert)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
             added += rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
+            if said:  # the tool said the reply itself (off_topic): no model call for it
+                yield Token(said)
+                added.append(rt.llm.assistant_message(said))
+                break
             if turn.interrupt.is_set():
                 interrupted = True
                 break
@@ -150,7 +158,13 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
         yield HandOff(contact.message, contact.phone, contact.email)
     trace.data["interrupted"] = interrupted
     yield TurnEnded(
-        added, state, trace.to_dict(), handed_off=handoff, interrupted=interrupted, alerts=alerts
+        added,
+        state,
+        trace.to_dict(),
+        handed_off=handoff,
+        interrupted=interrupted,
+        alerts=alerts,
+        tools=used,
     )
 
 

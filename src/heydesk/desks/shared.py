@@ -166,3 +166,31 @@ SEARCH_KNOWLEDGE = Tool(
     filler="Let me check that.",
     timeout_s=10.0,  # a question is embedded, then searched: two network calls
 )
+
+
+class OffTopicInput(BaseModel):
+    reply: str = Field(
+        min_length=1,
+        max_length=300,
+        description="One short, friendly line in the visitor's language: you can't help with "
+        "that here, and what you can help with",
+    )
+
+
+async def off_topic(ctx: ToolContext[Store], args: OffTopicInput) -> ToolResult:
+    """Says the model's line as it is and ends the turn: no second model call. Each call is a
+    strike; enough in a row block the visitor for a while (D51)."""
+    return ToolResult(ok=True, data={"said": True}, reply=" ".join(args.reply.split()))
+
+
+OFF_TOPIC = Tool(
+    name="off_topic",
+    description=(
+        "Use instead of answering when the visitor's message has nothing to do with this "
+        "business: jokes, homework, general knowledge, coding, chatting to pass the time, "
+        "testing you. Your `reply` is sent as it is and ends your turn. Never for a greeting, "
+        "thanks, or a question about the business, its products or services."
+    ),
+    input_model=OffTopicInput,
+    run=off_topic,
+)

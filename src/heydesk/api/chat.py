@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc
 from heydesk.api.sse import to_sse
@@ -16,6 +16,8 @@ class AgentOut(BaseModel):
 class ChatIn(BaseModel):
     message: str
     conversation_id: str | None = None  # none: start a new conversation
+    # A random token the page keeps in the browser, so the limits know the visitor (D51)
+    visitor_id: str = Field(min_length=8, max_length=64)
 
 
 @router.get("/api/chat/{public_key}")
@@ -28,7 +30,7 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
 async def chat(public_key: str, body: ChatIn, services: Svc) -> StreamingResponse:
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
-        agent, body.conversation_id, body.message, channel="web"
+        agent, body.conversation_id, body.message, "web", f"web:{body.visitor_id}"
     )
     return StreamingResponse(
         to_sse(turn),

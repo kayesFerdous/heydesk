@@ -73,6 +73,14 @@ class ConversationFull(HeyDeskError):
     code = "conversation_full"
 
 
+class VisitorLimited(HeyDeskError):
+    """A visitor (or the whole business) used up today's turns, or was blocked for chatting
+    off topic (D51). The message says how to reach the business instead."""
+
+    status_code = 429
+    code = "visitor_limited"
+
+
 class InvalidConfig(HeyDeskError):
     """An agent config that fails validation. `fields` maps a path to what's wrong with it."""
 

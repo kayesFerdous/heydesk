@@ -5,7 +5,7 @@ from heydesk.desks.base import Desk
 from heydesk.desks.clinic import CLINIC
 from heydesk.desks.receptionist import RECEPTIONIST
 from heydesk.desks.restaurant import RESTAURANT
-from heydesk.desks.shared import HANDOFF, SEARCH_KNOWLEDGE, TAKE_MESSAGE
+from heydesk.desks.shared import HANDOFF, OFF_TOPIC, SEARCH_KNOWLEDGE, TAKE_MESSAGE
 from heydesk.desks.shop import SHOP
 from heydesk.runtime.tool import Tool
 
@@ -13,7 +13,7 @@ DESKS: dict[str, Desk] = {desk.kind: desk for desk in (RESTAURANT, CLINIC, RECEP
 
 
 def tools_for(desk: Desk, has_documents: bool) -> list[Tool]:
-    """A desk's tools, then the shared ones: messages and hand-off always, and the documents
-    search when the business has documents (D35)."""
-    shared = [TAKE_MESSAGE, HANDOFF] + ([SEARCH_KNOWLEDGE] if has_documents else [])
+    """A desk's tools, then the shared ones: messages, hand-off and off-topic always (D51), and
+    the documents search when the business has documents (D35)."""
+    shared = [TAKE_MESSAGE, HANDOFF, OFF_TOPIC] + ([SEARCH_KNOWLEDGE] if has_documents else [])
     return [*desk.tools, *shared]

@@ -215,10 +215,13 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_the_courier(
         ToolCall("c3", "place_order", DETAILS),
         "Done: O-101.",
     ]
-    first = await client.post(f"/api/chat/{agent.public_key}", json={"message": "a kurti"})
+    first = await client.post(
+        f"/api/chat/{agent.public_key}", json={"visitor_id": "test-visitor", "message": "a kurti"}
+    )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
     await client.post(
-        f"/api/chat/{agent.public_key}", json={"message": "yes", "conversation_id": conv_id}
+        f"/api/chat/{agent.public_key}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
     )
 
     [order] = (await client.get("/api/shop/orders")).json()

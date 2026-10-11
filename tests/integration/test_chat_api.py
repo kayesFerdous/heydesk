@@ -25,7 +25,9 @@ async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -
 
 
 async def test_chat_streams_tokens_over_sse(client: AsyncClient) -> None:
-    res = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "a table for two"})
+    res = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a table for two"}
+    )
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/event-stream")
 
@@ -41,7 +43,10 @@ async def test_a_tool_shows_a_status_line_and_a_hand_off_shows_the_card(
 ) -> None:
     llm = app.state.services.conversations.runtime.llm
     llm.script = [ToolCall("call_1", "handoff_to_human", {}), "Of course."]
-    res = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "can I talk to a person?"})
+    res = await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "can I talk to a person?"},
+    )
 
     events = [event for event, _ in parse(res.text)]
     order = list(dict.fromkeys(events))  # each kind once, in the order it first came
@@ -52,12 +57,14 @@ async def test_a_tool_shows_a_status_line_and_a_hand_off_shows_the_card(
 
 
 async def test_the_next_message_continues_the_conversation(client: AsyncClient) -> None:
-    first = await client.post(f"/api/chat/{DEV_KEY}", json={"message": "hi"})
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hi"}
+    )
     conversation_id = parse(first.text)[0][1]["conversation_id"]
 
     res = await client.post(
         f"/api/chat/{DEV_KEY}",
-        json={"message": "again", "conversation_id": conversation_id},
+        json={"visitor_id": "test-visitor", "message": "again", "conversation_id": conversation_id},
     )
     assert parse(res.text)[-1] == ("done", {"interrupted": False})
 
@@ -65,7 +72,7 @@ async def test_the_next_message_continues_the_conversation(client: AsyncClient) 
 async def test_an_unknown_agent_is_404(client: AsyncClient) -> None:
     for res in (
         await client.get("/api/chat/nope"),
-        await client.post("/api/chat/nope", json={"message": "hi"}),
+        await client.post("/api/chat/nope", json={"visitor_id": "test-visitor", "message": "hi"}),
     ):
         assert res.status_code == 404
         assert res.json()["error"]["code"] == "not_found"
@@ -73,6 +80,8 @@ async def test_an_unknown_agent_is_404(client: AsyncClient) -> None:
 
 async def test_rejects_an_empty_or_long_message_before_streaming(client: AsyncClient) -> None:
     for message in ("   ", "x" * 2001):
-        res = await client.post(f"/api/chat/{DEV_KEY}", json={"message": message})
+        res = await client.post(
+            f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": message}
+        )
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "bad_request"

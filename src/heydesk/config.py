@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     MAX_TURNS: int = 60  # visitor messages per conversation; each turn resends the transcript (D21)
     CONVERSATION_IDLE_HOURS: int = 12  # on a messaging app, a message after this starts afresh
 
+    # Limits on a public chat, so timepass can't spend the business's turns (D51). A day is the
+    # business's local day.
+    VISITOR_DAILY_TURNS: int = 30  # one visitor's turns a day, on any channel
+    WORKSPACE_DAILY_TURNS: int = 500  # all of a business's visitors together
+    OFF_TOPIC_STRIKES: int = 5  # off-topic turns in a row before a visitor is blocked
+    BLOCK_HOURS: int = 24
+
     # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""

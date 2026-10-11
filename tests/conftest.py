@@ -139,7 +139,9 @@ class World:
     ) -> str:
         """One turn with a scripted model; returns the conversation id."""
         self.llm.script = script
-        turn = await self.services.conversations.start_turn(agent, conversation_id, text, "web")
+        turn = await self.services.conversations.start_turn(
+            agent, conversation_id, text, "web", "web:test-visitor"
+        )
         [_ async for _ in turn.events]
         return turn.conversation_id
 

@@ -1,4 +1,6 @@
 // The Call button: the microphone to the server over WebRTC, the agent's voice back.
+import { visitorId } from "./visitor.js";
+
 const button = document.getElementById("call");
 let pc = null;
 
@@ -34,12 +36,17 @@ const call = async () => {
     pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && done();
   });
   const key = document.querySelector('meta[name="agent-key"]').content;
-  const res = await fetch(`/api/voice/offer?key=${encodeURIComponent(key)}`, {
+  const query = new URLSearchParams({ key, visitor: visitorId });
+  const res = await fetch(`/api/voice/offer?${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
   });
-  if (!res.ok) throw new Error(`offer failed: ${res.status}`);
+  if (!res.ok) {  // a 429 says the visitor is over a limit, and how to reach the business
+    const body = await res.json().catch(() => ({}));
+    const message = body.error?.message ?? `offer failed: ${res.status}`;
+    throw Object.assign(new Error(message), { limited: res.status === 429 });
+  }
   await pc.setRemoteDescription(await res.json());
 };
 
@@ -48,6 +55,6 @@ button.addEventListener("click", () => {
   call().catch((error) => {
     console.error(error);
     hangUp();
-    button.textContent = "Call failed: try again";
+    button.textContent = error.limited ? error.message : "Call failed: try again";
   });
 });

@@ -38,6 +38,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
+from heydesk.services.visitors import VisitorService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -121,7 +122,8 @@ def build_services(
     agents = AgentService(sessions, knowledge, now)
     telegram = telegram or TelegramBot()
     team = TeamService(sessions, llm, telegram, now)
-    conversations = ConversationService(sessions, runtime, knowledge, team, settings, now)
+    visitors = VisitorService(sessions, settings, now)
+    conversations = ConversationService(sessions, runtime, knowledge, team, visitors, settings, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
@@ -132,4 +134,5 @@ def build_services(
             sessions, payments or build_payments(settings), team, settings, now
         ),
         users=UserService(sessions, settings.jwt_secret, now),
+        visitors=visitors,
     )

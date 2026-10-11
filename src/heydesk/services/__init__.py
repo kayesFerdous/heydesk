@@ -7,6 +7,7 @@ from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
 from heydesk.services.users import UserService
+from heydesk.services.visitors import VisitorService
 
 
 @dataclass(frozen=True)
@@ -18,3 +19,4 @@ class Services:
     knowledge: KnowledgeService
     payments: PaymentService
     users: UserService
+    visitors: VisitorService

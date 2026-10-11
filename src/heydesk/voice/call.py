@@ -40,6 +40,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.utils.text.base_text_filter import BaseTextFilter
 
 from heydesk.config import Settings
+from heydesk.errors import HeyDeskError
 from heydesk.runtime.events import HandOff, Token, ToolStarted
 from heydesk.runtime.speech import speakable
 from heydesk.services import Services
@@ -56,10 +57,11 @@ BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i
 class Agent(FrameProcessor):
     """Runs a turn for each thing the caller says and passes the reply on to be spoken."""
 
-    def __init__(self, conversations: ConversationService, agent: LiveAgent) -> None:
+    def __init__(self, conversations: ConversationService, agent: LiveAgent, visitor: str) -> None:
         super().__init__()
         self.conversations = conversations
         self.agent = agent
+        self.visitor = visitor  # the caller's page token, for the limits (D51)
         self.conversation_id: str | None = None  # one conversation per call
         self.turn: asyncio.Task[None] | None = None  # the running turn, in its own task
         self.interrupt: asyncio.Event | None = None  # that turn's stop flag
@@ -106,7 +108,15 @@ class Agent(FrameProcessor):
             await self.broadcast_interruption()
 
     async def reply(self, text: str) -> None:
-        turn = await self.conversations.start_turn(self.agent, self.conversation_id, text, "voice")
+        try:
+            turn = await self.conversations.start_turn(
+                self.agent, self.conversation_id, text, "voice", self.visitor
+            )
+        except HeyDeskError as error:  # over a limit (D51), or a full conversation: say why
+            await self.push_frame(LLMFullResponseStartFrame())
+            await self.push_frame(LLMTextFrame(error.message))
+            await self.push_frame(LLMFullResponseEndFrame())
+            return
         self.conversation_id = turn.conversation_id
         self.interrupt = turn.interrupt
         spoken = ""
@@ -151,7 +161,11 @@ class FirstSound(BaseObserver):
 
 
 async def run_call(
-    connection: SmallWebRTCConnection, settings: Settings, services: Services, agent: LiveAgent
+    connection: SmallWebRTCConnection,
+    settings: Settings,
+    services: Services,
+    agent: LiveAgent,
+    visitor: str,
 ) -> None:
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
@@ -169,7 +183,7 @@ async def run_call(
             transport.input(),
             VADProcessor(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=PAUSE_S))),
             stt,
-            Agent(services.conversations, agent),
+            Agent(services.conversations, agent, visitor),
             tts,
             transport.output(),
         ]

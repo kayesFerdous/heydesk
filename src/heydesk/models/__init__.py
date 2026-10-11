@@ -9,6 +9,7 @@ from heydesk.models.document import Document
 from heydesk.models.payment_account import PaymentAccount
 from heydesk.models.team_message import TeamMessage
 from heydesk.models.user import User
+from heydesk.models.visitor import Visitor
 from heydesk.models.workspace import Workspace
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "PaymentAccount",
     "TeamMessage",
     "User",
+    "Visitor",
     "Workspace",
 ]

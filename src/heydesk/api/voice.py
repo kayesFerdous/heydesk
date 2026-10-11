@@ -1,11 +1,11 @@
 """The browser's WebRTC handshake for a voice call; the call itself runs in `voice/` (design §10)."""
 
 import asyncio
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from aiortc import RTCIceServer
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCPatchRequest,
@@ -44,14 +44,21 @@ async def ice_for_browser(request: Request) -> list[dict[str, Any]]:
 
 @router.post("/api/voice/offer")
 async def offer(
-    body: SmallWebRTCRequest, request: Request, key: str | None = None
+    body: SmallWebRTCRequest,
+    request: Request,
+    visitor: Annotated[str, Query(min_length=8, max_length=64)],
+    key: str | None = None,
 ) -> dict[str, Any] | None:
+    """`visitor` is the page's token, as in web chat: a call shares the visitor's limits (D51)."""
     state = request.app.state
     agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
+    await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429 if limited
     handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])
 
     async def start(connection: SmallWebRTCConnection) -> None:
-        call = asyncio.create_task(run_call(connection, state.settings, state.services, agent))
+        call = asyncio.create_task(
+            run_call(connection, state.settings, state.services, agent, f"web:{visitor}")
+        )
         calls.add(call)
         call.add_done_callback(calls.discard)
 
