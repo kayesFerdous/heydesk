@@ -397,23 +397,18 @@ in Bangladesh many people share one.
 ### Rate limits (D52)
 
 The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
-(`services/rate_limits.py`, on the `limits` library) counts hits over a sliding window and raises
-`TooFast`, a 429 `rate_limited`, before anything else runs:
+(`services/rate_limits.py`, on the `limits` library) counts over a sliding window and answers a
+429 `rate_limited` before anything else runs. The limits are constants at the top of the file:
 
-| Route | Key | Default (`RATE_*` settings) |
+| Route | Counted by | Limit |
 |---|---|---|
-| `POST /api/chat/{key}` | visitor_id; and the IP, for a script making new visitor ids | 6 a minute; 60 a minute |
-| Telegram message | the bot and the chat | 6 a minute; over it, no reply at all, so a burst isn't answered |
-| `POST /api/voice/offer` | IP | 5 a minute |
-| `GET /api/chat/{key}/{id}/team` | the conversation, not the IP | 30 a minute |
+| `POST /api/chat/{key}` | visitor_id | 6 a minute |
+| `POST /api/chat/{key}` | IP (a script making a new visitor_id each time) | 60 a minute |
 | `POST /api/auth/login` | IP and email | 10 in 15 minutes |
-| `POST /api/auth/signup` | IP | 10 an hour |
 
-The counts are in memory (`RATE_LIMIT_STORAGE=async+memory://`), which is right for one server
-process. With more than one, point it at Redis (`async+redis://host:6379`, and add `coredis`):
-no code changes. Behind a proxy (Cloudflare, nginx), run uvicorn with `--proxy-headers
---forwarded-allow-ips=<the proxy>`, or every caller has the proxy's IP. A Cloudflare rate-limit
-rule and Turnstile in front of `/api/*` come with the deploy.
+The counts are in this server's memory: a restart clears them, and a second server process would
+keep its own. The IP is the real visitor's when a proxy on the same machine sends
+`X-Forwarded-For` (uvicorn trusts it from `127.0.0.1` by default).
 
 ### Telegram (D42)
 

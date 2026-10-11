@@ -49,6 +49,5 @@ class TeamOut(BaseModel):
 @router.get("/api/chat/{public_key}/{conversation_id}/team")
 async def team_replies(public_key: str, conversation_id: str, services: Svc) -> TeamOut:
     """What the team wrote from Telegram (D43). The chat page asks every few seconds."""
-    await services.rate_limits.poll(conversation_id)
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

@@ -13,7 +13,6 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
 )
 
-from heydesk.api.deps import client_ip
 from heydesk.voice.call import run_call
 
 router = APIRouter(include_in_schema=False)
@@ -52,7 +51,6 @@ async def offer(
 ) -> dict[str, Any] | None:
     """`visitor` is the page's token, as in web chat: a call shares the visitor's limits (D51)."""
     state = request.app.state
-    await state.services.rate_limits.call(client_ip(request))  # 429 for a burst of calls (D52)
     agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
     await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429 if limited
     handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])

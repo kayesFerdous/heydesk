@@ -124,14 +124,12 @@ def build_services(
     telegram = telegram or TelegramBot()
     team = TeamService(sessions, llm, telegram, now)
     visitors = VisitorService(sessions, settings, now)
-    rate_limits = RateLimiter(settings)
+    rate_limits = RateLimiter()
     conversations = ConversationService(sessions, runtime, knowledge, team, visitors, settings, now)
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
-        channels=ChannelService(
-            sessions, agents, conversations, team, telegram, rate_limits, settings, now
-        ),
+        channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
         conversations=conversations,
         knowledge=knowledge,
         payments=PaymentService(

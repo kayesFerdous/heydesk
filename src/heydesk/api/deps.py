@@ -22,9 +22,8 @@ class BusinessRequired(HeyDeskError):
 
 
 def client_ip(request: Request) -> str:
-    """The caller's address, for the rate limits (D52). Behind a proxy (Cloudflare, nginx), run
-    uvicorn with `--proxy-headers --forwarded-allow-ips=<the proxy>`, or every caller looks like
-    the proxy."""
+    """The caller's address, for the rate limits (D52). Behind a proxy, uvicorn takes the real
+    address from the proxy's X-Forwarded-For header, if the proxy is on this machine."""
     return request.client.host if request.client else "unknown"
 
 

@@ -38,9 +38,8 @@ class MeOut(BaseModel):
 
 
 @router.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> TokenOut:
+async def signup(body: SignupIn, services: Svc) -> TokenOut:
     """A new business and its owner. Admins are made from the command line, never here."""
-    await services.rate_limits.signup(ip)  # 429: mass signups (D52)
     return TokenOut(
         token=await services.users.signup(body.email, body.password, body.workspace_name)
     )
