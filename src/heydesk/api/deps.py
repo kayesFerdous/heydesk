@@ -1,6 +1,8 @@
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -72,10 +74,29 @@ async def admin_only(
     return principal
 
 
+PAGE = 100  # the most rows one list request returns
+
+
+@dataclass(frozen=True)
+class Page:
+    """Which slice of a newest-first list to return: up to `limit` rows, all older than
+    `before`. To see more, ask again with `before` set to the last row's time."""
+
+    limit: int = PAGE
+    before: datetime | None = None
+
+
+def page(
+    limit: Annotated[int, Query(ge=1, le=PAGE)] = PAGE, before: datetime | None = None
+) -> Page:
+    return Page(limit, before)
+
+
 type Svc = Annotated[Services, Depends(get_services)]
 type Workspace = Annotated[str, Depends(current_workspace)]
 type User = Annotated[Principal, Depends(current_user)]
 type Admin = Annotated[Principal, Depends(admin_only)]
+type Paged = Annotated[Page, Depends(page)]
 
 
 class StatusIn(BaseModel):

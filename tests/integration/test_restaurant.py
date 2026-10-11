@@ -15,7 +15,7 @@ from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import AGENT, CART, DEV_KEY, World, make_ctx
 
 LINES = [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]
-DETAILS = {"pickup_time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}
+DETAILS = {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}
 READ_BACK = "2 Chicken Biryani and 1 Borhani, ৳1,030, at 7:30 pm for Kayes. Shall I place it?"
 YES = {"read_back": 0.95, "said_yes": 0.95}
 
@@ -87,15 +87,15 @@ async def test_place_order_asks_for_what_is_missing_or_wrong_first(world: World)
     assert not no_cart.ok and "update_order first" in no_cart.data["error"]
 
     ctx = make_ctx(store, state={"cart": CART})
-    just_a_time = await place_order(ctx, PlaceOrderInput(pickup_time="7:30 pm"))
+    just_a_time = await place_order(ctx, PlaceOrderInput(time="7:30 pm"))
     assert just_a_time.data["still_needed"] == ["name", "phone"]
     assert just_a_time.data["next"] == "Ask for the name, one question at a time."
 
     open_till_10 = make_ctx(store, state={"cart": CART}, agent=agent.config)  # Tue 11:00–22:00
     too_late = await place_order(
-        open_till_10, PlaceOrderInput.model_validate(DETAILS | {"pickup_time": "11:30 pm"})
+        open_till_10, PlaceOrderInput.model_validate(DETAILS | {"time": "11:30 pm"})
     )
-    assert "outside our hours" in too_late.data["problems"]["pickup time"]
+    assert "outside our hours" in too_late.data["problems"]["time"]
 
     all_there = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
     assert all_there.data["read_back"] == (

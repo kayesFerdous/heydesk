@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import ImportIn, ImportOut, StatusIn, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, Svc, Workspace
 from heydesk.desks.restaurant.models import Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.values import MenuItem, menu_from_csv
@@ -34,6 +34,10 @@ class OrderOut(BaseModel):
     lines: list[dict[str, Any]]  # {code, name, quantity, price}
     total: int  # minor units
     currency: str
+    address: str  # empty: pickup
+    delivery_charge: int  # in `total`
+    paid: int  # paid online first (D48)
+    payment_ref: str  # the payment gateway's id for it
     pickup_at: datetime  # UTC
     note: str
     created_at: datetime
@@ -54,10 +58,12 @@ async def replace_menu(body: list[MenuItem], store: Restaurant) -> list[MenuItem
 
 @router.get("/api/orders")
 async def orders(
-    store: Restaurant, status: str | None = None, q: str | None = None
+    store: Restaurant, page: Paged, status: str | None = None, q: str | None = None
 ) -> list[OrderOut]:
-    """Newest first. `q` matches the number, the name or the phone."""
-    return [OrderOut.model_validate(o) for o in await store.find(Order, status, q)]
+    """Newest first, a page at a time (`limit`, `before`). `q` matches the number, the name
+    or the phone."""
+    found = await store.find(Order, status, q, limit=page.limit, before=page.before)
+    return [OrderOut.model_validate(o) for o in found]
 
 
 @router.get("/api/orders/{order_id}")

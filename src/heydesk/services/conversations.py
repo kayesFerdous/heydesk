@@ -90,6 +90,7 @@ class ConversationService:
             self.now,
             conversation_id=conv.id,
             knowledge=self.knowledge,
+            public_url=self.settings.public_url,
         )
         turn = TurnInput(
             system=build_system_prompt(
@@ -151,15 +152,26 @@ class ConversationService:
             conv = await self._get(s, agent, conversation_id)
         return [m["content"] for m in conv.messages if m.get("by") == TEAM]
 
-    async def list(self, ws: str, status: str | None = None) -> list[Conversation]:
-        """Newest activity first."""
+    async def list(
+        self,
+        ws: str,
+        status: str | None = None,
+        *,
+        limit: int = 100,
+        before: datetime | None = None,
+    ) -> list[Conversation]:
+        """Newest activity first, a page at a time: the next page is `before=` the last
+        one's `updated_at`."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
             .order_by(Conversation.updated_at.desc())
+            .limit(limit)
         )
         if status:
             query = query.where(Conversation.status == status)
+        if before:
+            query = query.where(Conversation.updated_at < before)
         async with self.sessions() as s:
             return list(await s.scalars(query))
 

@@ -17,6 +17,7 @@ from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.telegram import TelegramApi
 from heydesk.wiring import (
     build_decider,
@@ -35,6 +36,7 @@ def create_app(
     embedder: Embedder | None = None,
     knowledge_store: KnowledgeStore | None = None,
     telegram: TelegramApi | None = None,
+    payments: PaymentGateway | None = None,
     now: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
     settings = settings or Settings()
@@ -56,6 +58,7 @@ def create_app(
             settings,
             now,
             telegram,
+            payments,
         )
         if dev:
             try:

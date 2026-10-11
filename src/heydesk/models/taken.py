@@ -14,6 +14,7 @@ from heydesk.domain.values import record_code
 
 FIRST_NUMBER = 101  # a business's first order; "order 1" sounds like a test
 FIRST_STATUS = "new"  # what's waiting for the business
+UNPAID = "unpaid"  # waiting for its payment online; only the payment check moves it on (D47)
 
 
 class Taken:
@@ -50,6 +51,31 @@ class Taken:
             raise ValueError(f"something that is {self.status} can't become {status}")
         self.status = status
         self.updated_at = now
+
+
+class Payable:
+    """A mixin for a table whose rows a visitor can be asked to pay for online first (D47):
+    a shop's delivery charge, a restaurant's order, a clinic's doctor's fee. Such a row is
+    saved `unpaid`, and only `PaymentService.settle` makes it `new`."""
+
+    PAY_FOR: ClassVar[str]  # what the payment is for: "the delivery charge"
+
+    currency: Mapped[str] = mapped_column(String(3))
+    paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first
+    payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
+
+    @property
+    def due(self) -> int:
+        """What's paid online first, in minor units."""
+        raise NotImplementedError
+
+    def about(self) -> str:
+        """A line for the owner's alert once it's paid: what was ordered or booked."""
+        raise NotImplementedError
+
+    def after(self) -> str:
+        """What the visitor is told happens next, once it's paid."""
+        raise NotImplementedError
 
 
 async def next_number(s: AsyncSession, table: type[Taken], workspace_id: str) -> int:

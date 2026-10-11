@@ -13,7 +13,7 @@ from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import NewOrder, OrderCancel, Product
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
-from heydesk.models.taken import next_number
+from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
 
 
 class OutOfStock(ValueError):
@@ -27,9 +27,10 @@ class ShopStore(Store):
     async def replace_products(self, products: list[Product]) -> None:
         await self.replace_rows(ProductRow, products)
 
-    async def place_order(self, order: Confirmed[NewOrder]) -> str:
-        """Takes the items out of stock and saves the order; returns its code, "O-101".
-        Raises OutOfStock, and saves nothing, if there aren't enough left."""
+    async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
+        """Takes the items out of stock and saves the order: `new`, or `unpaid` when its
+        delivery charge is paid first (D47). Raises OutOfStock, and saves nothing, if there
+        aren't enough left."""
         o = order.value
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
@@ -40,6 +41,7 @@ class ShopStore(Store):
                 number=await next_number(s, ShopOrder, self.workspace_id),
                 created_at=now,
                 updated_at=now,
+                status=UNPAID if o.pay_first else FIRST_STATUS,
                 name=o.name,
                 phone=o.phone,
                 lines=o.lines,
@@ -52,7 +54,7 @@ class ShopStore(Store):
                 note=o.note,
             )
             s.add(saved)
-        return saved.code
+        return saved
 
     async def order(self, number: int) -> ShopOrder | None:
         return await self.by_number(ShopOrder, number)

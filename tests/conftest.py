@@ -83,6 +83,7 @@ def make_test_settings() -> Settings:
         EMBEDDING_DIMENSIONS=64,
         QDRANT_LOCAL_PATH=":memory:",
         PUBLIC_URL="https://heydesk.test",
+        PAYMENTS="fake",
         _env_file=None,
     )  # type: ignore[call-arg]
 

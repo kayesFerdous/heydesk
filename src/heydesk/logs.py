@@ -56,7 +56,8 @@ def configure_logging(level: str, as_json: bool) -> None:
         logging.getLogger(name).handlers.clear()
         logging.getLogger(name).propagate = True
     logging.getLogger("uvicorn.access").disabled = True  # RequestLogMiddleware logs requests
-    logging.getLogger("httpx").setLevel(logging.WARNING)  # its lines have Telegram tokens in URLs
+    # its lines have Telegram tokens and SSLCommerz passwords in URLs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class RequestLogMiddleware:

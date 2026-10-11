@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heydesk.desks import csv_import
+from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.schedule import DAYS
 from heydesk.runtime.speech import clock_time, money
 
@@ -98,6 +99,9 @@ class NewAppointment:
     at: datetime
     name: str
     phone: str
+    currency: str
+    deposit: int = 0  # minor units
+    pay_first: bool = False  # saved as unpaid until the deposit is paid online (D48)
 
 
 @dataclass(frozen=True)
@@ -133,3 +137,22 @@ def doctors_from_csv(text: str) -> list[Doctor]:
         )
 
     return csv_import.parse(text, {"name", "speciality", "fee", "days"}, row)
+
+
+class ClinicConfig(AgentConfig):
+    greeting: str = (
+        "Hello, thanks for contacting {business_name}. "
+        "I can help you find a doctor or request an appointment."
+    )
+    emergency_phone: str = ""  # where to send someone who needs help now
+    policies: str = ""  # insurance, what to bring, how fees are paid
+    deposit: int = Field(default=0, ge=0)  # minor units, taken online with each request
+    # The patient pays the deposit online first (SSLCommerz). The request reaches the clinic
+    # only when the payment comes in (D48)
+    pay_first: bool = False
+
+    @model_validator(mode="after")
+    def _something_to_pay_first(self) -> "ClinicConfig":
+        if self.pay_first and not self.deposit:
+            raise ValueError("To take a deposit first, set how much it is.")
+        return self

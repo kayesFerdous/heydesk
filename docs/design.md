@@ -67,7 +67,7 @@ src/heydesk/
 │   ├── clinic/          the same
 │   ├── shop/            the same
 │   ├── receptionist/    __init__ only: no tools or tables of its own
-│   └── csv_import.py    reading a CSV file into a desk's list (D46)
+│   └── csv_import.py    reading a CSV file into a desk's list (D50)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, knowledge
 ├── api/                 routes: read the request, call one service or store, return
@@ -100,7 +100,7 @@ business has documents (D35). To add a kind of business: a new folder, and a lin
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas and charges), `free_delivery_over` and `policies`; each sets its own default greeting. A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas and charges), `free_delivery_over` and `policies`; the restaurant `delivers` and `delivery_charge` (one charge to any address), the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -225,17 +225,17 @@ merged into the conversation's `state`, saved with the turn.
 | Tool | Desk | Writes? | What it does |
 |---|---|---|---|
 | `update_order` | restaurant | no | Sets the whole order (codes and quantities). Checks the dishes exist and are available; Python adds up the total. Refuses on a closed day (pickup is today only, D40). The cart goes in `state["cart"]` |
-| `place_order` | restaurant | **yes** | `pickup_time`, `name`, `phone`, `note`. The time must be later today and inside the hours. Returns the order number, and an alert for the owner (D43) |
+| `place_order` | restaurant | **yes** | `delivery` (when the restaurant `delivers`), `time`, `address` (for a delivery), `name`, `phone`, `note`. The time must be later today and inside the hours; a delivery adds `delivery_charge` to the total. Returns the order number, and an alert for the owner (D43). With `pay_first`, a delivery order is saved `unpaid` and it returns a `pay_link` for the delivery charge instead, and no alert; pickup pays nothing first (D48) |
 | `find_doctor` | clinic | no | Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and keeps the doctors who work it |
-| `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`; the clinic phones to confirm |
+| `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`; the clinic phones to confirm. With `pay_first`, it saves the request `unpaid` with the clinic's `deposit` and returns a `pay_link` instead (D48). Moving an unpaid one keeps it unpaid |
 | `cancel_appointment` | clinic | **yes** | The code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks (D38) |
 | `reschedule_appointment` | clinic | **yes** | The same, plus a new time checked like a new request. A moved appointment is `new` again |
 | `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock and adds up the subtotal. The cart goes in `state["cart"]` (D45) |
-| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock as it saves. Returns its code, `O-101`, and an alert |
-| `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, how long delivery usually takes and the courier the owner gave. A wrong code and a wrong number get the same answer |
-| `cancel_order` | shop | **yes** | The same code and mobile; only while `new` or `confirmed` (not once the courier has it). The items go back in stock |
+| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock as it saves. Returns its code, `O-101`, and an alert. With `pay_first` (and a charge), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment places it (D47) |
+| `track_order` | shop | no | The code and the mobile it was placed with: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, the courier the owner gave, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
+| `cancel_order` | shop | **yes** | The same code and mobile; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 
 **The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
@@ -288,18 +288,21 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
+| `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
-| `orders` | the shared columns, lines JSON, total, currency, pickup_at, note. Shown by number; new → ready → collected, or cancelled |
+| `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Shown by number; unpaid → new (the delivery charge was paid, D48) → ready → collected, or cancelled |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
-| `appointments` | the shared columns, doctor_code, doctor_name, at. Code `A-104`; new → confirmed → done, or cancelled |
+| `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, category, sizes JSON, colours JSON, stock (empty: not counted), position |
-| `shop_orders` | the shared columns, lines JSON, subtotal, delivery_charge, total, currency, zone, address, note, tracking. Code `O-101`; new → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking. Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
-change the table's `FLOW` doesn't allow is a 409 `invalid_transition`.
+change the table's `FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
+(`Payable`, same file) are on what a visitor can be asked to pay for first (D47, D48): currency,
+paid (minor units, online), payment_ref (the gateway's id).
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
 business's timezone. JSON columns: assign a new value to change one, because
@@ -326,11 +329,21 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock, replaced whole |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status and set its `tracking` (D45) |
-| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
+| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
+| GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
+| POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
+| POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
+| GET/PUT/DELETE | `/api/agent/sslcommerz` | The business's own SSLCommerz store: its id and test mode; connect it (checked with SSLCommerz first); disconnect it (D49). The password never comes back |
 | GET | `/health` | DB reachable |
+
+Lists that grow (orders, appointments, shop orders, messages, conversations, the
+audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, default
+100) and `?before=` the last row's time (`created_at`; `updated_at` for
+conversations; `at` for the audit log). Fewer than `limit` rows means it was the
+last page.
 
 Everything under `/api` except chat, desks, auth and the Telegram webhook needs
 `Authorization: Bearer <token>`.
@@ -404,6 +417,51 @@ owner replies /done ─► `active` again: the agent answers, and sees what the 
   silence. A phone call can't be answered this way; the owner is told to call back.
 - The `by` mark is taken off before the transcript goes to the model.
 
+### Paying first (D47–D49)
+
+A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz,
+into the business's **own** store, before anything is placed. What's paid is the table's `Payable.due`:
+
+| Desk | Pays first (`PAY_FOR`) | Then |
+|---|---|---|
+| Shop | the delivery charge | the rest in cash on delivery |
+| Restaurant | the delivery charge, for a delivery (pickup pays nothing first) | the rest on delivery |
+| Clinic | a deposit the owner sets, copied onto the appointment | the clinic phones to confirm |
+
+Nothing to pay (free delivery, a pickup) saves it `new` as before. The owner turns it on and
+off, sets the amounts and connects the store on the frontend's Agent → Payments section.
+
+**Each business's own store (D49).** `payment_accounts` holds its SSLCommerz store id,
+store password and test mode; `PUT /api/agent/sslcommerz` checks them with SSLCommerz first
+(it opens a ৳10 session no one pays; a 400 carries SSLCommerz's reason) and no route returns
+the password. The agent asks for payment only when `pay_first` is on **and** a store is
+connected (`Store.pays_first`): without one, the prompt says nothing about paying, the tools
+place orders as before, and `missing` says "Connect your SSLCommerz account…".
+`services/payments.py` (`PaymentService`, its `PAYABLE` tables), `api/payments.py` (the
+pages) and the `PaymentGateway` port (`adapters/payments/sslcommerz.py`; `PAYMENTS=fake` for
+tests) do it. `desks/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
+line (`pay_first_rule`).
+
+```
+yes to the read-back ─► the tool saves it `unpaid` (a shop's items held), returns
+    pay_link = PUBLIC_URL/pay/<id>; no alert yet
+visitor opens the link ─► a new SSLCommerz session for `due` ─► its page
+SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
+    /api/payments/sslcommerz/<id>)
+    ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
+       for this row (its tran_id), this amount
+    ─► UPDATE … WHERE status = 'unpaid' → new, paid, payment_ref (only the first post wins)
+    ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
+       the bot sends it on Telegram) and the owner's alert
+```
+
+- The agent can't mark anything paid: no tool moves `unpaid` (moving an unpaid appointment
+  keeps it unpaid), and the prompt says nothing is placed until a message says so. What the
+  browser posts is never trusted; only `val_id`, asked about with the business's own store.
+- The link opens a fresh session each time, so it doesn't run out. The row's id is long and
+  random: the link is its own key, like the Telegram webhook's channel id.
+- The owner can still move `unpaid` → `new` (paid some other way) or cancel it.
+
 ## 10. Voice (M2)
 
 A `voice/` package turns speech into `start_turn(channel="voice")` calls and
@@ -464,4 +522,5 @@ version handles them.
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
-| Shop: photos of a product, stock per size and colour, checking a bKash advance | The agent asks for the product's name; stock is per product; an advance payment is a policy the owner writes |
+| Shop: photos of a product, stock per size and colour | The agent asks for the product's name; stock is per product |
+| Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |

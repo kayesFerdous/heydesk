@@ -16,5 +16,6 @@ def test_production_starts_when_configured() -> None:
         LLM_PROVIDER="groq",
         DECIDER="jev",
         QDRANT_URL="https://example.qdrant.io",
+        PAYMENTS="sslcommerz",
         _env_file=None,
     )  # type: ignore[call-arg]

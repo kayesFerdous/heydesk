@@ -1,17 +1,25 @@
 """The clinic's tools: find a doctor; request, cancel or move an appointment."""
 
 from datetime import datetime
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
-from heydesk.desks.clinic.values import AppointmentChange, NewAppointment, match_doctor
+from heydesk.desks.clinic.values import (
+    AppointmentChange,
+    ClinicConfig,
+    NewAppointment,
+    match_doctor,
+)
+from heydesk.desks.shared import awaiting_payment
 from heydesk.domain.values import parse_code
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.schedule import DAYS
+from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ClinicStore]
@@ -78,12 +86,22 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
     if doctor is None or when is None or name is None or phone is None:
         return check.result()
 
-    appointment = NewAppointment(doctor, when, name, phone)
-    read_back = f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}"
+    config = cast(ClinicConfig, ctx.agent)
+    deposit = config.deposit if await ctx.store.pays_first(config) else 0
+    appointment = NewAppointment(
+        doctor, when, name, phone, config.currency, deposit, pay_first=deposit > 0
+    )
+    amount = money(deposit, config.currency)
+    read_back = f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}" + (
+        f"; a deposit of {amount} paid online now" if deposit else ""
+    )
     confirmed = await confirm(ctx.decider, appointment, read_back, ctx.agent_said, ctx.visitor_said)
     if confirmed is None:
         return ask_for_yes(read_back, "request_appointment")
-    code = await ctx.store.save_appointment(confirmed)
+    saved = await ctx.store.save_appointment(confirmed)
+    code = saved.code
+    if appointment.pay_first:  # the clinic hears about it once it's paid (D48)
+        return awaiting_payment(code, ctx.store.pay_link(saved.id), amount, saved.PAY_FOR)
     return ToolResult(
         ok=True,
         data={
@@ -100,7 +118,8 @@ REQUEST_APPOINTMENT = Tool(
         "Request an appointment: the doctor, the day and time, the patient's name and phone. "
         "Call it as soon as you have the doctor and the time: it checks the doctor works then "
         "and says what's still needed. When it has everything it gives you what to read back; "
-        "call it again with the same details after a clear yes."
+        "call it again with the same details after a clear yes. If the clinic takes a "
+        "deposit first, it returns a payment link."
     ),
     input_model=RequestAppointmentInput,
     run=request_appointment,

@@ -101,11 +101,15 @@ class AdminService:
         async with self.sessions() as s:
             return [(user, name) for user, name in (await s.execute(query)).all()]
 
-    async def audit_log(self, workspace_id: str | None = None) -> list[tuple[AuditEvent, str]]:
-        """Newest first, with the admin's email."""
+    async def audit_log(
+        self, workspace_id: str | None = None, *, limit: int = PAGE, before: datetime | None = None
+    ) -> list[tuple[AuditEvent, str]]:
+        """Newest first, with the admin's email. The next page is `before=` the last `at`."""
         query = select(AuditEvent, User.email).join(User, User.id == AuditEvent.actor_id)
         if workspace_id:
             query = query.where(AuditEvent.workspace_id == workspace_id)
+        if before:
+            query = query.where(AuditEvent.at < before)
         async with self.sessions() as s:
-            rows = (await s.execute(query.order_by(AuditEvent.at.desc()).limit(PAGE))).all()
+            rows = (await s.execute(query.order_by(AuditEvent.at.desc()).limit(limit))).all()
         return [(event, email) for event, email in rows]

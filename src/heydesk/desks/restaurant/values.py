@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from heydesk.desks import csv_import
+from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.speech import money
 
 
@@ -50,15 +51,23 @@ def cart_text(cart: dict[str, Any], currency: str) -> str:
 
 @dataclass(frozen=True)
 class NewOrder:
-    """An order ready to save once the visitor said yes. Money in minor units; `pickup_at` is local."""
+    """An order ready to save once the visitor said yes. Money in minor units; `pickup_at` is
+    local: when it's picked up, or delivered."""
 
     lines: list[dict[str, Any]]  # {code, name, quantity, price}, as update_order saved them
-    total: int
+    food: int  # the dishes' total
     currency: str
     pickup_at: datetime
     name: str
     phone: str
     note: str = ""
+    address: str = ""  # empty: pickup
+    delivery_charge: int = 0
+    pay_first: bool = False  # saved as unpaid until the delivery charge is paid online (D48)
+
+    @property
+    def total(self) -> int:
+        return self.food + self.delivery_charge
 
 
 def menu_from_csv(text: str) -> list[MenuItem]:
@@ -77,3 +86,23 @@ def menu_from_csv(text: str) -> list[MenuItem]:
         )
 
     return csv_import.parse(text, {"name", "price"}, row)
+
+
+class RestaurantConfig(AgentConfig):
+    greeting: str = (
+        "Hi, welcome to {business_name}! Hungry? I can help with the menu or take your order."
+    )
+    policies: str = ""  # allergens disclaimer, payment, parking…
+    delivers: bool = False  # off: pickup only
+    delivery_charge: int = Field(default=0, ge=0)  # minor units, the same to any address
+    # A delivery order's charge is paid online first (SSLCommerz); the order is placed only
+    # when the payment comes in, and the rest is cash on delivery (D48)
+    pay_first: bool = False
+
+    @model_validator(mode="after")
+    def _something_to_pay_first(self) -> "RestaurantConfig":
+        if self.pay_first and not (self.delivers and self.delivery_charge):
+            raise ValueError(
+                "To take the delivery charge first, turn on delivery and set its charge."
+            )
+        return self

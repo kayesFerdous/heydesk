@@ -5,7 +5,7 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.taken import Taken
+from heydesk.models.taken import Payable, Taken
 
 
 class DoctorRow(Base):
@@ -29,13 +29,18 @@ class DoctorRow(Base):
     position: Mapped[int] = mapped_column(default=0)  # the clinic's order, for the prompt
 
 
-class Appointment(Taken, Base):
-    """An appointment request: the clinic phones the patient to confirm it."""
+class Appointment(Taken, Payable, Base):
+    """An appointment request: the clinic phones the patient to confirm it.
+
+    When the clinic takes a deposit first, the request starts `unpaid` and only the payment
+    check makes it `new` (D48)."""
 
     __tablename__ = "appointments"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
     LETTER: ClassVar[str] = "A"
+    PAY_FOR: ClassVar[str] = "the deposit"
     FLOW: ClassVar[dict[str, set[str]]] = {
+        "unpaid": {"new", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "cancelled"},
         "confirmed": {"done", "cancelled", "new"},  # moved to a new time: to confirm again
         "done": set(),
@@ -45,3 +50,14 @@ class Appointment(Taken, Base):
     doctor_code: Mapped[str] = mapped_column(String(50))
     doctor_name: Mapped[str] = mapped_column(String(200))  # as it was when booked
     at: Mapped[datetime]  # UTC
+    deposit: Mapped[int] = mapped_column(default=0)  # minor units, the clinic's when booked
+
+    @property
+    def due(self) -> int:
+        return self.deposit
+
+    def about(self) -> str:
+        return f"with {self.doctor_name}"
+
+    def after(self) -> str:
+        return f"Your appointment request {self.code} is in: the clinic will call to confirm it."

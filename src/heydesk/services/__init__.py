@@ -5,6 +5,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.payments import PaymentService
 from heydesk.services.users import UserService
 
 
@@ -15,4 +16,5 @@ class Services:
     channels: ChannelService
     conversations: ConversationService
     knowledge: KnowledgeService
+    payments: PaymentService
     users: UserService

@@ -63,12 +63,21 @@ class Settings(BaseSettings):
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""
 
+    # Paying online before an order is placed (D47), into each business's own SSLCommerz store
+    # (D49), which the owner connects on the frontend. fake: tests, no network
+    PAYMENTS: Literal["sslcommerz", "fake"] = "sslcommerz"
+
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines
 
     @property
     def jwt_secret(self) -> str:
         return self.JWT_SECRET or DEV_JWT_SECRET
+
+    @property
+    def public_url(self) -> str:
+        """Where a visitor's browser reaches this server: links in replies, payment returns."""
+        return (self.PUBLIC_URL or "http://localhost:8000").rstrip("/")
 
     @model_validator(mode="after")
     def _production_is_real(self) -> Self:
@@ -83,6 +92,8 @@ class Settings(BaseSettings):
             problems.append("DECIDER is fake")
         if self.EMBEDDER == "fake":
             problems.append("EMBEDDER is fake")
+        if self.PAYMENTS == "fake":
+            problems.append("PAYMENTS is fake")
         if not self.QDRANT_URL:
             problems.append("QDRANT_URL is empty")
         if problems:

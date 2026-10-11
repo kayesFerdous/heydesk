@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import TeamMessage
+from heydesk.models import PaymentAccount, TeamMessage
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -26,7 +26,7 @@ from heydesk.runtime.tool import Tool
 if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.knowledge import KnowledgeService
 
-PAGE = 100  # newest first
+PAGE = 100  # the most rows a list returns at once (newest first)
 
 
 @dataclass(frozen=True)
@@ -53,12 +53,31 @@ class Store:
         *,
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
+        public_url: str = "",
     ) -> None:
         self.sessions = sessions
         self.workspace_id = workspace_id
         self.now = now
         self.conversation_id = conversation_id
         self.knowledge = knowledge
+        self.public_url = public_url  # where a link in a reply points: the payment page
+
+    async def pays_first(self, config: AgentConfig) -> bool:
+        """Whether the agent asks for payment before placing anything: the owner turned it on
+        (`pay_first`) and connected the business's SSLCommerz store (D49). Without the store,
+        the agent takes orders as if it were off."""
+        if not getattr(config, "pay_first", False):
+            return False
+        async with self.sessions() as s:
+            found = await s.scalar(
+                select(PaymentAccount.id).where(PaymentAccount.workspace_id == self.workspace_id)
+            )
+        return found is not None
+
+    def pay_link(self, record_id: str) -> str:
+        """The visitor's link to pay for something saved unpaid (D47). It starts a new payment
+        each time, so it doesn't run out; the id is long and random, so no one guesses another."""
+        return f"{self.public_url}/pay/{record_id}"
 
     async def search_knowledge(self, question: str) -> list[Snippet]:
         if self.knowledge is None:
@@ -75,8 +94,15 @@ class Store:
         )
         return saved.code
 
-    async def messages(self, status: str | None = None, q: str | None = None) -> list[TeamMessage]:
-        return await self.find(TeamMessage, status, q)
+    async def messages(
+        self,
+        status: str | None = None,
+        q: str | None = None,
+        *,
+        limit: int = PAGE,
+        before: datetime | None = None,
+    ) -> list[TeamMessage]:
+        return await self.find(TeamMessage, status, q, limit=limit, before=before)
 
     # A desk's list (the menu, the doctors, the products): replaced whole, kept in order
 
@@ -121,9 +147,18 @@ class Store:
         table: type[T],
         status: str | None = None,
         q: str | None = None,
+        *,
+        limit: int = PAGE,
+        before: datetime | None = None,
     ) -> list[T]:
-        """Newest first. `q` matches the number or code ("A-104"), the name or the phone."""
+        """Newest first. `q` matches the number or code ("A-104"), the name or the phone.
+
+        One page at a time: up to `limit` rows made before `before`. The next page is
+        `before=` the last row's `created_at`. Two rows made in the same microsecond, split
+        across a page edge, would hide one of them: not worth a second cursor field."""
         query = select(table).where(table.workspace_id == self.workspace_id)
+        if before:
+            query = query.where(table.created_at < before)
         if status:
             query = query.where(table.status == status)
         if q := (q or "").strip():
@@ -138,7 +173,7 @@ class Store:
                 )
             )
         async with self.sessions() as s:
-            return list(await s.scalars(query.order_by(table.created_at.desc()).limit(PAGE)))
+            return list(await s.scalars(query.order_by(table.created_at.desc()).limit(limit)))
 
     async def get[T: Taken](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:
@@ -192,10 +227,16 @@ class Desk:
         *,
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
+        public_url: str = "",
     ) -> Store:
         """Its data. A desk with tables of its own returns its own store."""
         return Store(
-            sessions, workspace_id, now, conversation_id=conversation_id, knowledge=knowledge
+            sessions,
+            workspace_id,
+            now,
+            conversation_id=conversation_id,
+            knowledge=knowledge,
+            public_url=public_url,
         )
 
     async def prompt(self, config: Any, store: Any) -> str:

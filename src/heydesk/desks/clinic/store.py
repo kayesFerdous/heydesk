@@ -9,7 +9,7 @@ from heydesk.desks.clinic.models import Appointment, DoctorRow
 from heydesk.desks.clinic.values import AppointmentChange, Doctor, NewAppointment
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
-from heydesk.models.taken import FIRST_STATUS
+from heydesk.models.taken import FIRST_STATUS, UNPAID
 
 
 class ClinicStore(Store):
@@ -19,18 +19,20 @@ class ClinicStore(Store):
     async def replace_doctors(self, doctors: list[Doctor]) -> None:
         await self.replace_rows(DoctorRow, doctors)
 
-    async def save_appointment(self, appointment: Confirmed[NewAppointment]) -> str:
-        """Saves the request and returns its code: "A-104"."""
+    async def save_appointment(self, appointment: Confirmed[NewAppointment]) -> Appointment:
+        """Saves the request: `new`, or `unpaid` when a deposit is paid first (D48)."""
         a = appointment.value
-        saved = await self.add(
+        return await self.add(
             Appointment,
+            status=UNPAID if a.pay_first else FIRST_STATUS,
             name=a.name,
             phone=a.phone,
             doctor_code=a.doctor.code,
             doctor_name=a.doctor.name,
             at=a.at.astimezone(UTC),
+            deposit=a.deposit,
+            currency=a.currency,
         )
-        return saved.code
 
     async def appointment(self, number: int) -> Appointment | None:
         return await self.by_number(Appointment, number)
@@ -51,6 +53,6 @@ class ClinicStore(Store):
                 found.move("cancelled", self.now())
                 return
             found.at = c.new_at.astimezone(UTC)
-            if found.status != FIRST_STATUS:
+            if found.status not in (FIRST_STATUS, UNPAID):  # moving it doesn't pay for it
                 found.move(FIRST_STATUS, self.now())
             found.updated_at = self.now()

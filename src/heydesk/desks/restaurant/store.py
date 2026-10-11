@@ -6,6 +6,7 @@ from heydesk.desks.base import Store
 from heydesk.desks.restaurant.models import MenuItemRow, Order
 from heydesk.desks.restaurant.values import MenuItem, NewOrder
 from heydesk.domain.values import Confirmed
+from heydesk.models.taken import FIRST_STATUS, UNPAID
 
 
 class RestaurantStore(Store):
@@ -15,11 +16,12 @@ class RestaurantStore(Store):
     async def replace_menu(self, menu: list[MenuItem]) -> None:
         await self.replace_rows(MenuItemRow, menu)
 
-    async def place_order(self, order: Confirmed[NewOrder]) -> int:
-        """Saves the order and returns its number: 101."""
+    async def place_order(self, order: Confirmed[NewOrder]) -> Order:
+        """Saves the order: `new`, or `unpaid` when its delivery charge is paid first (D48)."""
         o = order.value
-        saved = await self.add(
+        return await self.add(
             Order,
+            status=UNPAID if o.pay_first else FIRST_STATUS,
             name=o.name,
             phone=o.phone,
             lines=o.lines,
@@ -27,5 +29,6 @@ class RestaurantStore(Store):
             currency=o.currency,
             pickup_at=o.pickup_at.astimezone(UTC),
             note=o.note,
+            address=o.address,
+            delivery_charge=o.delivery_charge,
         )
-        return saved.number

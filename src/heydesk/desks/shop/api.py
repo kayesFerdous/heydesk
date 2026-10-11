@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import ImportIn, ImportOut, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Paged, Svc, Workspace
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import Product, products_from_csv
@@ -34,7 +34,9 @@ class ShopOrderOut(BaseModel):
     lines: list[dict[str, Any]]  # {code, name, size, colour, quantity, price}
     subtotal: int  # minor units
     delivery_charge: int
-    total: int  # what the rider collects
+    total: int  # the whole order
+    paid: int  # paid online first (D47); the rider collects `total - paid`
+    payment_ref: str  # the payment gateway's id for it
     currency: str
     zone: str
     address: str
@@ -76,10 +78,12 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
 
 @router.get("/api/shop/orders")
 async def orders(
-    store: Shop, status: str | None = None, q: str | None = None
+    store: Shop, page: Paged, status: str | None = None, q: str | None = None
 ) -> list[ShopOrderOut]:
-    """Newest first. `q` matches the code or number, the name or the phone."""
-    return [ShopOrderOut.model_validate(o) for o in await store.find(ShopOrder, status, q)]
+    """Newest first, a page at a time (`limit`, `before`). `q` matches the code or number,
+    the name or the phone."""
+    found = await store.find(ShopOrder, status, q, limit=page.limit, before=page.before)
+    return [ShopOrderOut.model_validate(o) for o in found]
 
 
 @router.get("/api/shop/orders/{order_id}")

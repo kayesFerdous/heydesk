@@ -6,6 +6,7 @@ from heydesk.models.audit import AuditEvent
 from heydesk.models.channel import Channel
 from heydesk.models.conversation import Conversation
 from heydesk.models.document import Document
+from heydesk.models.payment_account import PaymentAccount
 from heydesk.models.team_message import TeamMessage
 from heydesk.models.user import User
 from heydesk.models.workspace import Workspace
@@ -16,6 +17,7 @@ __all__ = [
     "Channel",
     "Conversation",
     "Document",
+    "PaymentAccount",
     "TeamMessage",
     "User",
     "Workspace",

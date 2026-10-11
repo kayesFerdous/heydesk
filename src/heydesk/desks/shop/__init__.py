@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk
+from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import Product, ShopConfig, cart_text
@@ -22,7 +23,6 @@ Only offer products from the list. If one is sold out, say so and suggest a simi
 If you can't tell which product they mean (a photo, "this one"), ask for its name.
 
 # Taking an order
-Orders are paid in cash on delivery, to the visitor's address.
 1. Whenever the order changes, call update_cart with the whole order: each product's code and
    quantity, and its size and colour when it has them. Then tell the visitor each line and the
    subtotal exactly as the tool gave them.
@@ -63,7 +63,13 @@ class ShopDesk(Desk):
         if config.policies.strip():
             about += ["Policies:", config.policies.strip()]
 
-        delivery = ["# Delivery", "Cash on delivery. The charge depends on the area:"]
+        delivery = ["# Delivery"]
+        if await store.pays_first(config):
+            delivery.append(pay_first_rule("the delivery charge", "place_order"))
+            delivery.append("The rest is paid in cash on delivery.")
+        else:
+            delivery.append("Orders are paid in cash on delivery.")
+        delivery.append("The charge depends on the area:")
         delivery += [zone.line(config.currency) for zone in config.delivery]
         if config.free_delivery_over:
             free = money(config.free_delivery_over, config.currency)
