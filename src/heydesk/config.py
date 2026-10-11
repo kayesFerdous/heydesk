@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     GIGALOGY_PROFILE_ID: str = ""  # the Maira profile picks the model, not DEFAULT_MODEL
     MODEL: str = "openai/gpt-oss-120b"  # Groq's model for every agent
 
-    DECIDER: Literal["jev", "llm", "fake"] = "fake"
+    DECIDER: Literal["jev", "fake"] = "fake"
     TYPESAFE_API_KEY: str = ""
     TYPESAFE_MODEL: str = "jev-latest"  # pin a version the day a judgment changes under you
     TYPESAFE_TIMEOUT: float = 5.0

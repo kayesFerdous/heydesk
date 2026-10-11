@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from heydesk.errors import HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
@@ -80,3 +80,18 @@ type Admin = Annotated[Principal, Depends(admin_only)]
 
 class StatusIn(BaseModel):
     status: str  # where it may go depends on what it is: see the 409 message
+
+
+class ImportIn(BaseModel):
+    """A CSV file for a desk's list (the menu, the doctors, the products)."""
+
+    csv: str = Field(
+        max_length=2_000_000, description="The file's text: a header row, then one per row"
+    )
+    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
+
+
+class ImportOut[T](BaseModel):
+    saved: bool
+    count: int
+    preview: list[T]  # the first few, as they'll be saved

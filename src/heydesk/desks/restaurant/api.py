@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import StatusIn, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, StatusIn, Svc, Workspace
 from heydesk.desks.restaurant.models import Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.values import MenuItem, menu_from_csv
@@ -40,19 +40,6 @@ class OrderOut(BaseModel):
     updated_at: datetime
 
 
-class ImportIn(BaseModel):
-    csv: str = Field(
-        max_length=2_000_000, description="The file's text: a header row, then one per row"
-    )
-    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
-
-
-class ImportOut(BaseModel):
-    saved: bool
-    count: int
-    preview: list[MenuItem]  # the first few, as they'll be saved
-
-
 @router.get("/api/menu")
 async def menu(store: Restaurant) -> list[MenuItem]:
     return await store.menu()
@@ -84,10 +71,10 @@ async def set_status(order_id: str, body: StatusIn, store: Restaurant) -> OrderO
 
 
 @router.post("/api/menu/import")
-async def import_menu(body: ImportIn, store: Restaurant) -> ImportOut:
+async def import_menu(body: ImportIn, store: Restaurant) -> ImportOut[MenuItem]:
     """Replaces the menu with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
     found = menu_from_csv(body.csv)
     if not body.dry_run:
         await store.replace_menu(found)
-    return ImportOut(saved=not body.dry_run, count=len(found), preview=found[:5])
+    return ImportOut[MenuItem](saved=not body.dry_run, count=len(found), preview=found[:5])

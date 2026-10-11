@@ -12,27 +12,10 @@ class Token:
 
 
 @dataclass(frozen=True)
-class Progress:
-    """A scripted waiting line while a tool runs (D6). Never enters the transcript.
-
-    Web shows `label` ("Checking the menu…"); voice says `text` ("Let me check that.").
-    """
-
-    label: str
-    text: str = ""
-
-
-@dataclass(frozen=True)
 class ToolStarted:
     name: str
     label: str = ""  # web shows it: "Placing your order…"
     filler: str = ""  # voice says it: "Placing that now."
-
-
-@dataclass(frozen=True)
-class ToolFinished:
-    name: str
-    ok: bool
 
 
 @dataclass(frozen=True)
@@ -52,4 +35,4 @@ class TurnEnded:
     alerts: list[str] = field(default_factory=list)  # tools' alerts for the owner (D43)
 
 
-type Event = Token | Progress | ToolStarted | ToolFinished | HandOff | TurnEnded
+type Event = Token | ToolStarted | HandOff | TurnEnded

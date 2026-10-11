@@ -58,20 +58,18 @@ def main() -> None:
     match sys.argv[1:]:
         case []:
             uvicorn.run("heydesk.main:app", reload=True)
+            return
         case ["create-user", email, password]:
-            try:
-                asyncio.run(create_user(email, password))
-            except HeyDeskError as error:
-                sys.exit(error.message)
+            command = create_user(email, password)
         case ["create-admin", email, password]:
-            try:
-                asyncio.run(create_admin(email, password))
-            except HeyDeskError as error:
-                sys.exit(error.message)
+            command = create_admin(email, password)
         case ["reindex-knowledge"]:
-            try:
-                asyncio.run(reindex_knowledge())
-            except (HeyDeskError, RuntimeError) as error:
-                sys.exit(str(error))
+            command = reindex_knowledge()
         case _:
             sys.exit(USAGE)
+    try:
+        asyncio.run(command)
+    except HeyDeskError as error:
+        sys.exit(error.message)
+    except RuntimeError as error:  # a setting is missing, such as GEMINI_API_KEY
+        sys.exit(str(error))

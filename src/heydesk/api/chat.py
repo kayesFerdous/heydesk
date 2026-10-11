@@ -1,12 +1,9 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from heydesk.api.deps import get_services
+from heydesk.api.deps import Svc
 from heydesk.api.sse import to_sse
-from heydesk.services import Services
 
 router = APIRouter()
 
@@ -22,15 +19,13 @@ class ChatIn(BaseModel):
 
 
 @router.get("/api/chat/{public_key}")
-async def agent(public_key: str, services: Annotated[Services, Depends(get_services)]) -> AgentOut:
+async def agent(public_key: str, services: Svc) -> AgentOut:
     found = await services.agents.by_key(public_key)  # 404 if unknown
     return AgentOut(name=found.config.name, greeting=found.greeting)
 
 
 @router.post("/api/chat/{public_key}")
-async def chat(
-    public_key: str, body: ChatIn, services: Annotated[Services, Depends(get_services)]
-) -> StreamingResponse:
+async def chat(public_key: str, body: ChatIn, services: Svc) -> StreamingResponse:
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
         agent, body.conversation_id, body.message, channel="web"
@@ -49,9 +44,7 @@ class TeamOut(BaseModel):
 
 
 @router.get("/api/chat/{public_key}/{conversation_id}/team")
-async def team_replies(
-    public_key: str, conversation_id: str, services: Annotated[Services, Depends(get_services)]
-) -> TeamOut:
+async def team_replies(public_key: str, conversation_id: str, services: Svc) -> TeamOut:
     """What the team wrote from Telegram (D43). The chat page asks every few seconds."""
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

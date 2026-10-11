@@ -21,7 +21,7 @@ from heydesk.models import Channel
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
-from heydesk.services.team import TeamService
+from heydesk.services.team import TeamService, send
 
 log = logging.getLogger(__name__)
 
@@ -147,10 +147,7 @@ class ChannelService:
             await self._send(channel, chat_id, FAILED)
 
     async def _send(self, channel: Channel, chat_id: str, text: str) -> None:
-        try:
-            await self.telegram.send_message(channel.token, chat_id, text)
-        except TelegramUnavailable as error:
-            log.warning("telegram send failed: %s", error, extra={"channel_id": channel.id})
+        await send(self.telegram, channel, chat_id, text)
 
     async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
         """ "typing…" lasts five seconds on Telegram; a reply can take longer."""

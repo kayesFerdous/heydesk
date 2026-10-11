@@ -15,7 +15,7 @@ from heydesk.ports.llm import (
     ToolCall,
     Usage,
 )
-from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
+from heydesk.runtime.events import Event, HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
 from tests.conftest import AGENT, FIXED_NOW, MenuStore
 
@@ -113,9 +113,9 @@ async def test_a_tool_runs_and_its_result_goes_back_to_the_model() -> None:
     events = await collect(make_turn("two biryanis and a borhani", tools=[UPDATE_ORDER]), llm)
 
     assert ToolStarted("update_order", "Updating your order…") in events
-    assert ToolFinished("update_order", ok=True) in events
     end = events[-1]
     assert isinstance(end, TurnEnded) and not end.handed_off
+    assert {"tool": "update_order", "ok": True}.items() <= end.trace["steps"][1].items()
     assert [m["role"] for m in end.added] == ["user", "assistant", "tool", "assistant"]
     result = json.loads(end.added[2]["content"])
     assert result["total"] == "৳1,030"
@@ -216,7 +216,7 @@ async def test_an_unknown_tool_gets_a_hint_and_the_model_carries_on() -> None:
     events = await collect(make_turn(), llm)
 
     assert ToolStarted("fly_to_moon", "") in events
-    assert ToolFinished("fly_to_moon", ok=False) in events
     end = events[-1]
     assert isinstance(end, TurnEnded) and not end.handed_off
+    assert {"tool": "fly_to_moon", "ok": False}.items() <= end.trace["steps"][1].items()
     assert "no tool called 'fly_to_moon'" in end.added[2]["content"]

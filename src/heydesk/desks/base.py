@@ -6,12 +6,13 @@ desk shares lives here (`Store`: messages for the team, the documents search) an
 `desks/shared.py` (the shared tools).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import String, cast, or_, select
+from pydantic import BaseModel
+from sqlalchemy import ScalarResult, String, cast, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.domain.values import Confirmed, parse_code
@@ -77,6 +78,27 @@ class Store:
     async def messages(self, status: str | None = None, q: str | None = None) -> list[TeamMessage]:
         return await self.find(TeamMessage, status, q)
 
+    # A desk's list (the menu, the doctors, the products): replaced whole, kept in order
+
+    async def rows_of[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
+        """Every row of `table` (it has a `position`) as `model`, in the business's order."""
+        async with self.sessions() as s:
+            rows: ScalarResult[Any] = await s.scalars(
+                select(table)
+                .where(table.workspace_id == self.workspace_id)
+                .order_by(table.position)
+            )
+            return [model.model_validate(row, from_attributes=True) for row in rows]
+
+    async def replace_rows(self, table: type[Any], items: Sequence[BaseModel]) -> None:
+        """`table` becomes exactly these, in this order."""
+        async with self.sessions() as s, s.begin():
+            await s.execute(delete(table).where(table.workspace_id == self.workspace_id))
+            s.add_all(
+                table(workspace_id=self.workspace_id, position=n, **item.model_dump())
+                for n, item in enumerate(items)
+            )
+
     # Shared by every table of things taken (`models.taken`)
 
     async def add[T: Taken](self, table: type[T], **fields: Any) -> T:
@@ -99,14 +121,11 @@ class Store:
         table: type[T],
         status: str | None = None,
         q: str | None = None,
-        conversation_id: str | None = None,
     ) -> list[T]:
         """Newest first. `q` matches the number or code ("A-104"), the name or the phone."""
         query = select(table).where(table.workspace_id == self.workspace_id)
         if status:
             query = query.where(table.status == status)
-        if conversation_id:
-            query = query.where(table.conversation_id == conversation_id)
         if q := (q or "").strip():
             like = f"%{q}%"
             code = parse_code(q)
@@ -135,13 +154,17 @@ class Store:
     async def set_status[T: Taken](self, table: type[T], row_id: str, status: str) -> T:
         async with self.sessions() as s, s.begin():
             row = await self._one(s, table, row_id)
-            try:
-                row.move(status, self.now())
-            except LookupError as error:
-                raise HeyDeskError(str(error)) from None
-            except ValueError as error:
-                raise InvalidTransition(str(error)) from None
+            self._move(row, status)
         return row
+
+    def _move(self, row: Taken, status: str) -> None:
+        """`row.move`, with its problems as the errors the owner's routes return."""
+        try:
+            row.move(status, self.now())
+        except LookupError as error:
+            raise HeyDeskError(str(error)) from None
+        except ValueError as error:
+            raise InvalidTransition(str(error)) from None
 
     async def _one[T: Taken](self, s: AsyncSession, table: type[T], row_id: str) -> T:
         row: T | None = await s.scalar(

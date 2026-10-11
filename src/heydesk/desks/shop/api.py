@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Svc, Workspace
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import Product, products_from_csv
@@ -51,19 +51,6 @@ class OrderChange(BaseModel):
     )
 
 
-class ImportIn(BaseModel):
-    csv: str = Field(
-        max_length=2_000_000, description="The file's text: a header row, then one per row"
-    )
-    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
-
-
-class ImportOut(BaseModel):
-    saved: bool
-    count: int
-    preview: list[Product]  # the first few, as they'll be saved
-
-
 @router.get("/api/products")
 async def products(store: Shop) -> list[Product]:
     return await store.products()
@@ -78,13 +65,13 @@ async def replace_products(body: list[Product], store: Shop) -> list[Product]:
 
 
 @router.post("/api/products/import")
-async def import_products(body: ImportIn, store: Shop) -> ImportOut:
+async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
     found = products_from_csv(body.csv)
     if not body.dry_run:
         await store.replace_products(found)
-    return ImportOut(saved=not body.dry_run, count=len(found), preview=found[:5])
+    return ImportOut[Product](saved=not body.dry_run, count=len(found), preview=found[:5])
 
 
 @router.get("/api/shop/orders")

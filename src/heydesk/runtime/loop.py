@@ -25,7 +25,7 @@ from heydesk.ports.llm import (
     ToolOutcome,
 )
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.events import Event, HandOff, Token, ToolFinished, ToolStarted, TurnEnded
+from heydesk.runtime.events import Event, HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.tool import Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
@@ -125,7 +125,6 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 with trace.step("tool", tool=call.name) as step:
                     result = await run_tool(tool, call, ctx)
                     step["ok"] = result.ok
-                yield ToolFinished(call.name, result.ok)
                 state |= result.state or {}
                 asked_for_person |= result.handoff  # the model still replies; the card follows
                 if result.alert:

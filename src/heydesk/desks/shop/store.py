@@ -5,14 +5,14 @@ them back, so two buyers can't get the last one."""
 
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import Store
 from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import NewOrder, OrderCancel, Product
 from heydesk.domain.values import Confirmed
-from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
+from heydesk.errors import NotFound
 from heydesk.models.taken import next_number
 
 
@@ -22,22 +22,10 @@ class OutOfStock(ValueError):
 
 class ShopStore(Store):
     async def products(self) -> list[Product]:
-        async with self.sessions() as s:
-            rows = await s.scalars(
-                select(ProductRow)
-                .where(ProductRow.workspace_id == self.workspace_id)
-                .order_by(ProductRow.position)
-            )
-            return [Product.model_validate(row, from_attributes=True) for row in rows]
+        return await self.rows_of(ProductRow, Product)
 
     async def replace_products(self, products: list[Product]) -> None:
-        """The shop's products become exactly these, in this order."""
-        async with self.sessions() as s, s.begin():
-            await s.execute(delete(ProductRow).where(ProductRow.workspace_id == self.workspace_id))
-            s.add_all(
-                ProductRow(workspace_id=self.workspace_id, position=n, **product.model_dump())
-                for n, product in enumerate(products)
-            )
+        await self.replace_rows(ProductRow, products)
 
     async def place_order(self, order: Confirmed[NewOrder]) -> str:
         """Takes the items out of stock and saves the order; returns its code, "O-101".
@@ -84,12 +72,7 @@ class ShopStore(Store):
         async with self.sessions() as s, s.begin():
             order = await self._one(s, ShopOrder, order_id)
             if status != order.status:
-                try:
-                    order.move(status, self.now())
-                except LookupError as error:
-                    raise HeyDeskError(str(error)) from None
-                except ValueError as error:
-                    raise InvalidTransition(str(error)) from None
+                self._move(order, status)
                 if status == "cancelled":
                     await self._stock(s, order.lines, +1)
             if tracking is not None:

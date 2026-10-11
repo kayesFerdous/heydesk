@@ -67,9 +67,7 @@ def build_decider(settings: Settings) -> Decider:
             retry=RetryPolicy(max_retries=0),  # inside a tool's timeout; a failure fails closed
         )
         return JevDecider(client, settings.TYPESAFE_MODEL)
-    if settings.DECIDER == "fake":
-        return FakeDecider()  # says no to everything: no order is ever confirmed
-    raise NotImplementedError(f"DECIDER={settings.DECIDER} isn't built; use jev or fake")
+    return FakeDecider()  # says no to everything: no order is ever confirmed
 
 
 def build_embedder(settings: Settings) -> Embedder:

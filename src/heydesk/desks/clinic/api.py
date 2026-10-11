@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import StatusIn, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, StatusIn, Svc, Workspace
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.values import Doctor, doctors_from_csv
@@ -36,19 +36,6 @@ class AppointmentOut(BaseModel):
     at: datetime  # UTC
     created_at: datetime
     updated_at: datetime
-
-
-class ImportIn(BaseModel):
-    csv: str = Field(
-        max_length=2_000_000, description="The file's text: a header row, then one per row"
-    )
-    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
-
-
-class ImportOut(BaseModel):
-    saved: bool
-    count: int
-    preview: list[Doctor]  # the first few, as they'll be saved
 
 
 @router.get("/api/doctors")
@@ -83,10 +70,10 @@ async def set_status(appointment_id: str, body: StatusIn, store: Clinic) -> Appo
 
 
 @router.post("/api/doctors/import")
-async def import_doctors(body: ImportIn, store: Clinic) -> ImportOut:
+async def import_doctors(body: ImportIn, store: Clinic) -> ImportOut[Doctor]:
     """Replaces the doctors with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
     found = doctors_from_csv(body.csv)
     if not body.dry_run:
         await store.replace_doctors(found)
-    return ImportOut(saved=not body.dry_run, count=len(found), preview=found[:5])
+    return ImportOut[Doctor](saved=not body.dry_run, count=len(found), preview=found[:5])

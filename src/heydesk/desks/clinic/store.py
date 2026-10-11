@@ -2,7 +2,7 @@
 
 from datetime import UTC
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from heydesk.desks.base import Store
 from heydesk.desks.clinic.models import Appointment, DoctorRow
@@ -14,22 +14,10 @@ from heydesk.models.taken import FIRST_STATUS
 
 class ClinicStore(Store):
     async def doctors(self) -> list[Doctor]:
-        async with self.sessions() as s:
-            rows = await s.scalars(
-                select(DoctorRow)
-                .where(DoctorRow.workspace_id == self.workspace_id)
-                .order_by(DoctorRow.position)
-            )
-            return [Doctor.model_validate(row, from_attributes=True) for row in rows]
+        return await self.rows_of(DoctorRow, Doctor)
 
     async def replace_doctors(self, doctors: list[Doctor]) -> None:
-        """The clinic's doctors become exactly these, in this order."""
-        async with self.sessions() as s, s.begin():
-            await s.execute(delete(DoctorRow).where(DoctorRow.workspace_id == self.workspace_id))
-            s.add_all(
-                DoctorRow(workspace_id=self.workspace_id, position=n, **doctor.model_dump())
-                for n, doctor in enumerate(doctors)
-            )
+        await self.replace_rows(DoctorRow, doctors)
 
     async def save_appointment(self, appointment: Confirmed[NewAppointment]) -> str:
         """Saves the request and returns its code: "A-104"."""

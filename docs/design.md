@@ -61,11 +61,13 @@ src/heydesk/
 ├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, Gemini, Qdrant, and fakes
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
-│   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search)
+│   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
 │   ├── shared.py        take_message, handoff_to_human, search_knowledge
 │   ├── restaurant/      __init__ (config, prompt) · tools · values · models · store · api
 │   ├── clinic/          the same
-│   └── receptionist/    __init__ only: no tools or tables of its own
+│   ├── shop/            the same
+│   ├── receptionist/    __init__ only: no tools or tables of its own
+│   └── csv_import.py    reading a CSV file into a desk's list (D46)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, knowledge
 ├── api/                 routes: read the request, call one service or store, return
@@ -318,9 +320,12 @@ SQLAlchemy doesn't see in-place edits.
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
 | GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
+| POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D46) |
 | GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
+| GET/PUT | `/api/products` | A shop's products, with their stock, replaced whole |
+| GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status and set its `tracking` (D45) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; move one's status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
@@ -448,7 +453,6 @@ version handles them.
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
 | Searching a long menu or doctor list | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41) |
-| Importing a menu from a spreadsheet | `PUT /api/menu` with JSON (D41 cut the CSV import) |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |

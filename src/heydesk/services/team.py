@@ -62,6 +62,14 @@ def handoff_alert(messages: list[Message]) -> str:
     return "🙋 Someone wants a person\n\n" + "\n".join(lines)
 
 
+async def send(telegram: TelegramApi, channel: Channel, chat_id: str, text: str) -> None:
+    """One message from the business's bot. A failure is logged, never raised."""
+    try:
+        await telegram.send_message(channel.token, chat_id, text)
+    except TelegramUnavailable as error:
+        log.warning("telegram send failed: %s", error, extra={"channel_id": channel.id})
+
+
 class TeamService:
     def __init__(
         self,
@@ -140,7 +148,4 @@ class TeamService:
             )
 
     async def _send(self, channel: Channel, chat_id: str, text: str) -> None:
-        try:
-            await self.telegram.send_message(channel.token, chat_id, text)
-        except TelegramUnavailable as error:
-            log.warning("telegram send failed: %s", error, extra={"channel_id": channel.id})
+        await send(self.telegram, channel, chat_id, text)

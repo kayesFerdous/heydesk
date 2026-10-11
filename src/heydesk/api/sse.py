@@ -5,13 +5,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from heydesk.runtime.events import (
-    HandOff,
-    Progress,
-    Token,
-    ToolStarted,
-    TurnEnded,
-)
+from heydesk.runtime.events import HandOff, Token, ToolStarted, TurnEnded
 from heydesk.services.conversations import RunningTurn
 
 log = logging.getLogger(__name__)
@@ -28,8 +22,6 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
             match event:
                 case Token(text):
                     yield frame("token", {"text": text})
-                case Progress(label):
-                    yield frame("status", {"label": label})
                 case ToolStarted(label=label) if label:
                     yield frame("status", {"label": label})  # shown until the reply starts
                 case HandOff(message, phone, email):
