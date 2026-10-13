@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import Store
 from heydesk.desks.shop.models import ProductRow, ShopOrder
-from heydesk.desks.shop.values import CHANGEABLE, NewOrder, OrderCancel, OrderEdit, Product
+from heydesk.desks.shop.values import CHANGEABLE, OWN, NewOrder, OrderCancel, OrderEdit, Product
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
 from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
@@ -138,22 +138,39 @@ class ShopStore(Store):
         return order
 
     async def _stock(self, s: AsyncSession, lines: list[dict[str, Any]], sign: int) -> None:
-        """Takes the lines' quantities out of stock (sign -1) or puts them back (+1). Products
-        whose stock isn't counted are left alone."""
-        wanted: dict[str, int] = {}
-        for line in lines:
-            wanted[line["code"]] = wanted.get(line["code"], 0) + line["quantity"]
-        rows = await s.scalars(
-            select(ProductRow).where(
-                ProductRow.workspace_id == self.workspace_id, ProductRow.code.in_(wanted)
+        """Takes the lines' quantities out of stock (sign -1) or puts them back (+1): from the
+        product's own stock, or from the variant of its size and colour (D56). What isn't
+        counted is left alone."""
+        rows = {
+            row.code: row
+            for row in await s.scalars(
+                select(ProductRow).where(
+                    ProductRow.workspace_id == self.workspace_id,
+                    ProductRow.code.in_({line["code"] for line in lines}),
+                )
             )
-        )
+        }
+        products = {
+            code: Product.model_validate(row, from_attributes=True) for code, row in rows.items()
+        }
+        wanted: dict[tuple[str, int], int] = {}  # (code, counter) → how many
+        for line in lines:
+            product = products.get(line["code"])
+            counter = product.counter(line["size"], line["colour"]) if product else None
+            if counter is not None:
+                key = (line["code"], counter)
+                wanted[key] = wanted.get(key, 0) + line["quantity"]
         short = []
-        for row in rows:
-            if row.stock is None:
-                continue
-            if sign < 0 and row.stock < wanted[row.code]:
-                short.append(f"{row.name} ({row.stock} left)")
-            row.stock += sign * wanted[row.code]
+        for (code, counter), quantity in wanted.items():
+            product, row = products[code], rows[code]
+            left = product.count(counter)
+            if sign < 0 and left < quantity:
+                short.append(f"{product.what(counter)} ({left} left)")
+            if counter == OWN:
+                row.stock = left + sign * quantity
+            else:  # a new list: a JSON column doesn't see a change in place
+                variants = [dict(v) for v in row.variants]
+                variants[counter]["stock"] = left + sign * quantity
+                row.variants = variants
         if short:
             raise OutOfStock(", ".join(short))

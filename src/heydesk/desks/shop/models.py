@@ -26,6 +26,7 @@ class ProductRow(Base):
     sizes: Mapped[list[Any]] = mapped_column(JSON, default=list)
     colours: Mapped[list[Any]] = mapped_column(JSON, default=list)
     stock: Mapped[int | None]  # None: not counted
+    variants: Mapped[list[Any]] = mapped_column(JSON, default=list)  # {size, colour, stock} (D56)
     position: Mapped[int] = mapped_column(default=0)  # the shop's order, for the prompt
 
 

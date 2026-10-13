@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **Next:** Messenger once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **Next:** product photos, or Messenger once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -111,7 +111,7 @@ a confirmation call and a courier's parcel id, as they already work.
       kurti in the wrong size is asked again; an order outside Dhaka is read back with ৳120
       delivery and saved after a yes; "where is O-101?" with the mobile gets its status
       (costs quota: ask first). Passed 13 Oct on the `online@gmail.com` test shop (O-102 to
-      Chittagong, saved on "ji"); the Telegram alert is still to see, with a bot linked
+      Chittagong, saved on "ji"); the owner's Telegram alert seen with a real bot (13 Oct)
 - [ ] Facebook Messenger as a channel, like Telegram (D42): a page connects, Meta posts messages
       to a webhook, replies go back through the Send API. Needs a Meta app with page messaging
       approved
@@ -224,6 +224,66 @@ a read-back and a yes (rule 2).
 order, "amar order kothay?" gets its status without a code; "address change korte chai" →
 the new address read back and saved after a yes, and the owner sees it; "XL e change korte
 chai" on a delivered order makes an exchange message.
+
+## 13 Oct: stock per size and colour (D56)
+
+Stock is counted per product, so when the L panjabis sell out the agent still offers L: a
+wrong fact (rule 1), in the clothing shops we're built for. A product can now count its stock
+per size and colour; one that doesn't works as today.
+
+**The shape** (`values.py`, `models.py`, a migration)
+- [x] `Product.variants: list[Variant]`, each `{size, colour, stock}`. Empty: the product's
+      own `stock` counts, as today. Set: the variants hold the stock and `stock` is left
+      empty
+- [x] A variant can leave the size or the colour empty to mean any of them: `{size: "L",
+      colour: "", stock: 4}` counts L in every colour, for shops that count by size only.
+      A cart line takes the first variant that matches it. A size and colour no variant
+      matches isn't counted, like a product with no stock
+- [x] `products.variants`, a JSON column (empty list by default). The store assigns a new list
+      when the stock changes (JSON columns don't see changes in place)
+
+**Using it** (`tools.py`, `store.py`, the prompt line)
+- [x] `update_cart` checks each line against its variant: "Cotton Panjabi (L, White): only 1
+      left" or "sold out", and says which sizes or colours of it are left
+- [x] `place_order` takes from the variant and `cancel_order` (and the owner's cancel) puts it
+      back, in the same transaction as today; `OutOfStock` names the variant
+- [x] The prompt line: "sold out: L/White, XL/Navy" and "only 2 left: M/White" after the
+      sizes and colours; SOLD OUT when every variant is 0. Python writes it, the model only
+      reads it
+- [x] `request_exchange` refuses a size or colour that's sold out ("XL/White is sold out;
+      left: M, XXL")
+- [x] The owner's new-order alert names the variant that's running low ("Cotton Panjabi
+      L/White: 1 left")
+
+**The owner** (`api.py`, the CSV import, `../heydesk-frontend`)
+- [x] `GET/PUT /api/products` carry `variants`
+- [x] The CSV `stock` column also takes a count per size or colour: `"M: 5; L: 0; XL: 3"`, or
+      `"L White: 2; L Navy: 0"`. A plain number stays the product's own stock
+- [x] The Products page: when a product has sizes or colours, its edit form can count by size
+      and colour instead of the one stock box: a list of counts, each a size (or any), a colour
+      (or any) and a number. (A grid of boxes couldn't show "M in any colour" and would turn it
+      into one count per colour.) The row shows what's sold out and what's low. The on/off switch
+      stays for products without variants; with variants, the counts say it
+- [x] `docs/api.md` in the frontend: `Variant` and the CSV format
+
+**Docs and tests**
+- [x] design.md (the products table, `update_cart`, the CSV import; the "not now" row for stock
+      per size goes), decisions.md D56, prompt-rules.md (the product line), the seed (the
+      Cotton Panjabi counted per size and colour)
+- [x] `test_shop.py`: L/White at 0 is refused while M/White is sold; the last 2 of a variant are
+      "only 2 left"; an order takes from its variant and a cancel puts it back; a size-only
+      variant counts every colour; an unlisted size is not counted; the CSV formats; an
+      exchange to a sold-out size is refused
+
+**Done when:** `scripts/check.sh` and the frontend's lint are green; on the Products page a
+panjabi's L/White is set to 0 and saved; and live on Maira with the seed shop (costs quota):
+"L white panjabi ache?" says L/White is sold out and offers what's left; ordering 3 of a
+variant with 2 left is refused with "only 2 left"; an order of M/White takes 1 from M/White
+only.
+
+Checked 13 Oct: the Products page saved L/White 0 and M (any colour) 4, kept them when another
+product was switched; live on Maira with the seed shop, "L navy cotton panjabi ache?" → sold
+out, L/White offered; 3 of XL/White → "only 2 left"; O-102 of M/White took M from 4 to 3 only.
 
 ## M1 — The agent takes an order
 

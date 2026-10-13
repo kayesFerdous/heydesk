@@ -17,6 +17,7 @@ from heydesk.desks.shop.values import (
     CANCELLABLE,
     CHANGEABLE,
     LOW_STOCK,
+    OWN,
     STATUS_WORDS,
     NewOrder,
     OrderCancel,
@@ -72,15 +73,20 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     if problems:
         return fail(" ".join(problems))
 
-    per_product: dict[str, int] = {}
-    for (code, _, _), qty in wanted.items():
-        per_product[code] = per_product.get(code, 0) + qty
+    needed: dict[tuple[str, int], int] = {}  # (code, counter) → how many, from each count
+    for (code, size, colour), qty in wanted.items():
+        counter = products[code].counter(size, colour)
+        if counter is not None:
+            needed[(code, counter)] = needed.get((code, counter), 0) + qty
     short = []
-    for code, qty in per_product.items():
-        stock = products[code].stock
-        if stock is not None and qty > stock:
+    for (code, counter), qty in needed.items():
+        product, left = products[code], products[code].count(counter)
+        if qty > left:
+            others = f" (left: {product.left()})" if counter != OWN and product.left() else ""
             short.append(
-                f"{products[code].name}: " + (f"only {stock} left" if stock else "sold out")
+                f"{product.what(counter)}: "
+                + (f"only {left} left" if left else "sold out")
+                + others
             )
     if short:
         return fail(f"Not enough in stock. {'; '.join(short)}. Tell the visitor.")
@@ -216,12 +222,17 @@ async def _order_alert(
     if trouble:
         counts = ", ".join(f"{n} {status}" for status, n in sorted(trouble.items(), reverse=True))
         alert += f"\n⚠️ This mobile before: {counts}"
-    codes = {line["code"] for line in lines}
-    low = [
-        f"{p.name}: " + (f"{p.stock} left" if p.stock else "sold out")
-        for p in await store.products()
-        if p.code in codes and p.stock is not None and p.stock <= LOW_STOCK
-    ]
+    products = {p.code: p for p in await store.products()}
+    low: list[str] = []
+    for line in lines:  # the counts this order took from, as they are now
+        product = products.get(line["code"])
+        counter = product.counter(line["size"], line["colour"]) if product else None
+        if product is None or counter is None or product.count(counter) > LOW_STOCK:
+            continue
+        left = product.count(counter)
+        said = f"{product.what(counter)}: " + (f"{left} left" if left else "sold out")
+        if said not in low:
+            low.append(said)
     if low:
         alert += f"\n📦 Running low: {'; '.join(low)}"
     return alert
@@ -497,6 +508,10 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
         colour = product.choose("colour", args.colour) if args.colour.strip() else line["colour"]
     except ValueError as error:
         return fail(str(error))  # "…isn't one of them. Ask which size: M, L, XL."
+    counter = product.counter(size, colour)
+    if counter is not None and product.count(counter) == 0:
+        left = f" Left: {product.left()}." if counter != OWN and product.left() else ""
+        return fail(f"{product.what(counter)} is sold out.{left} Ask what they'd like instead.")
     if (size, colour) == (line["size"], line["colour"]):
         return fail("That's the size and colour they have. Ask what they want instead.")
     reason = " ".join(args.reason.split())[:300]

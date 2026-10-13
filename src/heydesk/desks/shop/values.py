@@ -3,15 +3,32 @@ them. Pure."""
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from heydesk.desks import csv_import
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.speech import money
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
+OWN = -1  # `Product.counter`: the product's own stock, not a variant's
+
+
+class Variant(BaseModel):
+    """How many of one size and colour are left (D56). An empty size or colour means any of
+    them: `{"size": "L", "colour": "", "stock": 4}` counts L in every colour."""
+
+    size: str = Field(default="", max_length=50)
+    colour: str = Field(default="", max_length=50)
+    stock: int = Field(ge=0)
+
+    def label(self) -> str:
+        """ "L/White", "L" or "White"."""
+        return "/".join(part for part in (self.size, self.colour) if part)
+
+    def matches(self, size: str, colour: str) -> bool:
+        return self.size in ("", size) and self.colour in ("", colour)
 
 
 class Product(BaseModel):
@@ -24,6 +41,50 @@ class Product(BaseModel):
     sizes: list[str] = []  # "M", "L", "XL": the visitor picks one, when there are any
     colours: list[str] = []
     stock: int | None = Field(default=None, ge=0)  # None: not counted; 0: sold out
+    # Stock per size and colour (D56). When there are any, they hold the stock and `stock` is
+    # None; a size and colour no variant matches isn't counted
+    variants: list[Variant] = []
+
+    @model_validator(mode="after")
+    def _variants_fit(self) -> Self:
+        """Each variant names one of the product's own sizes and colours, spelled its way."""
+        for v in self.variants:
+            for what, said in (("size", v.size), ("colour", v.colour)):
+                choices: list[str] = getattr(self, what + "s")
+                spelled = next((c for c in choices if c.lower() == said.lower()), None)
+                if said and spelled is None:
+                    raise ValueError(
+                        f"{self.name}: the stock's {what} {said!r} isn't one of its {what}s"
+                    )
+                setattr(v, what, spelled or "")
+        if self.variants:
+            self.stock = None
+        return self
+
+    def counter(self, size: str, colour: str) -> int | None:
+        """Which count a line of this size and colour takes from: a variant's index, `OWN` for
+        the product's own stock, or None when it isn't counted."""
+        if not self.variants:
+            return None if self.stock is None else OWN
+        return next((i for i, v in enumerate(self.variants) if v.matches(size, colour)), None)
+
+    def count(self, counter: int) -> int:
+        """How many are left on that count."""
+        return (self.stock or 0) if counter == OWN else self.variants[counter].stock
+
+    def what(self, counter: int) -> str:
+        """ "Cotton Panjabi", or with a variant "Cotton Panjabi (L/White)"."""
+        return self.name if counter == OWN else f"{self.name} ({self.variants[counter].label()})"
+
+    def left(self) -> str:
+        """The variants that aren't sold out, for a hint: "M, XL/White"."""
+        return ", ".join(v.label() for v in self.variants if v.stock)
+
+    def sold_out(self) -> bool:
+        """Every size and colour is counted and at 0."""
+        every = [(s, c) for s in self.sizes or [""] for c in self.colours or [""]]
+        counters = [self.counter(s, c) for s, c in every]
+        return all(n is not None and self.count(n) == 0 for n in counters)
 
     def line(self, currency: str) -> str:
         """One product as a prompt line: `- Cotton Panjabi [panjabi] ৳1,850, sizes M/L…`"""
@@ -36,10 +97,18 @@ class Product(BaseModel):
             line += f", colours {'/'.join(self.colours)}"
         if self.description:
             line += f": {self.description}"
-        if self.stock == 0:
-            line += " SOLD OUT"
-        elif self.stock is not None and self.stock <= LOW_STOCK:
+        if self.sold_out():
+            return line + " SOLD OUT"
+        if self.stock is not None and self.stock <= LOW_STOCK:
             line += f" (only {self.stock} left)"
+        gone = [v.label() for v in self.variants if v.stock == 0]
+        if gone:
+            line += f" (sold out: {', '.join(gone)})"
+        line += "".join(
+            f" (only {v.stock} left: {v.label()})"
+            for v in self.variants
+            if 0 < v.stock <= LOW_STOCK
+        )
         return line
 
     def choose(self, what: str, said: str) -> str:
@@ -202,18 +271,23 @@ PRODUCT_COLUMNS = [
     csv_import.Column(name="description", about="a line or two about it"),
     csv_import.Column(name="sizes", about='the sizes it comes in: "M; L; XL"'),
     csv_import.Column(name="colours", about='the colours it comes in: "white; black"'),
-    csv_import.Column(name="stock", about="how many are left; empty when not counted"),
+    csv_import.Column(
+        name="stock",
+        about='how many are left, or per size and colour: "M: 5; L: 0"; empty when not counted',
+    ),
     csv_import.Column(name="code", about="the shop's own short id or SKU for it"),
 ]
 
 
 def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
     """Columns: name, price, and optionally was_price (before a sale), category, description,
-    sizes ("M; L; XL"), colours, stock (empty: not counted), code. `mapping` names them in the
-    file (D53)."""
+    sizes ("M; L; XL"), colours, stock (a number, "M: 5; L White: 0" per size and colour, or
+    empty: not counted), code. `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> Product:
-        stock = cells.get("stock", "")
+        sizes = csv_import.items(cells.get("sizes", ""))
+        colours = csv_import.items(cells.get("colours") or cells.get("colors", ""))
+        stock, variants = stock_cell(cells.get("stock", ""), sizes, colours)
         was = cells.get("was_price", "")
         return Product.model_validate(
             {
@@ -223,10 +297,40 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
                 "price": csv_import.money(cells["price"]),
                 "was_price": csv_import.money(was) if was else None,
                 "category": cells.get("category") or "Products",
-                "sizes": csv_import.items(cells.get("sizes", "")),
-                "colours": csv_import.items(cells.get("colours") or cells.get("colors", "")),
-                "stock": stock or None,
+                "sizes": sizes,
+                "colours": colours,
+                "stock": stock,
+                "variants": variants,
             }
         )
 
     return csv_import.parse(text, csv_import.needs(PRODUCT_COLUMNS), row, mapping)
+
+
+def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | None, list[Variant]]:
+    """A CSV stock cell: "" (not counted), "12" (the product's own stock), or a count per
+    size and colour, "M: 5; L: 0" or "L White: 2; L/Navy: 0" (D56). Raises ValueError."""
+    text = text.strip()
+    if not text:
+        return None, []
+    if text.isdigit():
+        return int(text), []
+    names = {  # "l white" → ("L", "White"); "l" → ("L", ""); "white" → ("", "White")
+        " ".join(part for part in (size, colour) if part).lower(): (size, colour)
+        for size in [*sizes, ""]
+        for colour in [*colours, ""]
+        if size or colour
+    }
+    variants = []
+    for part in re.split(r"[;\n]", text):
+        if not part.strip():
+            continue
+        said, _, count = part.rpartition(":")
+        key = " ".join(said.replace("/", " ").lower().split())
+        if key not in names or not count.strip().isdigit():
+            raise ValueError(
+                f"stock {part.strip()!r}: write a size or colour and a number, like M: 5"
+            )
+        size, colour = names[key]
+        variants.append(Variant(size=size, colour=colour, stock=int(count)))
+    return None, variants

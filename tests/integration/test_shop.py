@@ -25,7 +25,7 @@ from heydesk.desks.shop.tools import (
     track_order,
     update_cart,
 )
-from heydesk.desks.shop.values import mobile
+from heydesk.desks.shop.values import mobile, stock_cell
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -53,8 +53,13 @@ async def orders(world: World) -> list[ShopOrder]:
         return list(await s.scalars(select(ShopOrder)))
 
 
-async def stock(world: World, agent: LiveAgent, code: str) -> int | None:
-    return next(p.stock for p in await world.store(agent).products() if p.code == code)
+async def stock(
+    world: World, agent: LiveAgent, code: str, size: str = "", colour: str = ""
+) -> int | None:
+    """What's left of a product, or of its variant of that size and colour (D56)."""
+    product = next(p for p in await world.store(agent).products() if p.code == code)
+    counter = product.counter(size, colour)
+    return None if counter is None else product.count(counter)
 
 
 async def buy(world: World, agent: LiveAgent, *lines: dict[str, object]) -> str:
@@ -222,7 +227,7 @@ async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world:
 async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world: World) -> None:
     agent = await world.agent("shop")
     code = await buy(world, agent, PANJABIS)
-    assert await stock(world, agent, "panjabi-cotton") == 10
+    assert await stock(world, agent, "panjabi-cotton", "L", "White") == 1  # was 3
 
     track = ToolCall("t", "track_order", {"code": "o 101", "phone": "+8801712345678"})
     conv = await world.say(agent, None, [track, "It's received."])
@@ -241,7 +246,7 @@ async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world:
     await world.say(agent, conv, [cancel, "Cancelled."], "yes")
     [cancelled] = await orders(world)
     assert cancelled.status == "cancelled"
-    assert await stock(world, agent, "panjabi-cotton") == 12  # back in stock
+    assert await stock(world, agent, "panjabi-cotton", "L", "White") == 3  # back in stock
 
 
 async def test_the_owner_moves_orders_along_and_the_buyer_sees_the_courier(
@@ -310,6 +315,17 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
         20,
     )
     assert lungi["was_price"] == 60000  # on sale
+
+    per_size = "Name,Price,Sizes,Stock\nTee,350,M; L,M: 2; L: 0\n"
+    await client.post("/api/products/import", json={"csv": per_size})
+    [tee_now] = (await client.get("/api/products")).json()
+    assert (tee_now["stock"], tee_now["variants"]) == (
+        None,
+        [{"size": "M", "colour": "", "stock": 2}, {"size": "L", "colour": "", "stock": 0}],
+    )
+    no_such_size = [{**tee_now, "variants": [{"size": "XXL", "stock": 1}]}]
+    refused = await client.put("/api/products", json=no_such_size)
+    assert refused.status_code == 422 and "isn't one of its sizes" in refused.text
     assert (tee["sizes"], tee["stock"], tee["was_price"]) == (["S", "M"], None, None)
 
 
@@ -450,3 +466,62 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
     too_late = make_ctx(store, agent=agent.config, now=FIXED_NOW + timedelta(days=5))
     refused = await request_exchange(too_late, swap)
     assert "delivered 5 days ago; exchanges are within 3 days" in refused.data["error"]
+
+
+async def test_stock_is_counted_per_size_and_colour(world: World) -> None:
+    agent = await world.agent("shop")  # Cotton Panjabi: M any colour 4, L/White 3, L/Navy 0,
+    store = world.store(agent)  # XL/White 2; the rest isn't counted
+    ctx = make_ctx(store, agent=agent.config)
+    text = await SHOP.prompt(agent.config, store)
+    assert (
+        "Fits true to size. (sold out: L/Navy) (only 3 left: L/White) (only 2 left: XL/White)"
+        in text
+    )
+
+    navy = PANJABIS | {"colour": "Navy", "quantity": 1}
+    sold_out = await update_cart(ctx, cart(navy))
+    assert (
+        "Cotton Panjabi (L/Navy): sold out (left: M, L/White, XL/White)" in sold_out.data["error"]
+    )
+    too_many = await update_cart(ctx, cart(PANJABIS | {"quantity": 4}))
+    assert "Cotton Panjabi (L/White): only 3 left" in too_many.data["error"]
+    any_colour = {"code": "panjabi-cotton", "size": "M", "quantity": 1}
+    m_lines = [any_colour | {"colour": "White"}, any_colour | {"colour": "Navy", "quantity": 4}]
+    assert (
+        "(M): only 4 left" in (await update_cart(ctx, cart(*m_lines))).data["error"]
+    )  # M is one count
+    not_counted = await update_cart(ctx, cart(PANJABIS | {"colour": "Cream", "quantity": 9}))
+    assert not_counted.ok  # L/Cream isn't listed
+
+    await buy(world, agent, any_colour | {"colour": "Cream"})
+    assert await stock(world, agent, "panjabi-cotton", "M", "Navy") == 3  # M, whatever colour
+    assert await stock(world, agent, "panjabi-cotton", "L", "White") == 3  # untouched
+
+
+async def test_an_exchange_to_a_sold_out_size_is_refused(world: World) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, PANJABIS)  # L/White
+    [order] = await orders(world)
+    store = world.store(agent, order.conversation_id)
+    for status in ("confirmed", "shipped", "delivered"):
+        await store.move_order(order.id, status)
+
+    navy = ExchangeInput(product="panjabi-cotton", colour="Navy")  # L/Navy is at 0
+    refused = await request_exchange(make_ctx(store, agent=agent.config), navy)
+    assert (
+        "Cotton Panjabi (L/Navy) is sold out. Left: M, L/White, XL/White." in refused.data["error"]
+    )
+
+
+def test_a_csv_stock_cell_can_count_each_size_and_colour() -> None:
+    sizes, colours = ["M", "L"], ["White", "Sky Blue"]
+    assert stock_cell("", sizes, colours) == (None, [])
+    assert stock_cell("12", sizes, colours) == (12, [])
+    _, variants = stock_cell("M: 5; L sky blue: 0; L/White: 2", sizes, colours)
+    assert [(v.size, v.colour, v.stock) for v in variants] == [
+        ("M", "", 5),
+        ("L", "Sky Blue", 0),
+        ("L", "White", 2),
+    ]
+    with pytest.raises(ValueError, match="like M: 5"):
+        stock_cell("XXL: 2", sizes, colours)

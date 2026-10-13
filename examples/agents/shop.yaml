@@ -29,8 +29,12 @@ size_guide: |
   Kids Panjabi: by age, as the size says; take the bigger one if in between.
 # The products: saved in the products table, not the config. No stock: not counted.
 products:
+  # Counted per size and colour (D56): M in any colour; L in White and Navy; XL in White. What
+  # isn't listed (L Cream, XXL…) isn't counted.
   - {code: panjabi-cotton, name: Cotton Panjabi, price: 185000, category: Men,
-     sizes: [M, L, XL, XXL], colours: [White, Cream, Navy], stock: 12,
+     sizes: [M, L, XL, XXL], colours: [White, Cream, Navy],
+     variants: [{size: M, stock: 4}, {size: L, colour: White, stock: 3},
+                {size: L, colour: Navy, stock: 0}, {size: XL, colour: White, stock: 2}],
      description: "Soft cotton, embroidered collar. Fits true to size."}
   - {code: panjabi-silk, name: Silk Panjabi, price: 320000, category: Men,
      sizes: [M, L, XL], colours: [Maroon, Gold], stock: 2}
