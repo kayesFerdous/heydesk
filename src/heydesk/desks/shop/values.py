@@ -11,12 +11,15 @@ from heydesk.desks import csv_import
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.speech import money
 
+LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
+
 
 class Product(BaseModel):
     code: str = Field(min_length=1, max_length=50)  # the short id the model uses: "panjabi-white"
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     price: int = Field(ge=0)  # minor units (paisa)
+    was_price: int | None = Field(default=None, ge=0)  # before a sale; None: not on sale
     category: str = "Products"
     sizes: list[str] = []  # "M", "L", "XL": the visitor picks one, when there are any
     colours: list[str] = []
@@ -25,6 +28,8 @@ class Product(BaseModel):
     def line(self, currency: str) -> str:
         """One product as a prompt line: `- Cotton Panjabi [panjabi] ৳1,850, sizes M/L…`"""
         line = f"- {self.name} [{self.code}] {money(self.price, currency)}"
+        if self.was_price and self.was_price > self.price:
+            line += f" (was {money(self.was_price, currency)}, on sale)"
         if self.sizes:
             line += f", sizes {'/'.join(self.sizes)}"
         if self.colours:
@@ -33,6 +38,8 @@ class Product(BaseModel):
             line += f": {self.description}"
         if self.stock == 0:
             line += " SOLD OUT"
+        elif self.stock is not None and self.stock <= LOW_STOCK:
+            line += f" (only {self.stock} left)"
         return line
 
     def choose(self, what: str, said: str) -> str:
@@ -49,26 +56,33 @@ class Product(BaseModel):
 
 
 class Zone(BaseModel):
-    """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days"."""
+    """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days", and the
+    places in it that buyers name ("Mirpur", "Uttara")."""
 
     name: str = Field(min_length=1, max_length=100)
     charge: int = Field(ge=0)  # minor units
     days: str = Field(default="", max_length=50)  # how long it usually takes
+    places: list[str] = []  # what buyers say instead of the area's name
 
     def line(self, currency: str) -> str:
         line = f"- {self.name}: {money(self.charge, currency)}"
-        return line + (f", usually {self.days}" if self.days else "")
+        line += f", usually {self.days}" if self.days else ""
+        return line + (f" ({', '.join(self.places)})" if self.places else "")
 
 
 def match_zone(zones: list[Zone], said: str) -> Zone:
-    """The one delivery area `said` names ("inside dhaka", "outside"). Raises ValueError."""
+    """The one delivery area `said` names: by its name ("inside dhaka", "outside"), or by a
+    place in it ("Mirpur 10" → Inside Dhaka). Raises ValueError."""
     text = " ".join(said.lower().split())
     for zone in zones:
         if zone.name.lower() == text:
             return zone
-    found = [z for z in zones if text and text in z.name.lower()]
-    if len(found) == 1:
-        return found[0]
+    by_name = [z for z in zones if text and text in z.name.lower()]
+    if len(by_name) == 1:
+        return by_name[0]
+    by_place = [z for z in zones if any(p.lower() in text for p in z.places if p.strip())]
+    if len(by_place) == 1:
+        return by_place[0]
     names = " or ".join(z.name for z in zones)
     raise ValueError(f"Which delivery area: {names}? Ask.")
 
@@ -83,6 +97,7 @@ class ShopConfig(AgentConfig):
     )  # where the shop delivers, and the charge for each
     free_delivery_over: int = Field(default=0, ge=0)  # minor units; 0: never free
     policies: str = Field(default="", max_length=4000)  # returns, exchanges
+    size_guide: str = Field(default="", max_length=4000)  # each size's measurements, in words
     # The buyer pays the delivery charge online first (SSLCommerz), and the rest on delivery.
     # The order is placed only when the payment comes in (D47)
     pay_first: bool = False
@@ -163,6 +178,7 @@ class OrderCancel:
 PRODUCT_COLUMNS = [
     csv_import.Column(name="name", about="the product's name", required=True),
     csv_import.Column(name="price", about="its price: 1850 or ৳1,850", required=True),
+    csv_import.Column(name="was_price", about="its price before a sale; empty when not on sale"),
     csv_import.Column(name="category", about="a group it's listed under: Panjabi, Saree"),
     csv_import.Column(name="description", about="a line or two about it"),
     csv_import.Column(name="sizes", about='the sizes it comes in: "M; L; XL"'),
@@ -173,17 +189,20 @@ PRODUCT_COLUMNS = [
 
 
 def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
-    """Columns: name, price, and optionally category, description, sizes ("M; L; XL"),
-    colours, stock (empty: not counted), code. `mapping` names them in the file (D53)."""
+    """Columns: name, price, and optionally was_price (before a sale), category, description,
+    sizes ("M; L; XL"), colours, stock (empty: not counted), code. `mapping` names them in the
+    file (D53)."""
 
     def row(cells: dict[str, str]) -> Product:
         stock = cells.get("stock", "")
+        was = cells.get("was_price", "")
         return Product.model_validate(
             {
                 "code": cells.get("code") or csv_import.slug(cells["name"]),
                 "name": cells["name"],
                 "description": cells.get("description", ""),
                 "price": csv_import.money(cells["price"]),
+                "was_price": csv_import.money(was) if was else None,
                 "category": cells.get("category") or "Products",
                 "sizes": csv_import.items(cells.get("sizes", "")),
                 "colours": csv_import.items(cells.get("colours") or cells.get("colors", "")),

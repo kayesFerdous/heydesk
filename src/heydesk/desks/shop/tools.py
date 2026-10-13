@@ -13,6 +13,7 @@ from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
     CANCELLABLE,
+    LOW_STOCK,
     STATUS_WORDS,
     NewOrder,
     OrderCancel,
@@ -80,7 +81,8 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     if short:
         return fail(f"Not enough in stock. {'; '.join(short)}. Tell the visitor.")
 
-    currency = ctx.agent.currency
+    config = cast(ShopConfig, ctx.agent)
+    currency = config.currency
     lines: list[dict[str, Any]] = [
         {
             "code": code,
@@ -98,6 +100,8 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
         for line in lines
     ]
     data = {"order": said, "subtotal": money(subtotal, currency)}
+    if 0 < subtotal < config.free_delivery_over:
+        data["free_delivery_if_you_add"] = money(config.free_delivery_over - subtotal, currency)
     return ToolResult(ok=True, data=data, state={"cart": {"lines": lines, "subtotal": subtotal}})
 
 
@@ -106,7 +110,8 @@ UPDATE_CART = Tool(
     description=(
         "Set the visitor's whole order: every product with its quantity, and its size and "
         "colour when it has them. Call it after every change. Checks the sizes, colours and "
-        "stock, and returns each line and the subtotal; tell the visitor them exactly as given."
+        "stock, and returns each line and the subtotal; tell the visitor them exactly as given. "
+        "It may also say how much more would make the delivery free."
     ),
     input_model=UpdateCartInput,
     run=update_cart,
@@ -116,7 +121,9 @@ UPDATE_CART = Tool(
 
 class PlaceOrderInput(BaseModel):
     area: str = Field(
-        default="", description="The delivery area, one of the shop's, like Inside Dhaka"
+        default="",
+        description="Where to deliver: one of the shop's areas, or the place they named, "
+        "like Mirpur or Savar",
     )
     address: str = Field(
         default="", description="The full address: house, road, area, district, a landmark"
@@ -181,18 +188,39 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if order.pay_first:  # the owner hears about it once it's paid (D47)
         link = ctx.store.pay_link(saved.id)
         return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}})
-    alert = f"🛍️ New order {code}\n{read_back}"
+    takes = f" Delivery usually takes {zone.days}." if zone.days else ""
     return ToolResult(
         ok=True,
         data={
             "code": code,
             "total": data["total"],
-            "next": f"Tell them the code {code}, and that the shop will call {phone} to "
-            "confirm before sending it.",
+            "next": f"Tell them the code {code}, that the shop will call {phone} to confirm "
+            f"before sending it, and that they pay {data['total']} to the rider.{takes}",
         },
         state={"cart": {}},
-        alert=alert,
+        alert=await _order_alert(ctx.store, code, read_back, phone, cart["lines"]),
     )
+
+
+async def _order_alert(
+    store: ShopStore, code: str, read_back: str, phone: str, lines: list[dict[str, Any]]
+) -> str:
+    """The owner's new-order alert: the order, and a warning when this mobile's orders came
+    back before, and what's nearly sold out now. The visitor never hears these."""
+    alert = f"🛍️ New order {code}\n{read_back}"
+    trouble = await store.past_trouble(phone)
+    if trouble:
+        counts = ", ".join(f"{n} {status}" for status, n in sorted(trouble.items(), reverse=True))
+        alert += f"\n⚠️ This mobile before: {counts}"
+    codes = {line["code"] for line in lines}
+    low = [
+        f"{p.name}: " + (f"{p.stock} left" if p.stock else "sold out")
+        for p in await store.products()
+        if p.code in codes and p.stock is not None and p.stock <= LOW_STOCK
+    ]
+    if low:
+        alert += f"\n📦 Running low: {'; '.join(low)}"
+    return alert
 
 
 PLACE_ORDER = Tool(

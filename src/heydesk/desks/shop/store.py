@@ -5,7 +5,7 @@ them back, so two buyers can't get the last one."""
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import Store
@@ -55,6 +55,21 @@ class ShopStore(Store):
             )
             s.add(saved)
         return saved
+
+    async def past_trouble(self, phone: str) -> dict[str, int]:
+        """How many of this mobile's orders came back or were cancelled: {"returned": 2}. For
+        the owner's new-order alert, since a fake order costs a shop two delivery charges."""
+        async with self.sessions() as s:
+            rows = await s.execute(
+                select(ShopOrder.status, func.count())
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.phone == phone,
+                    ShopOrder.status.in_(["returned", "cancelled"]),
+                )
+                .group_by(ShopOrder.status)
+            )
+            return {status: count for status, count in rows}
 
     async def order(self, number: int) -> ShopOrder | None:
         return await self.by_number(ShopOrder, number)

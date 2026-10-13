@@ -53,6 +53,22 @@
         "serve"
       ],
       "port": 8080
+    },
+    {
+      "name": "heydesk-shop-fake",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8002"
+      ],
+      "port": 8002
     }
   ]
 }

@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -117,6 +117,68 @@ a confirmation call and a courier's parcel id, as they already work.
 
 **Done when:** the live check above passes, and the owner sees the order in `/api/shop/orders`
 and gets its Telegram alert.
+
+## 13 Oct: a smarter shop agent (D54)
+
+The shop agent works like an order form. This day makes it talk like a good shop assistant
+on a Facebook page, and helps with the questions buyers ask most. Python still does every
+fact (rule 1): which area a place is in, how much more is needed for free delivery, what's
+nearly sold out. Only the prompt changes the way the agent talks.
+
+**The prompt** (`desks/shop/__init__.py` `ROLE`; prompt-rules.md in the same change)
+- [x] Common buyer messages: bargaining ("dam kom hobe?") gets a polite no, because prices are
+      fixed and the agent never invents a discount; "pic den" gets the description; "original? /
+      fabric?" is answered only from the description, otherwise offer the team; "kobe pabo?"
+      gets the area's usual days
+- [x] Taking details: take everything they've already given (name, mobile and address are
+      often pasted in one message), then ask only for what's still missing, one at a time
+- [x] Never say a product's code: codes are for the tools only
+- [x] Help them choose: ask who it's for, the occasion or the budget, then suggest one or two
+      listed products. For a sold-out one, suggest one from the same category
+- [x] After the order code, say in one sentence what happens next: the shop calls to confirm,
+      delivery takes the area's usual days, and they pay the rider
+
+**What the agent can do** (`values.py`, `tools.py`)
+- [x] Areas matched by place name: `Zone.places` (`[Mirpur, Uttara, Dhanmondi…]`) and
+      `match_zone` also matches a place inside what the buyer said ("Mirpur 10" → Inside
+      Dhaka). The `# Delivery` section lists each zone's places. The seed gets real places
+- [x] Free-delivery nudge: when the cart is under `free_delivery_over`, `update_cart` also returns
+      `free_delivery_if_you_add` (the difference, worked out by Python). The prompt says to
+      mention it once, not on every change
+- [x] "Only N left": `Product.line` shows the count when stock is 3 or less (`LOW_STOCK`), and
+      still SOLD OUT at 0
+- [x] Size guide: `ShopConfig.size_guide` (free text, e.g. one line per size with chest and
+      length). It becomes its own `# Size guide` section when it's set. The prompt says to
+      suggest a size only from the guide; with no guide, offer the team
+- [x] Sale price: `Product.was_price` (optional). The line reads "৳1,850 (was ৳2,200, on
+      sale)", so the seed's "no refunds on sale items" has something to apply to. Also a CSV
+      import column
+
+**For the owner**
+- [x] The new-order alert says when this mobile has earlier `returned` or `cancelled` orders in
+      this shop ("⚠️ this mobile: 2 returned, 1 cancelled"). One store query; the agent itself
+      never mentions it
+- [x] The new-order alert lists any product the order brought to `LOW_STOCK` or less ("Silk
+      Panjabi: 1 left")
+
+**Docs and tests**
+- [x] design.md (the shop's config, tools and prompt), decisions.md D54, prompt-rules.md (the
+      Shop row and the shop's note), the seed `examples/agents/shop.yaml`
+- [x] `tests/integration/test_shop.py`: "Mirpur 10" is charged as Inside Dhaka and "Savar" as
+      the suburbs; the nudge shows under the limit and not over it; a low-stock line and a sale
+      line; the alert has the returns warning and the low-stock line; the shop prompt has the
+      size guide when it's set and leaves it out when it's empty
+- [x] Live check on Maira (costs quota: ask first): the four lines in **Done when** below (13 Oct, on the `online@gmail.com` test shop; O-101 saved after the yes)
+
+**Done when:** `scripts/check.sh` is green; in the dev chat (fake model, `DEV_AGENT_KIND=shop`)
+the prompt shows the places, the size guide, "only 2 left" and a sale price; and the live check
+from the 8 Oct day passes with these added (ask first, costs quota): "dam kom hobe?" is
+politely declined; "amar chest 40, kon size?" gets a size from the guide; name, mobile and
+address pasted in one message are all taken; "Mirpur" gets the Inside Dhaka charge with no
+question about the area.
+
+Next, if it's worth it: `change_order` (the address, mobile or note before it ships, after a
+yes) and tracking orders placed in this chat without the code.
 
 ## M1 — The agent takes an order
 

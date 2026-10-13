@@ -8,14 +8,24 @@ currency: BDT
 handoff:
   message: Let me get someone from our team. You can also call or WhatsApp us.
   phone: "+880 1800 000000"
+# Each area's places are what buyers say instead of its name: "Mirpur 10" is Inside Dhaka.
 delivery:
-  - {name: Inside Dhaka, charge: 6000, days: "1–2 days"}
-  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days"}
-  - {name: Outside Dhaka, charge: 12000, days: "3–5 days"}
+  - {name: Inside Dhaka, charge: 6000, days: "1–2 days",
+     places: [Mirpur, Uttara, Dhanmondi, Gulshan, Banani, Mohammadpur, Motijheel, Badda,
+              Rampura, Bashundhara, Farmgate, Old Dhaka]}
+  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days",
+     places: [Savar, Ashulia, Gazipur, Tongi, Keraniganj, Narayanganj]}
+  - {name: Outside Dhaka, charge: 12000, days: "3–5 days",
+     places: [Chittagong, Chattogram, Sylhet, Khulna, Rajshahi, Barishal, Rangpur, Mymensingh,
+              Cumilla, Comilla, Bogura]}
 free_delivery_over: 300000
 policies: |
   Check the parcel in front of the rider before paying. If something is wrong, don't take it.
   Exchange within 3 days for a different size, if the tag is on. No refunds on sale items.
+size_guide: |
+  Panjabi, in inches (chest / length): M 40 / 42, L 42 / 43, XL 44 / 44, XXL 46 / 45.
+  Kurti, chest in inches: S 36, M 38, L 40, XL 42.
+  Kids Panjabi: by age, as the size says; take the bigger one if in between.
 # The products: saved in the products table, not the config. No stock: not counted.
 products:
   - {code: panjabi-cotton, name: Cotton Panjabi, price: 185000, category: Men,
@@ -23,7 +33,7 @@ products:
      description: "Soft cotton, embroidered collar. Fits true to size."}
   - {code: panjabi-silk, name: Silk Panjabi, price: 320000, category: Men,
      sizes: [M, L, XL], colours: [Maroon, Gold], stock: 2}
-  - {code: three-piece, name: Lawn Three-Piece, price: 245000, category: Women,
+  - {code: three-piece, name: Lawn Three-Piece, price: 245000, was_price: 290000, category: Women,
      colours: [Peach, Mint, Sky Blue], stock: 8,
      description: "Unstitched kameez, salwar and dupatta, printed lawn."}
   - {code: jamdani-saree, name: Jamdani Saree, price: 650000, category: Women,

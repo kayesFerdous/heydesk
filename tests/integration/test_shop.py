@@ -76,11 +76,19 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
     text = await SHOP.prompt(agent.config, world.store(agent))
 
     assert "never ask them to message for the price" in text
-    assert "- Inside Dhaka: ৳60, usually 1–2 days" in text
+    assert "- Inside Dhaka: ৳60, usually 1–2 days (Mirpur, Uttara, Dhanmondi," in text
     assert "Delivery is free on orders of ৳3,000 or more." in text
     assert "- Cotton Kurti [kurti] ৳950, sizes S/M/L/XL, colours Black/Mustard" in text
     assert "- Jamdani Saree [jamdani-saree] ৳6,500, colours Off-white/Red: Handwoven" in text
     assert text.count("SOLD OUT") == 1
+    assert (
+        "- Silk Panjabi [panjabi-silk] ৳3,200, sizes M/L/XL, colours Maroon/Gold (only 2 left)"
+        in text
+    )
+    assert "- Lawn Three-Piece [three-piece] ৳2,450 (was ৳2,900, on sale)" in text
+    assert "# Size guide\nPanjabi, in inches" in text
+    no_guide = agent.config.model_copy(update={"size_guide": ""})
+    assert "# Size guide" not in await SHOP.prompt(no_guide, world.store(agent))
     assert "# The shop" in text  # it has policies
     assert await SHOP.missing(agent.config, world.store(agent)) == []
 
@@ -95,6 +103,9 @@ async def test_python_checks_sizes_colours_and_stock_and_adds_up_the_cart(world:
 
     added = await update_cart(ctx, cart(PANJABIS, KURTI, PANJABIS | {"quantity": 1}))
     assert added.ok and added.data["subtotal"] == "৳6,500"  # 3 panjabis + a kurti
+    assert "free_delivery_if_you_add" not in added.data  # over ৳3,000 already
+    just_a_kurti = await update_cart(ctx, cart(KURTI))
+    assert just_a_kurti.data["free_delivery_if_you_add"] == "৳2,050"  # ৳3,000 - ৳950
     assert added.data["order"][0] == "3 × Cotton Panjabi (L, White) = ৳5,550"
 
     no_size = await update_cart(ctx, cart(KURTI | {"size": ""}))
@@ -128,11 +139,14 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
         no_area.data["next"] == "Ask for the area, one question at a time."
         and "total" not in no_area.data
     )
-    wrong_area = await place_order(ctx, PlaceOrderInput(area="Chittagong"))
+    wrong_area = await place_order(ctx, PlaceOrderInput(area="Teknaf"))  # not one of its places
     assert "Inside Dhaka or Dhaka suburbs or Outside Dhaka" in wrong_area.data["problems"]["area"]
 
     just_the_area = await place_order(ctx, PlaceOrderInput(area="outside"))
     assert (just_the_area.data["delivery"], just_the_area.data["total"]) == ("৳120", "৳1,070")
+    for place, charge in [("Mirpur 10", "৳60"), ("Savar, Dhaka", "৳100"), ("chittagong", "৳120")]:
+        by_place = await place_order(ctx, PlaceOrderInput(area=place))
+        assert by_place.data["delivery"] == charge, place
     assert just_the_area.data["still_needed"] == ["address", "name", "phone"]
 
     all_there = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
@@ -171,6 +185,27 @@ async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: W
     assert (saved.zone, saved.phone) == ("Inside Dhaka", "01712345678")
     assert await stock(world, agent, "panjabi-silk") == 1  # was 2
     assert (await world.conversation(conv)).state["cart"] == {}
+
+
+async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world: World) -> None:
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    await buy(world, agent, KURTI)
+    [first] = await orders(world)
+    await store.move_order(first.id, "cancelled")
+
+    silk = {"code": "panjabi-silk", "quantity": 1, "size": "M", "colour": "Gold"}
+    state = (await update_cart(make_ctx(store, agent=agent.config), cart(silk))).state
+    ctx = make_ctx(store, state=state, agent=agent.config)
+    ctx.decider.script = [YES]
+    placed = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
+
+    assert placed.ok and placed.alert
+    assert "🛍️ New order O-102" in placed.alert
+    assert "⚠️ This mobile before: 1 cancelled" in placed.alert
+    assert "📦 Running low: Silk Panjabi: 1 left" in placed.alert
+    assert "pay ৳3,200 to the rider. Delivery usually takes 1–2 days." in placed.data["next"]
+    assert "This mobile" not in str(placed.data)  # for the owner, never the visitor
 
 
 async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world: World) -> None:
@@ -251,7 +286,10 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_the_courier(
 
 async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> None:
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    csv = "Name,Price (৳),Sizes,Colors,Stock\nCotton Lungi,450,,Blue; Green,20\nTee,350,S; M,,\n"
+    csv = (
+        "Name,Price (৳),Was price,Sizes,Colors,Stock\n"
+        "Cotton Lungi,450,600,,Blue; Green,20\nTee,350,,S; M,,\n"
+    )
     await client.post("/api/products/import", json={"csv": csv})
     lungi, tee = (await client.get("/api/products")).json()
     assert (lungi["code"], lungi["price"], lungi["colours"], lungi["stock"]) == (
@@ -260,7 +298,8 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
         ["Blue", "Green"],
         20,
     )
-    assert (tee["sizes"], tee["stock"]) == (["S", "M"], None)  # stock not counted
+    assert lungi["was_price"] == 60000  # on sale
+    assert (tee["sizes"], tee["stock"], tee["was_price"]) == (["S", "M"], None, None)
 
 
 SHEET = 'Item Title,MRP,Qty,Supplier\nCotton Panjabi,"৳1,850",12,Rahim & Co\nTee,350,,\n'

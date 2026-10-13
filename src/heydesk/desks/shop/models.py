@@ -21,6 +21,7 @@ class ProductRow(Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(default="")
     price: Mapped[int]  # minor units
+    was_price: Mapped[int | None]  # before a sale; None: not on sale
     category: Mapped[str] = mapped_column(String(100))
     sizes: Mapped[list[Any]] = mapped_column(JSON, default=list)
     colours: Mapped[list[Any]] = mapped_column(JSON, default=list)
