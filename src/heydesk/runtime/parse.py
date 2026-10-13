@@ -4,6 +4,7 @@ Every parser raises ValueError with a hint for the model ("Ask again.") when the
 doesn't fit, so a tool can hand the hint straight back.
 """
 
+import calendar
 import re
 from datetime import date, datetime, time, timedelta
 
@@ -142,8 +143,9 @@ def day_and_time(said: str, now: datetime, hours: WeeklyHours) -> datetime:
 
 
 def day_of(said: str, now: datetime, at: time | None = None) -> date:
-    """ "today", "tomorrow", "saturday", "5 oct" → the date, from `now` (local time). A weekday
-    is the next one; today's weekday is today, unless `at` today has already passed."""
+    """ "today", "tomorrow", "saturday", "5 oct", "sunday 18 oct" → the date, from `now` (local
+    time). A weekday is the next one; today's weekday is today, unless `at` today has already
+    passed. A weekday with a date must match it."""
     words = [w for w in said.lower().split() if w not in ("at", "on", "this", "next", "the", "of")]
     today = now.date()
     hint = "Pass the day as today, tomorrow, a weekday like Saturday, or a date like 5 Oct."
@@ -160,6 +162,14 @@ def day_of(said: str, now: datetime, at: time | None = None) -> date:
         if ahead == 0 and at is not None and at <= now.time():
             ahead = 7  # that time today has passed: the same day next week
         return today + timedelta(days=ahead)
+    if len(words) > 1 and words[0] in WEEKDAYS:  # "sunday 18 oct", as find_doctor writes it
+        day = day_of(" ".join(words[1:]), now, at)
+        if day.weekday() != WEEKDAYS[words[0]]:
+            raise ValueError(
+                f"{day.day} {day:%b} is a {day:%A}, not a {calendar.day_name[WEEKDAYS[words[0]]]}. "
+                "Ask which day they mean."
+            )
+        return day
     if len(words) == 1 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", words[0]):
         try:
             return date.fromisoformat(words[0])

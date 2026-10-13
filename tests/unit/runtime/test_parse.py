@@ -87,6 +87,8 @@ def test_details_that_dont_fit_are_refused(parser: object, said: str) -> None:
         ("5 Oct 6:30 pm", "2026-10-05T18:30"),
         ("October 6th, 4 pm", "2026-10-06T16:00"),
         ("2026-10-02 3 pm", "2026-10-02T15:00"),
+        ("Saturday 3 Oct at 5 pm", "2026-10-03T17:00"),  # how find_doctor writes the day
+        ("Sat 3 Oct 5 pm", "2026-10-03T17:00"),
     ],
 )
 def test_a_day_and_time_is_worked_out_by_python(said: str, saved: str) -> None:
@@ -108,6 +110,7 @@ def test_a_day_and_time_is_worked_out_by_python(said: str, saved: str) -> None:
         ("31 Feb at 5 pm", "Pass the day as"),
         ("15 Oct at 5 pm", "next 14 days"),
         ("tomorrow at 25:00", "isn't a time of day"),
+        ("Friday 3 Oct at 5 pm", "3 Oct is a Saturday, not a Friday"),  # never guessed
     ],
 )
 def test_a_day_and_time_outside_the_hours_or_unclear_is_refused_with_a_hint(
