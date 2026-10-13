@@ -22,6 +22,7 @@ free_delivery_over: 300000
 policies: |
   Check the parcel in front of the rider before paying. If something is wrong, don't take it.
   Exchange within 3 days for a different size, if the tag is on. No refunds on sale items.
+exchange_days: 3  # the agent takes size or colour exchange requests this long after delivery
 size_guide: |
   Panjabi, in inches (chest / length): M 40 / 42, L 42 / 43, XL 44 / 44, XXL 46 / 45.
   Kurti, chest in inches: S 36, M 38, L 40, XL 42.

@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **Next:** the shop's `change_order` and tracking without the code (D54's next), or Messenger once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **Next:** Messenger once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -180,6 +180,50 @@ question about the area.
 
 Next, if it's worth it: `change_order` (the address, mobile or note before it ships, after a
 yes) and tracking orders placed in this chat without the code.
+
+## 13 Oct: after the order (D55)
+
+What buyers ask once they've ordered: "where is it?", "change my address", "can I swap the
+size?". Today the first needs the code and mobile, and the others are a message the owner has
+to read and act on. Python still decides what's allowed (rule 1), and nothing changes without
+a read-back and a yes (rule 2).
+
+**Orders from this chat** (`tools.py` `_find`, `store.py`)
+- [x] When the visitor gives no code, `track_order`, `cancel_order` and `change_order` use the
+      order placed in this conversation (`conversation_id`), if there's exactly one. Several:
+      ask for the code. Another chat still needs the code and the mobile, as now
+- [x] The prompt's `# After an order`: for an order from this chat, don't ask for the code
+
+**Change an order before it ships** (`change_order`)
+- [x] `change_order`: find it as above, then any of a new `address`, `area` (or a place in one,
+      as `place_order`), `new_phone` and `note`. Only while `new` or `confirmed`
+      (`CHANGEABLE`); after that, offer a message
+- [x] A new area works out the delivery charge and total again (and free delivery). Refused
+      when the charge was paid online first (`paid > 0`): offer a message instead
+- [x] The items can't change here: cancel and order again (stock is taken per order)
+- [x] Read back only what changes ("address: … → …; total ৳899 → ৳919"), save after a yes
+      (`Confirmed[OrderEdit]`), and alert the owner ("✏️ Order O-103 changed: …"), since they
+      may have called the buyer already
+
+**Exchange request** (`request_exchange`; can be dropped from the day)
+- [x] `ShopConfig.exchange_days` (0: the agent takes no exchange requests). Only on a
+      `delivered` order, within that many days of delivery (its `updated_at`; Python counts)
+- [x] It takes the item, what they want instead (a size or colour), and why, and saves it as a
+      message for the team (the messages table, `M-104`) with an alert. The owner arranges the
+      swap; no new table, no stock change
+
+**Docs and tests**
+- [x] design.md (tools, config), decisions.md D55, prompt-rules.md (the shop's row), the seed
+      (`exchange_days: 3`)
+- [x] `test_shop.py`: tracking with no code in the same chat, and not from another chat; a
+      change of address saved only after a yes; a new area changes the total; no change once
+      `shipped`, nor of the area once paid; an exchange inside the days and refused after them
+- [x] Live check on Maira (costs quota: ask first): the three lines in **Done when** below (13 Oct, on the `online@gmail.com` test shop: O-104 tracked with no code, moved to Sylhet at ৳120 after a yes, then exchange M-102 once delivered)
+
+**Done when:** `scripts/check.sh` is green, and live on Maira (costs quota): after placing an
+order, "amar order kothay?" gets its status without a code; "address change korte chai" →
+the new address read back and saved after a yes, and the owner sees it; "XL e change korte
+chai" on a delivered order makes an exchange message.
 
 ## M1 — The agent takes an order
 

@@ -1,5 +1,6 @@
 """The shop's tools: keep the cart up to date (Python adds it up, rule 1), place a
-cash-on-delivery order, and track or cancel one with its code and the buyer's mobile.
+cash-on-delivery order, and track, change or cancel one: the order placed in this chat, or any
+with its code and the buyer's mobile (D55). A delivered order can get an exchange request.
 
 A shop can take the delivery charge online first (D47): then `place_order` saves the order
 `unpaid` and returns a payment link. No tool can mark it paid: only the payment check can."""
@@ -8,15 +9,18 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
+from heydesk.desks.base import NewMessage
 from heydesk.desks.shared import awaiting_payment
 from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import OutOfStock, ShopStore
+from heydesk.desks.shop.store import OutOfStock, ShopStore, TooLate
 from heydesk.desks.shop.values import (
     CANCELLABLE,
+    CHANGEABLE,
     LOW_STOCK,
     STATUS_WORDS,
     NewOrder,
     OrderCancel,
+    OrderEdit,
     ShopConfig,
     cart_text,
     lines_text,
@@ -242,13 +246,28 @@ PLACE_ORDER = Tool(
 
 
 class FindOrderInput(BaseModel):
-    code: str = Field(description="The order code the visitor gave, like O-104")
-    phone: str = Field(description="The mobile number the order was placed with")
+    code: str = Field(
+        default="", description="The order code, like O-104. Empty for the order made in this chat"
+    )
+    phone: str = Field(default="", description="The mobile number the order was placed with")
 
 
 async def _find(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolResult:
-    """The order, if the code and the mobile both match. One answer for a wrong code and a
-    wrong number, so a stranger can't find out whose order a code is."""
+    """With no code, the one order placed in this conversation (D55). Otherwise the order, if
+    the code and the mobile both match: one answer for a wrong code and a wrong number, so a
+    stranger can't find out whose order a code is."""
+    if not code.strip():
+        here = await ctx.store.orders_here()
+        if len(here) == 1:
+            return here[0]
+        if here:
+            codes = ", ".join(o.code for o in here)
+            return fail(f"This chat has several orders: {codes}. Ask which one.")
+        return fail(
+            "Ask for the order code (like O-104), then the mobile number it was placed with."
+        )
+    if not phone.strip():
+        return fail("Ask for the mobile number the order was placed with.")
     parsed = parse_code(code)
     if parsed is None or parsed[0] not in ("", "O"):
         return fail("That isn't an order code: they look like O-104. Ask again.")
@@ -290,8 +309,9 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
 TRACK_ORDER = Tool(
     name="track_order",
     description=(
-        "Where an order is. First ask for its code (like O-104), then the mobile number it was "
-        "placed with. Returns its status, items, total and the courier if it has one."
+        "Where an order is. For the order placed in this chat, call it with no code. Otherwise "
+        "first ask for its code (like O-104), then the mobile number it was placed with. "
+        "Returns its status, items, total and the courier if it has one."
     ),
     input_model=FindOrderInput,
     run=track_order,
@@ -325,9 +345,10 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
 CANCEL_ORDER = Tool(
     name="cancel_order",
     description=(
-        "Cancel an order before it's handed to the courier. First ask for its code (like O-104), "
-        "then the mobile number it was placed with. The first call finds it and gives what to "
-        "read back; call again after a clear yes."
+        "Cancel an order before it's handed to the courier. For the order placed in this chat, "
+        "no code is needed; otherwise ask for its code (like O-104), then the mobile number it "
+        "was placed with. The first call finds it and gives what to read back; call again after "
+        "a clear yes."
     ),
     input_model=FindOrderInput,
     run=cancel_order,
@@ -335,4 +356,169 @@ CANCEL_ORDER = Tool(
     timeout_s=10.0,
 )
 
-TOOLS = [UPDATE_CART, PLACE_ORDER, TRACK_ORDER, CANCEL_ORDER]
+
+class ChangeOrderInput(FindOrderInput):
+    address: str = Field(default="", description="A new full address, if it changes")
+    area: str = Field(
+        default="", description="A new delivery area, or the place they named, if it changes"
+    )
+    new_phone: str = Field(default="", description="A new mobile number for the rider")
+    note: str = Field(default="", description="A new note for the shop")
+
+
+async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
+    """New delivery details before the courier has it (D55). Python works out a new area's
+    charge and the total again; the items can't change here."""
+    found = await _find(ctx, args.code, args.phone)
+    if isinstance(found, ToolResult):
+        return found
+    if found.status not in CHANGEABLE:
+        return fail(
+            f"Order {found.code} is {STATUS_WORDS[found.status]}: it can't be changed now. "
+            "Offer to take a message for the team."
+        )
+    if not any(f.strip() for f in (args.address, args.area, args.new_phone, args.note)):
+        return fail(
+            "Ask what they want to change: the address, the delivery area, the mobile or the "
+            "note. To change the items, they cancel and order again."
+        )
+    config = cast(ShopConfig, ctx.agent)
+    check = Checks()
+    # Only what they gave is checked (an empty one is None); the rest stays as it is
+    address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
+    zone = check.take("area", args.area, lambda said: match_zone(config.delivery, said))
+    phone = check.take("new_phone", args.new_phone, mobile)
+    if check.problems:
+        return fail(" ".join(check.problems.values()))
+    if zone and zone.name != found.zone and found.paid:
+        return fail(
+            f"The delivery charge for {found.zone} was paid online, so the area can't change "
+            "here. Offer to take a message for the team."
+        )
+
+    def money_of(amount: int) -> str:
+        return money(amount, found.currency) if amount else "free"
+
+    charge = config.delivery_charge(zone, found.subtotal) if zone else found.delivery_charge
+    edit = OrderEdit(
+        number=found.number,
+        address=address or found.address,
+        zone=zone.name if zone else found.zone,
+        delivery_charge=charge,
+        phone=phone or found.phone,
+        note=" ".join(args.note.split())[:500] or found.note,
+    )
+    changes = [
+        f"{label}: {old} → {new}"
+        for label, old, new in (
+            ("address", found.address, edit.address),
+            ("delivery area", found.zone, edit.zone),
+            ("delivery", money_of(found.delivery_charge), money_of(edit.delivery_charge)),
+            (
+                "total",
+                money(found.total, found.currency),
+                money(found.subtotal + edit.delivery_charge, found.currency),
+            ),
+            ("mobile", found.phone, edit.phone),
+            ("note", found.note or "none", edit.note or "none"),
+        )
+        if old != new
+    ]
+    if not changes:
+        return fail("That's what the order already has. Ask what they want to change.")
+    read_back = f"Change order {found.code}: " + "; ".join(changes)
+    confirmed = await confirm(ctx.decider, edit, read_back, ctx.agent_said, ctx.visitor_said)
+    if confirmed is None:
+        return ask_for_yes(read_back, "change_order")
+    try:
+        await ctx.store.change_order(confirmed)
+    except TooLate:
+        return fail(f"Order {found.code} has just gone to the courier. Offer a message.")
+    return ToolResult(
+        ok=True,
+        data={"done": read_back, "next": "Tell them the order is changed."},
+        alert=f"✏️ Order {found.code} changed\n{read_back}",
+    )
+
+
+CHANGE_ORDER = Tool(
+    name="change_order",
+    description=(
+        "Change an order's address, delivery area, mobile or note before the courier has it. "
+        "For the order placed in this chat, no code is needed; otherwise ask for its code, "
+        "then the mobile it was placed with. Give only what changes. The first call gives what "
+        "to read back, with any new delivery charge and total; call again after a clear yes. "
+        "The items can't change: they cancel and order again."
+    ),
+    input_model=ChangeOrderInput,
+    run=change_order,
+    label="Changing your order…",
+    timeout_s=10.0,
+)
+
+
+class ExchangeInput(FindOrderInput):
+    item: str = Field(default="", description="Which item from the order, with its size/colour")
+    want: str = Field(default="", description="What they want instead: a size or a colour")
+    reason: str = Field(default="", description="Optional: why")
+
+
+async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
+    """An exchange request on a delivered order, within the shop's days (D55). It's saved as a
+    message for the team, who arrange the swap: no stock changes here."""
+    days = cast(ShopConfig, ctx.agent).exchange_days
+    if not days:
+        return fail("The shop doesn't take exchange requests here. Offer to take a message.")
+    found = await _find(ctx, args.code, args.phone)
+    if isinstance(found, ToolResult):
+        return found
+    if found.status != "delivered":
+        return fail(
+            f"Order {found.code} is {STATUS_WORDS[found.status]}: an exchange is only for a "
+            "delivered order."
+        )
+    since = (ctx.now - found.updated_at).days  # when it was marked delivered
+    if since > days:
+        return fail(
+            f"Order {found.code} was delivered {since} days ago; exchanges are within {days} "
+            "days. Tell them, and offer to take a message for the team."
+        )
+    check = Checks()
+    item = check.take("item", args.item, lambda said: parse.text(said, limit=200))
+    want = check.take("want", args.want, lambda said: parse.text(said, limit=200))
+    if item is None or want is None:
+        return check.result()
+    reason = " ".join(args.reason.split())[:300]
+    read_back = f"Exchange for order {found.code}: {item}, for {want}" + (
+        f"; why: {reason}" if reason else ""
+    )
+    message = NewMessage(read_back, found.name, found.phone)
+    confirmed = await confirm(ctx.decider, message, read_back, ctx.agent_said, ctx.visitor_said)
+    if confirmed is None:
+        return ask_for_yes(read_back, "request_exchange")
+    code = await ctx.store.save_message(confirmed)
+    return ToolResult(
+        ok=True,
+        data={
+            "code": code,
+            "next": f"Tell them the team will call {found.phone} to arrange the exchange.",
+        },
+        alert=f"🔁 Exchange request {code}\n{read_back}\n{found.name}, {found.phone}",
+    )
+
+
+REQUEST_EXCHANGE = Tool(
+    name="request_exchange",
+    description=(
+        "Ask the shop to swap an item from a delivered order for another size or colour. For "
+        "the order placed in this chat, no code is needed; otherwise ask for its code, then "
+        "the mobile. It checks the order was delivered recently enough, then gives what to "
+        "read back; call again after a clear yes."
+    ),
+    input_model=ExchangeInput,
+    run=request_exchange,
+    label="Noting your exchange…",
+    timeout_s=10.0,
+)
+
+TOOLS = [UPDATE_CART, PLACE_ORDER, TRACK_ORDER, CHANGE_ORDER, CANCEL_ORDER, REQUEST_EXCHANGE]

@@ -1,6 +1,10 @@
 """The shop desk: products with sizes, colours and stock; a cash-on-delivery order Python adds
-up, saved only after a yes and taken out of stock; tracking and cancelling with the code and
-the buyer's mobile; and the owner's products and orders routes."""
+up, saved only after a yes and taken out of stock; tracking, changing and cancelling it (the
+one from this chat, or with the code and the buyer's mobile); an exchange request once it's
+delivered; and the owner's products and orders routes."""
+
+from datetime import timedelta
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -10,17 +14,22 @@ from sqlalchemy import select
 from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
+    ChangeOrderInput,
+    ExchangeInput,
     FindOrderInput,
     PlaceOrderInput,
     UpdateCartInput,
+    change_order,
     place_order,
+    request_exchange,
     track_order,
     update_cart,
 )
 from heydesk.desks.shop.values import mobile
 from heydesk.ports.llm import LLMUnavailable, ToolCall
+from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
-from tests.conftest import SEEDS, World, make_ctx
+from tests.conftest import FIXED_NOW, SEEDS, World, make_ctx
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
 PANJABIS = {"code": "panjabi-cotton", "quantity": 2, "size": "L", "colour": "White"}
@@ -340,3 +349,95 @@ async def test_without_the_model_columns_match_by_name(app: FastAPI, client: Asy
     no_price = {"csv": sheet, "mapping": {"name": "Name"}}
     refused = await client.post("/api/products/import", json=no_price)
     assert refused.status_code == 422 and "price" in refused.text
+
+
+async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    [order] = await orders(world)
+
+    no_code = ToolCall("t", "track_order", {})
+    await world.say(agent, order.conversation_id, [no_code, "It's received."], "amar order kothay?")
+    assert "the shop will call to confirm it" in await world.tool_said(str(order.conversation_id))
+
+    elsewhere = await world.say(agent, None, [no_code, "Which code?"], "amar order kothay?")
+    assert "Ask for the order code" in await world.tool_said(elsewhere)  # another chat
+
+
+async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
+    world: World,
+) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)  # ৳950 inside Dhaka: ৳60 delivery, ৳1,010
+    [order] = await orders(world)
+    store = world.store(agent, order.conversation_id)
+
+    def ctx() -> ToolContext[Any]:
+        return make_ctx(store, agent=agent.config, decider=world.decider)
+
+    world.decider.script = [NO]
+    asked = await change_order(ctx(), ChangeOrderInput(area="Sylhet", address="Zindabazar, Sylhet"))
+    assert asked.data["read_back"] == (
+        "Change order O-101: address: House 12, Road 5, Mirpur 10, Dhaka, near the Shah Ali "
+        "mosque → Zindabazar, Sylhet; delivery area: Inside Dhaka → Outside Dhaka; delivery: "
+        "৳60 → ৳120; total: ৳1,010 → ৳1,070"
+    )
+    [unchanged] = await orders(world)
+    assert unchanged.zone == "Inside Dhaka"  # no yes, no change
+
+    world.decider.script = [YES]
+    done = await change_order(ctx(), ChangeOrderInput(area="Sylhet", address="Zindabazar, Sylhet"))
+    assert done.ok and done.alert and "✏️ Order O-101 changed" in done.alert
+    [changed] = await orders(world)
+    assert (changed.zone, changed.delivery_charge, changed.total) == (
+        "Outside Dhaka",
+        12000,
+        107000,
+    )
+
+    nothing = await change_order(ctx(), ChangeOrderInput())
+    assert "Ask what they want to change" in nothing.data["error"]
+    await store.move_order(changed.id, "confirmed")
+    await store.move_order(changed.id, "shipped")
+    late = await change_order(ctx(), ChangeOrderInput(note="ring twice"))
+    assert "can't be changed now" in late.data["error"]
+
+
+async def test_the_area_stays_once_its_charge_was_paid_online(world: World) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    [order] = await orders(world)
+    async with world.sessions() as s, s.begin():  # as if the delivery charge was paid first
+        (await s.get(ShopOrder, order.id)).paid = 6000  # type: ignore[union-attr]
+
+    ctx = make_ctx(world.store(agent, order.conversation_id), agent=agent.config)
+    refused = await change_order(ctx, ChangeOrderInput(area="outside"))
+    assert "was paid online, so the area can't change" in refused.data["error"]
+
+
+async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: World) -> None:
+    agent = await world.agent("shop")  # the seed takes exchanges for 3 days
+    await buy(world, agent, PANJABIS)
+    [order] = await orders(world)
+    store = world.store(agent, order.conversation_id)
+    swap = ExchangeInput(item="Cotton Panjabi, L", want="XL", reason="too tight")
+
+    early = await request_exchange(make_ctx(store, agent=agent.config), swap)
+    assert "only for a delivered order" in early.data["error"]
+    for status in ("confirmed", "shipped", "delivered"):
+        await store.move_order(order.id, status)
+
+    world.decider.script = [YES]
+    two_days_on = make_ctx(
+        store, agent=agent.config, decider=world.decider, now=FIXED_NOW + timedelta(days=2)
+    )
+    asked = await request_exchange(two_days_on, swap)
+    assert asked.ok and asked.data["code"] == "M-101"
+    assert (
+        asked.alert
+        and "Exchange for order O-101: Cotton Panjabi, L, for XL; why: too tight" in (asked.alert)
+    )
+
+    too_late = make_ctx(store, agent=agent.config, now=FIXED_NOW + timedelta(days=5))
+    refused = await request_exchange(too_late, swap)
+    assert "delivered 5 days ago; exchanges are within 3 days" in refused.data["error"]

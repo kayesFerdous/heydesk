@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import Store
 from heydesk.desks.shop.models import ProductRow, ShopOrder
-from heydesk.desks.shop.values import NewOrder, OrderCancel, Product
+from heydesk.desks.shop.values import CHANGEABLE, NewOrder, OrderCancel, OrderEdit, Product
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
 from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
@@ -18,6 +18,10 @@ from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
 
 class OutOfStock(ValueError):
     """Someone else bought the last ones since the cart was made."""
+
+
+class TooLate(ValueError):
+    """The order moved on (the courier has it) since the visitor asked to change it."""
 
 
 class ShopStore(Store):
@@ -70,6 +74,42 @@ class ShopStore(Store):
                 .group_by(ShopOrder.status)
             )
             return {status: count for status, count in rows}
+
+    async def orders_here(self) -> list[ShopOrder]:
+        """The orders placed in this conversation, newest first (D55): the visitor needs no
+        code for them."""
+        if self.conversation_id is None:
+            return []
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(ShopOrder)
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.conversation_id == self.conversation_id,
+                )
+                .order_by(ShopOrder.created_at.desc())
+            )
+            return list(found)
+
+    async def change_order(self, edit: Confirmed[OrderEdit]) -> ShopOrder:
+        """New delivery details, and the total again with the new charge. Raises TooLate if
+        the courier has it by now."""
+        e = edit.value
+        async with self.sessions() as s, s.begin():
+            order = await s.scalar(
+                select(ShopOrder).where(
+                    ShopOrder.workspace_id == self.workspace_id, ShopOrder.number == e.number
+                )
+            )
+            if order is None:
+                raise NotFound("There's no such order.")
+            if order.status not in CHANGEABLE:
+                raise TooLate(order.status)
+            order.address, order.zone, order.phone, order.note = e.address, e.zone, e.phone, e.note
+            order.delivery_charge = e.delivery_charge
+            order.total = order.subtotal + e.delivery_charge
+            order.updated_at = self.now()
+        return order
 
     async def order(self, number: int) -> ShopOrder | None:
         return await self.by_number(ShopOrder, number)

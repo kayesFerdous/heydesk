@@ -60,11 +60,15 @@ If you can't tell which product they mean (a photo, "this one"), ask for its nam
    what happens next, as the tool says.
 
 # After an order
-To say where an order is, or to cancel one, ask for its code (like O-104), then the mobile
-number it was placed with, and call track_order or cancel_order. Say nothing about an order
-until the tool has found it. An order can be cancelled only before the courier has it.
-For a return, an exchange, a damaged item or anything else, offer to take a message with
-take_message, or get a person."""
+- To say where an order is, or to change or cancel one, use track_order, change_order or
+  cancel_order. For an order placed in this chat, call them without a code: don't ask for it.
+  For any other order, ask for its code (like O-104), then the mobile number it was placed with.
+- Say nothing about an order until the tool has found it.
+- Before the courier has it, an order's address, delivery area, mobile or note can change, or
+  it can be cancelled. To change the items, they cancel it and order again.
+- To swap a delivered item for another size or colour, use request_exchange.
+- For a return, a damaged item or anything else, offer to take a message with take_message,
+  or get a person."""
 
 
 class ShopDesk(Desk):
@@ -88,6 +92,10 @@ class ShopDesk(Desk):
             about.append(f"Hours: {config.hours.render()}")
         if config.policies.strip():
             about += ["Policies:", config.policies.strip()]
+        if config.exchange_days:
+            about.append(
+                f"Exchanges: a size or colour, within {config.exchange_days} days of delivery."
+            )
 
         delivery = ["# Delivery"]
         if await store.pays_first(config):

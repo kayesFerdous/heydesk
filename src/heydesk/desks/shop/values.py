@@ -98,6 +98,9 @@ class ShopConfig(AgentConfig):
     free_delivery_over: int = Field(default=0, ge=0)  # minor units; 0: never free
     policies: str = Field(default="", max_length=4000)  # returns, exchanges
     size_guide: str = Field(default="", max_length=4000)  # each size's measurements, in words
+    # A delivered order's size or colour can be swapped within this many days (D55); 0: the
+    # agent takes no exchange requests
+    exchange_days: int = Field(default=0, ge=0, le=60)
     # The buyer pays the delivery charge online first (SSLCommerz), and the rest on delivery.
     # The order is placed only when the payment comes in (D47)
     pay_first: bool = False
@@ -148,6 +151,9 @@ STATUS_WORDS = {  # what track_order says about each status
     "cancelled": "cancelled",
 }
 CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
+# The address, area, mobile or note can change until the courier has it. An unpaid order
+# isn't placed yet: cancel it and order again
+CHANGEABLE = {"new", "confirmed"}
 
 
 @dataclass(frozen=True)
@@ -173,6 +179,19 @@ class NewOrder:
 @dataclass(frozen=True)
 class OrderCancel:
     number: int
+
+
+@dataclass(frozen=True)
+class OrderEdit:
+    """An order's delivery details after a change the visitor said yes to (D55). Every field
+    is the new value, or the old one where nothing changed. Money in minor units."""
+
+    number: int
+    address: str
+    zone: str
+    delivery_charge: int
+    phone: str
+    note: str
 
 
 PRODUCT_COLUMNS = [
