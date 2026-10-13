@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **Next:** a live run of each desk on Maira (costs quota: ask first), then update `../heydesk-frontend` to the new routes.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **Next:** update `../heydesk-frontend` to the new routes.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -107,10 +107,11 @@ a confirmation call and a courier's parcel id, as they already work.
       `track_order` and `cancel_order` with the code and mobile (back in stock)
 - [x] `/api/products` (+ CSV import), `/api/shop/orders` with status and `tracking`; the seed
       `examples/agents/shop.yaml`; `tests/integration/test_shop.py`
-- [ ] Live check on Maira with `DEV_AGENT_KIND=shop`: a question in Banglish gets the price; a
+- [x] Live check on Maira with `DEV_AGENT_KIND=shop`: a question in Banglish gets the price; a
       kurti in the wrong size is asked again; an order outside Dhaka is read back with ৳120
       delivery and saved after a yes; "where is O-101?" with the mobile gets its status
-      (costs quota: ask first)
+      (costs quota: ask first). Passed 13 Oct on the `online@gmail.com` test shop (O-102 to
+      Chittagong, saved on "ji"); the Telegram alert is still to see, with a bot linked
 - [ ] Facebook Messenger as a channel, like Telegram (D42): a page connects, Meta posts messages
       to a webhook, replies go back through the Send API. Needs a Meta app with page messaging
       approved
@@ -351,6 +352,6 @@ by desks; built and checked offline:
 - [x] Routes: `/api/desks`, `/api/menu`, `/api/orders`, `/api/doctors`, `/api/appointments`, `/api/messages`
 - [x] One fresh migration; seeds rewritten; `DEV_AGENT_KIND` replaces `DEV_AGENT_PRESET`
 - [x] Cut: `search_items`, item attributes, the CSV import, admin-only `instructions`
-- [ ] **Done when:** each desk, live on Maira, takes its booking or order only after a yes
+- [x] **Done when:** each desk, live on Maira, takes its booking or order only after a yes (13 Oct: clinic A-102, after a "not sure" saved nothing; restaurant order 105; receptionist M-102; shop O-101 and O-102)
 - [ ] `../heydesk-frontend` uses the new routes
 

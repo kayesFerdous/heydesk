@@ -76,6 +76,7 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
     text = await SHOP.prompt(agent.config, world.store(agent))
 
     assert "never ask them to message for the price" in text
+    assert "Never switch to Bangla letters or to English." in text
     assert "- Inside Dhaka: ৳60, usually 1–2 days (Mirpur, Uttara, Dhanmondi," in text
     assert "Delivery is free on orders of ৳3,000 or more." in text
     assert "- Cotton Kurti [kurti] ৳950, sizes S/M/L/XL, colours Black/Mustard" in text
@@ -93,7 +94,8 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
     assert await SHOP.missing(agent.config, world.store(agent)) == []
 
     added = await update_cart(make_ctx(world.store(agent), agent=agent.config), cart(KURTI))
-    assert SHOP.note(agent.config, {}) == ""
+    assert SHOP.note(agent.config, {}).startswith("\n# Language\nWrite your reply")
+    assert "# The order so far" not in SHOP.note(agent.config, {})
     assert "1 × Cotton Kurti (M, Black), subtotal ৳950" in SHOP.note(agent.config, added.state)
 
 

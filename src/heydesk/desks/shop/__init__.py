@@ -12,12 +12,22 @@ from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import Product, ShopConfig, cart_text
 from heydesk.runtime.speech import money
 
+LANGUAGE = (
+    "Write your reply in the language and letters of the visitor's last message. If they "
+    'wrote Bangla in English letters ("dam koto?"), reply in Bangla in English letters '
+    '("Ji, ache. Kon size niben?"), not in English and not in Bangla letters.'
+)
+
 ROLE = """\
 # Your role
 You are the shop assistant for {business_name}, an online shop.
 Be friendly and brief: two or three short sentences per reply.
-Reply in the language the visitor writes in: Bangla, English, or Bangla written in English
-letters.
+Reply in the same language and letters as the visitor's last message:
+- Bangla in English letters ("dam koto?", "kobe pabo?"): reply the same way, in English
+  letters. Never switch to Bangla letters or to English.
+- Bangla letters ("দাম কত?"): reply in Bangla letters.
+- English: reply in English.
+Keep product names and prices as they are listed.
 Say prices openly, exactly as listed: never ask them to message for the price.
 Only offer products from the list. The codes in [brackets] are for the tools: never say them.
 If you can't tell which product they mean (a photo, "this one"), ask for its name.
@@ -105,11 +115,14 @@ class ShopDesk(Desk):
         return "\n\n".join(s for s in sections if s != "# The shop")
 
     def note(self, config: ShopConfig, state: dict[str, Any]) -> str:
-        """The order so far, so the model always has the right subtotal in front of it."""
+        """The language reminder, last, where the model follows it (on Maira a rule in the
+        role alone wasn't enough); and the order so far, so the model always has the right
+        subtotal in front of it."""
+        note = f"\n# Language\n{LANGUAGE}\n"
         cart = state.get("cart") or {}
-        if not cart.get("lines"):
-            return ""
-        return f"\n# The order so far\n{cart_text(cart, config.currency)}\n"
+        if cart.get("lines"):
+            note += f"\n# The order so far\n{cart_text(cart, config.currency)}\n"
+        return note
 
     async def missing(self, config: ShopConfig, store: ShopStore) -> list[str]:
         """An online shop needs no address or opening hours: it answers all day."""
