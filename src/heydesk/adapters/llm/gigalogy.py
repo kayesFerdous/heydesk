@@ -5,7 +5,7 @@ Maira is not a chat-completions API, and three things follow from that:
 - **One `query`, no message list.** The system prompt, the tools and the
   transcript are written into one text, system prompt first. The Maira
   profile's own prompt sits above it, so the profile should say little more
-  than "do what the message says".
+  than "do what the message says" (its text: docs/prompt-rules.md, section 0).
 - **The model is set on the profile**, chosen by `GIGALOGY_PROFILE_ID`, so the
   agent's model name is ignored here.
 - **No streaming, and tool calls as JSON in the reply** (D16). The query lists
