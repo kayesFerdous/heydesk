@@ -69,6 +69,21 @@
         "8002"
       ],
       "port": 8002
+    },
+    {
+      "name": "heydesk-shop",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8003"
+      ],
+      "port": 8003
     }
   ]
 }
