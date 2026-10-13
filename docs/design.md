@@ -67,9 +67,9 @@ src/heydesk/
 │   ├── clinic/          the same
 │   ├── shop/            the same
 │   ├── receptionist/    __init__ only: no tools or tables of its own
-│   └── csv_import.py    reading a CSV file into a desk's list (D50)
+│   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
-├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge
+├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge, imports (D53)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
 ├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
@@ -327,7 +327,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
 | GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
-| POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50) |
+| POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
+| POST | `/api/menu/import/suggest`, `/api/doctors/import/suggest`, `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and the AI's suggested match for the owner to check (D53) |
 | GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
@@ -409,6 +410,48 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 The counts are in this server's memory: a restart clears them, and a second server process would
 keep its own. The IP is the real visitor's when a proxy on the same machine sends
 `X-Forwarded-For` (uvicorn trusts it from `127.0.0.1` by default).
+
+### Importing a list: their columns, our fields (D50, D53)
+
+A business's spreadsheet has its own column names ("Item Title", "MRP", "Qty"). It doesn't have
+to rename them to ours: the owner matches each of our fields to one of their columns, with the
+AI's suggestion to start from. Three steps, each knowing nothing of the others:
+
+```
+their file ─► 1. read: rows as {their column: text}            csv_import.peek / parse
+           ─► 2. match: {our field: their column}               the AI suggests, the owner decides
+           ─► 3. a row becomes our item: Product, MenuItem…     the desk's own row(), as before
+```
+
+**A desk lists its fields once:** `PRODUCT_COLUMNS`, `MENU_COLUMNS`, `DOCTOR_COLUMNS` in its
+`values.py`, each a `Column(name, about, required)`. `about` is what the field holds, in plain
+words, for the owner's screen and for the model. The required ones are what `parse` needs.
+
+**The flow:**
+
+1. `POST /api/products/import/suggest {csv}` → the file's `headers`, its first 3 rows as
+   `samples`, our `columns`, a `mapping` (`{"name": "Item Title", "price": "MRP"}`, a field with
+   no column left out) and `by_ai`.
+2. The owner's screen shows each of our fields with a dropdown of their columns, the AI's choice
+   picked. They change what's wrong.
+3. `POST /api/products/import {csv, mapping, dry_run: true}` → the first rows as they'll be
+   saved, or the problems per row. Then the same without `dry_run` saves them.
+
+Without `mapping`, the import matches columns by name as before (D50), so a file with our column
+names needs no step 1.
+
+**The AI only matches; Python checks it and does the values** (rule 1). `ImportService.suggest`
+(`services/imports.py`) sends the model our fields with their `about`, the file's headers and the
+3 sample rows (never the whole file), and asks for one JSON object, field → column. From the
+reply, `csv_import.check_mapping` keeps only our fields, the file's columns, and each column once.
+If the model fails, times out (`SUGGEST_TIMEOUT`, 20s) or answers something that isn't that
+object or matches nothing, the suggestion is the columns whose name already matches ours (`by_ai: false`) and the
+owner fills in the rest. An upload never fails because of the AI. Turning "৳1,850" into 185000,
+"M; L" into a list or "yes" into `True` stays in the desk's `row()`.
+
+**Later sources** (Shopify, a POS) are another step 1: something that returns rows as
+`{their field: text}`. Their field names are the same for every store, so their mapping is
+written once in code and the owner never sees step 2. Nothing in step 3 changes.
 
 ### Telegram (D42)
 
@@ -565,4 +608,5 @@ version handles them.
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
 | Shop: photos of a product, stock per size and colour | The agent asks for the product's name; stock is per product |
+| Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |

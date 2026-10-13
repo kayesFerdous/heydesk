@@ -6,10 +6,11 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
+from heydesk.desks.csv_import import Suggestion
 from heydesk.desks.restaurant.models import Order
 from heydesk.desks.restaurant.store import RestaurantStore
-from heydesk.desks.restaurant.values import MenuItem, menu_from_csv
+from heydesk.desks.restaurant.values import MENU_COLUMNS, MenuItem, menu_from_csv
 
 router = APIRouter(tags=["restaurant"])
 
@@ -76,11 +77,18 @@ async def set_status(order_id: str, body: StatusIn, store: Restaurant) -> OrderO
     return OrderOut.model_validate(await store.set_status(Order, order_id, body.status))
 
 
+@router.post("/api/menu/import/suggest")
+async def suggest_menu_columns(body: SuggestIn, services: Svc, _: Restaurant) -> Suggestion:
+    """The file's columns, a few rows and our fields, with the AI's guess at which column is
+    which field. The owner checks it, then imports with that `mapping` (D53)."""
+    return await services.imports.suggest(body.csv, MENU_COLUMNS)
+
+
 @router.post("/api/menu/import")
 async def import_menu(body: ImportIn, store: Restaurant) -> ImportOut[MenuItem]:
     """Replaces the menu with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
-    found = menu_from_csv(body.csv)
+    found = menu_from_csv(body.csv, body.mapping)
     if not body.dry_run:
         await store.replace_menu(found)
     return ImportOut[MenuItem](saved=not body.dry_run, count=len(found), preview=found[:5])

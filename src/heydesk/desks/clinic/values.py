@@ -112,10 +112,25 @@ class AppointmentChange:
     new_at: datetime | None = None
 
 
-def doctors_from_csv(text: str) -> list[Doctor]:
+DOCTOR_COLUMNS = [
+    csv_import.Column(name="name", about="the doctor's name", required=True),
+    csv_import.Column(name="speciality", about="what they treat: Cardiology", required=True),
+    csv_import.Column(name="fee", about="the visit fee: 1000 or ৳1,000", required=True),
+    csv_import.Column(name="days", about='the days they see patients: "sat; sun"', required=True),
+    csv_import.Column(name="start", about="when they start: 17:00"),
+    csv_import.Column(name="end", about="when they finish: 21:00"),
+    csv_import.Column(name="hours", about="start and end in one: 17:00-21:00"),
+    csv_import.Column(name="languages", about='the languages they speak: "bangla; english"'),
+    csv_import.Column(name="description", about="a line about them: degrees, experience"),
+    csv_import.Column(name="available", about="whether they're seeing patients now: yes or no"),
+    csv_import.Column(name="code", about="the clinic's own short id for them"),
+]
+
+
+def doctors_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Doctor]:
     """Columns: name, speciality, fee, days ("sat; sun; mon"), and either start and end
     ("17:00", "21:00") or hours ("17:00-21:00"); optionally languages, description,
-    available (yes/no), code."""
+    available (yes/no), code. `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> Doctor:
         start, end = cells.get("start", ""), cells.get("end", "")
@@ -136,7 +151,7 @@ def doctors_from_csv(text: str) -> list[Doctor]:
             }
         )
 
-    return csv_import.parse(text, {"name", "speciality", "fee", "days"}, row)
+    return csv_import.parse(text, csv_import.needs(DOCTOR_COLUMNS), row, mapping)
 
 
 class ClinicConfig(AgentConfig):

@@ -4,6 +4,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
 from heydesk.services.rate_limits import RateLimiter
@@ -17,6 +18,7 @@ class Services:
     agents: AgentService
     channels: ChannelService
     conversations: ConversationService
+    imports: ImportService
     knowledge: KnowledgeService
     payments: PaymentService
     rate_limits: RateLimiter

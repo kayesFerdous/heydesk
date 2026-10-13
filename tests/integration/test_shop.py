@@ -18,7 +18,7 @@ from heydesk.desks.shop.tools import (
     update_cart,
 )
 from heydesk.desks.shop.values import mobile
-from heydesk.ports.llm import ToolCall
+from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from tests.conftest import SEEDS, World, make_ctx
 
@@ -261,3 +261,41 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
         20,
     )
     assert (tee["sizes"], tee["stock"]) == (["S", "M"], None)  # stock not counted
+
+
+SHEET = 'Item Title,MRP,Qty,Supplier\nCotton Panjabi,"৳1,850",12,Rahim & Co\nTee,350,,\n'
+
+
+async def test_their_columns_are_matched_to_ours_and_imported(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    app.state.services.imports.llm.script.append(
+        'Here: {"name": "Item Title", "price": "MRP", "stock": "Qty", '
+        '"colours": "Nope", "owner": "Supplier"}'  # a column that isn't there; not our field
+    )
+    suggested = (await client.post("/api/products/import/suggest", json={"csv": SHEET})).json()
+    assert suggested["mapping"] == {"name": "Item Title", "price": "MRP", "stock": "Qty"}
+    assert suggested["by_ai"] and suggested["headers"][0] == "Item Title"
+    assert suggested["samples"][0]["MRP"] == "৳1,850"
+
+    body = {"csv": SHEET, "mapping": suggested["mapping"]}
+    await client.post("/api/products/import", json=body)
+    panjabi, tee = (await client.get("/api/products")).json()
+    assert (panjabi["name"], panjabi["price"], panjabi["stock"]) == ("Cotton Panjabi", 185000, 12)
+    assert (tee["price"], tee["stock"]) == (35000, None)
+
+
+async def test_without_the_model_columns_match_by_name(app: FastAPI, client: AsyncClient) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    sheet = "Name,Price (৳),Supplier\nTee,350,Rahim\n"
+    for failure in [LLMUnavailable("down"), '{"Name": "Tee"}']:  # down, or nothing usable
+        app.state.services.imports.llm.script.append(failure)
+        reply = await client.post("/api/products/import/suggest", json={"csv": sheet})
+        suggested = reply.json()
+        assert suggested["mapping"] == {"name": "Name", "price": "Price (৳)"}
+        assert not suggested["by_ai"]
+
+    no_price = {"csv": sheet, "mapping": {"name": "Name"}}
+    refused = await client.post("/api/products/import", json=no_price)
+    assert refused.status_code == 422 and "price" in refused.text

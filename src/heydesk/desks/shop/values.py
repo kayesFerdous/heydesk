@@ -160,9 +160,21 @@ class OrderCancel:
     number: int
 
 
-def products_from_csv(text: str) -> list[Product]:
+PRODUCT_COLUMNS = [
+    csv_import.Column(name="name", about="the product's name", required=True),
+    csv_import.Column(name="price", about="its price: 1850 or ৳1,850", required=True),
+    csv_import.Column(name="category", about="a group it's listed under: Panjabi, Saree"),
+    csv_import.Column(name="description", about="a line or two about it"),
+    csv_import.Column(name="sizes", about='the sizes it comes in: "M; L; XL"'),
+    csv_import.Column(name="colours", about='the colours it comes in: "white; black"'),
+    csv_import.Column(name="stock", about="how many are left; empty when not counted"),
+    csv_import.Column(name="code", about="the shop's own short id or SKU for it"),
+]
+
+
+def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
     """Columns: name, price, and optionally category, description, sizes ("M; L; XL"),
-    colours, stock (empty: not counted), code."""
+    colours, stock (empty: not counted), code. `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> Product:
         stock = cells.get("stock", "")
@@ -179,4 +191,4 @@ def products_from_csv(text: str) -> list[Product]:
             }
         )
 
-    return csv_import.parse(text, {"name", "price"}, row)
+    return csv_import.parse(text, csv_import.needs(PRODUCT_COLUMNS), row, mapping)

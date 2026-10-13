@@ -117,6 +117,15 @@ class ImportIn(BaseModel):
         max_length=2_000_000, description="The file's text: a header row, then one per row"
     )
     dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
+    mapping: dict[str, str] | None = Field(
+        default=None,
+        description="Our field → the file's column, as the owner checked it after /suggest "
+        "(D53). Without it, the file's columns are matched to ours by name",
+    )
+
+
+class SuggestIn(BaseModel):
+    csv: str = Field(max_length=2_000_000, description="The file's text, as for the import")
 
 
 class ImportOut[T](BaseModel):

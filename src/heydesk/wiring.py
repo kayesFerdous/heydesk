@@ -34,6 +34,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
 from heydesk.services.rate_limits import RateLimiter
@@ -131,6 +132,7 @@ def build_services(
         agents=agents,
         channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
         conversations=conversations,
+        imports=ImportService(llm, settings.MODEL),
         knowledge=knowledge,
         payments=PaymentService(
             sessions, payments or build_payments(settings), team, settings, now

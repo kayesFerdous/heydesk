@@ -70,9 +70,20 @@ class NewOrder:
         return self.food + self.delivery_charge
 
 
-def menu_from_csv(text: str) -> list[MenuItem]:
+MENU_COLUMNS = [
+    csv_import.Column(name="name", about="the dish's name", required=True),
+    csv_import.Column(name="price", about="its price: 350 or ৳350", required=True),
+    csv_import.Column(name="category", about="the part of the menu: Starters, Rice, Drinks"),
+    csv_import.Column(name="description", about="a line about the dish"),
+    csv_import.Column(name="tags", about='words about it: "spicy; popular; vegetarian"'),
+    csv_import.Column(name="available", about="whether it's served now: yes or no"),
+    csv_import.Column(name="code", about="the restaurant's own short id for it"),
+]
+
+
+def menu_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[MenuItem]:
     """Columns: name, price, and optionally category, description, tags ("spicy; popular"),
-    available (yes/no), code."""
+    available (yes/no), code. `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> MenuItem:
         return MenuItem(
@@ -85,7 +96,7 @@ def menu_from_csv(text: str) -> list[MenuItem]:
             available=csv_import.available(cells.get("available", "")),
         )
 
-    return csv_import.parse(text, {"name", "price"}, row)
+    return csv_import.parse(text, csv_import.needs(MENU_COLUMNS), row, mapping)
 
 
 class RestaurantConfig(AgentConfig):

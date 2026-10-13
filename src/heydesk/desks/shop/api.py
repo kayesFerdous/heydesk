@@ -6,10 +6,11 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
+from heydesk.desks.csv_import import Suggestion
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
-from heydesk.desks.shop.values import Product, products_from_csv
+from heydesk.desks.shop.values import PRODUCT_COLUMNS, Product, products_from_csv
 
 router = APIRouter(tags=["shop"])
 
@@ -66,11 +67,18 @@ async def replace_products(body: list[Product], store: Shop) -> list[Product]:
     return body
 
 
+@router.post("/api/products/import/suggest")
+async def suggest_products_columns(body: SuggestIn, services: Svc, _: Shop) -> Suggestion:
+    """The file's columns, a few rows and our fields, with the AI's guess at which column is
+    which field. The owner checks it, then imports with that `mapping` (D53)."""
+    return await services.imports.suggest(body.csv, PRODUCT_COLUMNS)
+
+
 @router.post("/api/products/import")
 async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
-    found = products_from_csv(body.csv)
+    found = products_from_csv(body.csv, body.mapping)
     if not body.dry_run:
         await store.replace_products(found)
     return ImportOut[Product](saved=not body.dry_run, count=len(found), preview=found[:5])

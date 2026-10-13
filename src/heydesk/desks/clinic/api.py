@@ -6,10 +6,11 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, Svc, Workspace
+from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
-from heydesk.desks.clinic.values import Doctor, doctors_from_csv
+from heydesk.desks.clinic.values import DOCTOR_COLUMNS, Doctor, doctors_from_csv
+from heydesk.desks.csv_import import Suggestion
 
 router = APIRouter(tags=["clinic"])
 
@@ -75,11 +76,18 @@ async def set_status(appointment_id: str, body: StatusIn, store: Clinic) -> Appo
     return AppointmentOut.model_validate(found)
 
 
+@router.post("/api/doctors/import/suggest")
+async def suggest_doctors_columns(body: SuggestIn, services: Svc, _: Clinic) -> Suggestion:
+    """The file's columns, a few rows and our fields, with the AI's guess at which column is
+    which field. The owner checks it, then imports with that `mapping` (D53)."""
+    return await services.imports.suggest(body.csv, DOCTOR_COLUMNS)
+
+
 @router.post("/api/doctors/import")
 async def import_doctors(body: ImportIn, store: Clinic) -> ImportOut[Doctor]:
     """Replaces the doctors with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
-    found = doctors_from_csv(body.csv)
+    found = doctors_from_csv(body.csv, body.mapping)
     if not body.dry_run:
         await store.replace_doctors(found)
     return ImportOut[Doctor](saved=not body.dry_run, count=len(found), preview=found[:5])
