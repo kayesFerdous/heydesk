@@ -458,8 +458,9 @@ CHANGE_ORDER = Tool(
 
 
 class ExchangeInput(FindOrderInput):
-    item: str = Field(default="", description="Which item from the order, with its size/colour")
-    want: str = Field(default="", description="What they want instead: a size or a colour")
+    product: str = Field(default="", description="The product's code, shown in [brackets]")
+    size: str = Field(default="", description="The size they want instead, if it changes")
+    colour: str = Field(default="", description="The colour they want instead, if it changes")
     reason: str = Field(default="", description="Optional: why")
 
 
@@ -483,14 +484,26 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
             f"Order {found.code} was delivered {since} days ago; exchanges are within {days} "
             "days. Tell them, and offer to take a message for the team."
         )
-    check = Checks()
-    item = check.take("item", args.item, lambda said: parse.text(said, limit=200))
-    want = check.take("want", args.want, lambda said: parse.text(said, limit=200))
-    if item is None or want is None:
-        return check.result()
+    line = next((line for line in found.lines if line["code"] == args.product), None)
+    if line is None:
+        return fail(f"Which item? The order has: {lines_text(found.lines)}. Ask which one.")
+    if not (args.size.strip() or args.colour.strip()):
+        return fail("Ask which size or colour they want instead.")
+    product = next((p for p in await ctx.store.products() if p.code == line["code"]), None)
+    if product is None:
+        return fail(f"{line['name']} isn't sold any more. Offer to take a message for the team.")
+    try:  # only sizes and colours the product comes in (as update_cart checks them)
+        size = product.choose("size", args.size) if args.size.strip() else line["size"]
+        colour = product.choose("colour", args.colour) if args.colour.strip() else line["colour"]
+    except ValueError as error:
+        return fail(str(error))  # "…isn't one of them. Ask which size: M, L, XL."
+    if (size, colour) == (line["size"], line["colour"]):
+        return fail("That's the size and colour they have. Ask what they want instead.")
     reason = " ".join(args.reason.split())[:300]
-    read_back = f"Exchange for order {found.code}: {item}, for {want}" + (
-        f"; why: {reason}" if reason else ""
+    swap = {**line, "quantity": 1, "size": size, "colour": colour}
+    read_back = (
+        f"Exchange for order {found.code}: {lines_text([{**line, 'quantity': 1}])} for "
+        f"{lines_text([swap])}" + (f"; why: {reason}" if reason else "")
     )
     message = NewMessage(read_back, found.name, found.phone)
     confirmed = await confirm(ctx.decider, message, read_back, ctx.agent_said, ctx.visitor_said)
@@ -510,10 +523,11 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
 REQUEST_EXCHANGE = Tool(
     name="request_exchange",
     description=(
-        "Ask the shop to swap an item from a delivered order for another size or colour. For "
-        "the order placed in this chat, no code is needed; otherwise ask for its code, then "
-        "the mobile. It checks the order was delivered recently enough, then gives what to "
-        "read back; call again after a clear yes."
+        "Ask the shop to swap an item from a delivered order for another size or colour: the "
+        "product's code and the size or colour they want. For the order placed in this chat, "
+        "no code is needed; otherwise ask for its code, then the mobile. It checks the order "
+        "was delivered recently enough and that the product comes in that size or colour, then "
+        "gives what to read back; call again after a clear yes."
     ),
     input_model=ExchangeInput,
     run=request_exchange,

@@ -420,7 +420,7 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
     await buy(world, agent, PANJABIS)
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
-    swap = ExchangeInput(item="Cotton Panjabi, L", want="XL", reason="too tight")
+    swap = ExchangeInput(product="panjabi-cotton", size="xl", reason="too tight")
 
     early = await request_exchange(make_ctx(store, agent=agent.config), swap)
     assert "only for a delivered order" in early.data["error"]
@@ -431,12 +431,21 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
     two_days_on = make_ctx(
         store, agent=agent.config, decider=world.decider, now=FIXED_NOW + timedelta(days=2)
     )
+    no_such_size = await request_exchange(
+        two_days_on, ExchangeInput(product="panjabi-cotton", size="3XL")
+    )
+    assert "'3XL' isn't one of them. Ask which size: M, L, XL, XXL" in no_such_size.data["error"]
+    same = await request_exchange(two_days_on, ExchangeInput(product="panjabi-cotton", size="L"))
+    assert "That's the size and colour they have" in same.data["error"]
+    not_ordered = await request_exchange(two_days_on, ExchangeInput(product="kurti", size="M"))
+    assert "The order has: 2 × Cotton Panjabi (L, White)" in not_ordered.data["error"]
+
     asked = await request_exchange(two_days_on, swap)
     assert asked.ok and asked.data["code"] == "M-101"
-    assert (
-        asked.alert
-        and "Exchange for order O-101: Cotton Panjabi, L, for XL; why: too tight" in (asked.alert)
-    )
+    assert asked.alert and (
+        "Exchange for order O-101: 1 × Cotton Panjabi (L, White) for 1 × Cotton Panjabi "
+        "(XL, White); why: too tight"
+    ) in (asked.alert)
 
     too_late = make_ctx(store, agent=agent.config, now=FIXED_NOW + timedelta(days=5))
     refused = await request_exchange(too_late, swap)
