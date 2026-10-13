@@ -24,6 +24,7 @@ def test_platform_rules_first_and_right_now_last() -> None:
     text = prompt()
 
     assert text.startswith(PLATFORM_RULES)
+    assert "Codes in [brackets] (a product's, a dish's, a doctor's) are for tools only" in text
     text = prompt(notes="Be formal.", documents=["Menu guide"])
     headings = ("# Your role", "# Notes", "# FAQ\nParking", "# Documents", "# Right now")
     positions = [text.index(h) for h in headings]
