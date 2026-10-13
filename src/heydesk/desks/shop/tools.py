@@ -113,6 +113,9 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     data = {"order": said, "subtotal": money(subtotal, currency)}
     if 0 < subtotal < config.free_delivery_over:
         data["free_delivery_if_you_add"] = money(config.free_delivery_over - subtotal, currency)
+    elif subtotal and config.free_delivery_over:
+        # Said outright: with nothing said, Maira made up a nudge with no amount (13 Oct)
+        data["delivery"] = "free"
     return ToolResult(ok=True, data=data, state={"cart": {"lines": lines, "subtotal": subtotal}})
 
 
@@ -122,7 +125,7 @@ UPDATE_CART = Tool(
         "Set the visitor's whole order: every product with its quantity, and its size and "
         "colour when it has them. Call it after every change. Checks the sizes, colours and "
         "stock, and returns each line and the subtotal; tell the visitor them exactly as given. "
-        "It may also say how much more would make the delivery free."
+        "It may also say how much more would make the delivery free, or that it's free."
     ),
     input_model=UpdateCartInput,
     run=update_cart,

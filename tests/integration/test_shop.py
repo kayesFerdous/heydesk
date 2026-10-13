@@ -127,8 +127,10 @@ async def test_python_checks_sizes_colours_and_stock_and_adds_up_the_cart(world:
     added = await update_cart(ctx, cart(PANJABIS, KURTI, PANJABIS | {"quantity": 1}))
     assert added.ok and added.data["subtotal"] == "৳6,500"  # 3 panjabis + a kurti
     assert "free_delivery_if_you_add" not in added.data  # over ৳3,000 already
+    assert added.data["delivery"] == "free"  # said, so the model doesn't make up a nudge
     just_a_kurti = await update_cart(ctx, cart(KURTI))
     assert just_a_kurti.data["free_delivery_if_you_add"] == "৳2,050"  # ৳3,000 - ৳950
+    assert "delivery" not in just_a_kurti.data
     assert added.data["order"][0] == "3 × Cotton Panjabi (L, White) = ৳5,550"
 
     no_size = await update_cart(ctx, cart(KURTI | {"size": ""}))
