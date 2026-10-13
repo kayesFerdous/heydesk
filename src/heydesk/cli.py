@@ -1,7 +1,7 @@
 """`uv run heydesk` starts the dev server. `create-user EMAIL PASSWORD` adds an owner to the
 dev workspace, so the API can manage the dev agent. `create-admin EMAIL PASSWORD` makes a
 platform admin (the only way to make one, D23). `reindex-knowledge` rebuilds the Qdrant chunks
-from the documents saved in the database (D34)."""
+from the documents saved in the database (D34), and re-embeds every product photo (D57)."""
 
 import asyncio
 import sys
@@ -14,8 +14,9 @@ from heydesk.errors import HeyDeskError
 from heydesk.models import Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.photos import PhotoService
 from heydesk.services.users import UserService
-from heydesk.wiring import build_embedder, build_knowledge_store
+from heydesk.wiring import build_embedder, build_knowledge_store, build_photo_index, build_qdrant
 
 USAGE = (
     "usage: heydesk [create-user EMAIL PASSWORD | create-admin EMAIL PASSWORD | reindex-knowledge]"
@@ -46,12 +47,20 @@ async def create_admin(email: str, password: str) -> None:
 async def reindex_knowledge() -> None:
     settings = Settings()
     engine, sessions = make_engine(settings.DATABASE_URL)
+    embedder, qdrant = build_embedder(settings), build_qdrant(settings)
     knowledge = KnowledgeService(
-        sessions, build_embedder(settings), build_knowledge_store(settings), utcnow
+        sessions, embedder, build_knowledge_store(settings, qdrant), utcnow
     )
     count = await knowledge.reindex()
+    photos = PhotoService(
+        embedder,
+        build_photo_index(settings, qdrant),
+        settings.MEDIA_DIR,
+        settings.PHOTO_MIN_SIMILARITY,
+    )
+    photo_count = await photos.reindex()
     await engine.dispose()
-    print(f"Re-indexed {count} document(s).")
+    print(f"Re-indexed {count} document(s) and {photo_count} product photo(s).")
 
 
 def main() -> None:

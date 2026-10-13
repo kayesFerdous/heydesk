@@ -18,12 +18,15 @@ from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.payments import PaymentGateway
+from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
 from heydesk.wiring import (
     build_decider,
     build_embedder,
     build_knowledge_store,
     build_llm,
+    build_photo_index,
+    build_qdrant,
     build_services,
 )
 
@@ -35,6 +38,7 @@ def create_app(
     decider: Decider | None = None,
     embedder: Embedder | None = None,
     knowledge_store: KnowledgeStore | None = None,
+    photo_index: PhotoIndex | None = None,
     telegram: TelegramApi | None = None,
     payments: PaymentGateway | None = None,
     now: Callable[[], datetime] = utcnow,
@@ -49,12 +53,18 @@ def create_app(
         app.state.settings = settings
         app.state.engine = engine
         app.state.sessions = sessions
+        store, photos = knowledge_store, photo_index
+        if store is None or photos is None:  # one Qdrant client for both
+            qdrant = build_qdrant(settings)
+            store = store or build_knowledge_store(settings, qdrant)
+            photos = photos or build_photo_index(settings, qdrant)
         app.state.services = build_services(
             sessions,
             llm or build_llm(settings),
             decider or build_decider(settings),
             embedder or build_embedder(settings),
-            knowledge_store or build_knowledge_store(settings),
+            store,
+            photos,
             settings,
             now,
             telegram,
@@ -84,6 +94,8 @@ def create_app(
     app.add_middleware(RequestLogMiddleware)  # outermost: logs every request, even CORS rejections
     register_exception_handlers(app)
     include_routers(app, dev_page=dev)
+    # Product photos and the ones visitors send (D57); the folder is made on the first photo
+    app.mount("/media", StaticFiles(directory=settings.MEDIA_DIR, check_dir=False), name="media")
     if dev:  # after the routes, so GET / is the page with the agent's key baked in
         app.mount("/", StaticFiles(directory=WEB_STATIC, html=True), name="web")
     return app

@@ -26,6 +26,13 @@ class HandOff:
 
 
 @dataclass(frozen=True)
+class Photos:
+    """Photos a tool showed the visitor (D57): each `{name, price, url}`."""
+
+    items: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
 class TurnEnded:
     added: list[Message]  # transcript additions, provider-native, in order
     state: dict[str, Any]  # the conversation state after the turn
@@ -36,4 +43,4 @@ class TurnEnded:
     tools: list[str] = field(default_factory=list)  # the tools that ran, in order (D51)
 
 
-type Event = Token | ToolStarted | HandOff | TurnEnded
+type Event = Token | ToolStarted | HandOff | Photos | TurnEnded

@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **Next:** product photos, or Messenger once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **Next:** Messenger once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -284,6 +284,93 @@ only.
 Checked 13 Oct: the Products page saved L/White 0 and M (any colour) 4, kept them when another
 product was switched; live on Maira with the seed shop, "L navy cotton panjabi ache?" → sold
 out, L/White offered; 3 of XL/White → "only 2 left"; O-102 of M/White took M from 4 to 3 only.
+
+## 13 Oct: photos in the shop (D57)
+
+Facebook-page buyers send a screenshot and ask "eta ache?"; today the agent can only ask for
+the name. The owner adds photos to products, a visitor sends a photo and the agent finds the
+closest products, and the agent can show a product's photos. Web chat and the shop only.
+Tested 13 Oct with `gemini-embedding-2` on 14 real products: the right one first 42/42.
+
+**Storing and embedding a photo** (`services/photos.py`, the embedder, a Qdrant store)
+- [x] `uv add pillow`. `PhotoService.save(ws, data)`: Pillow opens it (a 422 if it can't), makes
+      a JPEG of at most 1024 px, writes `media/<workspace_id>/<id>.jpg` (`MEDIA_DIR`) → `Photo(id,
+      url)`. `/media` is served as static files
+- [x] `Embedder.embed_image(jpeg)`: the Gemini adapter sends it as `inline_data`, one image per
+      request; the fake one hashes the bytes (the same photo matches itself)
+- [x] `PhotoIndex` port and its Qdrant adapter: a `heydesk_photos` collection (768, cosine,
+      dense only), `add(ws, photo_id, vector)`, `nearest(ws, vector, limit)` filtered by
+      `workspace_id`. Built in `wiring.py` with the knowledge store
+- [x] `PHOTO_MIN_SIMILARITY = 0.75` in settings (0 with the fake embedder, like the knowledge floor)
+
+**The owner adds photos** (the shop's `api.py`, `values.py`, `models.py`, a migration)
+- [x] `POST /api/products/photos` (multipart): save, embed, index → `{id, url}`. Embedding
+      failed: a 503 and nothing kept
+- [x] `Product.photos: list[str]` (at most 3 URLs), `products.photos` JSON; `GET/PUT
+      /api/products` carry it. A URL that isn't one of the business's product photos is a 422;
+      a CSV import keeps each product's photos by its code
+- [x] `reindex-knowledge` re-embeds every product photo from its file
+
+**A visitor sends a photo** (`api/chat.py`, `ConversationService`, the shop desk)
+- [x] `ChatIn.photo: str | None` (base64, at most 2 MB decoded); `AgentOut.photos` from
+      `Desk.takes_photos` (the shop only); a photo to another desk is a 422
+- [x] `start_turn` saves it, embeds it and asks the index for the 10 nearest; the shop's
+      `photo_line(store, matches)` keeps this business's products at or above the floor, one
+      per product, best first, at most 3, and writes the line (design §7, Photos). The stored
+      visitor message is that line, a new line, then their text, and has `photo` (the URL).
+      Gemini or Qdrant down: the "couldn't be checked" line, never an error
+- [x] The model never gets `photo` or `photos`: the turn drops them (`HIDDEN` in
+      `runtime/loop.py`, with `by`)
+
+**The agent shows photos** (the shop's `tools.py`, the runtime, SSE)
+- [x] `show_photos(products)`: up to 3 codes → each one's name, price (as `update_cart` says
+      it) and first photo's URL; a product with no photo is named in the result. Off the web
+      chat: "photos can't be shown here; describe it"
+- [x] `ToolResult.photos` → a `Photos(items)` event → SSE `photos {items}`; the tool's stored
+      message has `photos` too
+
+**The prompt** (the shop's `ROLE`, prompt-rules.md)
+- [x] Replace "You can't send photos" and "ask for its name" with: a `[Photo. …]` line lists the
+      closest products, best first. Show the first with show_photos and ask if it's the one; never
+      say you have it before they say yes; if not, offer the others as similar. Nothing looks like
+      it, or it couldn't be checked: say so and ask what it is. They ask for a photo:
+      show_photos
+
+**The frontend** (`../heydesk-frontend`)
+- [x] Chat (`AgentChat.vue`, `api/chat.js`): when the agent says `photos`, a photo button next
+      to the box; the picked file is shrunk in the browser (canvas, JPEG, 1024 px) and sent as
+      `photo` with the message (the text may be empty); the visitor's bubble shows it
+- [x] Chat: the `photos` event shows a row of product cards (photo, name, price) in the agent's
+      reply
+- [x] Products page: each product shows its photos; add (up to 3) and remove; saved with the
+      product
+- [x] Conversations page: a message's `photo` and `photos` show as pictures
+- [x] `docs/api.md`: `photo`, `photos`, the upload route, the `photos` event
+
+**Docs and tests**
+- [x] design.md, decisions.md D57, prompt-rules.md (the shop's row). The seed stays without
+      photos: `photos/` isn't in git, and a seed can't embed without a Gemini key
+- [x] `test_shop.py` with the fake embedder: a product's own photo sent back is the first match;
+      no photos indexed → "nothing looks like it"; the embedder failing → "couldn't be checked"
+      and the turn still runs; another business's photo is never matched; `show_photos` sends
+      the event; a photo to the restaurant is a 422
+
+**Done when:** `scripts/check.sh` and the frontend's lint are green; on the Products page, the 14
+photos in `photos/` are added to products and saved; and live on Maira with real Gemini (costs
+quota): a screenshot of the Navy Shirt's photo in the chat → the agent shows the Navy Shirt and
+asks if it's the one; "yes" then an order works as before; a photo of a landscape → it says
+nothing looks like it and asks; "chobi dekhan" for a product → its photo appears.
+
+Checked 13 Oct with the fake model and real Gemini: on the Products page a photo was added to
+the Cotton Panjabi with Add photo and saved; four more products got your photos through the API.
+In the chat, a phone screenshot of the Silk Panjabi's photo (the navy shirt) → "Closest products
+in the shop: Silk Panjabi" alone; a drawn landscape with no words → "Nothing in the shop looks like
+it"; the owner's Conversations page shows the visitor's photo. Live on Maira (13 Oct), with the
+same photos: the screenshot + "eta ache?" → show_photos, the Silk Panjabi's card, "ki apni
+khujchen?" without saying the shop has it; "ha eta. L size maroon nibo" → update_cart, L/Maroon
+৳3,200; "cotton panjabi er chobi dekhan" → its card; the landscape alone → "Ei chobir moto kono
+product amader shop-e nei. Eta ki jinis?". Seen on the way, not D57: Maira invented a
+free-delivery nudge ("aro ৳?") that update_cart didn't give (the subtotal was already over it).
 
 ## M1 — The agent takes an order
 

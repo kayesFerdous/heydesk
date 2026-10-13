@@ -14,6 +14,7 @@ from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.decider.jev import JevDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.embedder.gemini import GeminiEmbedder
+from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
@@ -27,6 +28,7 @@ from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.payments import PaymentGateway
+from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
@@ -37,6 +39,7 @@ from heydesk.services.conversations import ConversationService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
+from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
@@ -87,19 +90,26 @@ def build_embedder(settings: Settings) -> Embedder:
     return FakeEmbedder(settings.EMBEDDING_DIMENSIONS)  # words only: no meaning, no key
 
 
-def build_knowledge_store(settings: Settings) -> KnowledgeStore:
-    """Qdrant Cloud when `QDRANT_URL` is set; otherwise its local mode, in a folder."""
+def build_qdrant(settings: Settings) -> AsyncQdrantClient:
+    """Qdrant Cloud when `QDRANT_URL` is set; otherwise its local mode, in a folder. One client
+    for the documents and the photos: local mode lets only one client open its folder."""
     if settings.QDRANT_URL:
-        client = AsyncQdrantClient(
+        return AsyncQdrantClient(
             url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY or None, timeout=20
         )
-    else:
-        client = AsyncQdrantClient(path=settings.QDRANT_LOCAL_PATH)
+    return AsyncQdrantClient(path=settings.QDRANT_LOCAL_PATH)
+
+
+def build_knowledge_store(settings: Settings, client: AsyncQdrantClient) -> KnowledgeStore:
     # The floor was measured on Gemini's scores; the fake embedder's mean something else
     floor = settings.KNOWLEDGE_MIN_SIMILARITY if settings.EMBEDDER == "gemini" else 0.0
     return QdrantKnowledgeStore(
         client, settings.QDRANT_COLLECTION, settings.EMBEDDING_DIMENSIONS, floor
     )
+
+
+def build_photo_index(settings: Settings, client: AsyncQdrantClient) -> PhotoIndex:
+    return QdrantPhotoIndex(client, settings.QDRANT_PHOTO_COLLECTION, settings.EMBEDDING_DIMENSIONS)
 
 
 def build_payments(settings: Settings) -> PaymentGateway:
@@ -114,6 +124,7 @@ def build_services(
     decider: Decider,
     embedder: Embedder,
     store: KnowledgeStore,
+    photo_index: PhotoIndex,
     settings: Settings,
     now: Callable[[], datetime],
     telegram: TelegramApi | None = None,
@@ -121,12 +132,15 @@ def build_services(
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
+    photos = PhotoService(embedder, photo_index, settings.MEDIA_DIR, settings.PHOTO_MIN_SIMILARITY)
     agents = AgentService(sessions, knowledge, now)
     telegram = telegram or TelegramBot()
     team = TeamService(sessions, llm, telegram, now)
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
-    conversations = ConversationService(sessions, runtime, knowledge, team, visitors, settings, now)
+    conversations = ConversationService(
+        sessions, runtime, knowledge, photos, team, visitors, settings, now
+    )
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
@@ -134,6 +148,7 @@ def build_services(
         conversations=conversations,
         imports=ImportService(llm, settings.MODEL),
         knowledge=knowledge,
+        photos=photos,
         payments=PaymentService(
             sessions, payments or build_payments(settings), team, settings, now
         ),

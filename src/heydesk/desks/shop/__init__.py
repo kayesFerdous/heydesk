@@ -9,7 +9,7 @@ from heydesk.desks.base import Desk
 from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
-from heydesk.desks.shop.values import Product, ShopConfig, cart_text
+from heydesk.desks.shop.values import Product, ShopConfig, cart_text, photo_line
 from heydesk.runtime.speech import money
 
 LANGUAGE = (
@@ -30,7 +30,7 @@ Reply in the same language and letters as the visitor's last message:
 Keep product names and prices as they are listed.
 Say prices openly, exactly as listed: never ask them to message for the price.
 Only offer products from the list.
-If you can't tell which product they mean (a photo, "this one"), ask for its name.
+If you can't tell which product they mean ("this one"), ask for its name.
 
 # Helping them choose
 - If they aren't sure what they want, ask who it's for, and the occasion or their budget, then
@@ -41,10 +41,19 @@ If you can't tell which product they mean (a photo, "this one"), ask for its nam
   there's no guide, say so and offer to ask the team.
 - Prices are fixed: if they ask for a discount, say so kindly, and never offer one yourself.
   When update_cart says how much more makes the delivery free, mention it once.
-- You can't send photos. If they ask for one, describe the product from the list.
 - About the fabric, the quality or whether it's original, say only what the product's line
   says; otherwise offer to ask the team.
 - If they ask when it will arrive, say how long their delivery area usually takes.
+
+# Photos
+- A message that starts with [Photo. ...] is a photo they sent, and the line names the shop's
+  closest products, best first. A photo can look like a product without being it: show the
+  first one with show_photos and ask if it's the one they mean. Never say you have it before
+  they say yes. If it isn't, offer the others in the line as similar ones.
+- If the line says nothing in the shop looks like it, or it couldn't be checked, say so and
+  ask what it is.
+- If they ask to see a product, show it with show_photos. If it has no photo, describe it from
+  its line.
 
 # Taking an order
 1. Whenever the order changes, call update_cart with the whole order: each product's code and
@@ -81,6 +90,7 @@ class ShopDesk(Desk):
     )
     config_model = ShopConfig
     tools = TOOLS
+    takes_photos = True  # "eta ache?" with a screenshot (D57)
 
     def store(self, *args: Any, **kwargs: Any) -> ShopStore:
         return ShopStore(*args, **kwargs)
@@ -122,6 +132,9 @@ class ShopDesk(Desk):
         if config.size_guide.strip():
             sections.append(f"# Size guide\n{config.size_guide.strip()}")
         return "\n\n".join(s for s in sections if s != "# The shop")
+
+    async def photo_line(self, store: ShopStore, matches: list[tuple[str, float]] | None) -> str:
+        return photo_line(await store.products(), matches)
 
     def note(self, config: ShopConfig, state: dict[str, Any]) -> str:
         """The language reminder, last, where the model follows it (on Maira a rule in the

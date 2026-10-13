@@ -1,3 +1,4 @@
+import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 import heydesk.desks  # noqa: F401  (registers every desk's tables)
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
+from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.telegram.fake import FakeTelegram
@@ -84,15 +86,18 @@ def make_test_settings() -> Settings:
         QDRANT_LOCAL_PATH=":memory:",
         PUBLIC_URL="https://heydesk.test",
         PAYMENTS="fake",
+        MEDIA_DIR=tempfile.mkdtemp(prefix="heydesk-media-"),  # photos never land in the repo
         _env_file=None,
     )  # type: ignore[call-arg]
 
 
-def make_knowledge() -> tuple[FakeEmbedder, QdrantKnowledgeStore]:
-    """An offline knowledge base: fake embeddings and Qdrant's own engine in memory."""
+def make_knowledge() -> tuple[FakeEmbedder, QdrantKnowledgeStore, QdrantPhotoIndex]:
+    """An offline knowledge base and photo index: fake embeddings and Qdrant's own engine in
+    memory, one client for both."""
     embedder = FakeEmbedder(dimensions=64)
-    store = QdrantKnowledgeStore(AsyncQdrantClient(":memory:"), "test", dimensions=64)
-    return embedder, store
+    client = AsyncQdrantClient(":memory:")
+    store = QdrantKnowledgeStore(client, "test", dimensions=64)
+    return embedder, store, QdrantPhotoIndex(client, "test_photos", dimensions=64)
 
 
 async def create_tables(engine: AsyncEngine) -> None:
@@ -161,8 +166,10 @@ async def world() -> AsyncIterator[World]:
     engine, sessions = make_engine("sqlite+aiosqlite://")
     await create_tables(engine)
     llm, decider, clock = FakeLLM(), FakeDecider(), Clock()
-    embedder, store = make_knowledge()
-    services = build_services(sessions, llm, decider, embedder, store, make_test_settings(), clock)
+    embedder, store, photos = make_knowledge()
+    services = build_services(
+        sessions, llm, decider, embedder, store, photos, make_test_settings(), clock
+    )
     await services.agents.ensure_dev_agent("restaurant", SEED)
     yield World(services, sessions, llm, decider, clock, embedder)
     await store.client.close()
@@ -171,13 +178,14 @@ async def world() -> AsyncIterator[World]:
 
 @pytest.fixture
 async def app() -> AsyncIterator[FastAPI]:
-    embedder, store = make_knowledge()
+    embedder, store, photos = make_knowledge()
     app = create_app(
         make_test_settings(),
         llm=FakeLLM(),
         decider=FakeDecider(),
         embedder=embedder,
         knowledge_store=store,
+        photo_index=photos,
         telegram=FakeTelegram(),
         now=Clock(),
     )

@@ -25,11 +25,14 @@ from heydesk.ports.llm import (
     ToolOutcome,
 )
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.events import Event, HandOff, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import Event, HandOff, Photos, Token, ToolStarted, TurnEnded
 from heydesk.runtime.tool import Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
 MAX_MODEL_CALLS = 6  # rule 9
+# Keys a stored message may have for the people who read it, never for the model: who wrote it
+# (the team, D43), the photo a visitor sent and the photos a tool showed (D57)
+HIDDEN = ("by", "photo", "photos")
 
 
 @dataclass(frozen=True)
@@ -46,7 +49,7 @@ class TurnInput:
     tools: list[Tool]  # the desk's tools
     model: str
     history: list[Message]  # the transcript so far
-    user_text: str
+    user_text: str  # what they typed: their yes, if there was one
     channel: str
     agent: AgentConfig
     store: Any  # the desk's data, for its tools
@@ -55,6 +58,8 @@ class TurnInput:
     note: Callable[[dict[str, Any]], str] = lambda state: ""  # the desk's note on the state
     is_first: bool = False  # the conversation's first turn: the greeting goes in first (D8)
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
+    photo_url: str = ""  # the photo the visitor sent with it, if any (D57)
+    photo_line: str = ""  # Python's line on that photo, which the model reads before their text
 
 
 async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
@@ -77,7 +82,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             finished: Finished | None = None
             calls: list[ToolCall] = []
             system = turn.system + turn.note(state)
-            request = ChatRequest(system, specs, [*turn.history, *added], turn.model)
+            request = ChatRequest(system, specs, for_model([*turn.history, *added]), turn.model)
             with trace.step("model", n=n) as step:
                 async with aclosing(rt.llm.stream(request)) as stream:
                     async for event in stream:
@@ -115,8 +120,10 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 rt.decider,
                 agent_said=agent_said,
                 visitor_said=turn.user_text,
+                channel=turn.channel,
             )
             outcomes = []
+            shown: list[list[dict[str, str]] | None] = []  # each call's photos, if it showed any
             for call in calls:
                 tool = tools.get(call.name)
                 yield (
@@ -133,8 +140,15 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 asked_for_person |= result.handoff  # the model still replies; the card follows
                 if result.alert:
                     alerts.append(result.alert)
+                if result.photos:
+                    yield Photos(result.photos)
+                shown.append(result.photos)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
-            added += rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
+            results = rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
+            for message, photos in zip(results, shown, strict=False):
+                if photos:  # kept for the chat page and the owner, hidden from the model
+                    message["photos"] = photos
+            added += results
             if said:  # the tool said the reply itself (off_topic): no model call for it
                 yield Token(said)
                 added.append(rt.llm.assistant_message(said))
@@ -173,8 +187,16 @@ def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
     added = []
     if turn.is_first:  # what they saw first, so the model never greets twice (D8)
         added.append(llm.assistant_message(turn.agent.fill(turn.agent.greeting)))
-    added.append(llm.user_message(turn.user_text))
+    said = llm.user_message("\n".join(t for t in (turn.photo_line, turn.user_text) if t))
+    if turn.photo_url:
+        said["photo"] = turn.photo_url
+    added.append(said)
     return added
+
+
+def for_model(messages: list[Message]) -> list[Message]:
+    """The transcript as the model gets it: without the keys only people read (`HIDDEN`)."""
+    return [{k: v for k, v in m.items() if k not in HIDDEN} for m in messages]
 
 
 def last_agent_text(messages: list[Message]) -> str:

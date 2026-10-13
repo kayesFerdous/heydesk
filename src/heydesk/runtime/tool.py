@@ -33,6 +33,7 @@ class ToolContext[S]:
     decider: Decider  # for the commit check
     agent_said: str  # the agent's last message before this turn: the read-back, if there was one
     visitor_said: str  # this turn's message: the yes, if there was one
+    channel: str = "web"  # "web", "voice", "telegram": only the web chat shows photos (D57)
 
     @property
     def local_now(self) -> datetime:
@@ -48,6 +49,7 @@ class ToolResult:
     handoff: bool = False  # the turn ends with the hand-off card; the conversation needs a person
     alert: str | None = None  # for the owner, on Telegram (D43): what was just saved
     reply: str | None = None  # said to the visitor as it is, and the turn ends: no more model calls
+    photos: list[dict[str, str]] | None = None  # shown to the visitor: {name, price, url} (D57)
 
 
 def fail(hint: str) -> ToolResult:

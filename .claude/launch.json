@@ -71,6 +71,37 @@
       "port": 8002
     },
     {
+      "name": "heydesk-shop-fake-console",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "heydesk-shop-console",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "heydesk-shop",
       "runtimeExecutable": "env",
       "runtimeArgs": [

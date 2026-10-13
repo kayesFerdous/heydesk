@@ -1,6 +1,7 @@
 """The shop's tools: keep the cart up to date (Python adds it up, rule 1), place a
 cash-on-delivery order, and track, change or cancel one: the order placed in this chat, or any
 with its code and the buyer's mobile (D55). A delivered order can get an exchange request.
+On the web chat, it can show products' photos (D57).
 
 A shop can take the delivery charge online first (D47): then `place_order` saves the order
 `unpaid` and returns a payment link. No tool can mark it paid: only the payment check can."""
@@ -550,4 +551,53 @@ REQUEST_EXCHANGE = Tool(
     timeout_s=10.0,
 )
 
-TOOLS = [UPDATE_CART, PLACE_ORDER, TRACK_ORDER, CHANGE_ORDER, CANCEL_ORDER, REQUEST_EXCHANGE]
+
+class ShowPhotosInput(BaseModel):
+    products: list[str] = Field(
+        min_length=1, max_length=3, description="Up to 3 product codes, shown in [brackets]"
+    )
+
+
+async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
+    """Each product's first photo, with its name and price, on the visitor's screen (D57)."""
+    if ctx.channel != "web":
+        return fail("Photos can't be shown here. Describe the product from its line instead.")
+    products = {p.code: p for p in await ctx.store.products()}
+    unknown = [code for code in args.products if code not in products]
+    if unknown:
+        return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
+    chosen = [products[code] for code in dict.fromkeys(args.products)]
+    shown = [p for p in chosen if p.photos]
+    data: dict[str, Any] = {"shown": [p.name for p in shown]}
+    if len(shown) < len(chosen):
+        data["no_photo"] = [p.name for p in chosen if not p.photos]
+        data["next"] = "Describe the ones with no photo from their line."
+    else:
+        data["next"] = "They can see the photos now. Ask if it's what they're looking for."
+    photos = [
+        {"name": p.name, "price": money(p.price, ctx.agent.currency), "url": p.photos[0]}
+        for p in shown
+    ]
+    return ToolResult(ok=True, data=data, photos=photos or None)
+
+
+SHOW_PHOTOS = Tool(
+    name="show_photos",
+    description=(
+        "Show the visitor photos of up to 3 products, with their names and prices: to ask if a "
+        "photo they sent is one of them, or when they ask to see a product."
+    ),
+    input_model=ShowPhotosInput,
+    run=show_photos,
+    label="Finding the photos…",
+)
+
+TOOLS = [
+    UPDATE_CART,
+    PLACE_ORDER,
+    TRACK_ORDER,
+    CHANGE_ORDER,
+    CANCEL_ORDER,
+    REQUEST_EXCHANGE,
+    SHOW_PHOTOS,
+]

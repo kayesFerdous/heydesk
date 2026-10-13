@@ -7,6 +7,7 @@ from heydesk.services.conversations import ConversationService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
+from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
@@ -21,6 +22,7 @@ class Services:
     imports: ImportService
     knowledge: KnowledgeService
     payments: PaymentService
+    photos: PhotoService
     rate_limits: RateLimiter
     users: UserService
     visitors: VisitorService

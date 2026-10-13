@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28.1",
     "limits>=5.8.0",
     "num2words>=0.5.14",
+    "pillow>=12.3.0",
     "pipecat-ai[deepgram,piper,silero,webrtc]>=1.12.0",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.15.0",

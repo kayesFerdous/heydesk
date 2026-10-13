@@ -21,6 +21,7 @@ async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -
     assert res.json() == {
         "name": "Spice Garden assistant",
         "greeting": "Hi, welcome to Spice Garden! Hungry? I can help with the menu or take your order.",
+        "photos": False,  # only a shop takes photos (D57)
     }
 
 

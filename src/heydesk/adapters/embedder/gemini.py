@@ -3,7 +3,13 @@
 Over httpx, like the other adapters. For text, this model takes a task written into the input
 rather than a parameter: documents as `title: … | text: …`, questions as `task: search result
 | query: …`. Vectors are cut to `dimensions` (768), which Qdrant compares by cosine.
+
+A photo goes in as it is (`inline_data`, a JPEG) with no task, one photo per request: Gemini
+takes up to 6 images in one embedding, but they'd make one vector, not six (D57).
 """
+
+import base64
+from typing import Any
 
 import httpx
 
@@ -36,15 +42,22 @@ class GeminiEmbedder:
     async def embed_query(self, text: str) -> list[float]:
         return (await self._embed([f"task: search result | query: {text}"]))[0]
 
-    async def _embed(self, inputs: list[str]) -> list[list[float]]:
+    async def embed_image(self, jpeg: bytes) -> list[float]:
+        photo = {
+            "inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(jpeg).decode()}
+        }
+        return (await self._embed([photo]))[0]
+
+    async def _embed(self, inputs: list[str | dict[str, Any]]) -> list[list[float]]:
+        """One vector per input: a text, or a part as Gemini spells it (a photo)."""
         body = {
             "requests": [
                 {
                     "model": f"models/{self.model}",
-                    "content": {"parts": [{"text": text}]},
+                    "content": {"parts": [{"text": part} if isinstance(part, str) else part]},
                     "outputDimensionality": self.dimensions,
                 }
-                for text in inputs
+                for part in inputs
             ]
         }
         try:

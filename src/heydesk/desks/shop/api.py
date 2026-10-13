@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
@@ -11,6 +11,7 @@ from heydesk.desks.csv_import import Suggestion
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import PRODUCT_COLUMNS, Product, products_from_csv
+from heydesk.errors import InvalidConfig
 
 router = APIRouter(tags=["shop"])
 
@@ -60,11 +61,38 @@ async def products(store: Shop) -> list[Product]:
 
 
 @router.put("/api/products")
-async def replace_products(body: list[Product], store: Shop) -> list[Product]:
-    """The products become exactly these, in this order (with their stock). Live from the
-    next message."""
+async def replace_products(
+    body: list[Product], store: Shop, services: Svc, ws: Workspace
+) -> list[Product]:
+    """The products become exactly these, in this order (with their stock and photos). Live
+    from the next message."""
+    wrong = {
+        f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
+        for n, product in enumerate(body)
+        for url in product.photos
+        if not services.photos.is_products(ws, url)
+    }
+    if wrong:
+        raise InvalidConfig(wrong)
     await store.replace_products(body)
     return body
+
+
+class PhotoOut(BaseModel):
+    url: str  # put it in a product's `photos` and save the products
+
+
+@router.post("/api/products/photos")
+async def add_product_photo(
+    file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP photo, up to 10 MB")],
+    services: Svc,
+    ws: Workspace,
+    _: Shop,
+) -> PhotoOut:
+    """Adds a product photo: saved as a JPEG and indexed, so a visitor's photo can find it
+    (D57). It belongs to a product once that product's `photos` are saved with its URL."""
+    photo = await services.photos.add_product_photo(ws, await file.read())
+    return PhotoOut(url=photo.url)
 
 
 @router.post("/api/products/import/suggest")
@@ -79,6 +107,8 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
     found = products_from_csv(body.csv, body.mapping)
+    photos = {p.code: p.photos for p in await store.products()}  # a CSV has no photos: keep them
+    found = [p.model_copy(update={"photos": photos.get(p.code, [])}) for p in found]
     if not body.dry_run:
         await store.replace_products(found)
     return ImportOut[Product](saved=not body.dry_run, count=len(found), preview=found[:5])

@@ -1,4 +1,5 @@
-"""The `Embedder` port: text → vectors, for searching a business's documents (D33)."""
+"""The `Embedder` port: text and photos → vectors, for searching a business's documents (D33)
+and its product photos (D57)."""
 
 from typing import Protocol
 
@@ -16,4 +17,8 @@ class Embedder(Protocol):
 
     async def embed_query(self, text: str) -> list[float]:
         """A visitor's question, as a vector comparable with the documents'."""
+        ...
+
+    async def embed_image(self, jpeg: bytes) -> list[float]:
+        """A photo (JPEG bytes), as a vector comparable with other photos'."""
         ...

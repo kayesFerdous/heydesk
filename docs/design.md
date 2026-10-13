@@ -87,7 +87,7 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | File | What's in it |
 |---|---|
 | `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
-| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange` |
+| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
 | `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`; `Doctor` (with `works_at`), `NewAppointment`; `Product`, `Zone`, `ShopConfig`, `mobile()` |
 | `models.py` | Its tables: `menu_items` and `orders`; `doctors` and `appointments`; `products` and `shop_orders` |
 | `store.py` | Its data access, for its tools and its owner routes, always one workspace |
@@ -240,6 +240,7 @@ merged into the conversation's `state`, saved with the turn.
 | `change_order` | shop | **yes** | Found like `track_order`; then any of a new `address`, `area` (or a place in one), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). A new area works out the delivery charge and total again; not once its charge was paid online. The items can't change: cancel and order again. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `track_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `track_order`; only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
+| `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Off the web chat, it says photos can't be shown here (D57) |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 
@@ -281,6 +282,55 @@ ask: the agent calls search_knowledge(question) ─► Gemini embeds the questio
   Scanned PDFs have no text layer: they're refused with a reason.
 - `uv run heydesk reindex-knowledge` rebuilds every chunk from the saved text (a new collection or model).
 
+### Photos (D57)
+
+A shop's products have photos, a visitor can send a photo ("eta ache?"), and the agent can show
+a product's photos. Web chat only; Telegram and voice stay text (§12).
+
+```
+owner adds:  a file ─► Pillow: a JPEG, at most 1024 px ─► media/<workspace_id>/products/<id>.jpg
+             ─► Gemini embeds the image (one image per request) ─► Qdrant `heydesk_photos`
+             ─► {url}; the Products page puts the URL in the product's `photos` and saves
+visitor sends: the page shrinks it to a JPEG ─► `photo` in the chat body (base64)
+             ─► saved the same way, in media/<workspace_id>/chat/ ─► Gemini embeds it
+             ─► Qdrant: this business's 10 nearest photos ─► each URL ─► its product
+             ─► one line at the top of the visitor's message
+agent shows:  show_photos(products) ─► a `photos` event: each product's name, price and photo
+```
+
+- **Python matches, the model only talks (rule 1).** The visitor's stored message starts with a
+  line Python writes, then what they typed:
+  `[Photo. Closest products in the shop: Sky Blue Casual Shirt [P12], Sky Blue Shirt [P15]]`, or
+  `[Photo. Nothing in the shop looks like it.]`, or, when Gemini or Qdrant didn't answer,
+  `[Photo. It couldn't be checked: ask what it is.]`. It's stored, so later turns still know what
+  the photo was. A product appears once (its best photo), at most 3, best first, and only at or
+  above `PHOTO_MIN_SIMILARITY` (0.75).
+- **A match is never a yes.** Measured 13 Oct on 14 real products (shirts, a panjabi, phones,
+  cameras): the right product came first 42 times out of 42, at 0.84–0.95; but when a product is
+  missing, a look-alike still scores up to 0.86. No number tells "this one" from "one like it",
+  so the prompt says: show the closest with `show_photos` and ask if it's the one; if not, offer
+  the others as similar. Below 0.75 is a different kind of thing (a phone for a graphics card
+  scored 0.72).
+- **A message can carry photos.** A visitor's message has `photo` (its URL), and `show_photos`'s
+  tool message has `photos` (its items). The chat page and the owner's conversation view show
+  them. The turn leaves them out of what the model gets (`HIDDEN` in `runtime/loop.py`, with
+  `by`).
+- **Isolation.** Files are under the business's id; every Qdrant point has `workspace_id` and
+  every search filters by it. Saving products refuses a photo URL that isn't one of this
+  business's product photos (a 422). A photo found that's on none of its products (one the owner
+  removed) is skipped. A CSV import keeps each product's photos by its code.
+- **Only the shop takes photos** (`Desk.takes_photos`). `GET /api/chat/{key}` says `photos: true`
+  for it, so the page shows the button; a photo sent to another desk is a 422.
+- **Limits.** 3 photos a product. A visitor's photo is at most 2 MB after the page shrinks it,
+  an owner's 10 MB, and Pillow must read it (a 422 `unreadable_photo` otherwise). The services
+  are `PhotoService` (`services/photos.py`), the `PhotoIndex` port and its Qdrant adapter, which
+  shares one Qdrant client with the documents (local mode lets only one open its folder). Gemini takes only PNG and JPEG, so everything is
+  stored as JPEG; the owner can upload WebP too.
+- **Free.** Gemini's free tier; one call per photo added and one per photo a visitor sends.
+  Gemini allows 6 images per *embedding*, not per call, so a batch of one-image requests is fine.
+  Free-tier inputs may be used by Google to improve its products.
+- `reindex-knowledge` also re-embeds every product photo from its file.
+
 ## 8. Data model
 
 Every table has `workspace_id` (except `workspaces`).
@@ -301,7 +351,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Shown by number; unpaid → new (the delivery charge was paid, D48) → ready → collected, or cancelled |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
-| `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), position |
+| `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking. Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
@@ -319,8 +369,8 @@ SQLAlchemy doesn't see in-place edits.
 | Method | Path | Does |
 |---|---|---|
 | GET | `/` | Dev chat page (development only) |
-| GET | `/api/chat/{key}` | Agent name and greeting |
-| POST | `/api/chat/{key}` | `{message, conversation_id?}` → Server-Sent Events |
+| GET | `/api/chat/{key}` | Agent name, greeting, and `photos` (true when it takes photos, D57) |
+| POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
@@ -335,9 +385,11 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422 |
+| POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
+| GET | `/media/…` | A photo: a product's (`<workspace_id>/products/<id>.jpg`) or one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status and set its `tracking` (D45) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said |
+| GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57 |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
@@ -370,7 +422,7 @@ for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21). A st
 change a table's flow doesn't allow is a 409 `invalid_transition` (§8).
 
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
-`handoff {message, phone}`, `done {interrupted}`, `error {message}`.
+`handoff {message, phone}`, `photos {items: [{name, price, url}]}` (D57), `done {interrupted}`, `error {message}`.
 
 Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
 tokens, cost, error (rule 7). There is no trace table (D15).
@@ -609,6 +661,7 @@ version handles them.
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
-| Shop: photos of a product | The agent asks for the product's name |
+| Photos: Telegram and Messenger, several in one message, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat only, one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
+| Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |

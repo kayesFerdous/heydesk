@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     # often, lower it if answerable questions get nothing. Exact-word matches ignore it.
     KNOWLEDGE_MIN_SIMILARITY: float = 0.6
 
+    # Photos (D57): a shop's product photos and the ones visitors send, kept as JPEG files here
+    # and embedded by the same Gemini model into their own Qdrant collection
+    MEDIA_DIR: str = "./media"
+    QDRANT_PHOTO_COLLECTION: str = "heydesk_photos"
+    # A product photo below this isn't like the visitor's photo at all. From a run on 13 Oct (14
+    # real products): the right product scored 0.84 to 0.95, a look-alike of a missing product up
+    # to 0.86, a different kind of thing (a phone for a graphics card) 0.66 to 0.76. No score
+    # tells "this one" from "one like it", so the agent always asks; this only drops the unlike.
+    PHOTO_MIN_SIMILARITY: float = 0.75
+
     # Speech-to-text for voice calls: Deepgram streams the words as they're spoken, Chorus uploads
     # each utterance (D18, D39)
     STT_PROVIDER: Literal["deepgram", "chorus"] = "deepgram"

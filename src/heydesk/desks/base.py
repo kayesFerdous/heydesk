@@ -218,6 +218,7 @@ class Desk:
     description: ClassVar[str]  # for the owner, in plain words
     config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
     tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
+    takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop, D57)
 
     def store(
         self,
@@ -246,6 +247,11 @@ class Desk:
     def note(self, config: Any, state: dict[str, Any]) -> str:
         """A short note from the conversation state, added before every model call."""
         return ""
+
+    async def photo_line(self, store: Any, matches: list[tuple[str, float]] | None) -> str:
+        """The line the model reads about a visitor's photo: what it's like, from `matches`
+        (the closest product photos, best first; None when they couldn't be searched)."""
+        return "[Photo.]"
 
     async def missing(self, config: Any, store: Any) -> list[str]:
         """What the owner still has to fill in, in their words. The agent answers meanwhile."""

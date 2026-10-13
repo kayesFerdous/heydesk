@@ -12,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.desks import tools_for
-from heydesk.errors import ConversationFull, HeyDeskError, NotFound
+from heydesk.errors import ConversationFull, HeyDeskError, NotFound, UnreadablePhoto
 from heydesk.models import Conversation
 from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
 from heydesk.services.visitors import VisitorService
 
@@ -46,6 +47,7 @@ class ConversationService:
         sessions: async_sessionmaker[AsyncSession],
         runtime: Runtime,
         knowledge: KnowledgeService,
+        photos: PhotoService,
         team: TeamService,
         visitors: VisitorService,
         settings: Settings,
@@ -54,6 +56,7 @@ class ConversationService:
         self.sessions = sessions
         self.runtime = runtime
         self.knowledge = knowledge
+        self.photos = photos
         self.team = team
         self.visitors = visitors
         self.settings = settings
@@ -67,13 +70,19 @@ class ConversationService:
         channel: str,
         visitor: str,
         contact: str | None = None,
+        photo: bytes | None = None,
     ) -> RunningTurn:
         """Loads the conversation (or starts one), then runs the turn as the listener reads it.
         `visitor` is who is talking, for the limits (D51): `web:<token>`, `telegram:<chat id>`.
-        A messaging app passes its `contact` (the chat id) for a new conversation."""
+        A messaging app passes its `contact` (the chat id) for a new conversation. A web visitor
+        can send a `photo` with it, or instead of words, when the desk takes photos (D57)."""
         text = text.strip()
-        if not text or len(text) > self.settings.MAX_MESSAGE_CHARS:
+        if photo is not None and not agent.desk.takes_photos:
+            raise UnreadablePhoto("This chat can't take photos.")
+        if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
+        # Read before anything is saved, so a file that isn't a photo changes nothing
+        saved = await self.photos.save(agent.workspace_id, "chat", photo) if photo else None
         conv = None
         if conversation_id:
             async with self.sessions() as s:
@@ -98,13 +107,17 @@ class ConversationService:
             knowledge=self.knowledge,
             public_url=self.settings.public_url,
         )
+        photo_line = ""
+        if saved:  # kept for the owner's view; the model gets a line on its closest products
+            matches = await self.photos.nearest(agent.workspace_id, saved.jpeg)
+            photo_line = await desk.photo_line(store, matches)
         turn = TurnInput(
             system=build_system_prompt(
                 config, await desk.prompt(config, store), channel, now, agent.documents
             ),
             tools=tools_for(desk, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
-            history=[{k: v for k, v in m.items() if k != "by"} for m in conv.messages],
+            history=conv.messages,
             user_text=text,
             channel=channel,
             agent=config,
@@ -113,6 +126,8 @@ class ConversationService:
             state=conv.state,
             note=lambda state: desk.note(config, state),
             is_first=not conv.messages,
+            photo_url=saved.url if saved else "",
+            photo_line=photo_line,
         )
         return RunningTurn(conv.id, self._run(turn, conv, agent, visitor), turn.interrupt)
 

@@ -1,14 +1,19 @@
 """The shop desk: products with sizes, colours and stock; a cash-on-delivery order Python adds
 up, saved only after a yes and taken out of stock; tracking, changing and cancelling it (the
 one from this chat, or with the code and the buyer's mobile); an exchange request once it's
-delivered; and the owner's products and orders routes."""
+delivered; the owner's products and orders routes; and photos: the owner's, a visitor's sent to
+find a product, and the ones the agent shows (D57)."""
 
+import base64
+import io
+import json
 from datetime import timedelta
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+from PIL import Image
 from sqlalchemy import select
 
 from heydesk.desks.shop import SHOP
@@ -18,10 +23,12 @@ from heydesk.desks.shop.tools import (
     ExchangeInput,
     FindOrderInput,
     PlaceOrderInput,
+    ShowPhotosInput,
     UpdateCartInput,
     change_order,
     place_order,
     request_exchange,
+    show_photos,
     track_order,
     update_cart,
 )
@@ -29,7 +36,7 @@ from heydesk.desks.shop.values import mobile, stock_cell
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
-from tests.conftest import FIXED_NOW, SEEDS, World, make_ctx
+from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
 PANJABIS = {"code": "panjabi-cotton", "quantity": 2, "size": "L", "colour": "White"}
@@ -525,3 +532,120 @@ def test_a_csv_stock_cell_can_count_each_size_and_colour() -> None:
     ]
     with pytest.raises(ValueError, match="like M: 5"):
         stock_cell("XXL: 2", sizes, colours)
+
+
+# Photos (D57)
+
+
+def photo(colour: str) -> bytes:
+    """A small picture of one colour, as a phone would send it."""
+    out = io.BytesIO()
+    Image.new("RGB", (40, 40), colour).save(out, "PNG")
+    return out.getvalue()
+
+
+def as_base64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    agent = await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    added = await client.post(
+        "/api/products/photos", files={"file": ("kurti.png", photo("red"), "image/png")}
+    )
+    url = added.json()["url"]
+    assert url.startswith(f"/media/{DEV_WORKSPACE_ID}/products/") and url.endswith(".jpg")
+    assert (await client.get(url)).headers["content-type"] == "image/jpeg"
+
+    products = (await client.get("/api/products")).json()
+    kurti = next(p for p in products if p["code"] == "kurti")
+    kurti["photos"] = [url]
+    assert (await client.put("/api/products", json=products)).status_code == 200
+    kurti["photos"] = ["/media/someone-else/products/x.jpg"]
+    assert (await client.put("/api/products", json=products)).status_code == 422
+    csv = "Name,Code,Price\nCotton Kurti,kurti,950\n"
+    await client.post("/api/products/import", json={"csv": csv})
+    assert (await client.get("/api/products")).json()[0]["photos"] == [url]  # kept
+
+    llm = services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
+    body = {"visitor_id": "test-visitor", "message": "eta ache?", "photo": as_base64(photo("red"))}
+    res = await client.post(f"/api/chat/{agent.public_key}", json=body)
+    shown = next(
+        json.loads(f.split("data: ")[1])
+        for f in res.text.split("\n\n")
+        if f.startswith("event: photos")
+    )
+    assert shown == {"items": [{"name": "Cotton Kurti", "price": "৳950", "url": url}]}
+
+    conv_id = res.text.split('"conversation_id": "')[1].split('"')[0]
+    [_, said, _, tool, _] = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages
+    assert (
+        said["content"] == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
+    )
+    assert said["photo"].startswith(f"/media/{DEV_WORKSPACE_ID}/chat/")
+    assert tool["photos"] == shown["items"]  # for the owner's view
+    seen = (await client.get(f"/api/conversations/{conv_id}")).json()["messages"]
+    assert (seen[1]["photo"], seen[2]["photos"]) == (said["photo"], shown["items"])
+    sent = [m for r in llm.requests for m in r.messages]
+    assert not any("photo" in m or "photos" in m for m in sent)  # the model never gets them
+
+    llm.script = ["What is it?"]
+    other = {"visitor_id": "test-visitor", "photo": as_base64(photo("blue"))}  # no words
+    await client.post(f"/api/chat/{agent.public_key}", json=other)
+    assert llm.requests[-1].messages[-1]["content"] == "[Photo. Nothing in the shop looks like it.]"
+
+
+async def test_another_business_never_sees_your_photos(app: FastAPI, client: AsyncClient) -> None:
+    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    second = await new_business(app)
+    try:
+        await second.post("/api/agent", json={"kind": "shop"})
+        await second.post(
+            "/api/products/photos", files={"file": ("tee.png", photo("green"), "image/png")}
+        )
+    finally:
+        await second.aclose()
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = ["What is it?"]
+    body = {"visitor_id": "test-visitor", "photo": as_base64(photo("green"))}
+    await client.post(f"/api/chat/{agent.public_key}", json=body)
+    assert llm.requests[-1].messages[-1]["content"] == "[Photo. Nothing in the shop looks like it.]"
+
+
+async def test_a_photo_that_cant_be_checked_still_gets_an_answer(world: World) -> None:
+    agent = await world.agent("shop")
+    world.embedder.fail_queries = True  # Gemini is down
+    world.llm.script = ["What is it?"]
+    turn = await world.services.conversations.start_turn(
+        agent, None, "", "web", "web:test-visitor", photo=photo("red")
+    )
+    [_ async for _ in turn.events]
+    said = (await world.conversation(turn.conversation_id)).messages[1]["content"]
+    assert said == "[Photo. It couldn't be checked: ask what it is.]"
+
+
+async def test_only_the_shop_takes_photos_and_only_real_ones(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    body = {"visitor_id": "test-visitor", "message": "hi", "photo": as_base64(photo("red"))}
+    to_restaurant = await client.post(f"/api/chat/{DEV_KEY}", json=body)
+    assert to_restaurant.status_code == 422 and "can't take photos" in to_restaurant.text
+
+    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    not_a_photo = {**body, "photo": as_base64(b"hello, not a picture")}
+    refused = await client.post(f"/api/chat/{agent.public_key}", json=not_a_photo)
+    assert refused.status_code == 422 and refused.json()["error"]["code"] == "unreadable_photo"
+
+
+async def test_show_photos_works_only_on_the_web_chat(world: World) -> None:
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    args = ShowPhotosInput(products=["kurti"])
+    on_call = await show_photos(make_ctx(store, agent=agent.config, channel="voice"), args)
+    assert not on_call.ok and "can't be shown here" in on_call.data["error"]
+    no_photo = await show_photos(make_ctx(store, agent=agent.config), args)
+    assert (no_photo.photos, no_photo.data["no_photo"]) == (None, ["Cotton Kurti"])

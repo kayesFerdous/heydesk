@@ -24,7 +24,9 @@ class ConversationOut(BaseModel):
 
 class Line(BaseModel):
     role: Literal["user", "assistant"]
-    text: str
+    text: str  # empty for photos the agent showed
+    photo: str = ""  # the photo the visitor sent with it (D57)
+    photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url} (D57)
 
 
 class ConversationWithMessages(ConversationOut):
@@ -65,14 +67,17 @@ async def conversation(
     conversation_id: str, services: Svc, ws: Workspace
 ) -> ConversationWithMessages:
     conv = await services.conversations.get(ws, conversation_id)
-    said = [
-        Line(role=m["role"], text=m["content"])
-        for m in conv.messages
-        if m.get("role") in ("user", "assistant")
-        and isinstance(m.get("content"), str)
-        and m["content"].strip()
-        and not m.get("tool_calls")
-    ]
+    said = []
+    for m in conv.messages:
+        if m.get("photos"):  # a tool's result, kept only for the photos it showed
+            said.append(Line(role="assistant", text="", photos=m["photos"]))
+        elif (
+            m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+            and m["content"].strip()
+            and not m.get("tool_calls")
+        ):
+            said.append(Line(role=m["role"], text=m["content"], photo=m.get("photo", "")))
     return ConversationWithMessages(
         **ConversationOut.model_validate(conv).model_dump(), messages=said
     )

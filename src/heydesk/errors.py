@@ -66,6 +66,14 @@ class KnowledgeUnavailable(HeyDeskError):
     code = "knowledge_unavailable"
 
 
+class UnreadablePhoto(HeyDeskError):
+    """A file that isn't a picture we can read, one too big, or a photo sent to an agent that
+    takes none (D57)."""
+
+    status_code = 422
+    code = "unreadable_photo"
+
+
 class ConversationFull(HeyDeskError):
     """A conversation reached MAX_TURNS: every turn sends the whole transcript (D21)."""
 

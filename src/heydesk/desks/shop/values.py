@@ -44,6 +44,8 @@ class Product(BaseModel):
     # Stock per size and colour (D56). When there are any, they hold the stock and `stock` is
     # None; a size and colour no variant matches isn't counted
     variants: list[Variant] = []
+    # Up to 3 photo URLs, from `POST /api/products/photos`; the first is the one the agent shows
+    photos: list[str] = Field(default=[], max_length=3)
 
     @model_validator(mode="after")
     def _variants_fit(self) -> Self:
@@ -178,6 +180,23 @@ class ShopConfig(AgentConfig):
         if self.free_delivery_over and subtotal >= self.free_delivery_over:
             return 0
         return zone.charge
+
+
+PHOTO_MATCHES = 3  # products named in a photo's line
+
+
+def photo_line(products: list[Product], matches: list[tuple[str, float]] | None) -> str:
+    """What the model reads about a visitor's photo (D57): the products whose photos are most
+    like it, best first, each once. `matches` are (photo URL, score), best first; a URL on no
+    product (one the owner removed) is skipped. None: the photo couldn't be searched."""
+    if matches is None:
+        return "[Photo. It couldn't be checked: ask what it is.]"
+    by_url = {url: p for p in products for url in p.photos}
+    found = [by_url[url] for url, _ in matches if url in by_url]
+    names = list(dict.fromkeys(f"{p.name} [{p.code}]" for p in found))[:PHOTO_MATCHES]
+    if not names:
+        return "[Photo. Nothing in the shop looks like it.]"
+    return f"[Photo. Closest products in the shop: {', '.join(names)}]"
 
 
 BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
