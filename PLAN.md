@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **Next:** Messenger once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **Next:** Messenger once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -371,6 +371,53 @@ khujchen?" without saying the shop has it; "ha eta. L size maroon nibo" → upda
 ৳3,200; "cotton panjabi er chobi dekhan" → its card; the landscape alone → "Ei chobir moto kono
 product amader shop-e nei. Eta ki jinis?". Seen on the way, not D57: Maira invented a
 free-delivery nudge ("aro ৳?") that update_cart didn't give (the subtotal was already over it).
+
+## 14 Oct: a linked Google Sheet (D58)
+
+Most Bangladeshi Facebook shops and chambers keep their list on paper or in Excel; the khata
+and POS apps and local store builders have no public API (research, 14 Oct). A Google Sheet is
+the cheapest step up: the owner links it once, and the list (products and stock, the menu, the
+doctors and who's in today) follows it every 5 minutes.
+
+**Reading the sheet** (`ports/sheets.py`, `adapters/sheets.py`, `services/sheets.py`)
+- [x] `csv_url`: a sheet's link → its tab's CSV export; only `docs.google.com`. `fetch_csv`
+      (httpx): a private sheet gets Google's sign-in page, not CSV → "share it by link"
+- [x] `sheet_links` (one per agent: url, mapping, seen, checked, synced_at, problem) and a
+      migration. `SheetService`: suggest (as D53), link (as an import: problems per row,
+      `dry_run`), get, sync, unlink, and `run`, a loop the lifespan starts
+      (`SHEET_SYNC_MINUTES`, 5)
+- [x] The same text as last time does nothing. A row with a problem, or a sheet that can't be
+      read, keeps the old list; `problem` says why, and the owner hears once on Telegram
+      (`TeamService.notify`)
+
+**The list** (`desks/base.py`, each desk's store)
+- [x] `Desk.columns` and `Desk.read_list`; `Store.take_sheet`: the menu and doctors are
+      replaced; the shop merges (`merge`, `take_off`, `HOLDS`): a count comes from the sheet
+      only when its cell changed, less the orders still `unpaid`, `new` or `confirmed`
+- [x] While linked: `PUT /api/menu`, `PUT /api/doctors` and every import are 409
+      `sheet_linked`; `PUT /api/products` takes only photos
+
+**The owner** (`../heydesk-frontend`)
+- [x] The list page: a "Google Sheet" button opens the import panel in sheet mode (paste the
+      link, check the columns, see the rows, "Keep these N in sync"); while linked, a bar
+      says when it was read or what's wrong, with "Read now" and "Stop syncing", and the rows
+      are locked (a shop can still change photos). English and Bangla; `docs/api.md`
+
+**Docs and tests**
+- [x] design.md (the new section, the table, routes, layout, §12), decisions.md D58
+- [x] `tests/integration/test_sheets.py`: the link's CSV URL; a price change keeps our count,
+      a recount takes off the order not shipped yet, and not once it's shipped; a bad row and
+      an unshared sheet keep the old list, and a good read clears it; the 409s, a preview
+      without linking, the owner alerted once; a linked shop still takes photos
+
+**Done when:** `scripts/check.sh` and the frontend's lint are green; in the browser (fake
+model), a real public Google Sheet is linked from the Products page, the list becomes its
+rows, "Read now" reads it and "Stop syncing" unlocks the list.
+
+Checked 14 Oct: Google's public sample sheet (30 rows) linked from the dev shop's Products page
+with Name and Price matched by hand (the fake model matches by name only); the bar showed
+"Last read", the rows were locked with photos still open, Read now answered 200, Stop syncing
+brought back Add and Import. The seed products were put back after.
 
 ## M1 — The agent takes an order
 

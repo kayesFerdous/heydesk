@@ -21,6 +21,7 @@ from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
+from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
@@ -29,6 +30,7 @@ from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
+from heydesk.ports.sheets import FetchCsv
 from heydesk.ports.telegram import TelegramApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
@@ -41,6 +43,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
+from heydesk.services.sheets import SheetService
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
@@ -129,6 +132,7 @@ def build_services(
     now: Callable[[], datetime],
     telegram: TelegramApi | None = None,
     payments: PaymentGateway | None = None,
+    fetch_sheet: FetchCsv = fetch_csv,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
@@ -138,6 +142,7 @@ def build_services(
     team = TeamService(sessions, llm, telegram, now)
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
+    imports = ImportService(llm, settings.MODEL)
     conversations = ConversationService(
         sessions, runtime, knowledge, photos, team, visitors, settings, now
     )
@@ -146,7 +151,7 @@ def build_services(
         agents=agents,
         channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
         conversations=conversations,
-        imports=ImportService(llm, settings.MODEL),
+        imports=imports,
         knowledge=knowledge,
         photos=photos,
         payments=PaymentService(
@@ -155,4 +160,5 @@ def build_services(
         users=UserService(sessions, settings.jwt_secret, now),
         visitors=visitors,
         rate_limits=rate_limits,
+        sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
     )

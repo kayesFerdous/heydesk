@@ -7,6 +7,7 @@ from heydesk.models.channel import Channel
 from heydesk.models.conversation import Conversation
 from heydesk.models.document import Document
 from heydesk.models.payment_account import PaymentAccount
+from heydesk.models.sheet_link import SheetLink
 from heydesk.models.team_message import TeamMessage
 from heydesk.models.user import User
 from heydesk.models.visitor import Visitor
@@ -19,6 +20,7 @@ __all__ = [
     "Conversation",
     "Document",
     "PaymentAccount",
+    "SheetLink",
     "TeamMessage",
     "User",
     "Visitor",

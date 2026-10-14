@@ -50,7 +50,9 @@ async def doctors(store: Clinic) -> list[Doctor]:
 
 @router.put("/api/doctors")
 async def replace_doctors(body: list[Doctor], store: Clinic) -> list[Doctor]:
-    """The clinic's doctors become exactly these, in this order. Live from the next message."""
+    """The clinic's doctors become exactly these, in this order. Live from the next message.
+    A 409 while a Google Sheet is the list (D58)."""
+    await store.not_linked()
     await store.replace_doctors(body)
     return body
 
@@ -87,6 +89,7 @@ async def suggest_doctors_columns(body: SuggestIn, services: Svc, _: Clinic) -> 
 async def import_doctors(body: ImportIn, store: Clinic) -> ImportOut[Doctor]:
     """Replaces the doctors with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
+    await store.not_linked()
     found = doctors_from_csv(body.csv, body.mapping)
     if not body.dry_run:
         await store.replace_doctors(found)

@@ -1,0 +1,152 @@
+"""A desk's list kept in a linked Google Sheet (D58): the link becomes its CSV, the list is the
+sheet's, the shop's count is taken only when its cell changed (less the orders not shipped
+yet), a sheet with a problem keeps the old list, and while linked the list isn't edited here."""
+
+import pytest
+from fastapi import FastAPI
+from httpx import AsyncClient
+
+from heydesk.errors import InvalidConfig
+from heydesk.ports.sheets import SheetUnreadable
+from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.services.sheets import csv_url
+from tests.conftest import SEEDS, World
+from tests.integration.test_shop import buy, photo, stock
+from tests.integration.test_team import OWNER, link_owner, to
+
+LINK = "https://docs.google.com/spreadsheets/d/abc-123_X/edit#gid=42"
+MAPPING = {"code": "Code", "name": "Item", "price": "Price", "stock": "Qty"}
+
+
+class Sheet:
+    """A fake Google Sheet: its text, or the problem reading it."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.problem = ""
+
+    async def __call__(self, url: str) -> str:
+        assert url == "https://docs.google.com/spreadsheets/d/abc-123_X/export?format=csv&gid=42"
+        if self.problem:
+            raise SheetUnreadable(self.problem)
+        return self.text
+
+
+def products(silk: str, kurti_price: str = "950") -> str:
+    return (
+        f"Code,Item,Price,Qty\npanjabi-silk,Silk Panjabi,3200,{silk}\nkurti,Kurti,{kurti_price},\n"
+    )
+
+
+def test_a_sheets_link_becomes_the_csv_of_its_tab() -> None:
+    assert csv_url("https://docs.google.com/spreadsheets/d/abc/edit?usp=sharing").endswith(
+        "/d/abc/export?format=csv"
+    )
+    with pytest.raises(InvalidConfig):
+        csv_url("https://example.com/spreadsheets/d/abc")
+
+
+async def test_the_shelf_count_is_taken_only_when_the_owner_changes_it(world: World) -> None:
+    agent = await world.agent("shop")
+    sheet = Sheet(products(silk="5"))
+    world.services.sheets.fetch = sheet
+    await world.services.sheets.link(DEV_WORKSPACE_ID, LINK, MAPPING)
+    assert await stock(world, agent, "panjabi-silk") == 5
+
+    code = await buy(world, agent, {"code": "panjabi-silk", "quantity": 1})
+    assert await stock(world, agent, "panjabi-silk") == 4
+
+    sheet.text = products(silk="5", kurti_price="990")  # a new price; the count untouched
+    await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert await stock(world, agent, "panjabi-silk") == 4  # our order still counts
+    kurti = next(p for p in await world.store(agent).products() if p.code == "kurti")
+    assert kurti.price == 99000
+
+    sheet.text = products(silk="6", kurti_price="990")  # restocked: 6 on the shelf
+    await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert await stock(world, agent, "panjabi-silk") == 5  # less the order not shipped yet
+
+    order = await world.store(agent).order(int(code.removeprefix("O-")))
+    assert order is not None
+    for status in ("confirmed", "shipped"):
+        await world.store(agent).move_order(order.id, status)
+    sheet.text = products(silk="5", kurti_price="990")  # counted again once it's gone
+    await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert await stock(world, agent, "panjabi-silk") == 5
+
+
+async def test_a_sheet_with_a_problem_keeps_the_old_list(world: World) -> None:
+    agent = await world.agent("shop")
+    sheet = Sheet(products(silk="5"))
+    world.services.sheets.fetch = sheet
+    await world.services.sheets.link(DEV_WORKSPACE_ID, LINK, MAPPING)
+
+    sheet.text = products(silk="5", kurti_price="cheap")
+    link = await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert "row 3" in link.problem and "cheap" in link.problem
+    assert len(await world.store(agent).products()) == 2
+
+    sheet.problem = "Share the sheet as 'Anyone with the link: Viewer', then try again."
+    link = await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert link.problem.startswith("Share the sheet")
+
+    sheet.problem, sheet.text = "", products(silk="7")
+    link = await world.services.sheets.sync(DEV_WORKSPACE_ID)
+    assert link.problem == "" and await stock(world, agent, "panjabi-silk") == 7
+
+
+async def test_while_a_sheet_is_linked_the_list_is_changed_there(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    sheet = Sheet("Item,Price,Code\nBiryani,450,biryani\nBorhani,130,borhani\n")
+    app.state.services.sheets.fetch = sheet
+    mapping = {"name": "Item", "price": "Price", "code": "Code"}
+
+    suggested = (await client.post("/api/agent/sheet/suggest", json={"url": LINK})).json()
+    assert suggested["headers"] == ["Item", "Price", "Code"]
+    wrong = await client.put("/api/agent/sheet", json={"url": LINK, "mapping": {"name": "Item"}})
+    assert wrong.status_code == 422  # no price: nothing is linked
+    assert (await client.get("/api/agent/sheet")).status_code == 404
+
+    body = {"url": LINK, "mapping": mapping}
+    checked = (await client.put("/api/agent/sheet", json=body | {"dry_run": True})).json()
+    assert (checked["saved"], checked["count"]) == (False, 2)
+    assert (await client.get("/api/agent/sheet")).status_code == 404  # only checked
+    linked = (await client.put("/api/agent/sheet", json=body)).json()
+    assert (linked["saved"], linked["count"]) == (True, 2)
+    assert (await client.get("/api/agent/sheet")).json()["problem"] == ""
+    assert [d["name"] for d in (await client.get("/api/menu")).json()] == ["Biryani", "Borhani"]
+    refused = await client.put("/api/menu", json=[])
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "sheet_linked"
+
+    sheet.text += "Lassi,120,lassi\n"
+    await client.post("/api/agent/sheet/sync")
+    assert len((await client.get("/api/menu")).json()) == 3
+
+    await link_owner(app, client)
+    sheet.text += "Kulfi,,kulfi\n"  # no price
+    for _ in range(2):
+        synced = (await client.post("/api/agent/sheet/sync")).json()
+    assert "row 5" in synced["problem"]
+    alerts = [t for t in to(app, OWNER) if "Google Sheet" in t]
+    assert len(alerts) == 1  # once, not on every sync
+    assert len((await client.get("/api/menu")).json()) == 3
+
+    assert (await client.delete("/api/agent/sheet")).status_code == 204
+    assert (await client.put("/api/menu", json=[])).status_code == 200
+
+
+async def test_a_linked_shop_still_takes_photos_here(app: FastAPI, client: AsyncClient) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    app.state.services.sheets.fetch = Sheet(products(silk="5"))
+    await client.put("/api/agent/sheet", json={"url": LINK, "mapping": MAPPING})
+    silk, kurti = (await client.get("/api/products")).json()
+
+    file = {"file": ("p.png", photo("red"), "image/png")}
+    url = (await client.post("/api/products/photos", files=file)).json()["url"]
+    edited = [{**silk, "price": 1, "photos": [url]}, kurti]
+    await client.put("/api/products", json=edited)
+    silk_now, _ = (await client.get("/api/products")).json()
+    assert (silk_now["photos"], silk_now["price"]) == ([url], 320000)  # the price is the sheet's
+    csv = {"csv": "Name,Price\nTee,350\n"}
+    assert (await client.post("/api/products/import", json=csv)).status_code == 409

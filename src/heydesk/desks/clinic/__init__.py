@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 from heydesk.desks.base import Desk, missing_basics
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.tools import TOOLS
-from heydesk.desks.clinic.values import ClinicConfig, Doctor
+from heydesk.desks.clinic.values import DOCTOR_COLUMNS, ClinicConfig, Doctor, doctors_from_csv
 from heydesk.desks.shared import pay_first_rule
 from heydesk.runtime.speech import money
 
@@ -46,6 +46,7 @@ class ClinicDesk(Desk):
     )
     config_model = ClinicConfig
     tools = TOOLS
+    columns = DOCTOR_COLUMNS
 
     def store(self, *args: Any, **kwargs: Any) -> ClinicStore:
         return ClinicStore(*args, **kwargs)
@@ -74,6 +75,9 @@ class ClinicDesk(Desk):
         if not await store.doctors():
             missing.append("Add your doctors.")
         return missing
+
+    def read_list(self, text: str, mapping: dict[str, str] | None) -> list[Doctor]:
+        return doctors_from_csv(text, mapping)
 
     async def seed(self, store: ClinicStore, data: dict[str, Any]) -> None:
         doctors = TypeAdapter(list[Doctor]).validate_python(data.pop("doctors", []))

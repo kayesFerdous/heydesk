@@ -52,7 +52,9 @@ async def menu(store: Restaurant) -> list[MenuItem]:
 
 @router.put("/api/menu")
 async def replace_menu(body: list[MenuItem], store: Restaurant) -> list[MenuItem]:
-    """The menu becomes exactly these dishes, in this order. Live from the next message."""
+    """The menu becomes exactly these dishes, in this order. Live from the next message.
+    A 409 while a Google Sheet is the list (D58)."""
+    await store.not_linked()
     await store.replace_menu(body)
     return body
 
@@ -88,6 +90,7 @@ async def suggest_menu_columns(body: SuggestIn, services: Svc, _: Restaurant) ->
 async def import_menu(body: ImportIn, store: Restaurant) -> ImportOut[MenuItem]:
     """Replaces the menu with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
+    await store.not_linked()
     found = menu_from_csv(body.csv, body.mapping)
     if not body.dry_run:
         await store.replace_menu(found)

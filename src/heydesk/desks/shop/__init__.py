@@ -9,7 +9,14 @@ from heydesk.desks.base import Desk
 from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
-from heydesk.desks.shop.values import Product, ShopConfig, cart_text, photo_line
+from heydesk.desks.shop.values import (
+    PRODUCT_COLUMNS,
+    Product,
+    ShopConfig,
+    cart_text,
+    photo_line,
+    products_from_csv,
+)
 from heydesk.runtime.speech import money
 
 LANGUAGE = (
@@ -91,6 +98,7 @@ class ShopDesk(Desk):
     )
     config_model = ShopConfig
     tools = TOOLS
+    columns = PRODUCT_COLUMNS
     takes_photos = True  # "eta ache?" with a screenshot (D57)
 
     def store(self, *args: Any, **kwargs: Any) -> ShopStore:
@@ -157,6 +165,9 @@ class ShopDesk(Desk):
         if not (config.handoff.phone or config.handoff.email):
             missing.append("Add a phone number or email for when someone needs a person.")
         return missing
+
+    def read_list(self, text: str, mapping: dict[str, str] | None) -> list[Product]:
+        return products_from_csv(text, mapping)
 
     async def seed(self, store: ShopStore, data: dict[str, Any]) -> None:
         products = TypeAdapter(list[Product]).validate_python(data.pop("products", []))

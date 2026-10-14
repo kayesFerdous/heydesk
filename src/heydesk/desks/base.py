@@ -15,9 +15,10 @@ from pydantic import BaseModel
 from sqlalchemy import ScalarResult, String, cast, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
-from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import PaymentAccount, TeamMessage
+from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
+from heydesk.models import PaymentAccount, SheetLink, TeamMessage
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -27,6 +28,13 @@ if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.knowledge import KnowledgeService
 
 PAGE = 100  # the most rows a list returns at once (newest first)
+
+
+class SheetLinked(Conflict):
+    code = "sheet_linked"
+
+    def __init__(self) -> None:
+        super().__init__("Your list comes from your Google Sheet: change it there.")
 
 
 @dataclass(frozen=True)
@@ -119,11 +127,34 @@ class Store:
     async def replace_rows(self, table: type[Any], items: Sequence[BaseModel]) -> None:
         """`table` becomes exactly these, in this order."""
         async with self.sessions() as s, s.begin():
-            await s.execute(delete(table).where(table.workspace_id == self.workspace_id))
-            s.add_all(
-                table(workspace_id=self.workspace_id, position=n, **item.model_dump())
-                for n, item in enumerate(items)
+            await self._replace(s, table, items)
+
+    async def _replace(self, s: AsyncSession, table: type[Any], items: Sequence[BaseModel]) -> None:
+        await s.execute(delete(table).where(table.workspace_id == self.workspace_id))
+        s.add_all(
+            table(workspace_id=self.workspace_id, position=n, **item.model_dump())
+            for n, item in enumerate(items)
+        )
+
+    async def take_sheet(
+        self, text: str, mapping: dict[str, str], seen: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The list becomes the linked sheet's rows (D58); returns what to remember for the
+        next time (`seen`). Raises InvalidConfig with the rows' problems, saving nothing."""
+        raise NotFound("This agent has no list to keep in a sheet.")
+
+    async def linked(self) -> bool:
+        """A Google Sheet is the list (D58)."""
+        async with self.sessions() as s:
+            found = await s.scalar(
+                select(SheetLink.id).where(SheetLink.workspace_id == self.workspace_id)
             )
+        return found is not None
+
+    async def not_linked(self) -> None:
+        """409 while a Google Sheet is the list: an edit here would be undone by it (D58)."""
+        if await self.linked():
+            raise SheetLinked()
 
     # Shared by every table of things taken (`models.taken`)
 
@@ -219,6 +250,7 @@ class Desk:
     config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
     tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
     takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop, D57)
+    columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet (D53, D58)
 
     def store(
         self,
@@ -256,6 +288,10 @@ class Desk:
     async def missing(self, config: Any, store: Any) -> list[str]:
         """What the owner still has to fill in, in their words. The agent answers meanwhile."""
         return missing_basics(config)
+
+    def read_list(self, text: str, mapping: dict[str, str] | None) -> Sequence[BaseModel]:
+        """Its list from a CSV's text, without saving it: problems per row (D50, D58)."""
+        raise NotFound("This agent has no list to keep in a sheet.")
 
     async def seed(self, store: Any, data: dict[str, Any]) -> None:
         """The dev agent's own lists from its seed file (`menu:`, `doctors:`), popped from `data`."""

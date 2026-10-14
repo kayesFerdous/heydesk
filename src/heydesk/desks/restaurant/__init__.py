@@ -8,7 +8,14 @@ from pydantic import TypeAdapter
 from heydesk.desks.base import Desk, missing_basics
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.tools import TOOLS
-from heydesk.desks.restaurant.values import MenuItem, RestaurantConfig, cart_text, menu_text
+from heydesk.desks.restaurant.values import (
+    MENU_COLUMNS,
+    MenuItem,
+    RestaurantConfig,
+    cart_text,
+    menu_from_csv,
+    menu_text,
+)
 from heydesk.desks.shared import pay_first_rule
 from heydesk.runtime.speech import money
 
@@ -51,6 +58,7 @@ class RestaurantDesk(Desk):
     )
     config_model = RestaurantConfig
     tools = TOOLS
+    columns = MENU_COLUMNS
 
     def store(self, *args: Any, **kwargs: Any) -> RestaurantStore:
         return RestaurantStore(*args, **kwargs)
@@ -92,6 +100,9 @@ class RestaurantDesk(Desk):
         if not await store.menu():
             missing.append("Add your menu.")
         return missing
+
+    def read_list(self, text: str, mapping: dict[str, str] | None) -> list[MenuItem]:
+        return menu_from_csv(text, mapping)
 
     async def seed(self, store: RestaurantStore, data: dict[str, Any]) -> None:
         menu = TypeAdapter(list[MenuItem]).validate_python(data.pop("menu", []))

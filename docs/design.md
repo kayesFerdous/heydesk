@@ -58,7 +58,7 @@ src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
 ├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore
-├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, Gemini, Qdrant, and fakes
+├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, Gemini, Qdrant, Google Sheets' CSV (D58), and fakes
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
@@ -69,7 +69,7 @@ src/heydesk/
 │   ├── receptionist/    __init__ only: no tools or tables of its own
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
-├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge, imports (D53)
+├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge, imports (D53), sheets (D58)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
 ├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
@@ -344,6 +344,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
 | `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
+| `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
@@ -391,6 +392,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57 |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
+| GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
@@ -505,7 +507,102 @@ owner fills in the rest. An upload never fails because of the AI. Turning "৳1,
 
 **Later sources** (Shopify, a POS) are another step 1: something that returns rows as
 `{their field: text}`. Their field names are the same for every store, so their mapping is
-written once in code and the owner never sees step 2. Nothing in step 3 changes.
+written once in code and the owner never sees step 2. Nothing in step 3 changes. The first
+one is a Google Sheet that stays linked (D58, below).
+
+### A linked Google Sheet (D58)
+
+Most small shops and chambers keep their list on paper or in Excel, not in software with an
+API. A Google Sheet is the next step up for them, and it's an import that repeats: the same
+three steps as above, every few minutes, with the owner's match saved. The list it fills is
+the desk's own (`products`, `menu_items`, `doctors`), so the agent, its tools and the prompt
+don't change: they read our table as before.
+
+```
+owner: pastes the sheet's link ─► suggest (as D53) ─► checks the match ─► PUT /api/agent/sheet
+every SHEET_SYNC_MINUTES (5):
+  fetch the sheet as CSV ─► same text as last time? stop
+                         ─► parse with the saved mapping (the desk's row(), as an import)
+                         ─► a row has a problem? keep the old list, note it, alert the owner once
+                         ─► merge (the shop's stock, below) ─► replace the list
+```
+
+- **The link.** The owner shares the sheet as *Anyone with the link: Viewer* and pastes its
+  normal URL. `sheet_csv_url` turns `docs.google.com/spreadsheets/d/<id>/edit#gid=<gid>` into
+  `…/d/<id>/export?format=csv&gid=<gid>`: one tab of the sheet, as CSV, with no Google keys or
+  login. Only `docs.google.com` links are taken. A private sheet answers with Google's login
+  page, not CSV, and connecting says to share it. Anyone with the link can read the sheet, so
+  the owner's screen says to keep cost prices and buyers out of that tab.
+- **Fetching** is `fetch_csv(url) -> str` (`adapters/sheets.py`, httpx, 10s; the `FetchCsv`
+  port raises `SheetUnreadable` with a line for the owner), passed in by `wiring.py`; tests
+  set `SheetService.fetch` to a fake that returns a string. A loop started in the lifespan
+  (`SheetService.run`) syncs every linked sheet each `SHEET_SYNC_MINUTES`, one after another,
+  and stops with the app. `POST /api/agent/sheet/sync` syncs one now.
+- **Same text, no work.** `checked` is the SHA-256 of the last text fetched. Most syncs stop
+  there: no parse, no write.
+- **Everything comes from the sheet, except the shop's stock.** Names, prices, sizes, a
+  doctor's days, `available`: the sheet's, every time, since nothing else changes them. Stock
+  is changed by both: the owner in the sheet, and our orders (`place_order` takes it off,
+  cancelling puts it back). So a product's stock comes from the sheet **only when its stock
+  cell changed** since the last sync: the owner counted or restocked it. Otherwise ours stays,
+  with our orders taken off since. `seen` keeps each code's stock cell as last read.
+- **The owner writes what's on the shelf; Python takes off what's sold but still there.** An
+  order that's `unpaid`, `new` or `confirmed` holds its items but hasn't left the shop yet, so
+  a count of the shelf still includes them. When a count comes from the sheet, those orders'
+  lines are taken off it (with `Product.counter`, as `place_order` takes stock, D56); never
+  below 0. The owner just counts what they see, with no sum to do; a shipped order has left
+  the shelf, so it isn't taken off again.
+
+  ```python
+  HOLDS = {"unpaid", "new", "confirmed"}  # sold, still on the shelf
+
+  def merge(found: list[Product], ours: dict[str, Product], seen: dict[str, str],
+            cells: dict[str, str], held: list[dict]) -> list[Product]:
+      """`cells`: each code's stock cell in the sheet now. `held`: the lines of the
+      orders in HOLDS."""
+      keep = []
+      for p in found:
+          old = ours.get(p.code)
+          if old and seen.get(p.code) == cells[p.code]:      # the owner didn't touch the count
+              p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
+          else:                                              # a new count of the shelf
+              p = take_off(p, [l for l in held if l["code"] == p.code])
+          keep.append(p.model_copy(update={"photos": old.photos if old else []}))
+      return keep
+  ```
+
+  A new product, or one whose cell changed, takes the sheet's count less what's held. A
+  changed price alone doesn't reset the count. A product gone from the sheet is gone from the
+  list; past orders keep their own lines. The first sync takes every count from the sheet,
+  less what's held. The menu and doctors have no stock, so they are only replaced. The owner's
+  screen says it in one line: *"Write what's on your shelf. We take off the orders you haven't
+  shipped yet."*
+- **A problem keeps the old list.** A row the desk's `row()` can't read (as an import: nothing
+  saved until the whole sheet is clean), or a sheet that can't be fetched: the list stays as
+  it was, `problem` says why (the first 3 rows' problems, or "couldn't open the sheet"), and the
+  owner gets one Telegram alert when the problem first appears, not every 5 minutes (a new
+  `TeamService.notify(ws, text)`: an alert with no conversation, so no `Ref:` line).
+  A sheet that can't be fetched is read whole again once it's back.
+  The next clean sync clears it.
+- **While a sheet is linked, the sheet is the list.** `PUT /api/menu`, `PUT /api/doctors` and
+  every CSV import are a 409 `sheet_linked` (`Store.not_linked`), so an edit in HeyDesk isn't
+  silently undone 5 minutes later. Photos are still added in HeyDesk, so `PUT /api/products`
+  takes only each product's `photos` then; they're kept by code.
+- **One sheet per agent**, because an agent is one desk with one list. The desk names its
+  fields (`Desk.columns`, the same as the import's) and its store takes the sheet's text
+  (`Store.take_sheet(text, mapping, seen) -> seen`): the menu and doctors are replaced; the
+  shop merges, in one transaction with reading the orders that hold stock (`merge`,
+  `take_off`, `HOLDS` in `values.py`). The receptionist has no list, so no sheet.
+
+**Routes:**
+
+| Method | Path | What |
+|---|---|---|
+| POST | `/api/agent/sheet/suggest` | `{url}` → fetches it, then the same as D53's suggest: its columns, 3 rows, our fields, the AI's `mapping` |
+| PUT | `/api/agent/sheet` | `{url, mapping, dry_run}` → reads the whole sheet like an import and answers like one (`saved`, `count`, `preview`): problems per row and nothing saved; `dry_run` only checks; otherwise the link is saved and the list taken from it |
+| GET | `/api/agent/sheet` | The link, `synced_at`, `problem` |
+| DELETE | `/api/agent/sheet` | Stops syncing. The list stays as it is and can be edited again |
+| POST | `/api/agent/sheet/sync` | Syncs now; returns what GET does |
 
 ### Telegram (D42)
 
@@ -664,4 +761,5 @@ version handles them.
 | Photos: Telegram and Messenger, several in one message, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat only, one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
+| Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |

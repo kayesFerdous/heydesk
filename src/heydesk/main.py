@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -81,7 +82,11 @@ def create_app(
                     "Run: uv run alembic upgrade head"
                 ) from error
             app.state.dev_agent_key = agent.public_key
+        sheets = asyncio.create_task(
+            app.state.services.sheets.run(settings.SHEET_SYNC_MINUTES * 60)
+        )
         yield
+        sheets.cancel()
         await engine.dispose()
 
     app = FastAPI(title="HeyDesk", lifespan=lifespan)

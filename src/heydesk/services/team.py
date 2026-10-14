@@ -91,6 +91,13 @@ class TeamService:
         how = HOW_TO_ANSWER.get(conv.channel, "")
         await self._send(channel, channel.owner_chat_id, f"{text}\n\n{how}\nRef: {conv.id}")
 
+    async def notify(self, ws: str, text: str) -> None:
+        """Tells the owner something about the business, not a chat (a sheet that can't be
+        read, D58), if they've linked their chat. No `Ref:`: there's no one to answer."""
+        channel = await self._channel(ws)
+        if channel is not None and channel.owner_chat_id is not None:
+            await self._send(channel, channel.owner_chat_id, text)
+
     async def forward(self, conv: Conversation, text: str) -> None:
         """A visitor wrote while the team is answering: pass it on, for the owner to reply to."""
         await self.alert(conv, f"💬 Customer: {text}")

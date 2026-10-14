@@ -5,12 +5,23 @@ them back, so two buyers can't get the last one."""
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ScalarResult, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import Store
 from heydesk.desks.shop.models import ProductRow, ShopOrder
-from heydesk.desks.shop.values import CHANGEABLE, OWN, NewOrder, OrderCancel, OrderEdit, Product
+from heydesk.desks.shop.values import (
+    CHANGEABLE,
+    HOLDS,
+    OWN,
+    NewOrder,
+    OrderCancel,
+    OrderEdit,
+    Product,
+    counted,
+    merge,
+    products_from_csv,
+)
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
 from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
@@ -30,6 +41,25 @@ class ShopStore(Store):
 
     async def replace_products(self, products: list[Product]) -> None:
         await self.replace_rows(ProductRow, products)
+
+    async def take_sheet(
+        self, text: str, mapping: dict[str, str], seen: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The sheet's products, keeping our count where the sheet's didn't change, and
+        taking a new count less the orders not shipped yet (D58). Photos are kept by code."""
+        found = products_from_csv(text, mapping)
+        ws = self.workspace_id
+        async with self.sessions() as s, s.begin():
+            rows = await s.scalars(select(ProductRow).where(ProductRow.workspace_id == ws))
+            ours = {r.code: Product.model_validate(r, from_attributes=True) for r in rows}
+            orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
+                select(ShopOrder.lines).where(
+                    ShopOrder.workspace_id == ws, ShopOrder.status.in_(HOLDS)
+                )
+            )
+            held = [line for lines in orders for line in lines]
+            await self._replace(s, ProductRow, merge(found, ours, seen, held))
+        return {p.code: counted(p) for p in found}
 
     async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
         """Takes the items out of stock and saves the order: `new`, or `unpaid` when its

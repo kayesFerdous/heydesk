@@ -242,6 +242,8 @@ CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
 # The address, area, mobile or note can change until the courier has it. An unpaid order
 # isn't placed yet: cancel it and order again
 CHANGEABLE = {"new", "confirmed"}
+# Sold but still on the shelf: a count from a linked sheet includes them (D58)
+HOLDS = {"unpaid", "new", "confirmed"}
 
 
 @dataclass(frozen=True)
@@ -353,3 +355,43 @@ def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | N
         size, colour = names[key]
         variants.append(Variant(size=size, colour=colour, stock=int(count)))
     return None, variants
+
+
+# A linked Google Sheet (D58): the owner writes what's on the shelf
+
+
+def counted(p: Product) -> list[Any]:
+    """A product's count as the sheet says it, to see next time whether the owner changed it."""
+    return [p.stock, [v.model_dump() for v in p.variants]]
+
+
+def take_off(p: Product, lines: list[dict[str, Any]]) -> Product:
+    """`p` less these order lines (its own), never below 0: what's left to sell."""
+    stock, variants = p.stock, [v.model_copy() for v in p.variants]
+    for line in lines:
+        counter = p.counter(line["size"], line["colour"])
+        if counter == OWN:
+            stock = max(0, (stock or 0) - line["quantity"])
+        elif counter is not None:
+            variants[counter].stock = max(0, variants[counter].stock - line["quantity"])
+    return p.model_copy(update={"stock": stock, "variants": variants})
+
+
+def merge(
+    found: list[Product],
+    ours: dict[str, Product],
+    seen: dict[str, Any],
+    held: list[dict[str, Any]],
+) -> list[Product]:
+    """The sheet's products (`found`), with our count where the sheet's is the same as last
+    time (`seen`), and a new count less what's `held` (the lines of orders not shipped yet).
+    Photos are ours: a sheet has none."""
+    kept = []
+    for p in found:
+        old = ours.get(p.code)
+        if old and seen.get(p.code) == counted(p):  # the owner didn't touch this count
+            p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
+        else:
+            p = take_off(p, [line for line in held if line["code"] == p.code])
+        kept.append(p.model_copy(update={"photos": old.photos if old else []}))
+    return kept

@@ -65,7 +65,7 @@ async def replace_products(
     body: list[Product], store: Shop, services: Svc, ws: Workspace
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
-    from the next message."""
+    from the next message. While a Google Sheet is the list, only their photos are taken (D58)."""
     wrong = {
         f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
         for n, product in enumerate(body)
@@ -74,6 +74,12 @@ async def replace_products(
     }
     if wrong:
         raise InvalidConfig(wrong)
+    if await store.linked():  # the rest is the sheet's
+        photos = {p.code: p.photos for p in body}
+        body = [
+            p.model_copy(update={"photos": photos.get(p.code, p.photos)})
+            for p in await store.products()
+        ]
     await store.replace_products(body)
     return body
 
@@ -106,6 +112,7 @@ async def suggest_products_columns(body: SuggestIn, services: Svc, _: Shop) -> S
 async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
+    await store.not_linked()
     found = products_from_csv(body.csv, body.mapping)
     photos = {p.code: p.photos for p in await store.products()}  # a CSV has no photos: keep them
     found = [p.model_copy(update={"photos": photos.get(p.code, [])}) for p in found]

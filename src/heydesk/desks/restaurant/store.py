@@ -1,10 +1,11 @@
 """A restaurant's data: its menu and orders, plus what every desk has (`Store`)."""
 
 from datetime import UTC
+from typing import Any
 
 from heydesk.desks.base import Store
 from heydesk.desks.restaurant.models import MenuItemRow, Order
-from heydesk.desks.restaurant.values import MenuItem, NewOrder
+from heydesk.desks.restaurant.values import MenuItem, NewOrder, menu_from_csv
 from heydesk.domain.values import Confirmed
 from heydesk.models.taken import FIRST_STATUS, UNPAID
 
@@ -15,6 +16,12 @@ class RestaurantStore(Store):
 
     async def replace_menu(self, menu: list[MenuItem]) -> None:
         await self.replace_rows(MenuItemRow, menu)
+
+    async def take_sheet(
+        self, text: str, mapping: dict[str, str], seen: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self.replace_menu(menu_from_csv(text, mapping))
+        return {}
 
     async def place_order(self, order: Confirmed[NewOrder]) -> Order:
         """Saves the order: `new`, or `unpaid` when its delivery charge is paid first (D48)."""

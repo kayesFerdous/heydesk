@@ -1,12 +1,18 @@
 """A clinic's data: its doctors and appointments, plus what every desk has (`Store`)."""
 
 from datetime import UTC
+from typing import Any
 
 from sqlalchemy import select
 
 from heydesk.desks.base import Store
 from heydesk.desks.clinic.models import Appointment, DoctorRow
-from heydesk.desks.clinic.values import AppointmentChange, Doctor, NewAppointment
+from heydesk.desks.clinic.values import (
+    AppointmentChange,
+    Doctor,
+    NewAppointment,
+    doctors_from_csv,
+)
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
 from heydesk.models.taken import FIRST_STATUS, UNPAID
@@ -18,6 +24,12 @@ class ClinicStore(Store):
 
     async def replace_doctors(self, doctors: list[Doctor]) -> None:
         await self.replace_rows(DoctorRow, doctors)
+
+    async def take_sheet(
+        self, text: str, mapping: dict[str, str], seen: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self.replace_doctors(doctors_from_csv(text, mapping))
+        return {}
 
     async def save_appointment(self, appointment: Confirmed[NewAppointment]) -> Appointment:
         """Saves the request: `new`, or `unpaid` when a deposit is paid first (D48)."""

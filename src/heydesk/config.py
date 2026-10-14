@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     OFF_TOPIC_STRIKES: int = 5  # off-topic turns in a row before a visitor is blocked
     BLOCK_HOURS: int = 24
 
+    SHEET_SYNC_MINUTES: float = 5  # how often a linked Google Sheet is read again (D58)
+
     # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""
