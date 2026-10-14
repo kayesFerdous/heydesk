@@ -7,7 +7,8 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Channel(Base):
-    """A business's agent on a messaging app (D42): its Telegram bot. One per app.
+    """A business's agent on a messaging app: its Telegram bot (D42) or Facebook Page (D60).
+    One per app.
 
     `token` lets anyone run the bot, so it never leaves the server: no route returns it.
     """
@@ -18,10 +19,11 @@ class Channel(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)  # in its URL
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"))
-    kind: Mapped[str] = mapped_column(String(20))  # "telegram"
-    token: Mapped[str] = mapped_column(String(200))  # from @BotFather
-    secret: Mapped[str] = mapped_column(String(64))  # Telegram sends it with every message
-    address: Mapped[str] = mapped_column(String(100))  # the bot's username: spice_garden_bot
+    kind: Mapped[str] = mapped_column(String(20))  # "telegram" or "messenger"
+    token: Mapped[str] = mapped_column(String(500))  # from @BotFather; a Page access token
+    # Telegram sends it with every message; empty on Messenger, which signs with the app secret
+    secret: Mapped[str] = mapped_column(String(64))
+    address: Mapped[str] = mapped_column(String(100))  # the bot's username; the Page's id
     # the owner's own chat with the bot, for alerts and answering visitors (D43)
     owner_chat_id: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

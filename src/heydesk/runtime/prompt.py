@@ -43,6 +43,8 @@ CHANNEL_STYLE = {
     "voice": "a phone call. Speak in one or two short sentences: no lists, symbols or markdown.",
     "telegram": "a Telegram chat, read on a phone. Keep replies to two or three short "
     "sentences, in plain text: no markdown, bold or tables.",
+    "messenger": "a Facebook Messenger chat, read on a phone. Keep replies to two or three "
+    "short sentences, in plain text: no markdown, bold or tables.",
 }
 
 

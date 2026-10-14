@@ -19,6 +19,7 @@ from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
+from heydesk.adapters.messenger.graph import MessengerGraph
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
@@ -28,6 +29,7 @@ from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.sheets import FetchCsv
@@ -131,6 +133,7 @@ def build_services(
     settings: Settings,
     now: Callable[[], datetime],
     telegram: TelegramApi | None = None,
+    messenger: MessengerApi | None = None,
     payments: PaymentGateway | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
 ) -> Services:
@@ -139,7 +142,8 @@ def build_services(
     photos = PhotoService(embedder, photo_index, settings.MEDIA_DIR, settings.PHOTO_MIN_SIMILARITY)
     agents = AgentService(sessions, knowledge, now)
     telegram = telegram or TelegramBot()
-    team = TeamService(sessions, llm, telegram, now)
+    messenger = messenger or MessengerGraph()
+    team = TeamService(sessions, llm, telegram, messenger, now)
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
     imports = ImportService(llm, settings.MODEL)
@@ -149,7 +153,9 @@ def build_services(
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
-        channels=ChannelService(sessions, agents, conversations, team, telegram, settings, now),
+        channels=ChannelService(
+            sessions, agents, conversations, team, telegram, messenger, settings, now
+        ),
         conversations=conversations,
         imports=imports,
         knowledge=knowledge,

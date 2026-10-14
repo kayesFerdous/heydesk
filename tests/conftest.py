@@ -19,6 +19,7 @@ from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
+from heydesk.adapters.messenger.fake import FakeMessenger
 from heydesk.adapters.telegram.fake import FakeTelegram
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
@@ -85,6 +86,8 @@ def make_test_settings() -> Settings:
         EMBEDDING_DIMENSIONS=64,
         QDRANT_LOCAL_PATH=":memory:",
         PUBLIC_URL="https://heydesk.test",
+        META_APP_SECRET="app-secret",
+        MESSENGER_VERIFY_TOKEN="verify-me",
         PAYMENTS="fake",
         MEDIA_DIR=tempfile.mkdtemp(prefix="heydesk-media-"),  # photos never land in the repo
         _env_file=None,
@@ -187,6 +190,7 @@ async def app() -> AsyncIterator[FastAPI]:
         knowledge_store=store,
         photo_index=photos,
         telegram=FakeTelegram(),
+        messenger=FakeMessenger(),
         now=Clock(),
     )
     async with LifespanManager(app):

@@ -33,7 +33,9 @@ class ToolContext[S]:
     decider: Decider  # for the commit check
     agent_said: str  # the agent's last message before this turn: the read-back, if there was one
     visitor_said: str  # this turn's message: the yes, if there was one
-    channel: str = "web"  # "web", "voice", "telegram": only the web chat shows photos (D57)
+    channel: str = (
+        "web"  # "web", "voice", "telegram", "messenger": only the web chat shows photos (D57)
+    )
 
     @property
     def local_now(self) -> datetime:

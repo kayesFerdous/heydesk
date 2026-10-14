@@ -13,7 +13,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 A business picks its **kind** (a restaurant, a clinic, a receptionist for an office), fills in
 its details (address, hours, its menu or doctors, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
-browser, or on **Telegram** with the business's own bot (D42). It answers questions, takes orders and messages, and hands over to a
+browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60). It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders, appointments and messages through the API.
 
 **The model talks; code guarantees.** The model writes the words. Python
@@ -29,7 +29,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
-| Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`). A messaging app's link to the business is a row in `channels` (D42) |
+| Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`). A messaging app's link to the business is a row in `channels` (D42, D60) |
 | Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
 | Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
 | Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
@@ -73,6 +73,7 @@ src/heydesk/
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
 ├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
+├── adapters/messenger/  the Graph API client for Messenger (and its fake) (D60)
 └── web/static/          the dev chat page
 ```
 
@@ -343,7 +344,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
-| `channels` | agent_id, kind (`telegram`), token, secret, address (the bot's username), owner_chat_id (where alerts go, D43). One per agent and kind (D42) |
+| `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
@@ -394,6 +395,9 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
+| GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with a Page access token; disconnect it (D60) |
+| GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
+| POST | `/api/messenger` | Messenger's webhook, one for every Page: checked by `X-Hub-Signature-256` with `META_APP_SECRET`, each message routed by its Page id, answered after the response |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
 | POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
@@ -638,6 +642,28 @@ Telegram ─► POST /api/telegram/{id}  (secret header checked, else 404) ─�
 - Only private chats are answered. The token is never returned by a route, and httpx's
   request log is off because Telegram's URLs carry it.
 
+### Messenger (D60)
+
+Messenger is the same shape as Telegram, with one difference: there is one Meta app (ours), so
+there is **one webhook for every Page**, set once in the app's dashboard to
+`PUBLIC_URL/api/messenger` with `MESSENGER_VERIFY_TOKEN`. Facebook signs each post with
+`META_APP_SECRET`; a post without a good signature is a 404.
+
+A business connects **its Page** with a Page access token (`PUT /api/agent/messenger`).
+`ChannelService` asks Facebook whose Page it is (`/me`), refuses a Page another business has,
+subscribes our app to its `messages`, and saves the row with the Page id as `address`.
+
+```
+Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at once
+          then, for each message: its Page id ─► the channel ─► the same turn as Telegram's
+          (the sender's PSID is the contact; the Page's own echoes are skipped)
+```
+
+- **Alerts stay on Telegram** (D43): the owner answers a Messenger visitor by replying to its
+  alert there, and the Page sends their words. Facebook only lets a Page answer within 24 hours
+  of the visitor's last message; a later reply fails and is logged.
+- The token goes in the Graph API's query string, so it's never logged (httpx's log is off).
+
 ### The team on Telegram (D43)
 
 The owner gets alerts, and can answer any web or Telegram visitor, in their own chat with the
@@ -768,7 +794,8 @@ version handles them.
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
-| Shop: Facebook Messenger, Instagram, WhatsApp | Web chat, voice and Telegram for now; Messenger is the next channel (D45) |
+| Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
+| Messenger: Facebook Login to connect a Page, the Get Started button, quick replies, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text only. A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
 | Photos: Telegram and Messenger, several in one message, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat only, one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |

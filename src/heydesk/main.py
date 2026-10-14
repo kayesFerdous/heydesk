@@ -18,6 +18,7 @@ from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
@@ -41,6 +42,7 @@ def create_app(
     knowledge_store: KnowledgeStore | None = None,
     photo_index: PhotoIndex | None = None,
     telegram: TelegramApi | None = None,
+    messenger: MessengerApi | None = None,
     payments: PaymentGateway | None = None,
     now: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
@@ -68,8 +70,9 @@ def create_app(
             photos,
             settings,
             now,
-            telegram,
-            payments,
+            telegram=telegram,
+            messenger=messenger,
+            payments=payments,
         )
         if dev:
             try:

@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""
 
+    # Facebook Messenger (D60): our Meta app. Its webhook is set once in the app's dashboard to
+    # PUBLIC_URL/api/messenger with this verify token; Facebook signs each post with the secret
+    META_APP_SECRET: str = ""
+    MESSENGER_VERIFY_TOKEN: str = ""
+
     # Paying online before an order is placed (D47), into each business's own SSLCommerz store
     # (D49), which the owner connects on the frontend. fake: tests, no network
     PAYMENTS: Literal["sslcommerz", "fake"] = "sslcommerz"
