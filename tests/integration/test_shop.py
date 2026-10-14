@@ -32,7 +32,7 @@ from heydesk.desks.shop.tools import (
     track_order,
     update_cart,
 )
-from heydesk.desks.shop.values import mobile, stock_cell
+from heydesk.desks.shop.values import mobile, products_from_csv, stock_cell
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -534,6 +534,33 @@ def test_a_csv_stock_cell_can_count_each_size_and_colour() -> None:
     ]
     with pytest.raises(ValueError, match="like M: 5"):
         stock_cell("XXL: 2", sizes, colours)
+
+
+def test_rows_of_one_product_per_size_and_colour_become_one_product() -> None:
+    csv = (
+        "SKU,Product Name,Variant,Option,Price,Inventory\n"
+        "SKU-001,Classic T-Shirt,Black,M,499,100\n"
+        "SKU-002,Classic T-Shirt,White,L,499,80\n"
+        "SKU-003,classic t-shirt,Black,XL,549,5\n"  # another price: its own product
+        "SKU-004,Cap,Black,,399,60\n"
+    )
+    mapping = {"code": "SKU", "name": "Product Name", "colours": "Variant", "sizes": "Option"}
+    shirt, big, cap = products_from_csv(csv, mapping | {"price": "Price", "stock": "Inventory"})
+    assert (shirt.code, shirt.sizes, shirt.colours, shirt.stock) == (
+        "SKU-001",
+        ["M", "L"],
+        ["Black", "White"],
+        None,
+    )
+    assert [(v.size, v.colour, v.stock) for v in shirt.variants] == [
+        ("M", "Black", 100),
+        ("L", "White", 80),
+        ("M", "White", 0),  # no row for it: the shop doesn't make it
+        ("L", "Black", 0),
+    ]
+    assert "sold out: M/White, L/Black" in shirt.line("BDT")
+    assert (big.code, big.price, big.stock) == ("SKU-003", 54900, 5)
+    assert (cap.stock, cap.variants) == (60, [])  # one row stays as it was
 
 
 # Photos (D57)

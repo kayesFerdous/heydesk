@@ -496,6 +496,17 @@ words, for the owner's screen and for the model. The required ones are what `par
 Without `mapping`, the import matches columns by name as before (D50), so a file with our column
 names needs no step 1.
 
+**One row per size and colour (D59).** Many shops keep a row for each ("T-Shirt, M, Black, 100"
+and "T-Shirt, L, White, 80"). The shop's `products_from_csv` makes rows with the same name
+(any case) and price one product (`grouped`): its sizes and colours are all the rows', each
+row's count is a variant (D56), and the first row gives the code, description and category.
+When every row has a count, a size and colour no row has gets a variant at 0: a T-shirt in
+M/Black and L/White lists M and L, Black and White, but L/Black was never made, and unlisted
+would mean "not counted" (D56), which the agent offered as available. A row with no count adds
+no variant. A different price
+stays its own product: a product has one price. A sheet gets the same, since it's read by the
+same function.
+
 **The AI only matches; Python checks it and does the values** (rule 1). `ImportService.suggest`
 (`services/imports.py`) sends the model our fields with their `about`, the file's headers and the
 3 sample rows (never the whole file), and asks for one JSON object, field → column. From the

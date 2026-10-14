@@ -325,7 +325,43 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
             }
         )
 
-    return csv_import.parse(text, csv_import.needs(PRODUCT_COLUMNS), row, mapping)
+    return grouped(csv_import.parse(text, csv_import.needs(PRODUCT_COLUMNS), row, mapping))
+
+
+def grouped(rows: list[Product]) -> list[Product]:
+    """Rows with the same name and price are one product (D59): many shops keep one row per
+    size and colour ("T-Shirt, M, Black, 100" and "T-Shirt, L, White, 80"). Its sizes and
+    colours are all the rows', and each row's count is a variant (D56). The first row gives
+    the code, description and category. A different price stays its own product.
+
+    When every row has a count, a size and colour no row has is 0: the shop doesn't make it,
+    so it's never offered (on its own, unlisted would mean not counted, D56)."""
+    groups: dict[tuple[str, int], list[Product]] = {}
+    for p in rows:
+        groups.setdefault((p.name.strip().lower(), p.price), []).append(p)
+    return [group[0] if len(group) == 1 else one_product(group) for group in groups.values()]
+
+
+def one_product(group: list[Product]) -> Product:
+    variants: list[Variant] = []
+    for p in group:
+        if p.variants:
+            variants += p.variants
+        elif p.stock is not None:  # a row of one size and colour: its count is theirs
+            size = p.sizes[0] if len(p.sizes) == 1 else ""
+            colour = p.colours[0] if len(p.colours) == 1 else ""
+            variants.append(Variant(size=size, colour=colour, stock=p.stock))
+    sizes = list(dict.fromkeys(s for p in group for s in p.sizes))
+    colours = list(dict.fromkeys(c for p in group for c in p.colours))
+    if all(p.variants or p.stock is not None for p in group):
+        variants += [
+            Variant(size=size, colour=colour, stock=0)
+            for size in sizes or [""]
+            for colour in colours or [""]
+            if not any(v.matches(size, colour) for v in variants)
+        ]
+    update = {"sizes": sizes, "colours": colours, "stock": None, "variants": variants}
+    return group[0].model_copy(update=update)
 
 
 def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | None, list[Variant]]:
