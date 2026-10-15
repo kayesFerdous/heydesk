@@ -6,10 +6,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
 
 from heydesk.errors import Conflict
-from heydesk.models import User
+from heydesk.models import Conversation, User
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY
 from tests.integration.test_restaurant import place_an_order
+from tests.integration.test_telegram import connect
 
 ADMIN = {"email": "admin@heydesk.test", "password": "an admin password"}
 
@@ -187,4 +188,32 @@ async def test_an_admin_cant_reset_another_admins_password(app: FastAPI) -> None
     assert reset.status_code == 403
     login = {"email": "other@heydesk.test", "password": "another admin's"}
     assert (await admin.post("/api/auth/login", json=login)).status_code == 200
+    await admin.aclose()
+
+
+async def test_a_business_at_a_glance_for_the_admin(app: FastAPI, client: AsyncClient) -> None:
+    await connect(app, client)  # its Telegram bot
+    await place_an_order(app, client)
+    async with app.state.sessions() as s, s.begin():  # the customer asked for a person
+        await s.execute(update(Conversation).values(status="needs_human"))
+    admin = await as_admin(app)
+
+    page = (await admin.get(f"/api/admin/businesses/{DEV_WORKSPACE_ID}")).json()
+
+    assert (page["name"], page["status"], page["kind"]) == ("Dev", "active", "restaurant")
+    assert page["public_key"] == DEV_KEY
+    assert [o["email"] for o in page["owners"]] == ["owner@example.com"]
+    assert [(c["kind"], c["address"]) for c in page["channels"]] == [
+        ("telegram", "spice_garden_bot")
+    ]
+    assert (page["payments"], page["documents"], page["sheet"]) == (None, 0, None)
+    assert (page["conversations"], page["conversations_7_days"], page["waiting"]) == (1, 1, 1)
+    assert page["last_activity_at"] is not None
+    await admin.aclose()
+
+
+async def test_only_an_admin_sees_a_business_page(app: FastAPI, client: AsyncClient) -> None:
+    assert (await client.get(f"/api/admin/businesses/{DEV_WORKSPACE_ID}")).status_code == 404
+    admin = await as_admin(app)
+    assert (await admin.get("/api/admin/businesses/nope")).status_code == 404
     await admin.aclose()

@@ -25,6 +25,41 @@ class BusinessRowOut(BaseModel):
     created_at: datetime
 
 
+class OwnerOut(BaseModel):
+    email: str
+    created_at: datetime
+
+
+class ChannelOut(BaseModel):
+    kind: Literal["telegram", "messenger"]
+    address: str  # the bot's username; the Page's id
+    created_at: datetime
+
+
+class SheetOut(BaseModel):
+    synced_at: datetime | None  # the last good read
+    problem: str  # empty: fine
+
+
+class BusinessOut(BaseModel):
+    id: str
+    name: str
+    status: Literal["active", "suspended"]
+    kind: str | None  # its desk; None: no agent yet
+    agent_name: str | None
+    public_key: str | None  # the chat link is /chat/<public_key>
+    created_at: datetime
+    owners: list[OwnerOut]
+    channels: list[ChannelOut]
+    payments: Literal["sandbox", "live"] | None  # None: not connected
+    documents: int
+    sheet: SheetOut | None
+    conversations: int
+    conversations_7_days: int
+    waiting: int  # handed to a person and not yet answered
+    last_activity_at: datetime | None
+
+
 class BusinessStatusIn(BaseModel):
     status: Literal["active", "suspended"]
 
@@ -54,6 +89,12 @@ class AuditOut(BaseModel):
 @router.get("/businesses")
 async def businesses(admin: Admin, services: Svc) -> list[BusinessRowOut]:
     return [BusinessRowOut.model_validate(asdict(row)) for row in await services.admin.businesses()]
+
+
+@router.get("/businesses/{workspace_id}")
+async def business(workspace_id: str, admin: Admin, services: Svc) -> BusinessOut:
+    """One business at a glance: counts and connections, no customer's words."""
+    return BusinessOut.model_validate(asdict(await services.admin.business(workspace_id)))
 
 
 @router.patch("/businesses/{workspace_id}", status_code=204)

@@ -384,7 +384,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
-| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log |
+| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
@@ -434,6 +434,11 @@ the ordinary routes (an owner's header is ignored). The database, not the token,
 says someone is still an admin. Every admin write, and every admin read of one
 thing (one conversation), is saved to `audit_events`. A suspended business's chat
 answers 404 `unavailable`; its owner can still log in.
+An admin's page for one business (`GET /api/admin/businesses/{id}`, D69) has its
+desk, agent and chat key, owners, connected channels, payments (sandbox or live),
+documents, a linked sheet's last sync and problem, and counts of conversations (all,
+the last 7 days, waiting for a person): counts and connections, never a customer's words,
+so opening it isn't audited.
 `uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
