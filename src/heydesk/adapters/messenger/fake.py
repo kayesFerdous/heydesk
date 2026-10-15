@@ -8,12 +8,9 @@ class FakeMessenger:
         self.subscribed: set[str] = set()  # page ids
         self.sent: list[tuple[str, str]] = []  # (psid, text), in order
 
-    async def page_id(self, token: str) -> str:
-        if token.startswith("bad"):
-            raise MessengerUnavailable("me: Invalid OAuth access token")
-        return "1001"
-
     async def subscribe(self, token: str, page_id: str) -> None:
+        if token.startswith("bad"):
+            raise MessengerUnavailable("subscribed_apps: Invalid OAuth access token")
         self.subscribed.add(page_id)
 
     async def unsubscribe(self, token: str, page_id: str) -> None:

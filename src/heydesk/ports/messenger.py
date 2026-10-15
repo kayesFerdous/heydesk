@@ -12,12 +12,9 @@ class MessengerUnavailable(Exception):
 
 
 class MessengerApi(Protocol):
-    async def page_id(self, token: str) -> str:
-        """The id of the Page the token is for. Fails for a wrong token."""
-        ...
-
     async def subscribe(self, token: str, page_id: str) -> None:
-        """Facebook posts the Page's new messages to our app's webhook."""
+        """Facebook posts the Page's new messages to our app's webhook. Fails when the token
+        isn't for that Page, so it is also the check on the pair."""
         ...
 
     async def unsubscribe(self, token: str, page_id: str) -> None: ...

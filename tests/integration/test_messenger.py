@@ -40,7 +40,9 @@ def sent(app: FastAPI) -> list[tuple[str, str]]:
 
 
 async def connect(client: AsyncClient) -> None:
-    assert (await client.put("/api/agent/messenger", json={"token": TOKEN})).status_code == 200
+    assert (
+        await client.put("/api/agent/messenger", json={"token": TOKEN, "page_id": PAGE})
+    ).status_code == 200
 
 
 async def test_facebook_checks_the_webhook_with_our_verify_token(client: AsyncClient) -> None:
@@ -61,7 +63,9 @@ async def test_an_owner_connects_their_page_and_gets_its_link(
     assert res.json() == {"page_id": PAGE, "link": f"https://m.me/{PAGE}"}
     assert TOKEN not in res.text  # the token never leaves the server
 
-    res = await client.put("/api/agent/messenger", json={"token": "bad" + "x" * 20})
+    res = await client.put(
+        "/api/agent/messenger", json={"token": "bad" + "x" * 20, "page_id": PAGE}
+    )
     assert res.status_code == 422
 
 
@@ -100,7 +104,7 @@ async def test_a_page_belongs_to_one_business(app: FastAPI, client: AsyncClient)
     await connect(client)
     other = await new_business(app)
     assert (await other.post("/api/agent", json={"kind": "restaurant"})).status_code == 201
-    res = await other.put("/api/agent/messenger", json={"token": TOKEN})
+    res = await other.put("/api/agent/messenger", json={"token": TOKEN, "page_id": PAGE})
     assert res.status_code == 422
 
 

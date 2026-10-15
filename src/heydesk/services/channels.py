@@ -86,21 +86,23 @@ class ChannelService:
             await self.telegram.delete_webhook(channel.token)
         await self._delete(channel)
 
-    async def connect_messenger(self, ws: str, token: str) -> Channel:
-        """Checks the Page token with Facebook and subscribes our app to the Page's messages.
-        Connecting again (a new token, or another Page) replaces the old one."""
+    async def connect_messenger(self, ws: str, token: str, page_id: str) -> Channel:
+        """Subscribes our app to the Page's messages, which also checks that the token is for
+        that Page. Connecting again (a new token, or another Page) replaces the old one."""
         if not self.settings.META_APP_SECRET:
             raise HeyDeskError("The server has no META_APP_SECRET, so Messenger can't reach it.")
         agent = await self.agents.get(ws)  # 404 if the business has no agent yet
         try:
-            page_id = await self.messenger.page_id(token)
             taken = await self.messenger_page(page_id)
             if taken is not None and taken.workspace_id != ws:
-                raise InvalidConfig({"token": "This Page is connected to another business."})
+                raise InvalidConfig({"page_id": "This Page is connected to another business."})
             await self.messenger.subscribe(token, page_id)  # first: if it fails, nothing saved
         except MessengerUnavailable:
             raise InvalidConfig(
-                {"token": "Facebook doesn't accept this token. Make a new Page access token."}
+                {
+                    "token": "Facebook doesn't accept this token for this Page. "
+                    "Check the Page id, or make a new Page access token."
+                }
             ) from None
         async with self.sessions() as s:
             channel = await self._find(s, ws, MESSENGER)

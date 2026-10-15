@@ -22,6 +22,7 @@ class MessengerIn(BaseModel):
     token: str = Field(
         min_length=20, max_length=500, description="The Page's access token, from our Meta app"
     )
+    page_id: str = Field(pattern=r"^\d{1,25}$", description="The Page's id, digits only")
 
 
 class MessengerOut(BaseModel):
@@ -40,8 +41,9 @@ async def get_messenger(ws: Workspace, services: Svc) -> MessengerOut:
 
 @router.put("/api/agent/messenger")
 async def connect_messenger(body: MessengerIn, ws: Workspace, services: Svc) -> MessengerOut:
-    """Connects the business's Facebook Page: from now on the agent answers its messages."""
-    return messenger_out(await services.channels.connect_messenger(ws, body.token.strip()))
+    """Connects the business's Facebook Page (its id and access token): the agent answers its messages."""
+    channel = await services.channels.connect_messenger(ws, body.token.strip(), body.page_id)
+    return messenger_out(channel)
 
 
 @router.delete("/api/agent/messenger", status_code=status.HTTP_204_NO_CONTENT)

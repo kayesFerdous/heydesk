@@ -17,10 +17,6 @@ class MessengerGraph:
     def __init__(self, timeout: float = 10.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
 
-    async def page_id(self, token: str) -> str:
-        me = await self._call("GET", "me", token)
-        return str(me["id"])
-
     async def subscribe(self, token: str, page_id: str) -> None:
         await self._call(
             "POST", f"{page_id}/subscribed_apps", token, subscribed_fields="messages"

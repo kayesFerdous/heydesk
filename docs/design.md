@@ -395,7 +395,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
-| GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with a Page access token; disconnect it (D60) |
+| GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with its id and a Page access token; disconnect it (D60, D61) |
 | GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
 | POST | `/api/messenger` | Messenger's webhook, one for every Page: checked by `X-Hub-Signature-256` with `META_APP_SECRET`, each message routed by its Page id, answered after the response |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
@@ -649,9 +649,11 @@ there is **one webhook for every Page**, set once in the app's dashboard to
 `PUBLIC_URL/api/messenger` with `MESSENGER_VERIFY_TOKEN`. Facebook signs each post with
 `META_APP_SECRET`; a post without a good signature is a 404.
 
-A business connects **its Page** with a Page access token (`PUT /api/agent/messenger`).
-`ChannelService` asks Facebook whose Page it is (`/me`), refuses a Page another business has,
-subscribes our app to its `messages`, and saves the row with the Page id as `address`.
+A business connects **its Page** with the Page's id and a Page access token
+(`PUT /api/agent/messenger {token, page_id}`, D61). `ChannelService` refuses a Page another
+business has, subscribes our app to its `messages` (Facebook only accepts that for the right
+token and Page, so it is the check), and saves the row with the Page id as `address`. There is
+no `/me` call: Meta wants App Review before a dashboard token may read the Page itself.
 
 ```
 Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at once
