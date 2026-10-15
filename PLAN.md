@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **15 Oct, D64–D66: the restaurant takes table bookings, its customers track, change or cancel an order, and hear in their chat when it's ready or on its way**, built, checked offline and live on Maira. **15 Oct, D67–D68: admins from the command line** (`heydesk admins`, `delete-admin`, `reset-password`; `scripts/dev.sh admin`), **anyone changes their own password** (`PUT /api/auth/password`, the Account page), and an admin resets only an owner's; checked offline and in the browser. **15 Oct, the admin panel's phase 1 (days A1–A3): an admin opens a business** and uses the owner's pages under a banner, **sees one business at a glance** (D69), **finds one by name or owner email, and suspends with a reason** kept for admins (D70); checked in the browser. **Next:** phase 2 of the admin panel (usage, cost and errors) when it's planned into days; Messenger's live check (with D62's photos) once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **15 Oct, D64–D66: the restaurant takes table bookings, its customers track, change or cancel an order, and hear in their chat when it's ready or on its way**, built, checked offline and live on Maira. **15 Oct, D67–D68: admins from the command line** (`heydesk admins`, `delete-admin`, `reset-password`; `scripts/dev.sh admin`), **anyone changes their own password** (`PUT /api/auth/password`, the Account page), and an admin resets only an owner's; checked offline and in the browser. **15 Oct, the admin panel's phase 1 (days A1–A3): an admin opens a business** and uses the owner's pages under a banner, **sees one business at a glance** (D69), **finds one by name or owner email, and suspends with a reason** kept for admins (D70); checked in the browser. **Next:** phase 2 of the admin panel, usage, cost and errors (days B1–B3, below); Messenger's live check (with D62's photos) once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -586,12 +586,66 @@ showed the reason; the demo owner's Home said the agent is paused, without it; r
 reason was gone (D70). Suspending moved from the list's rows to the business's page, where the
 reason is typed; the rows keep **Open**.
 
+### Phase 2: usage, cost and errors (planned 15 Oct)
+
+Today a turn's trace (time, tokens, cost, error) is only a log line, so nothing can be added up.
+Phase 2 saves it, then shows it. What a trace knows: the channel, the model (`llm`), each model
+call's tokens, `cost_micros`, the first token's and the whole turn's time, the tools that ran,
+an `error`, a hand-off, an interruption. **Cost is only known for Groq**: Gigalogy (the default)
+reports tokens but no price, and Jev, Gemini embeddings and speech-to-text aren't counted at all.
+
+### Day B1: save every turn
+
+- [ ] A `turns` table: workspace_id, conversation_id, channel, llm, at, total_ms,
+      first_output_ms, input_tokens, output_tokens, cost_micros, tools (the names), error,
+      handed_off, interrupted. **No customer's words**, as in the logs. Indexed by
+      (workspace_id, at). Written in `ConversationService._save`, in the same transaction as the
+      messages; a message passed to the team (no agent turn) isn't a turn
+- [ ] Gigalogy's price, if we want a cost for it: two settings, its dollars per million input and
+      output tokens, 0 meaning unknown (to confirm on the day: is there a price to put in?)
+- [ ] design.md (the data model, §12: turns are kept forever for now), decisions.md
+- [ ] Tests (`test_conversations.py`): a turn is saved with its tokens, cost and tools; a model
+      failure saves `error` and `handed_off`; a message to the team saves no turn; turns carry
+      their own workspace
+
+**Done when:** `scripts/check.sh` is green, and after three messages in the dev chat (Maira)
+there are three rows in `turns` with tokens and times, and no message text.
+
+### Day B2: the Overview tab
+
+- [ ] `GET /api/admin/overview?days=7` (`AdminService.overview`): for today and the last N days,
+      turns, conversations started, tokens, cost (known part), failed turns, hand-offs, and the
+      typical and slow first reply (median and 95th percentile of `first_output_ms`); one row a
+      day; the 5 busiest businesses (turns, cost). A day is Dhaka's day (all businesses are
+      there today); one setting if that changes
+- [ ] `../heydesk-frontend`: **Overview** as the admin's first tab: the numbers as tiles, the days
+      as plain bars (CSS, no chart library), the busiest businesses linking to their pages.
+      Cost says "Groq only" while Gigalogy has no price
+- [ ] design.md, decisions.md, `docs/api.md`
+- [ ] Tests (`test_roles.py`): turns on two days and two businesses add up per day and per
+      business; an owner gets 404
+
+**Done when:** `scripts/check.sh` and the frontend's lint and build are green, and the Overview
+shows today's turns from B1's check, with their tokens, and the dev business as the busiest.
+
+### Day B3: usage on a business's page, and failed turns
+
+- [ ] The business page (D69) gains its last 7 days: turns, tokens, cost, failed turns,
+      hand-offs, the typical first reply
+- [ ] `GET /api/admin/turns?failed=true&workspace_id=` newest first, a page at a time: when, the
+      business, the channel, the error. `../heydesk-frontend`: a **Failed turns** list on the
+      Overview and on a business's page; each opens the business as admin (A1) at
+      `/conversations?open=<id>` (opening it is audited, D23)
+- [ ] design.md, decisions.md, `docs/api.md`
+- [ ] Tests: the page's usage counts only its own business and the last 7 days; the failed list
+      holds only failures, newest first, filtered by business
+
+**Done when:** `scripts/check.sh` and the frontend's lint and build are green, and in the browser
+a failed turn (the fake model told to fail, or Maira with a wrong key) shows in **Failed turns**,
+and opening it shows the conversation that got the polite line.
+
 ### Later phases (not started)
 
-- **Phase 2, usage, cost and errors:** each turn's trace (now only a log line) saved in a
-  `turns` table: business, conversation, channel, time, tokens, cost, error, hand-off. An
-  **Overview** tab (today and 7 days: turns, cost, errors, hand-offs; the busiest businesses),
-  usage on a business's page, and a list of failed turns that opens the conversation.
 - **Phase 3, abuse and channel health:** blocked visitors (the `visitors` table already has them)
   with an unblock; the last error of each Telegram or Messenger channel and linked sheet, shown
   on the business's page.
