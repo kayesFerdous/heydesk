@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **15 Oct, D64–D66: the restaurant takes table bookings, its customers track, change or cancel an order, and hear in their chat when it's ready or on its way**, built, checked offline and live on Maira. **Next:** Messenger's live check (with D62's photos) once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **15 Oct, D64–D66: the restaurant takes table bookings, its customers track, change or cancel an order, and hear in their chat when it's ready or on its way**, built, checked offline and live on Maira. **15 Oct, D67–D68: admins from the command line** (`heydesk admins`, `delete-admin`, `reset-password`; `scripts/dev.sh admin`), **anyone changes their own password** (`PUT /api/auth/password`, the Account page), and an admin resets only an owner's; checked offline and in the browser. **15 Oct, admin day A1: an admin opens a business** and uses the owner's pages under a banner, checked in the browser. **Next:** admin days A2–A3 (below); Messenger's live check (with D62's photos) once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -506,6 +506,85 @@ D40).
       order marked ready in the API shows "your order is ready" in the chat (15 Oct, live on
       Maira + Jev: T-101 for Fri 16 Oct 8 pm with a birthday note; a full 8 pm offered 6:00,
       6:30 and 9:30 pm; O-103 marked ready showed "Your order O-103 is ready to pick up.")
+
+## The admin panel (planned 15 Oct)
+
+What an admin panel needs for a multi-tenant AI product, and what HeyDesk lacks, is in three
+phases. Phase 1 makes the panel usable for support; the backend already has most of it
+(`X-Business`, the audit log). One day at a time, A1 first. Decisions get their D numbers as
+they're made.
+
+### Day A1: view a business as its owner sees it
+
+- [x] `../heydesk-frontend`: **Open** on each row of the Businesses tab. The auth store keeps the
+      business being viewed (id, name) for the tab's session; `api/client.js` sends it as
+      `X-Business` on every request
+- [x] The owner's pages and sidebar open for an admin who is viewing a business; with none, an
+      owner page sends them back to `/admin`
+- [x] A banner on every page while viewing: "Viewing Spice Garden as HeyDesk admin", and
+      **Exit**, back to `/admin` with the header gone. It also says when the business is
+      suspended
+- [x] Backend: nothing new expected (D23). Check that a write, and opening one conversation, while
+      viewing is in the audit log with the business's id; a test if one is missing
+- [x] `../heydesk-frontend/PRODUCT.md`: the admin can view a business; drop "an owner cannot edit
+      `instructions`, `tools` or `preset`" (D41 put the prompt and tools in code)
+
+**Done when:** `scripts/check.sh` and the frontend's lint and build are green, and in the browser
+an admin opens a business, sees its inbox, conversations and settings under the banner, changes
+its FAQ, and the Activity tab shows that change for it; **Exit** goes back to `/admin`; the
+owner's own login still sees only their business.
+
+Checked 15 Oct (Maira backend, the dev database, a check admin `a1-check@heydesk.test`): Open on
+Mayer Doa showed its Home, inbox and settings under the banner, also after a reload; its FAQ
+changed and the audit log and Activity tab had `PATCH /api/agent` for Mayer Doa (then put back);
+`/admin` closed the business; the demo owner saw only Lakeview Clinic and was sent from `/admin`
+to `/home`. The backend needed nothing new (`test_what_an_admin_changes_or_opens_is_in_the_audit_log`
+already covers the audit). The browser pane was hidden, so page transitions didn't finish and pages
+were checked by loading them; **Exit** is a link to `/admin`, the same path.
+
+### Day A2: a business's own page
+
+- [ ] `GET /api/admin/businesses/{id}` (`AdminService.business`): name, status, desk, created;
+      its owners (email, since); the agent's name and chat link; connected channels (kind,
+      address, since); payments connected or not (sandbox or live); documents and a linked
+      sheet; conversations (all, last 7 days, waiting for a person now); last activity
+- [ ] `../heydesk-frontend`: `/admin/businesses/:id`, reached from the Businesses tab: those
+      facts, **Open as admin** (A1), suspend or reactivate, and this business's activity
+      (`/api/admin/audit?workspace_id=`)
+- [ ] design.md (the API table, the admin part of §9) and decisions.md
+- [ ] Tests (`test_roles.py`): the page for a business with Telegram connected and a waiting
+      conversation; an owner gets 404; an unknown id gets 404
+
+**Done when:** `scripts/check.sh` is green, and in the browser a business with a channel shows it
+on its page, and **Open as admin** opens it.
+
+### Day A3: find a business, and say why it's suspended
+
+- [ ] Suspending takes a reason (required); the business keeps it until it's reactivated, and the
+      audit entry carries it. Shown on the business's page and in the Activity tab, not to the
+      owner
+- [ ] `../heydesk-frontend`: search the Businesses tab by name or owner email; filter by status and
+      desk; sort by last activity or newest. Search the Owners tab by email or business. In the
+      browser, as the lists are short (no new API)
+- [ ] design.md and decisions.md; a migration if the reason is a column
+- [ ] Tests: suspending without a reason is a 422; the reason is on the business's page and in the
+      audit log; reactivating clears it
+
+**Done when:** `scripts/check.sh` is green, and in the browser the admin finds a business by part
+of its owner's email, suspends it with a reason, sees the reason on its page and in Activity,
+and the owner's console says it's suspended without the reason.
+
+### Later phases (not started)
+
+- **Phase 2, usage, cost and errors:** each turn's trace (now only a log line) saved in a
+  `turns` table: business, conversation, channel, time, tokens, cost, error, hand-off. An
+  **Overview** tab (today and 7 days: turns, cost, errors, hand-offs; the busiest businesses),
+  usage on a business's page, and a list of failed turns that opens the conversation.
+- **Phase 3, abuse and channel health:** blocked visitors (the `visitors` table already has them)
+  with an unblock; the last error of each Telegram or Messenger channel and linked sheet, shown
+  on the business's page.
+- **Before real customers:** "Forgot password?" by email, two-factor login for admins, shorter
+  admin sessions.
 
 ## M1 — The agent takes an order
 
