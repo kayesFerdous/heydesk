@@ -21,6 +21,11 @@ class LoginIn(BaseModel):
     password: str
 
 
+class PasswordIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 class TokenOut(BaseModel):
     token: str
 
@@ -49,6 +54,15 @@ async def signup(body: SignupIn, services: Svc) -> TokenOut:
 async def login(body: LoginIn, services: Svc, ip: ClientIp) -> TokenOut:
     await services.rate_limits.login(ip, body.email)  # 429: password guessing (D52)
     return TokenOut(token=await services.users.login(body.email, body.password))
+
+
+@router.put("/api/auth/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(body: PasswordIn, principal: User, services: Svc, ip: ClientIp) -> None:
+    """Your own password: the current one, then the new one. A 403 if the current is wrong."""
+    await services.rate_limits.login(ip, principal.user_id)  # 429: guessing the current one
+    await services.users.change_password(
+        principal.user_id, body.current_password, body.new_password
+    )
 
 
 @router.get("/api/auth/me")

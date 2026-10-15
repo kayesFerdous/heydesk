@@ -1,9 +1,11 @@
 """Two roles (D23): an owner sees only their business; an admin runs the platform."""
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
 
+from heydesk.errors import Conflict
 from heydesk.models import User
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY
@@ -124,4 +126,65 @@ async def test_an_admin_resets_a_forgotten_password(app: FastAPI, client: AsyncC
     assert (await client.post("/api/auth/login", json=old)).status_code == 401
     log = (await admin.get("/api/admin/audit")).json()
     assert log[0]["action"] == "password reset"
+    await admin.aclose()
+
+
+async def test_from_the_command_line_an_admin_forgets_a_password_and_is_deleted(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    users = app.state.services.users
+    await users.create_admin(ADMIN["email"], ADMIN["password"])
+    assert [a.email for a in await users.admins()] == [ADMIN["email"]]
+
+    await users.reset_password("Admin@HeyDesk.test", "a new password")
+
+    new = {"email": ADMIN["email"], "password": "a new password"}
+    assert (await client.post("/api/auth/login", json=new)).status_code == 200
+    assert (await client.post("/api/auth/login", json=ADMIN)).status_code == 401
+    await users.delete_admin(ADMIN["email"])
+    assert await users.admins() == []
+
+
+async def test_an_admin_in_the_audit_log_cant_be_deleted(app: FastAPI) -> None:
+    admin = await as_admin(app, DEV_WORKSPACE_ID)
+    await admin.patch("/api/agent", json={"faq": "Open on Eid."})  # now in the audit log
+
+    with pytest.raises(Conflict):
+        await app.state.services.users.delete_admin(ADMIN["email"])
+    await admin.aclose()
+
+
+async def test_an_owner_changes_the_temporary_password_an_admin_gave_them(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    admin = await as_admin(app)
+    owner = next(u for u in (await admin.get("/api/admin/users")).json() if u["role"] == "owner")
+    temp = (await admin.post(f"/api/admin/users/{owner['id']}/password")).json()["password"]
+
+    wrong = {"current_password": "not it", "new_password": "my own password"}
+    assert (await client.put("/api/auth/password", json=wrong)).status_code == 403
+    right = {"current_password": temp, "new_password": "my own password"}
+    assert (await client.put("/api/auth/password", json=right)).status_code == 204
+
+    login = {"email": owner["email"], "password": "my own password"}
+    assert (await client.post("/api/auth/login", json=login)).status_code == 200
+    old = {"email": owner["email"], "password": temp}
+    assert (await client.post("/api/auth/login", json=old)).status_code == 401  # the admin's
+    await admin.aclose()
+
+
+async def test_an_admin_cant_reset_another_admins_password(app: FastAPI) -> None:
+    admin = await as_admin(app)
+    await app.state.services.users.create_admin("other@heydesk.test", "another admin's")
+    other = next(
+        u
+        for u in (await admin.get("/api/admin/users")).json()
+        if u["email"] == "other@heydesk.test"
+    )
+
+    reset = await admin.post(f"/api/admin/users/{other['id']}/password")
+
+    assert reset.status_code == 403
+    login = {"email": "other@heydesk.test", "password": "another admin's"}
+    assert (await admin.post("/api/auth/login", json=login)).status_code == 200
     await admin.aclose()

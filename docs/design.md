@@ -383,7 +383,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
-| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset a password), the audit log |
+| PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
+| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
@@ -423,7 +424,11 @@ Everything under `/api` except chat, desks, auth and the Telegram webhook needs
 
 **Two roles** (D23). An **owner** belongs to one business: the token says which
 (rule 6), and they only ever see it. An **admin** runs the platform and belongs to
-none: made only by `uv run heydesk create-admin EMAIL PASSWORD`, never by signup.
+none: made only by `uv run heydesk create-admin EMAIL [PASSWORD]`, never by signup.
+The command line also lists admins (`admins`), deletes one with no audit entries
+(`delete-admin EMAIL`), and replaces a forgotten password, an admin's or an owner's
+(`reset-password EMAIL [PASSWORD]`). Without a password one is made up; it is
+printed, as it can't be read back from its hash (D67).
 An admin works inside a business by sending its id in an `X-Business` header on
 the ordinary routes (an owner's header is ignored). The database, not the token,
 says someone is still an admin. Every admin write, and every admin read of one

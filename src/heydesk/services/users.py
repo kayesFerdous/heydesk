@@ -15,8 +15,8 @@ from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.errors import Conflict, NotFound, Unauthorized
-from heydesk.models import User, Workspace
+from heydesk.errors import Conflict, Forbidden, NotFound, Unauthorized
+from heydesk.models import AuditEvent, User, Workspace
 
 TOKEN_DAYS = 7
 hasher = PasswordHash.recommended()  # argon2
@@ -62,6 +62,35 @@ class UserService:
         """From the command line only (`heydesk create-admin`): never a web route."""
         await self._add(email, password, role="admin", ws=None)
 
+    async def admins(self) -> list[User]:
+        """From the command line only (`heydesk admins`)."""
+        async with self.sessions() as s:
+            query = select(User).where(User.role == "admin").order_by(User.created_at)
+            return list(await s.scalars(query))
+
+    async def delete_admin(self, email: str) -> None:
+        """From the command line only. An admin in the audit log stays: it keeps who did what."""
+        async with self.sessions() as s, s.begin():
+            user = await s.scalar(
+                select(User).where(User.email == email.strip().lower(), User.role == "admin")
+            )
+            if user is None:
+                raise NotFound("There's no admin with that email.")
+            if await s.scalar(select(AuditEvent.id).where(AuditEvent.actor_id == user.id).limit(1)):
+                raise Conflict(
+                    "This admin is in the audit log, which keeps who did what, so they stay. "
+                    "Reset their password instead."
+                )
+            await s.delete(user)
+
+    async def reset_password(self, email: str, password: str) -> None:
+        """From the command line, for a forgotten password: an admin's or an owner's."""
+        async with self.sessions() as s, s.begin():
+            user = await s.scalar(select(User).where(User.email == email.strip().lower()))
+            if user is None:
+                raise NotFound("There's no user with that email.")
+            user.password_hash = hasher.hash(password)
+
     async def login(self, email: str, password: str) -> str:
         async with self.sessions() as s:
             user = await s.scalar(select(User).where(User.email == email.strip().lower()))
@@ -98,11 +127,27 @@ class UserService:
         return user, business
 
     async def set_password(self, user_id: str, password: str) -> None:
+        """An admin resets an owner's forgotten password. Never another admin's: that would let
+        one admin take over another, so an admin's is reset on the command line (D68)."""
         async with self.sessions() as s, s.begin():
             user = await s.get(User, user_id)
             if user is None:
                 raise NotFound("There's no such user.")
+            if user.role == "admin":
+                raise Forbidden(
+                    "An admin's password is reset on the command line: heydesk reset-password EMAIL"
+                )
             user.password_hash = hasher.hash(password)
+
+    async def change_password(self, user_id: str, current: str, new: str) -> None:
+        """Someone changes their own password, after a reset or any time (D68)."""
+        async with self.sessions() as s, s.begin():
+            user = await s.get(User, user_id)
+            if user is None:
+                raise Unauthorized("Log in again.")
+            if not hasher.verify(current, user.password_hash):
+                raise Forbidden("That isn't your current password.")
+            user.password_hash = hasher.hash(new)
 
     async def _add(self, email: str, password: str, *, role: str, ws: str | None) -> User:
         email = email.strip().lower()
@@ -130,5 +175,6 @@ class UserService:
 
 
 def temporary_password() -> str:
-    """Shown once to the admin who reset it; the owner changes it after logging in."""
+    """Shown once to the admin who reset it; the owner changes it after logging in
+    (PUT /api/auth/password)."""
     return secrets.token_urlsafe(9)

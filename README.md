@@ -38,6 +38,11 @@ uv run uvicorn heydesk.main:app --reload
 Open <http://localhost:8000> to chat with the dev agent, or press **Call** to
 talk to it (Chrome, on `localhost`, allows the microphone).
 
+Or let `scripts/dev.sh` do it. On its own it shows a menu: the backend, both with the frontend
+(`../heydesk-frontend`), a public link, stop, status, logs, tests. Each choice also prints its
+short form for next time, such as `scripts/dev.sh a --fake --desk shop` or `scripts/dev.sh p`.
+It stops whatever already holds :8000 or :8080 first, and `scripts/dev.sh help` lists everything.
+
 In `.env`, pick the models:
 
 - **Talking:** `LLM_PROVIDER=gigalogy` with the three `GIGALOGY_*` keys, or
@@ -81,6 +86,9 @@ uv run heydesk create-user you@example.com "a long password"   # an owner of the
 uv run heydesk create-admin you@example.com "a long password"  # a platform admin (no business)
 ```
 
+Forgot a password? `uv run heydesk reset-password you@example.com` prints a new one (for an
+admin or an owner). `scripts/dev.sh admin` lists, adds, resets and deletes admins from a menu.
+
 It prints a token. In Swagger, press **Authorize** and paste it. Then:
 
 | | |
@@ -112,7 +120,7 @@ The agent can answer on the business's own Telegram bot.
 
 1. In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token.
 2. Put your ngrok domain in `.env` as `PUBLIC_URL=https://….ngrok-free.app`, and start
-   everything with `scripts/dev.sh`: the frontend opens on that link, and its dev server passes
+   everything with `scripts/dev.sh public`: the frontend opens on that link, and its dev server passes
    `/api` on to the backend, so Telegram reaches it there too.
 3. In the frontend, open **Your agent** → **Where customers reach you** → **Set up Telegram**, and
    paste BotFather's whole reply: the token is found in it and the bot connects. (Or
