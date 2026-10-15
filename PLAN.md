@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **Next:** Messenger's live check once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62: photos on Messenger**, built and checked offline. **Next:** Messenger's live check (with D62's photos) once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -438,6 +438,27 @@ T-shirt is one product and "L size black ache?" isn't offered as available.
 Checked 14 Oct: the shop's sheet re-linked, 100 rows → 99 products, the Classic Cotton T-Shirt
 one product (M/Black 100, L/White 80); before the 0s, Maira said L/Black was available; after,
 3 of 3 said sold out and offered L/White or M/Black.
+
+## 15 Oct: photos on Messenger (D62)
+
+A Facebook buyer's screenshot is matched like a web chat photo, and the agent shows products
+on Messenger as a carousel. Shop only; Telegram after.
+
+- [x] `MessengerApi.download(url)` and `send_cards(token, psid, cards)`; `MessengerGraph`
+      (the URL never in an error), `FakeMessenger` records both
+- [x] `ChannelService._answer`: a message's first `image` attachment (no `sticker_id`) on a
+      desk that takes photos → `conversations.reply(..., photo=bytes)`; anything else not text
+      still gets "I can only read text"
+- [x] `ConversationService.reply` takes `photo` and collects `Photos` events into
+      `Reply.photos`; `ChannelService` sends them with `send_cards` (absolute URLs from
+      `public_url`) before the text, and a failed send is logged
+- [x] `show_photos` works on `messenger` as on `web`
+- [x] Tests (`test_messenger.py`): a photo → the turn gets the `[Photo. …]` line; `show_photos`
+      on Messenger → one carousel with the photo's full URL, then the text; a sticker or a
+      clinic's photo → "I can only read text"
+
+**Done when:** `scripts/check.sh` is green, and on a real Page a screenshot of a product gets
+"is it this one?" with its card, and "show me the shirt" sends its card.
 
 ## M1 — The agent takes an order
 

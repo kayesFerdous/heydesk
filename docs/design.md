@@ -241,7 +241,7 @@ merged into the conversation's `state`, saved with the turn.
 | `change_order` | shop | **yes** | Found like `track_order`; then any of a new `address`, `area` (or a place in one), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). A new area works out the delivery charge and total again; not once its charge was paid online. The items can't change: cancel and order again. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `track_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `track_order`; only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
-| `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Off the web chat, it says photos can't be shown here (D57) |
+| `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. On the web chat and Messenger (D62) only; elsewhere it says photos can't be shown here (D57) |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 
@@ -286,7 +286,7 @@ ask: the agent calls search_knowledge(question) ─► Gemini embeds the questio
 ### Photos (D57)
 
 A shop's products have photos, a visitor can send a photo ("eta ache?"), and the agent can show
-a product's photos. Web chat only; Telegram and voice stay text (§12).
+a product's photos. Web chat and Messenger (D62); Telegram and voice stay text (§12).
 
 ```
 owner adds:  a file ─► Pillow: a JPEG, at most 1024 px ─► media/<workspace_id>/products/<id>.jpg
@@ -666,6 +666,37 @@ Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at 
   of the visitor's last message; a later reply fails and is logged.
 - The token goes in the Graph API's query string, so it's never logged (httpx's log is off).
 
+### Photos on Messenger (D62)
+
+The shop's photos (D57) work on Messenger as they do in the web chat: a buyer sends a
+screenshot ("eta ache?"), and the agent shows products with their photo, name and price.
+
+```
+buyer sends: a message with an `image` attachment ─► its first image's URL (Facebook's CDN)
+             ─► MessengerApi.download(url) ─► bytes ─► ConversationService.reply(…, photo=bytes)
+             ─► the same turn as the web chat's photo (saved, embedded, the [Photo. …] line)
+agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
+             ─► MessengerApi.send_cards: one carousel of up to 3 cards, before the reply's text
+                (each card: the photo at PUBLIC_URL + its /media/… URL, the name, the price)
+```
+
+- **Only the shop, only images.** A sticker arrives as an `image` with a `sticker_id`, so it's
+  skipped; audio, video, files and the other desks still get "I can only read text".
+  Several images in one message: the first is used (one photo a message, as in D57). Facebook
+  sends a photo and its words as two messages, so the photo's turn has no text, which the turn
+  allows.
+- **Downloaded at once.** Facebook's attachment URLs expire, so the photo is fetched in the
+  webhook's background task and stored under the business's folder like a web photo
+  (`PhotoService` refuses one over 10 MB, and the visitor is told). The URL is never logged.
+- **A carousel, not loose images.** Messenger's generic template shows each photo with a title
+  (the name) and a subtitle (the price) in one message, like the web chat's cards. The image is
+  square (`image_aspect_ratio: square`). Facebook fetches the image itself, so it needs a public
+  `PUBLIC_URL`, as the webhook does.
+- **`show_photos` works on `web` and `messenger`**; elsewhere it still says photos can't be
+  shown here. If the carousel fails to send, it's logged and the text still goes.
+- The port gains `download(url) -> bytes` and `send_cards(token, psid, cards)`; `FakeMessenger`
+  records both. Telegram is next, the same shape (`getFile`, `sendMediaGroup`).
+
 ### The team on Telegram (D43)
 
 The owner gets alerts, and can answer any web or Telegram visitor, in their own chat with the
@@ -798,7 +829,7 @@ version handles them.
 | Encrypting bot tokens at rest | Stored as they are; no route returns them |
 | Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
 | Messenger: Facebook Login to connect a Page, the Get Started button, quick replies, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text only. A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
-| Photos: Telegram and Messenger, several in one message, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat only, one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
+| Photos: Telegram, several in one message, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat and Messenger (D62), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |

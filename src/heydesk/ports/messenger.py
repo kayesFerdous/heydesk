@@ -23,6 +23,14 @@ class MessengerApi(Protocol):
         """`psid` is the visitor's id on this Page."""
         ...
 
+    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
+        """Products as one carousel (D62): each card `{name, price, url}`, the photo's full URL."""
+        ...
+
+    async def download(self, url: str) -> bytes:
+        """A photo the visitor sent, from the URL in its message. Facebook's URLs expire."""
+        ...
+
     async def send_typing(self, token: str, psid: str) -> None:
         """Shows "typing…" in the chat, until the reply or about 20 seconds."""
         ...

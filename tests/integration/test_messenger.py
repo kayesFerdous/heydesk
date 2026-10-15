@@ -9,18 +9,20 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from heydesk.ports.llm import ToolCall
-from tests.conftest import new_business
+from tests.conftest import SEEDS, new_business
+from tests.integration.test_shop import photo
 from tests.integration.test_team import from_owner, link_owner, to
 from tests.integration.test_telegram import send as to_telegram
 
 TOKEN = "EAAB-a-page-access-token"
 PAGE = "1001"  # FakeMessenger's page
 PSID = "9001"
+CDN = "https://scontent.example/photo.jpg"  # where Facebook keeps a photo a visitor sent
+NOT_TEXT = "I can only read text messages for now. Please type your question."
 
 
 def message(text: str | None = "hi", **extra: Any) -> dict[str, Any]:
-    msg: dict[str, Any] = {"mid": "m1", **extra}
-    msg["text" if text is not None else "attachments"] = text or [{"type": "image"}]
+    msg: dict[str, Any] = {"mid": "m1", **({"text": text} if text is not None else {}), **extra}
     event = {"sender": {"id": PSID}, "recipient": {"id": PAGE}, "message": msg}
     return {"object": "page", "entry": [{"id": PAGE, "messaging": [event]}]}
 
@@ -90,14 +92,52 @@ async def test_a_wrong_signature_is_a_404_and_nothing_is_answered(
     assert sent(app) == []
 
 
-async def test_echoes_and_photos(app: FastAPI, client: AsyncClient) -> None:
+def image(**payload: Any) -> dict[str, Any]:
+    return {"attachments": [{"type": "image", "payload": {"url": CDN, **payload}}]}
+
+
+async def test_echoes_and_photos_to_a_desk_that_takes_none(
+    app: FastAPI, client: AsyncClient
+) -> None:
     await connect(client)
     await post(client, message("from the page", is_echo=True))
-    await post(client, message(None))
+    await post(client, message(None, **image()))  # the restaurant takes no photos
 
-    assert sent(app) == [
-        (PSID, "I can only read text messages for now. Please type your question.")
-    ]
+    assert sent(app) == [(PSID, NOT_TEXT)]
+
+
+async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    added = await client.post(
+        "/api/products/photos", files={"file": ("kurti.png", photo("red"), "image/png")}
+    )
+    url = added.json()["url"]
+    products = (await client.get("/api/products")).json()
+    next(p for p in products if p["code"] == "kurti")["photos"] = [url]
+    await client.put("/api/products", json=products)
+    await connect(client)
+    fake = services.channels.messenger
+    fake.files[CDN] = photo("red")
+    llm = services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
+
+    await post(client, message(None, **image()))
+
+    said = llm.requests[0].messages[-1]["content"]
+    assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]"
+    card = {
+        "name": "Cotton Kurti",
+        "price": "৳950",
+        "url": services.channels.settings.public_url + url,
+    }
+    assert fake.cards == [(PSID, [card])]
+    assert sent(app) == [(PSID, "Is it this one?")]
+
+    await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up
+    assert sent(app)[-1] == (PSID, NOT_TEXT)
 
 
 async def test_a_page_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:

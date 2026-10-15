@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -14,7 +14,7 @@ from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.errors import ConversationFull, HeyDeskError, NotFound, UnreadablePhoto
 from heydesk.models import Conversation
-from heydesk.runtime.events import Event, HandOff, Token, TurnEnded
+from heydesk.runtime.events import Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
@@ -39,6 +39,7 @@ class Reply:
 
     text: str  # empty when the turn failed: the hand-off says what to do
     handoff: HandOff | None
+    photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool (D62)
 
 
 class ConversationService:
@@ -131,9 +132,11 @@ class ConversationService:
         )
         return RunningTurn(conv.id, self._run(turn, conv, agent, visitor), turn.interrupt)
 
-    async def reply(self, agent: LiveAgent, channel: str, contact: str, text: str) -> Reply:
+    async def reply(
+        self, agent: LiveAgent, channel: str, contact: str, text: str, photo: bytes | None = None
+    ) -> Reply:
         """For a messaging app (D42): continues the contact's conversation, or starts one, and
-        returns the whole reply. A conversation that is full, or quiet for
+        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62). A conversation that is full, or quiet for
         CONVERSATION_IDLE_HOURS, is left behind: yesterday's half-order shouldn't come back."""
         async with self.sessions() as s:
             latest = await s.scalar(
@@ -151,9 +154,16 @@ class ConversationService:
         if latest and (self._is_full(latest) or self.now() - latest.updated_at > idle):
             latest = None
         turn = await self.start_turn(
-            agent, latest.id if latest else None, text, channel, f"{channel}:{contact}", contact
+            agent,
+            latest.id if latest else None,
+            text,
+            channel,
+            f"{channel}:{contact}",
+            contact,
+            photo,
         )
         parts: list[str] = []
+        photos: list[dict[str, str]] = []
         handoff = None
         async with aclosing(turn.events) as events:
             async for event in events:
@@ -161,7 +171,9 @@ class ConversationService:
                     parts.append(event.text)
                 elif isinstance(event, HandOff):
                     handoff = event
-        return Reply("".join(parts).strip(), handoff)
+                elif isinstance(event, Photos):
+                    photos.extend(event.items)
+        return Reply("".join(parts).strip(), handoff, photos)
 
     async def restart(self, agent: LiveAgent, channel: str, contact: str) -> None:
         """A new, empty conversation for the contact (Telegram's /start); their next message

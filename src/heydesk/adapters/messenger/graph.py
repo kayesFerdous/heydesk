@@ -28,6 +28,22 @@ class MessengerGraph:
     async def send_message(self, token: str, psid: str, text: str) -> None:
         await self._send(token, psid, message={"text": text}, messaging_type="RESPONSE")
 
+    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
+        elements = [
+            {"title": c["name"], "subtitle": c["price"], "image_url": c["url"]} for c in cards
+        ]
+        payload = {"template_type": "generic", "image_aspect_ratio": "square", "elements": elements}
+        message = {"attachment": {"type": "template", "payload": payload}}
+        await self._send(token, psid, message=message, messaging_type="RESPONSE")
+
+    async def download(self, url: str) -> bytes:
+        try:
+            res = await self.client.get(url, follow_redirects=True)
+            res.raise_for_status()
+        except httpx.HTTPError:  # the URL isn't in the error: it's the visitor's file
+            raise MessengerUnavailable("attachment: Facebook didn't send the photo") from None
+        return res.content
+
     async def send_typing(self, token: str, psid: str) -> None:
         await self._send(token, psid, sender_action="typing_on")
 

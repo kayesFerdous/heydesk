@@ -33,6 +33,15 @@ NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
 
 
+def first_photo(message: dict[str, Any]) -> str | None:
+    """The first image's URL in a Messenger message. A sticker is an image too, so it's not."""
+    for attachment in message.get("attachments") or []:
+        payload = attachment.get("payload") or {}
+        if attachment.get("type") == "image" and "sticker_id" not in payload:
+            return payload.get("url")
+    return None
+
+
 class ChannelService:
     def __init__(
         self,
@@ -164,6 +173,7 @@ class ChannelService:
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
         text = message.get("text")
+        photo_url = first_photo(message)  # Messenger's (D62); Telegram's photos aren't read
         try:
             if channel.kind == TELEGRAM and text and text.startswith("/start owner_"):  # D43
                 await self.team.link_owner(channel, chat_id, text.removeprefix("/start owner_"))
@@ -172,17 +182,24 @@ class ChannelService:
                 await self.team.owner_wrote(channel, message)
                 return
             agent = await self.agents.by_id(channel.agent_id)
-            if text is None:  # a photo, a sticker, a voice note
+            photo = None
+            if text is None and photo_url and agent.desk.takes_photos:
+                photo = await self.messenger.download(photo_url)  # its URL expires
+            if text is None and photo is None:  # a sticker, a voice note, a file
                 await self._send(channel, chat_id, NOT_TEXT)
-            elif text.split(maxsplit=1)[:1] == ["/start"]:
+            elif text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 await self.conversations.restart(agent, channel.kind, chat_id)
                 await self._send(channel, chat_id, agent.greeting)
             else:
                 typing = asyncio.create_task(self._keep_typing(channel, chat_id))
                 try:
-                    reply = await self.conversations.reply(agent, channel.kind, chat_id, text)
+                    reply = await self.conversations.reply(
+                        agent, channel.kind, chat_id, text or "", photo
+                    )
                 finally:
                     typing.cancel()
+                if reply.photos:
+                    await self._send_cards(channel, chat_id, reply.photos)
                 if reply.text:
                     await self._send(channel, chat_id, reply.text)
                 if reply.handoff:
@@ -198,6 +215,17 @@ class ChannelService:
 
     async def _send(self, channel: Channel, chat_id: str, text: str) -> None:
         await self.team.send(channel, chat_id, text)
+
+    async def _send_cards(
+        self, channel: Channel, chat_id: str, photos: list[dict[str, str]]
+    ) -> None:
+        """The products `show_photos` chose, as one carousel (D62). Facebook fetches each
+        photo from us, so its URL is made whole. If it fails, the text still goes."""
+        cards = [{**p, "url": self.settings.public_url + p["url"]} for p in photos]
+        try:
+            await self.messenger.send_cards(channel.token, chat_id, cards)
+        except MessengerUnavailable as error:
+            log.warning("cards not sent: %s", error, extra={"channel_id": channel.id})
 
     async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
         """ "typing…" lasts five seconds on Telegram; a reply can take longer."""
