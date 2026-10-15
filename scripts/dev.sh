@@ -22,7 +22,7 @@ PUBLIC_URL=$(uv run python -c "from heydesk.config import Settings; print(Settin
 uv run alembic upgrade head
 uv run uvicorn heydesk.main:app --reload &
 # the frontend builds its chat links on PUBLIC_URL, so they work from any phone
-(cd "$FRONTEND" && VUE_APP_PUBLIC_URL="$PUBLIC_URL" pnpm run serve) &
+(cd "$FRONTEND" && VITE_PUBLIC_URL="$PUBLIC_URL" pnpm run serve) &
 
 if [[ "${1:-}" == "--tunnel" ]]; then
   sleep 8  # let the frontend come up first
