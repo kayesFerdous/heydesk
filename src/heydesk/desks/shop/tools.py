@@ -10,10 +10,10 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from heydesk.desks.base import NewMessage
+from heydesk.desks.base import NewMessage, TooLate
 from heydesk.desks.shared import awaiting_payment
 from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import OutOfStock, ShopStore, TooLate
+from heydesk.desks.shop.store import OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
     CANCELLABLE,
     CHANGEABLE,

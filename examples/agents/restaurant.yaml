@@ -17,6 +17,10 @@ hours:
   fri: ["14:00", "23:00"]
   sat: ["11:00", "23:00"]
   sun: ["11:00", "23:00"]
+# Table bookings: Python counts the seats; a booking keeps them for table_minutes
+takes_bookings: true
+seats: 40
+max_party: 12
 policies: |
   Pickup only for now. Prices include VAT.
   Dishes may contain nuts, dairy and gluten. Ask the team about allergens before ordering.

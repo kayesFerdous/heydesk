@@ -37,6 +37,11 @@ class SheetLinked(Conflict):
         super().__init__("Your list comes from your Google Sheet: change it there.")
 
 
+class TooLate(ValueError):
+    """An order moved on (the courier or the kitchen has it) since the visitor asked to
+    change it."""
+
+
 @dataclass(frozen=True)
 class NewMessage:
     """A message for the team, ready to save once the visitor said yes to it."""
@@ -206,6 +211,22 @@ class Store:
         async with self.sessions() as s:
             return list(await s.scalars(query.order_by(table.created_at.desc()).limit(limit)))
 
+    async def here[T: Taken](self, table: type[T]) -> list[T]:
+        """What was taken in this conversation, newest first (D55): the visitor needs no code
+        for it."""
+        if self.conversation_id is None:
+            return []
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(table)
+                .where(
+                    table.workspace_id == self.workspace_id,
+                    table.conversation_id == self.conversation_id,
+                )
+                .order_by(table.created_at.desc())
+            )
+            return list(found)
+
     async def get[T: Taken](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:
             return await self._one(s, table, row_id)
@@ -271,6 +292,11 @@ class Desk:
             knowledge=knowledge,
             public_url=public_url,
         )
+
+    def own_tools(self, config: Any) -> list[Tool]:
+        """Its tools for this business. A desk whose tools depend on a switch in its config
+        (the restaurant's `takes_bookings`) adds them here."""
+        return self.tools
 
     async def prompt(self, config: Any, store: Any) -> str:
         """Its section of the system prompt: who the agent is, how it works, what it knows."""

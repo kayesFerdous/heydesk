@@ -85,6 +85,11 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
     assert [t.name for t in request.tools] == [
         "update_order",
         "place_order",
+        "track_order",  # after the order (D65)
+        "change_order",
+        "cancel_order",
+        "book_table",  # the seed takes bookings (D64)
+        "cancel_booking",
         "take_message",
         "handoff_to_human",
         "off_topic",

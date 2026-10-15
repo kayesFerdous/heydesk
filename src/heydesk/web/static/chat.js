@@ -6,6 +6,7 @@ const $ = (id) => document.getElementById(id);
 const AGENT_KEY = document.querySelector('meta[name="agent-key"]').content;  // baked in by GET /
 let conversationId = null;
 let greeting = "";
+let teamShown = 0;  // the team's lines already on the page
 
 const add = (cls, text) => {
   const node = document.createElement("div");
@@ -100,8 +101,20 @@ $("form").addEventListener("submit", (e) => {
   send(message);
 });
 
+// What the business said meanwhile (a payment came in, the order is ready): the server adds it
+// to the conversation, and the page asks for it every few seconds (D43, D66)
+setInterval(async () => {
+  if (!conversationId) return;
+  const res = await fetch(`/api/chat/${AGENT_KEY}/${conversationId}/team`).catch(() => null);
+  if (!res?.ok) return;
+  const { replies } = await res.json();
+  for (const line of replies.slice(teamShown)) add("agent", line);
+  teamShown = replies.length;
+}, 4000);
+
 $("restart").addEventListener("click", () => {
   conversationId = null;
+  teamShown = 0;
   $("log").replaceChildren();
   if (greeting) add("agent", greeting);
   $("input").focus();

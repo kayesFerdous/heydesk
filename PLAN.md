@@ -4,7 +4,7 @@ An MVP in about four weeks: a business's AI front desk you can **talk to**. How
 it works is in [docs/design.md](docs/design.md); decisions in
 [docs/decisions.md](docs/decisions.md).
 
-> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **Next:** Messenger's live check (with D62's photos) once there's a Meta app.
+> **Now:** days 1–23 built, then the product made simpler and more real (4 Oct, D22–D40). **6 Oct, D41: no presets. Each kind of business is its own folder (a desk) with its own prompt, tools, tables and routes**; the generic jobs and tasks engine, records and items are gone. Offline checks green; the dev server boots. **7 Oct, D42: Telegram**, built and checked offline; the live check needs a bot token and a tunnel. **8 Oct, D43: owner alerts and takeover on Telegram**, backend built and checked offline. **8 Oct, D45: the online shop desk** (f-commerce), built and checked offline. **11 Oct, D51: limits on the public chat** (daily turns per visitor and per business, an `off_topic` tool, a block after five strikes), built and checked offline; the frontend must now send `visitor_id`. **11 Oct, D52: rate limits** on chat (per visitor and per IP) and login, built and checked offline. **13 Oct, D53: import a spreadsheet as it is**: the AI suggests which of its columns is which of our fields, the owner checks it on the Products screen; built, checked offline and in the browser (with the fake model). **13 Oct, D54: a smarter shop agent** (the prompt helps buyers choose and answers what they ask most; areas by place name, a free-delivery nudge, "only N left", a size guide, sale prices; the owner's alert warns about a mobile's past returns), built, checked offline and live on Maira. **13 Oct: each desk passed its live run on Maira.** **13 Oct: the frontend edits D54's fields** (places per delivery area, the size guide, a sale price), checked in the browser. **13 Oct, D55: after the order**: the order from this chat needs no code, `change_order` before it ships, `request_exchange` after delivery; built, checked offline and live on Maira. **13 Oct, D56: stock per size and colour**, built, checked in the browser and live on Maira. **13 Oct, D57: photos in the shop** (product photos, "eta ache?" by photo, the agent shows photos), built, checked offline, in the browser and live on Maira. **14 Oct, D58: a linked Google Sheet** (a desk's list follows the sheet every 5 minutes; the shop's stock is a shelf count less the orders not shipped), built, checked offline and in the browser. **14 Oct: the D58 live check passed on Maira** (it matched all 8 columns of a real shop's sheet). **14 Oct, D59: one row per size and colour** is one product with variants, checked offline and live on Maira. **14 Oct, D60: Messenger**, built and checked offline. **15 Oct, D62 and D63: photos on Messenger and Telegram**, built and checked offline. **15 Oct, D64–D66: the restaurant takes table bookings, its customers track, change or cancel an order, and hear in their chat when it's ready or on its way**, built, checked offline and live on Maira. **Next:** Messenger's live check (with D62's photos) once there's a Meta app.
 > **Dates:** day 1 = Wed 30 Sep 2026 · demo on day 27 (Mon 26 Oct) · buffer to day 30.
 
 **How to use this file:** do the next unticked day. Its bullets say what to
@@ -93,7 +93,7 @@ tools (documents search, item search, message, hand-off) stay on for every kind.
 - [x] Live check on the clinic with a real model: "a heart doctor tomorrow evening" → the right doctor,
       a time outside their hours refused, a request saved after a yes (6 Oct, Maira + Jev: all three)
 - [x] Appointment codes (`A-104`); cancel and reschedule with the code and the name, after a yes (D38)
-- [ ] Next kinds: restaurant (reservations as well as orders), then the others
+- [ ] Next kinds: restaurant (reservations as well as orders; 15 Oct: built, D64), then the others
 
 ## 8 Oct: the online shop desk (D45)
 
@@ -477,6 +477,35 @@ public URL is needed for them.
 
 **Done when:** `scripts/check.sh` is green, and with a real bot a screenshot of a product gets
 "is it this one?" with its photo.
+
+## 15 Oct: the restaurant's bookings, and after the order (D64–D66)
+
+A restaurant can take table bookings, and its customers can track, change or cancel an order,
+and hear in their chat when the owner moves it along. Orders for a later day wait (they change
+D40).
+
+- [x] `bookings` table (`T-101`; new → confirmed → seated → done, or cancelled or no_show);
+      config `takes_bookings`, `seats`, `table_minutes`, `max_party`; `book_table` (the party
+      size, `day_and_time`, a shared seat count, up to 3 free times nearby) and
+      `cancel_booking` (code and name); `GET/PATCH /api/bookings`. With bookings off, no tools
+      and no prompt section (`Desk.own_tools(config)`) (D64)
+- [x] `track_order`, `change_order` (time, address, note; while new), `cancel_order` (while
+      unpaid or new); the order from this chat needs no code; the code is `O-101` now, not
+      `#101`; `Store.here()` and `TooLate` shared with the shop (D65)
+- [x] Delivery `ready → out_for_delivery → delivered`, pickup `ready → collected`; the owner's
+      ready / on its way / confirmed / cancelled is told in the customer's chat
+      (`news()`, `TeamService.tell_visitor`, `Services.team`) (D66)
+- [x] Tests (`test_restaurant.py`): a booking saved only after a yes; a full slot names free
+      times; the seats counted when each table sits down; outside the hours and too many
+      people refused; cancel by code and name; bookings off; another workspace sees none;
+      track, change and cancel from this chat; marking ready adds the team's line
+- [ ] `../heydesk-frontend`: a bookings screen, the booking fields, the delivery statuses
+- [x] The dev chat page shows the team's lines too (it asks `/team` every 4 seconds)
+- [x] **Done when:** in the dev chat (`DEV_AGENT_KIND=restaurant`), "table for 4 tomorrow at
+      8 pm" is read back and saved as T-101 after a yes; a full slot offers another time; an
+      order marked ready in the API shows "your order is ready" in the chat (15 Oct, live on
+      Maira + Jev: T-101 for Fri 16 Oct 8 pm with a birthday note; a full 8 pm offered 6:00,
+      6:30 and 9:30 pm; O-103 marked ready showed "Your order O-103 is ready to pick up.")
 
 ## M1 — The agent takes an order
 

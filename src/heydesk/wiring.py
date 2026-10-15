@@ -167,4 +167,5 @@ def build_services(
         visitors=visitors,
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
+        team=team,
     )

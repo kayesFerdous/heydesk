@@ -115,6 +115,21 @@
         "8003"
       ],
       "port": 8003
+    },
+    {
+      "name": "heydesk-restaurant",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DEV_AGENT_KIND=restaurant",
+        "DEV_AGENT_SEED=examples/agents/restaurant.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8004"
+      ],
+      "port": 8004
     }
   ]
 }

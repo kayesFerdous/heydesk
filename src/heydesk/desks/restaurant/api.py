@@ -1,4 +1,4 @@
-"""A restaurant's own routes: its menu, and the orders the agent took."""
+"""A restaurant's own routes: its menu, and the orders and table bookings the agent took."""
 
 from datetime import datetime
 from typing import Annotated, Any, cast
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
 from heydesk.desks.csv_import import Suggestion
-from heydesk.desks.restaurant.models import Order
+from heydesk.desks.restaurant.models import Booking, Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.values import MENU_COLUMNS, MenuItem, menu_from_csv
 
@@ -28,8 +28,10 @@ class OrderOut(BaseModel):
 
     id: str
     conversation_id: str | None
-    number: int  # what the visitor was told
-    status: str  # new → ready → collected, or cancelled
+    code: str  # what the visitor was told: O-101
+    number: int
+    # new → ready → collected (pickup), or ready → out_for_delivery → delivered; or cancelled
+    status: str
     name: str
     phone: str
     lines: list[dict[str, Any]]  # {code, name, quantity, price}
@@ -75,8 +77,19 @@ async def order(order_id: str, store: Restaurant) -> OrderOut:
 
 
 @router.patch("/api/orders/{order_id}")
-async def set_status(order_id: str, body: StatusIn, store: Restaurant) -> OrderOut:
-    return OrderOut.model_validate(await store.set_status(Order, order_id, body.status))
+async def set_status(order_id: str, body: StatusIn, store: Restaurant, services: Svc) -> OrderOut:
+    """Moves it along. The visitor hears it in their chat when it's ready to pick up, on its
+    way, or cancelled (D66)."""
+    order = await store.set_status(Order, order_id, body.status)
+    await tell_visitor(services, order)
+    return OrderOut.model_validate(order)
+
+
+async def tell_visitor(services: Svc, row: Order | Booking) -> None:
+    """The line for the visitor's chat, as the team's message (D66). It goes out on Telegram or
+    Messenger, and the web page fetches it, as the payment line does (D47)."""
+    if row.conversation_id and (line := row.news()):
+        await services.team.tell_visitor(row.conversation_id, line)
 
 
 @router.post("/api/menu/import/suggest")
@@ -95,3 +108,44 @@ async def import_menu(body: ImportIn, store: Restaurant) -> ImportOut[MenuItem]:
     if not body.dry_run:
         await store.replace_menu(found)
     return ImportOut[MenuItem](saved=not body.dry_run, count=len(found), preview=found[:5])
+
+
+class BookingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    code: str  # what the visitor was told: T-101
+    conversation_id: str | None
+    status: str  # new → confirmed → seated → done, or cancelled or no_show
+    name: str
+    phone: str
+    people: int
+    at: datetime  # UTC: when they arrive
+    note: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@router.get("/api/bookings")
+async def bookings(
+    store: Restaurant, page: Paged, status: str | None = None, q: str | None = None
+) -> list[BookingOut]:
+    """Newest first, a page at a time (`limit`, `before`). `q` matches the code, the name or
+    the phone."""
+    found = await store.find(Booking, status, q, limit=page.limit, before=page.before)
+    return [BookingOut.model_validate(b) for b in found]
+
+
+@router.get("/api/bookings/{booking_id}")
+async def booking(booking_id: str, store: Restaurant) -> BookingOut:
+    return BookingOut.model_validate(await store.get(Booking, booking_id))
+
+
+@router.patch("/api/bookings/{booking_id}")
+async def set_booking_status(
+    booking_id: str, body: StatusIn, store: Restaurant, services: Svc
+) -> BookingOut:
+    """Moves it along. The visitor hears it in their chat when it's confirmed or cancelled."""
+    booking = await store.set_status(Booking, booking_id, body.status)
+    await tell_visitor(services, booking)
+    return BookingOut.model_validate(booking)

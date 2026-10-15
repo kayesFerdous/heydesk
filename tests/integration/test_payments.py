@@ -131,7 +131,7 @@ async def test_the_restaurant_takes_the_delivery_charge_first_but_not_for_pickup
     assert (await found(world, conv)).status == "new"
     told = (await world.conversation(conv)).messages[-1]["content"]
     assert told == (
-        "✅ Payment received: ৳60 for the delivery charge. Your order #101 is placed. The rest, "
+        "✅ Payment received: ৳60 for the delivery charge. Your order O-101 is placed. The rest, "
         "৳1,030, is paid on delivery."
     )
 

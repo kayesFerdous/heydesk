@@ -1,7 +1,8 @@
-"""A restaurant's menu and orders, as its tools, prompt and routes see them. Pure."""
+"""A restaurant's menu, orders and table bookings, as its tools, prompt and routes see them.
+Pure."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -70,6 +71,104 @@ class NewOrder:
         return self.food + self.delivery_charge
 
 
+@dataclass(frozen=True)
+class OrderEdit:
+    """An order's new time, address or note, after a change the visitor said yes to (D65).
+    Every field is the new value, or the old one where nothing changed. `pickup_at` is local."""
+
+    number: int
+    pickup_at: datetime
+    address: str
+    note: str
+
+
+@dataclass(frozen=True)
+class OrderCancel:
+    number: int
+
+
+STATUS_WORDS = {  # what track_order says about each status
+    "unpaid": "not placed yet: it's waiting for the delivery charge to be paid online",
+    "new": "received: the kitchen has it",
+    "ready": "ready",
+    "out_for_delivery": "on its way to them",
+    "collected": "picked up",
+    "delivered": "delivered",
+    "cancelled": "cancelled",
+}
+CANCELLABLE = {"unpaid", "new"}  # not once it's ready
+# Its time, address or note can change until it's ready. An unpaid order isn't placed yet:
+# cancel it and order again
+CHANGEABLE = {"new"}
+
+
+@dataclass(frozen=True)
+class NewBooking:
+    """A table booking ready to save once the visitor said yes. `at` is local."""
+
+    at: datetime
+    people: int
+    name: str
+    phone: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class BookingCancel:
+    number: int
+
+
+# A booking keeps its seats until it's done, cancelled or a no-show
+HOLDS_SEATS = {"new", "confirmed", "seated"}
+CANCELLABLE_BOOKING = {"new", "confirmed"}
+STEP = timedelta(minutes=30)  # how far apart the other times we offer are
+NEARBY = 6  # steps either side of the asked time: up to 3 hours
+OFFERED = 3  # other times offered when a slot is full
+
+
+def party(people: int, most: int) -> int:
+    if people > most:
+        raise ValueError(
+            f"We take tables for up to {most} people. For a bigger group, offer to take a "
+            "message for the team."
+        )
+    return people
+
+
+def has_room(
+    taken: list[tuple[datetime, int]], at: datetime, people: int, seats: int, minutes: int
+) -> bool:
+    """Whether `people` more fit from `at` for `minutes`, with the bookings `taken` (their
+    start and their people). One shared count of seats, not real tables. The room is
+    fullest when someone sits down: at `at`, or when a later booking starts before we leave."""
+    keep = timedelta(minutes=minutes)
+    moments = [at] + [start for start, _ in taken if at < start < at + keep]
+    return all(
+        sum(n for start, n in taken if start <= moment < start + keep) + people <= seats
+        for moment in moments
+    )
+
+
+def free_times(
+    taken: list[tuple[datetime, int]],
+    at: datetime,
+    people: int,
+    config: "RestaurantConfig",
+    now: datetime,
+) -> list[datetime]:
+    """The nearest times on the same day (local) with room for `people`, in clock order."""
+    near = [at + STEP * n * sign for n in range(1, NEARBY + 1) for sign in (-1, 1)]
+    free = [
+        t
+        for t in near
+        if t > now
+        and t.date() == at.date()
+        and config.hours.problem_with(t) is None
+        and has_room(taken, t, people, config.seats, config.table_minutes)
+    ]
+    return sorted(free[:OFFERED])
+
+
 MENU_COLUMNS = [
     csv_import.Column(name="name", about="the dish's name", required=True),
     csv_import.Column(name="price", about="its price: 350 or ৳350", required=True),
@@ -109,6 +208,10 @@ class RestaurantConfig(AgentConfig):
     # A delivery order's charge is paid online first (SSLCommerz); the order is placed only
     # when the payment comes in, and the rest is cash on delivery (D48)
     pay_first: bool = False
+    takes_bookings: bool = False  # off: no table bookings, and the agent doesn't offer them
+    seats: int = Field(default=0, ge=0)  # people we can seat at once
+    table_minutes: int = Field(default=90, ge=15, le=480)  # how long a booking keeps its seats
+    max_party: int = Field(default=10, ge=1)  # the most people in one booking
 
     @model_validator(mode="after")
     def _something_to_pay_first(self) -> "RestaurantConfig":
@@ -116,4 +219,10 @@ class RestaurantConfig(AgentConfig):
             raise ValueError(
                 "To take the delivery charge first, turn on delivery and set its charge."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _seats_to_book(self) -> "RestaurantConfig":
+        if self.takes_bookings and not self.seats:
+            raise ValueError("To take table bookings, set how many seats you have.")
         return self

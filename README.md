@@ -91,7 +91,8 @@ It prints a token. In Swagger, press **Authorize** and paste it. Then:
 | `PATCH /api/agent` | Edit it: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message |
 | `POST /api/agent/documents` | Add pasted text to the agent's knowledge: `{"title": "Policies", "text": "…"}`. `POST /api/agent/documents/file` takes a `.txt`, `.md` or `.pdf`. `GET` lists them and `DELETE /api/agent/documents/{id}` removes one. The agent searches them when a question isn't answered elsewhere |
 | `GET/PUT /api/menu` | A restaurant's menu, replaced whole (prices in paisa) |
-| `GET /api/orders` | A restaurant's orders, newest first; `?status=`, `?q=` (number, name or phone). `PATCH /api/orders/{id}` with `{"status": "ready"}`: new → ready → collected (or cancelled) |
+| `GET /api/orders` | A restaurant's orders, newest first; `?status=`, `?q=` (number, name or phone). `PATCH /api/orders/{id}` with `{"status": "ready"}`: new → ready → collected for a pickup, or ready → out_for_delivery → delivered (or cancelled). Ready (a pickup), on its way, and cancelled are told to the customer in their chat |
+| `GET /api/bookings` | A restaurant's table bookings (when `takes_bookings` is on), newest first; `?status=`, `?q=` (code, name or phone). `PATCH /api/bookings/{id}` with `{"status": "confirmed"}`: new → confirmed → seated → done (or cancelled, or no_show). Confirmed and cancelled are told to the customer in their chat |
 | `GET/PUT /api/doctors` | A clinic's doctors, with their `days`, `start` and `end` |
 | `GET/PUT /api/products` | A shop's products, with `sizes`, `colours` and `stock` (empty: not counted). `POST /api/products/import` takes a CSV |
 | `GET /api/shop/orders` | A shop's cash-on-delivery orders (`O-101`). `PATCH` with `{"status": "confirmed"}` after calling the buyer, then `{"status": "shipped", "tracking": "Steadfast 12345678"}`: new → confirmed → shipped → delivered or returned (or cancelled, back in stock) |

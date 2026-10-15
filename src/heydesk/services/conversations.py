@@ -116,7 +116,7 @@ class ConversationService:
             system=build_system_prompt(
                 config, await desk.prompt(config, store), channel, now, agent.documents
             ),
-            tools=tools_for(desk, has_documents=bool(agent.documents)),
+            tools=tools_for(desk, config, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
             history=conv.messages,
             user_text=text,

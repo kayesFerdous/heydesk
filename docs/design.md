@@ -88,20 +88,21 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | File | What's in it |
 |---|---|
 | `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
-| `tools.py` | Its tools: the restaurant's `update_order` and `place_order`; the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
-| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`; `Doctor` (with `works_at`), `NewAppointment`; `Product`, `Zone`, `ShopConfig`, `mobile()` |
-| `models.py` | Its tables: `menu_items` and `orders`; `doctors` and `appointments`; `products` and `shop_orders` |
+| `tools.py` | Its tools: the restaurant's `update_order`, `place_order`, `track_order`, `change_order`, `cancel_order` (D65), and `book_table` and `cancel_booking` when it takes bookings (D64); the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
+| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`, `NewBooking`, `has_room()`, `free_times()`; `Doctor` (with `works_at`), `NewAppointment`; `Product`, `Zone`, `ShopConfig`, `mobile()` |
+| `models.py` | Its tables: `menu_items`, `orders` and `bookings`; `doctors` and `appointments`; `products` and `shop_orders` |
 | `store.py` | Its data access, for its tools and its owner routes, always one workspace |
-| `api.py` | Its owner routes: `/api/menu`, `/api/orders`; `/api/doctors`, `/api/appointments`; `/api/products`, `/api/shop/orders` |
+| `api.py` | Its owner routes: `/api/menu`, `/api/orders`, `/api/bookings`; `/api/doctors`, `/api/appointments`; `/api/products`, `/api/shop/orders` |
 
-`desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, has_documents)` is a desk's tools
-then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
+`desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, config, has_documents)` is a desk's
+tools for this business (`Desk.own_tools(config)`: the restaurant adds its booking tools only
+when `takes_bookings` is on, D64) then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
 `search_knowledge` when the business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas, each with a charge, usual days and the `places` buyers name in it, D54), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas, each with a charge, usual days and the `places` buyers name in it, D54), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -228,7 +229,12 @@ merged into the conversation's `state`, saved with the turn.
 | Tool | Desk | Writes? | What it does |
 |---|---|---|---|
 | `update_order` | restaurant | no | Sets the whole order (codes and quantities). Checks the dishes exist and are available; Python adds up the total. Refuses on a closed day (pickup is today only, D40). The cart goes in `state["cart"]` |
-| `place_order` | restaurant | **yes** | `delivery` (when the restaurant `delivers`), `time`, `address` (for a delivery), `name`, `phone`, `note`. The time must be later today and inside the hours; a delivery adds `delivery_charge` to the total. Returns the order number, and an alert for the owner (D43). With `pay_first`, a delivery order is saved `unpaid` and it returns a `pay_link` for the delivery charge instead, and no alert; pickup pays nothing first (D48) |
+| `place_order` | restaurant | **yes** | `delivery` (when the restaurant `delivers`), `time`, `address` (for a delivery), `name`, `phone`, `note`. The time must be later today and inside the hours; a delivery adds `delivery_charge` to the total. Returns the order code, `O-101` (D65), and an alert for the owner (D43). With `pay_first`, a delivery order is saved `unpaid` and it returns a `pay_link` for the delivery charge instead, and no alert; pickup pays nothing first (D48) |
+| `track_order` | restaurant | no | The order placed in this chat with no code; otherwise its code and the phone it was placed with, one answer for a wrong code and a wrong phone (as the shop, D55). Its status in words, dishes, total, time; a `pay_link` while unpaid (D65) |
+| `change_order` | restaurant | **yes** | Found the same way; only while `new`. A new `time` (later today, inside the hours), `address` (a delivery only) or `note`; reads back old → new. The store checks it's still `new` when saving. The dishes can't change: cancel and order again. An alert for the owner (D65) |
+| `cancel_order` | restaurant | **yes** | Found the same way; while `unpaid` or `new`. An alert for the owner, which says to refund it when it was paid online (D65) |
+| `book_table` | restaurant | **yes** | Only when `takes_bookings` (D64). `people`, `time` (a day and a time in the next 14 days, inside the hours: `parse.day_and_time`), `name`, `phone`, `note`. `people` at most `max_party`. As soon as the people and the time are known, Python counts the seats: no more than `seats` people at any moment, each booking holding its seats for `table_minutes` (one shared count, not real tables). A full slot is refused with up to 3 free times nearby on the same day, 30 minutes apart. Saved `new`, code `T-101`; the visitor is told the restaurant will confirm it in the chat; an alert for the owner |
+| `cancel_booking` | restaurant | **yes** | Only when `takes_bookings`. The code (`T-101`) and the name it's under, as the clinic's `cancel_appointment` (D38); while `new` or `confirmed`. An alert for the owner |
 | `find_doctor` | clinic | no | Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and keeps the doctors who work it |
 | `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`; the clinic phones to confirm. With `pay_first`, it saves the request `unpaid` with the clinic's `deposit` and returns a `pay_link` instead (D48). Moving an unpaid one keeps it unpaid |
 | `cancel_appointment` | clinic | **yes** | The code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks (D38) |
@@ -350,7 +356,8 @@ Every table has `workspace_id` (except `workspaces`).
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
-| `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Shown by number; unpaid → new (the delivery charge was paid, D48) → ready → collected, or cancelled |
+| `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Code `O-101` (D65); unpaid → new (the delivery charge was paid, D48) → ready → collected for a pickup, or ready → out_for_delivery → delivered for a delivery (D66); unpaid, new, ready or out_for_delivery → cancelled |
+| `bookings` | the shared columns, at (UTC), people, note. Code `T-101`; new → confirmed → seated → done; new or confirmed → cancelled; confirmed → no_show. New, confirmed and seated hold their seats (D64) |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
@@ -383,7 +390,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
 | POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
 | POST | `/api/menu/import/suggest`, `/api/doctors/import/suggest`, `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and the AI's suggested match for the owner to check (D53) |
-| GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status |
+| GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status (the visitor hears ready, on its way or cancelled in their chat, D66) |
+| GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422 |
@@ -741,6 +749,15 @@ visitor writes while `human` ─► saved, forwarded to the owner with its Ref; 
 owner replies /done ─► `active` again: the agent answers, and sees what the team said
 ```
 
+- **Telling a restaurant's visitor (D66):** when the owner moves an order or a booking with
+  `PATCH /api/orders/{id}` or `/api/bookings/{id}`, the row's `news()` gives a line, and
+  `TeamService.tell_visitor` adds it to that conversation as the team's (the web page fetches
+  it, the bot or the Page sends it, the model sees it next turn; the conversation stays with
+  the agent). Lines: a pickup `ready` ("Your order O-101 is ready to pick up."), a delivery
+  `out_for_delivery` ("…is on its way."), a booking `confirmed` ("Your table for 4 is
+  confirmed (T-101)."), and an order or booking the owner `cancelled`. Nothing for the other
+  steps. `Services.team` is the `TeamService`, for the routes.
+
 - After a hand-off the agent keeps answering until the owner replies, so no one waits in
   silence. A phone call can't be answered this way; the owner is told to call back.
 - The `by` mark is taken off before the transcript goes to the model.
@@ -844,6 +861,9 @@ version handles them.
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
+| Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |
+| Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
+| Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |

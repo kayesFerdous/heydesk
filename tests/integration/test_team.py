@@ -49,7 +49,7 @@ async def test_the_owner_links_their_chat_and_hears_about_each_order(
     conv_id = await place_an_order(app, client)  # in the web chat
 
     alert = to(app, OWNER)[-1]
-    assert alert.startswith("🛒 New order #101\n2 × Chicken Biryani, 1 × Borhani, total ৳1,030")
+    assert alert.startswith("🛒 New order O-101\n2 × Chicken Biryani, 1 × Borhani, total ৳1,030")
     assert "pickup today at 7:30 pm; name Kayes; phone 01712345678" in alert
     assert alert.endswith(f"Ref: {conv_id}")
 

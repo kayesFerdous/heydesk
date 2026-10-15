@@ -62,7 +62,7 @@ async def test_another_business_never_gets_the_documents(app: FastAPI, client: A
         live = await app.state.services.agents.by_key(agent["public_key"])
         assert live.documents == []
         assert "search_knowledge" not in {
-            t.name for t in tools_for(live.desk, has_documents=bool(live.documents))
+            t.name for t in tools_for(live.desk, live.config, has_documents=bool(live.documents))
         }
         # Even asked directly, the other business's search finds nothing of the first's
         found = await app.state.services.knowledge.search(live.workspace_id, "refunds seven days")

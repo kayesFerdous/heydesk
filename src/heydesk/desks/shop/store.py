@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import ScalarResult, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from heydesk.desks.base import Store
+from heydesk.desks.base import Store, TooLate
 from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import (
     CHANGEABLE,
@@ -29,10 +29,6 @@ from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
 
 class OutOfStock(ValueError):
     """Someone else bought the last ones since the cart was made."""
-
-
-class TooLate(ValueError):
-    """The order moved on (the courier has it) since the visitor asked to change it."""
 
 
 class ShopStore(Store):
@@ -106,20 +102,8 @@ class ShopStore(Store):
             return {status: count for status, count in rows}
 
     async def orders_here(self) -> list[ShopOrder]:
-        """The orders placed in this conversation, newest first (D55): the visitor needs no
-        code for them."""
-        if self.conversation_id is None:
-            return []
-        async with self.sessions() as s:
-            found = await s.scalars(
-                select(ShopOrder)
-                .where(
-                    ShopOrder.workspace_id == self.workspace_id,
-                    ShopOrder.conversation_id == self.conversation_id,
-                )
-                .order_by(ShopOrder.created_at.desc())
-            )
-            return list(found)
+        """The orders placed in this conversation, newest first (D55)."""
+        return await self.here(ShopOrder)
 
     async def change_order(self, edit: Confirmed[OrderEdit]) -> ShopOrder:
         """New delivery details, and the total again with the new charge. Raises TooLate if

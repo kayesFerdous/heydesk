@@ -23,9 +23,10 @@ async def messages(world: World) -> list[TeamMessage]:
 
 async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: World) -> None:
     for desk in DESKS.values():
-        names = [t.name for t in tools_for(desk, has_documents=False)]
+        config = (await world.agent(desk.kind)).config
+        names = [t.name for t in tools_for(desk, config, has_documents=False)]
         assert names[-3:] == ["take_message", "handoff_to_human", "off_topic"], desk.kind
-        assert "search_knowledge" in [t.name for t in tools_for(desk, has_documents=True)]
+        assert "search_knowledge" in [t.name for t in tools_for(desk, config, True)]
 
 
 async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:
@@ -71,7 +72,7 @@ async def test_the_receptionist_answers_from_its_own_fields(world: World) -> Non
 
     assert "You are the receptionist for {business_name}." in text
     assert "Company registration, ৳40,000" in text
-    assert [t.name for t in tools_for(agent.desk, has_documents=False)] == [
+    assert [t.name for t in tools_for(agent.desk, agent.config, has_documents=False)] == [
         "take_message",
         "handoff_to_human",
         "off_topic",
