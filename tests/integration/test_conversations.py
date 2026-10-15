@@ -2,10 +2,11 @@ import pytest
 from sqlalchemy import select
 
 from heydesk.errors import NotFound
-from heydesk.models import Conversation
+from heydesk.models import Conversation, Turn
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.conversations import RunningTurn
+from heydesk.services.team import HUMAN
 from tests.conftest import DEV_KEY, World
 
 
@@ -105,3 +106,41 @@ async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
 
     assert len(await mine.menu()) == 10
     assert await other.menu() == []  # rule 6: workspace_id on every query
+
+
+async def turns(world: World) -> list[Turn]:
+    async with world.sessions() as s:
+        return list(await s.scalars(select(Turn).order_by(Turn.at)))
+
+
+async def test_each_turn_is_saved_with_its_tokens_and_tools_but_no_words(world: World) -> None:
+    world.llm.script = [ToolCall("call_1", "handoff_to_human", {}), "Someone will call you."]
+    conv_id = await say(world, "can I talk to a person?")
+
+    [turn] = await turns(world)
+    assert (turn.workspace_id, turn.conversation_id) == (DEV_WORKSPACE_ID, conv_id)
+    assert (turn.channel, turn.llm, turn.tools) == ("web", "fake", ["handoff_to_human"])
+    assert (turn.input_tokens, turn.output_tokens) == (0, 5)  # the fake counts words out
+    assert turn.handed_off and not turn.error and not turn.interrupted
+    assert turn.total_ms >= 0 and turn.first_output_ms is not None
+    row = {c.key: getattr(turn, c.key) for c in Turn.__table__.columns}
+    assert "person" not in str(row) and "call you" not in str(row)  # nobody's words
+
+
+async def test_a_failed_turn_keeps_its_error(world: World) -> None:
+    world.llm.script = [LLMUnavailable("503 from the provider")]
+    await say(world, "hello")
+
+    [turn] = await turns(world)
+    assert turn.error == "503 from the provider" and turn.handed_off
+
+
+async def test_a_message_to_the_team_is_not_a_turn(world: World) -> None:
+    world.llm.script = ["Hello!"]
+    conv_id = await say(world, "hi")
+    async with world.sessions() as s, s.begin():
+        (await s.get(Conversation, conv_id)).status = HUMAN  # the owner took the chat over
+
+    await say(world, "are you there?", conv_id)
+
+    assert len(await turns(world)) == 1

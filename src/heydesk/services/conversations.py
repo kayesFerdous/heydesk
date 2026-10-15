@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.errors import ConversationFull, HeyDeskError, NotFound, UnreadablePhoto
-from heydesk.models import Conversation
+from heydesk.models import Conversation, Turn
 from heydesk.runtime.events import Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -252,7 +252,30 @@ class ConversationService:
             if ended.handed_off:
                 saved.status = "needs_human"
             saved.updated_at = self.now()
+            if not ended.trace.get("to_team"):  # a message to the team isn't an agent turn
+                s.add(self._turn(conv, ended))
         log.info("turn finished", extra={"conversation_id": conv.id, "trace": ended.trace})
+
+    def _turn(self, conv: Conversation, ended: TurnEnded) -> Turn:
+        """The turn's trace as a row (D71), so the admin can add it up. No one's words."""
+        trace = ended.trace
+        tokens = [step["tokens"] for step in trace["steps"] if "tokens" in step]
+        return Turn(
+            workspace_id=conv.workspace_id,
+            conversation_id=conv.id,
+            channel=trace["channel"],
+            llm=trace.get("llm", ""),
+            at=self.now(),
+            total_ms=trace["total_ms"],
+            first_output_ms=trace["first_output_ms"],
+            input_tokens=sum(t["input"] for t in tokens),
+            output_tokens=sum(t["output"] for t in tokens),
+            cost_micros=trace["cost_micros"],
+            tools=ended.tools,
+            error=(trace["error"] or "")[:300],
+            handed_off=ended.handed_off,
+            interrupted=ended.interrupted,
+        )
 
     def _new(self, agent: LiveAgent, channel: str, contact: str | None) -> Conversation:
         return Conversation(

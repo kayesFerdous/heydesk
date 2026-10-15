@@ -136,7 +136,7 @@ visitor message ─► start_turn: load the conversation (or start one), build t
                  ─► run_turn: model ⇄ tools, at most 6 model calls
                        text  ─► streamed to the visitor
                        tool  ─► validate ─► run with a timeout ─► result back to the model
-                 ─► append the turn's messages, log the trace
+                 ─► append the turn's messages, save and log the trace
 ```
 
 `ConversationService.start_turn` is the one entry point for web and voice. The
@@ -347,6 +347,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70) |
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
+| `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
@@ -452,7 +453,8 @@ SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 `handoff {message, phone}`, `photos {items: [{name, price, url}]}` (D57), `done {interrupted}`, `error {message}`.
 
 Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
-tokens, cost, error (rule 7). There is no trace table (D15).
+tokens, cost, error (rule 7). The same save adds a row to `turns` (D71, changing D15's
+"no trace table"): the sums without the steps or anyone's words, for the admin.
 
 ### Limits on a public chat (D51)
 
@@ -872,6 +874,7 @@ version handles them.
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
+| Clearing old `turns`, a price for Gigalogy, the cost of Jev, Gemini embeddings and speech-to-text | Every turn is kept; a turn's cost is Groq's alone (Gigalogy reports tokens, no price), so a Gigalogy turn's cost is 0, meaning unknown (D71) |
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |
