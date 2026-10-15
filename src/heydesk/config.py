@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GIGALOGY_PROJECT_KEY: str = ""
     GIGALOGY_API_KEY: str = ""
-    GIGALOGY_PROFILE_ID: str = ""  # the Maira profile picks the model, not DEFAULT_MODEL
+    GIGALOGY_PROFILE_ID: str = ""  # the Maira profile picks the model, not MODEL
     MODEL: str = "openai/gpt-oss-120b"  # Groq's model for every agent
 
     DECIDER: Literal["jev", "fake"] = "fake"

@@ -4,132 +4,20 @@
     {
       "name": "heydesk",
       "runtimeExecutable": "uv",
-      "runtimeArgs": [
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--reload",
-        "--port",
-        "8000"
-      ],
+      "runtimeArgs": ["run", "uvicorn", "heydesk.main:app", "--reload", "--port", "8000"],
       "port": 8000
-    },
-    {
-      "name": "heydesk-groq",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "LLM_PROVIDER=groq",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--reload",
-        "--port",
-        "8001"
-      ],
-      "port": 8001
     },
     {
       "name": "heydesk-fake",
       "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "LLM_PROVIDER=fake",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8000"
-      ],
+      "runtimeArgs": ["LLM_PROVIDER=fake", "uv", "run", "uvicorn", "heydesk.main:app", "--port", "8000"],
       "port": 8000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--dir",
-        "../heydesk-frontend",
-        "run",
-        "serve"
-      ],
+      "runtimeArgs": ["--dir", "../heydesk-frontend", "run", "serve"],
       "port": 8080
-    },
-    {
-      "name": "heydesk-shop-fake",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "LLM_PROVIDER=fake",
-        "DEV_AGENT_KIND=shop",
-        "DEV_AGENT_SEED=examples/agents/shop.yaml",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8002"
-      ],
-      "port": 8002
-    },
-    {
-      "name": "heydesk-shop-fake-console",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "LLM_PROVIDER=fake",
-        "DEV_AGENT_KIND=shop",
-        "DEV_AGENT_SEED=examples/agents/shop.yaml",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8000"
-      ],
-      "port": 8000
-    },
-    {
-      "name": "heydesk-shop-console",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "DEV_AGENT_KIND=shop",
-        "DEV_AGENT_SEED=examples/agents/shop.yaml",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8000"
-      ],
-      "port": 8000
-    },
-    {
-      "name": "heydesk-shop",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "DEV_AGENT_KIND=shop",
-        "DEV_AGENT_SEED=examples/agents/shop.yaml",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8003"
-      ],
-      "port": 8003
-    },
-    {
-      "name": "heydesk-restaurant",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "DEV_AGENT_KIND=restaurant",
-        "DEV_AGENT_SEED=examples/agents/restaurant.yaml",
-        "uv",
-        "run",
-        "uvicorn",
-        "heydesk.main:app",
-        "--port",
-        "8004"
-      ],
-      "port": 8004
     }
   ]
 }

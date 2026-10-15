@@ -1,67 +1,90 @@
-# The five-minute demo
+# The demo
 
-What to show, in order, and what to say. Rehearse it twice in a row without a
-hitch, and record one good run as the backup video.
+About seven minutes, on the online shop (the seed's Nakshi Threads), then the owner's and
+the admin's screens. Rehearse it twice in a row without a hitch, and record one good run as
+the backup video.
 
 ## Before
 
+In `.env`: the real providers (`LLM_PROVIDER=gigalogy`, `DECIDER=jev`, `EMBEDDER=gemini`) and
+the shop as the dev agent:
+
 ```bash
-scripts/reset.sh                       # a fresh database and the demo login
-uv run uvicorn heydesk.main:app        # no --reload: a file save mustn't restart it mid-demo
+DEV_AGENT_KIND=shop
+DEV_AGENT_SEED=examples/agents/shop.yaml
 ```
 
-- `.env`: the real model (`LLM_PROVIDER=gigalogy` or `groq`) and `DECIDER=jev`.
-- Chrome on <http://localhost:8000>, the microphone allowed, the sound on.
-- A second tab on <http://localhost:8000/docs>, **Authorize**d with the token
-  `scripts/reset.sh` printed.
-- A terminal showing the server log: the `turn finished` lines are the trace.
+Then a fresh database and both servers, with no reload so a saved file can't restart it
+mid-demo:
 
-## 1. A web order (1 min)
+```bash
+scripts/reset.sh                    # the database, demo@heydesk.test and admin@heydesk.test
+scripts/dev.sh all --no-reload      # the backend on :8000, the frontend on :8080
+```
 
-Type, one line at a time:
+Open three tabs:
 
-1. *what's good here?* → it recommends from the menu, with prices.
-2. *two chicken biryani and a borhani* → **৳1,030**: Python added it up, not the model.
-3. *pickup at 7pm, I'm Kayes, 01712345678* → it reads everything back and asks.
-4. *yes* → **order 101**.
+1. The customer chat: <http://localhost:8080/chat/dev-shop>
+2. The owner, logged in as `demo@heydesk.test` / `demo password`: <http://localhost:8080>
+3. The admin, in a private window, as `admin@heydesk.test` / `admin password`
 
-Say: nothing is saved until it has read the order back and heard a clear yes.
-Jev checks both, and if Jev is down, nothing is saved.
+Keep a terminal with `scripts/dev.sh logs api` open: the `turn finished` lines are the trace.
 
-## 2. A voice order (1 min)
+## 1. The problem (30 s)
 
-Press **Call**. It greets you. Say:
+Small Bangladeshi shops sell through a Facebook page, and someone answers the same questions all
+day: the price, the size, the stock, the delivery charge, "where's my order?". HeyDesk's agent
+answers them and takes the order, in the buyer's own mix of Bangla and English.
 
-1. *I'd like one mutton kacchi for pickup at 8 tonight.*
-2. Give your name and number when it asks.
-3. *Yes, that's right.* → you hear "Placing that now", then the order number.
+## 2. A customer orders (2 min)
 
-Point out the total spoken in words, and the phone number read back digit by digit.
+In the customer chat, one line at a time:
 
-## 3. Interrupting it (30 s)
+1. *Cotton panjabi L size white ache?* → yes, and only 3 left (Python's count, per size and colour).
+2. *L navy?* → sold out, and it offers what's left.
+3. *1ta L white, Mirpur 10 e delivery* → Mirpur 10 is Inside Dhaka: ৳60 delivery, ৳1,910 in
+   all, and ৳1,150 more would make delivery free.
+4. *dam kom hobe?* → a polite no: prices are fixed, and it never invents a discount.
+5. Give a name and a mobile (`01712345678`) → it reads the whole order back and asks.
+6. *ji* → order **O-101**, and what happens next.
 
-Still on the call: *what's on the menu?* While it's listing, talk over it:
-*just the drinks, please*. It stops at once and answers about the drinks.
+Say: the model only talks. Python found the area, the charge, the total and the stock, and
+nothing was saved until the read-back got a clear yes. A second model, Jev, checks that yes, and
+if Jev is down nothing is saved.
 
-## 4. The hand-off (30 s)
+## 3. The owner (1.5 min)
 
-Type (or say) *can I talk to a person?* → the polite line and the phone number.
-In Swagger, `GET /api/conversations?status=needs_human` shows that conversation.
+In the owner's tab:
 
-## 5. Edit the agent (1.5 min)
+1. The **Inbox** has O-101. Confirm it (the shop calls the buyer first), then ship it with a
+   tracking line such as `Steadfast 12345678`.
+2. Back in the customer chat: *amar order kothay?* → shipped, with the tracking line, and no
+   code needed in the same chat.
+3. The products page: change the Silk Panjabi's price and save. In the chat: *silk panjabi er
+   dam koto?* → the new price. An edit is live on the next message; there's no publish step.
 
-In Swagger:
+## 4. The admin (1 min)
 
-1. `GET /api/orders` → orders 101 and 102, with what was said in
-   `GET /api/conversations/{conversation_id}`.
-2. `GET /api/menu`, change Chicken Biryani's `price` to `47500`,
-   and send it back with `PUT /api/menu`.
-3. Back in the chat, a new conversation: *how much is the chicken biryani?* → **৳475**.
+In the admin's window:
 
-Say: an edit is live on the next message. There's no publish step.
+1. **Overview**: today's turns, tokens, cost and the first-reply times, added up from the saved
+   turns (never the customers' words).
+2. **Businesses**: find **Dev** (the dev workspace; its agent is Nakshi Threads) and open its
+   page: its channels, payments, documents and week of use. **Open** shows the owner's screens under a banner, and every change lands in the
+   audit log.
+
+## 5. How it's built (1.5 min)
+
+Show the README's diagram and say:
+
+- Each kind of business is one folder (`desks/shop/`): its prompt, tools, tables and routes.
+- The engine (`runtime/`) knows no framework or database; the providers sit behind small
+  interfaces, so Maira and Groq swap with one setting.
+- `scripts/check.sh` runs the tests (offline, about 15 seconds), lint, types and the layer
+  rules, and CI runs it on every push.
 
 ## If something goes wrong
 
-- **No sound on the call:** hang up and call again; check the server log for `chorus:` lines.
-- **The model is slow or down:** switch `LLM_PROVIDER` and restart, or play the backup video.
-- **A stuck conversation:** reload the page; it starts a new one.
+- **The model is slow or down:** set `LLM_PROVIDER=groq` and restart, or play the backup video.
+- **Nothing is saved after "ji":** `DECIDER` must be `jev`; with `fake` it always says no.
+- **A stuck conversation:** reload the chat page; it starts a new one.

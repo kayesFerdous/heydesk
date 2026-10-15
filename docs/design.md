@@ -10,11 +10,12 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 
 ## 1. What it is
 
-A business picks its **kind** (a restaurant, a clinic, a receptionist for an office), fills in
-its details (address, hours, its menu or doctors, FAQ) and adds its own notes, and it has an AI
+A business picks its **kind** (a restaurant, a clinic, a receptionist for an office, an online shop), fills in
+its details (address, hours, its menu, doctors or products, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
 browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60). It answers questions, takes orders and messages, and hands over to a
-person when needed. The business sees orders, appointments and messages through the API.
+person when needed. The business sees orders, appointments and messages through the API, which
+the separate frontend (`../heydesk-frontend`) uses.
 
 **The model talks; code guarantees.** The model writes the words. Python
 decides prices, totals, times, what to ask next and when something may be
@@ -24,7 +25,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Desk | A kind of business (`restaurant`, `clinic`, `receptionist`): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
+| Desk | A kind of business (`restaurant`, `clinic`, `receptionist`, `shop`): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
 | Agent | A business's agent: one desk's config, which the business edits. Edits are live on the next message |
 | Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
@@ -57,8 +58,11 @@ saved. Nothing is saved without reading it back and hearing a yes.
 src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
-├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore
-├── adapters/            GigalogyLLM (default), GroqLLM, JevDecider, Gemini, Qdrant, Google Sheets' CSV (D58), and fakes
+├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore, PhotoIndex,
+│                        TelegramApi, MessengerApi, PaymentGateway, the sheet reader
+├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM, JevDecider,
+│                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
+│                        Graph API, SSLCommerz, Google Sheets' CSV (D58)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
@@ -69,11 +73,11 @@ src/heydesk/
 │   ├── receptionist/    __init__ only: no tools or tables of its own
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
-├── services/            agents, conversations, visitors (the limits, D51), users, admin, knowledge, imports (D53), sheets (D58)
+├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
+│                        knowledge, photos (D57), imports (D53), sheets (D58), channels (Telegram and
+│                        Messenger, D42, D60), team (the owner's alerts, D43), payments (D47)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
-├── adapters/telegram/   the Bot API client (and its fake); the channel is `services/channels.py` (D42)
-├── adapters/messenger/  the Graph API client for Messenger (and its fake) (D60)
 └── web/static/          the dev chat page
 ```
 
