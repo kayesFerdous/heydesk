@@ -2,10 +2,10 @@
 To act inside a business, an admin uses the ordinary routes with the X-Business header."""
 
 from dataclasses import asdict
-from datetime import datetime
-from typing import Literal
+from datetime import date, datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, model_validator
 
 from heydesk.api.deps import Admin, Paged, Svc
@@ -62,6 +62,42 @@ class BusinessOut(BaseModel):
     last_activity_at: datetime | None
 
 
+class TotalsOut(BaseModel):
+    turns: int
+    conversations: int  # started in those days
+    input_tokens: int
+    output_tokens: int
+    cost_micros: int  # millionths of a dollar; priced providers only (Groq), D71
+    failed: int  # turns that ended with the polite line
+    handed_off: int
+    first_reply_ms: int | None  # the median first reply
+    slow_first_reply_ms: int | None  # the 95th percentile
+
+
+class DayOut(BaseModel):
+    day: date  # Dhaka's
+    turns: int
+    conversations: int
+    cost_micros: int
+    failed: int
+    handed_off: int
+
+
+class BusyOut(BaseModel):
+    id: str
+    name: str
+    turns: int
+    cost_micros: int
+
+
+class OverviewOut(BaseModel):
+    days: int
+    today: TotalsOut
+    period: TotalsOut
+    per_day: list[DayOut]  # oldest first
+    busiest: list[BusyOut]  # the most turns first, up to 5
+
+
 class BusinessStatusIn(BaseModel):
     status: Literal["active", "suspended"]
     reason: str = Field(default="", max_length=300)  # needed to suspend (D70)
@@ -93,6 +129,14 @@ class AuditOut(BaseModel):
     action: str
     target: str
     at: datetime
+
+
+@router.get("/overview")
+async def overview(
+    admin: Admin, services: Svc, days: Annotated[int, Query(ge=1, le=30)] = 7
+) -> OverviewOut:
+    """What every agent did today and in the last `days` days, from the saved turns (D72)."""
+    return OverviewOut.model_validate(asdict(await services.admin.overview(days)))
 
 
 @router.get("/businesses")

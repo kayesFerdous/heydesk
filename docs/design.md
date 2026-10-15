@@ -385,7 +385,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
-| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69) |
+| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
@@ -443,6 +443,11 @@ so opening it isn't audited.
 Suspending takes a reason (`PATCH /api/admin/businesses/{id}` `{status, reason}`; none is a
 422). It's kept on the business until it's reactivated, and is in the audit entry, for
 admins only: the owner's console says it's suspended, not why (D70).
+The admin's **Overview** (`GET /api/admin/overview?days=7`, 1 to 30, D72) adds up the saved
+turns (D71) for today and the last N days: turns, conversations started, tokens, cost (priced
+providers only), failed turns, hand-offs, and the median and 95th-percentile first reply; one
+row a day, oldest first, empty days included; the 5 businesses with the most turns. A day is
+Dhaka's, as every business is there today. The rows are summed in Python, not SQL.
 `uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)

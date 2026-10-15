@@ -1,14 +1,17 @@
 """Two roles (D23): an owner sees only their business; an admin runs the platform."""
 
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from heydesk.errors import Conflict
-from heydesk.models import Conversation, User
+from heydesk.models import Conversation, Turn, User, Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from tests.conftest import DEV_KEY
+from tests.conftest import DEV_KEY, FIXED_NOW, new_business
 from tests.integration.test_restaurant import place_an_order
 from tests.integration.test_telegram import connect
 
@@ -236,3 +239,59 @@ async def test_a_suspension_says_why_to_admins_only(app: FastAPI, client: AsyncC
     await admin.patch(page, json={"status": "active"})
     assert (await admin.get(page)).json()["suspended_reason"] == ""
     await admin.aclose()
+
+
+def a_turn(ws: str, at: datetime, **kw: Any) -> Turn:
+    row: dict[str, Any] = {
+        "conversation_id": "c1",
+        "channel": "web",
+        "llm": "groq",
+        "total_ms": 4000,
+        "first_output_ms": 1000,
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "cost_micros": 0,
+        "tools": [],
+        "error": "",
+        "handed_off": False,
+        "interrupted": False,
+    }
+    return Turn(workspace_id=ws, at=at, **(row | kw))
+
+
+async def test_the_overview_adds_up_turns_by_dhaka_day_and_business(app: FastAPI) -> None:
+    await new_business(app)  # "Cafe"
+    async with app.state.sessions() as s, s.begin():
+        cafe = await s.scalar(select(Workspace.id).where(Workspace.name == "Cafe"))
+        s.add_all(
+            [  # the clock: Tue 29 Sep, 08:00 UTC = 14:00 in Dhaka
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW - timedelta(hours=1), cost_micros=300),
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW, first_output_ms=3000, error="503"),
+                a_turn(cafe, datetime(2026, 9, 28, 19, tzinfo=UTC), handed_off=True),  # 01:00 Dhaka
+                a_turn(DEV_WORKSPACE_ID, datetime(2026, 9, 28, 17, tzinfo=UTC), cost_micros=100),
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW - timedelta(days=10)),  # before the 7 days
+            ]
+        )
+    admin = await as_admin(app)
+
+    seen = (await admin.get("/api/admin/overview")).json()
+
+    today = seen["today"]
+    assert (today["turns"], today["failed"], today["handed_off"]) == (3, 1, 1)
+    assert (today["cost_micros"], today["input_tokens"]) == (300, 300)
+    assert (today["first_reply_ms"], today["slow_first_reply_ms"]) == (1000, 3000)
+    assert seen["period"]["turns"] == 4
+    assert [(d["day"], d["turns"]) for d in seen["per_day"][-2:]] == [
+        ("2026-09-28", 1),  # 23:00 in Dhaka is still the 28th
+        ("2026-09-29", 3),
+    ]
+    assert len(seen["per_day"]) == 7
+    assert [(b["name"], b["turns"], b["cost_micros"]) for b in seen["busiest"]] == [
+        ("Dev", 3, 400),
+        ("Cafe", 1, 0),
+    ]
+    await admin.aclose()
+
+
+async def test_only_an_admin_sees_the_overview(client: AsyncClient) -> None:
+    assert (await client.get("/api/admin/overview")).status_code == 404

@@ -1,9 +1,12 @@
 """The platform's side (D23): every business, every user, and the audit log of what admins
 did inside businesses. Only `api/admin.py` and the admin dependency call this."""
 
-from collections.abc import Callable
+import math
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,11 +20,14 @@ from heydesk.models import (
     Document,
     PaymentAccount,
     SheetLink,
+    Turn,
     User,
     Workspace,
 )
 
 PAGE = 200
+DAY_ZONE = ZoneInfo("Asia/Dhaka")  # the overview's days are Dhaka's: every business is there today
+BUSIEST = 5
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,48 @@ class BusinessDetail:
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
+
+
+@dataclass(frozen=True)
+class Totals:
+    """What the agents did in a stretch of days (D72). Cost counts only priced providers."""
+
+    turns: int
+    conversations: int  # started in those days
+    input_tokens: int
+    output_tokens: int
+    cost_micros: int
+    failed: int  # turns with an error: the visitor got the polite line
+    handed_off: int
+    first_reply_ms: int | None  # the median turn's first words
+    slow_first_reply_ms: int | None  # the 95th percentile's
+
+
+@dataclass(frozen=True)
+class DayRow:
+    day: date
+    turns: int
+    conversations: int
+    cost_micros: int
+    failed: int
+    handed_off: int
+
+
+@dataclass(frozen=True)
+class BusyBusiness:
+    id: str
+    name: str
+    turns: int
+    cost_micros: int
+
+
+@dataclass(frozen=True)
+class Overview:
+    days: int
+    today: Totals
+    period: Totals
+    per_day: list[DayRow]  # oldest first, every day even an empty one
+    busiest: list[BusyBusiness]
 
 
 class AdminService:
@@ -197,6 +245,63 @@ class AdminService:
                 last_activity_at=last,
             )
 
+    async def overview(self, days: int = 7) -> Overview:
+        """Today and the last `days` days, from the saved turns (D71). The rows are read and
+        added up here: a few thousand a week is fine, and it reads more easily than SQL."""
+        today = self.now().astimezone(DAY_ZONE).date()
+        first = today - timedelta(days=days - 1)
+        start = datetime.combine(first, time(), DAY_ZONE).astimezone(UTC)
+        async with self.sessions() as s:
+            turns = (await s.execute(select(Turn).where(Turn.at >= start))).scalars().all()
+            started = list(
+                await s.scalars(
+                    select(Conversation.created_at).where(Conversation.created_at >= start)
+                )
+            )
+            by_business = Counter(t.workspace_id for t in turns)
+            top = [ws for ws, _ in by_business.most_common(BUSIEST)]
+            named = await s.execute(
+                select(Workspace.id, Workspace.name).where(Workspace.id.in_(top))
+            )
+            names = {ws: name for ws, name in named}
+
+        def day_of(at: datetime) -> date:
+            return at.astimezone(DAY_ZONE).date()
+
+        per_day = []
+        for n in range(days):
+            day = first + timedelta(days=n)
+            those = [t for t in turns if day_of(t.at) == day]
+            per_day.append(
+                DayRow(
+                    day,
+                    len(those),
+                    sum(1 for at in started if day_of(at) == day),
+                    sum(t.cost_micros for t in those),
+                    sum(1 for t in those if t.error),
+                    sum(1 for t in those if t.handed_off),
+                )
+            )
+        busiest = [
+            BusyBusiness(
+                ws,
+                names.get(ws, ""),
+                by_business[ws],
+                sum(t.cost_micros for t in turns if t.workspace_id == ws),
+            )
+            for ws in top
+        ]
+        return Overview(
+            days=days,
+            today=totals(
+                [t for t in turns if day_of(t.at) == today],
+                sum(1 for at in started if day_of(at) == today),
+            ),
+            period=totals(turns, len(started)),
+            per_day=per_day,
+            busiest=busiest,
+        )
+
     async def set_business_status(self, workspace_id: str, status: str, reason: str = "") -> None:
         """A reason goes with a suspension (D70); reactivating clears it."""
         async with self.sessions() as s, s.begin():
@@ -229,3 +334,25 @@ class AdminService:
         async with self.sessions() as s:
             rows = (await s.execute(query.order_by(AuditEvent.at.desc()).limit(limit))).all()
         return [(event, email) for event, email in rows]
+
+
+def totals(turns: Sequence[Turn], conversations: int) -> Totals:
+    firsts = sorted(t.first_output_ms for t in turns if t.first_output_ms is not None)
+    return Totals(
+        turns=len(turns),
+        conversations=conversations,
+        input_tokens=sum(t.input_tokens for t in turns),
+        output_tokens=sum(t.output_tokens for t in turns),
+        cost_micros=sum(t.cost_micros for t in turns),
+        failed=sum(1 for t in turns if t.error),
+        handed_off=sum(1 for t in turns if t.handed_off),
+        first_reply_ms=percentile(firsts, 50),
+        slow_first_reply_ms=percentile(firsts, 95),
+    )
+
+
+def percentile(ordered: list[int], p: int) -> int | None:
+    """The value p% of them are at or under (nearest rank). None for no values."""
+    if not ordered:
+        return None
+    return ordered[max(0, math.ceil(p / 100 * len(ordered)) - 1)]
