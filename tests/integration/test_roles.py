@@ -87,7 +87,8 @@ async def test_a_suspended_business_is_unavailable_but_its_owner_can_log_in(
     admin = await as_admin(app)
 
     suspended = await admin.patch(
-        f"/api/admin/businesses/{DEV_WORKSPACE_ID}", json={"status": "suspended"}
+        f"/api/admin/businesses/{DEV_WORKSPACE_ID}",
+        json={"status": "suspended", "reason": "Unpaid invoice"},
     )
 
     assert suspended.status_code == 204
@@ -216,4 +217,22 @@ async def test_only_an_admin_sees_a_business_page(app: FastAPI, client: AsyncCli
     assert (await client.get(f"/api/admin/businesses/{DEV_WORKSPACE_ID}")).status_code == 404
     admin = await as_admin(app)
     assert (await admin.get("/api/admin/businesses/nope")).status_code == 404
+    await admin.aclose()
+
+
+async def test_a_suspension_says_why_to_admins_only(app: FastAPI, client: AsyncClient) -> None:
+    admin = await as_admin(app)
+    page = f"/api/admin/businesses/{DEV_WORKSPACE_ID}"
+
+    no_reason = await admin.patch(page, json={"status": "suspended", "reason": "  "})
+    assert no_reason.status_code == 422
+    await admin.patch(page, json={"status": "suspended", "reason": "Spam reports"})
+
+    assert (await admin.get(page)).json()["suspended_reason"] == "Spam reports"
+    log = (await admin.get("/api/admin/audit")).json()
+    assert (log[0]["action"], log[0]["target"]) == ("business suspended", "Spam reports")
+    assert "Spam reports" not in (await client.get("/api/auth/me")).text  # not the owner's
+
+    await admin.patch(page, json={"status": "active"})
+    assert (await admin.get(page)).json()["suspended_reason"] == ""
     await admin.aclose()

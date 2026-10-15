@@ -29,6 +29,7 @@ class BusinessRow:
     id: str
     name: str
     status: str
+    suspended_reason: str
     kind: str | None  # its desk; None: no agent yet
     owner_email: str | None
     conversations: int
@@ -62,6 +63,7 @@ class BusinessDetail:
     id: str
     name: str
     status: str
+    suspended_reason: str  # empty while active
     kind: str | None  # its desk; None: no agent yet
     agent_name: str | None
     public_key: str | None  # the chat link's key
@@ -130,7 +132,17 @@ class AdminService:
         async with self.sessions() as s:
             rows = (await s.execute(query)).all()
         return [
-            BusinessRow(ws.id, ws.name, ws.status, kind, email, n or 0, last, ws.created_at)
+            BusinessRow(
+                ws.id,
+                ws.name,
+                ws.status,
+                ws.suspended_reason,
+                kind,
+                email,
+                n or 0,
+                last,
+                ws.created_at,
+            )
             for ws, kind, email, n, last in rows
         ]
 
@@ -169,6 +181,7 @@ class AdminService:
                 id=ws.id,
                 name=ws.name,
                 status=ws.status,
+                suspended_reason=ws.suspended_reason,
                 kind=agent.kind if agent else None,
                 agent_name=agent.name if agent else None,
                 public_key=agent.public_key if agent else None,
@@ -184,12 +197,14 @@ class AdminService:
                 last_activity_at=last,
             )
 
-    async def set_business_status(self, workspace_id: str, status: str) -> None:
+    async def set_business_status(self, workspace_id: str, status: str, reason: str = "") -> None:
+        """A reason goes with a suspension (D70); reactivating clears it."""
         async with self.sessions() as s, s.begin():
             business = await s.get(Workspace, workspace_id)
             if business is None:
                 raise NotFound("There's no such business.")
             business.status = status
+            business.suspended_reason = reason.strip() if status == "suspended" else ""
 
     async def users(self) -> list[tuple[User, str | None]]:
         """Every user with their business's name; newest first."""

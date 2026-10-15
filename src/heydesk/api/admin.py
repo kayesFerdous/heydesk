@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from heydesk.api.deps import Admin, Paged, Svc
 from heydesk.services.users import temporary_password
@@ -18,6 +18,7 @@ class BusinessRowOut(BaseModel):
     id: str
     name: str
     status: Literal["active", "suspended"]
+    suspended_reason: str  # for admins only; empty while active
     kind: str | None  # its desk
     owner_email: str | None
     conversations: int
@@ -45,6 +46,7 @@ class BusinessOut(BaseModel):
     id: str
     name: str
     status: Literal["active", "suspended"]
+    suspended_reason: str  # for admins only; empty while active
     kind: str | None  # its desk; None: no agent yet
     agent_name: str | None
     public_key: str | None  # the chat link is /chat/<public_key>
@@ -62,6 +64,13 @@ class BusinessOut(BaseModel):
 
 class BusinessStatusIn(BaseModel):
     status: Literal["active", "suspended"]
+    reason: str = Field(default="", max_length=300)  # needed to suspend (D70)
+
+    @model_validator(mode="after")
+    def _a_suspension_says_why(self) -> "BusinessStatusIn":
+        if self.status == "suspended" and not self.reason.strip():
+            raise ValueError("Say why the business is suspended.")
+        return self
 
 
 class UserRowOut(BaseModel):
@@ -102,8 +111,9 @@ async def business_status(
     workspace_id: str, body: BusinessStatusIn, admin: Admin, services: Svc
 ) -> None:
     """Suspended: the chat link says the assistant is unavailable; the owner can still log in."""
-    await services.admin.set_business_status(workspace_id, body.status)
-    await services.admin.audit(admin.user_id, workspace_id, f"business {body.status}", "")
+    await services.admin.set_business_status(workspace_id, body.status, body.reason)
+    reason = body.reason.strip() if body.status == "suspended" else ""
+    await services.admin.audit(admin.user_id, workspace_id, f"business {body.status}", reason)
 
 
 @router.get("/users")

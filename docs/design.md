@@ -344,7 +344,7 @@ Every table has `workspace_id` (except `workspaces`).
 
 | Table | Columns |
 |---|---|
-| `workspaces` | id, name, status (`active`/`suspended`) |
+| `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70) |
 | `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
@@ -439,6 +439,9 @@ desk, agent and chat key, owners, connected channels, payments (sandbox or live)
 documents, a linked sheet's last sync and problem, and counts of conversations (all,
 the last 7 days, waiting for a person): counts and connections, never a customer's words,
 so opening it isn't audited.
+Suspending takes a reason (`PATCH /api/admin/businesses/{id}` `{status, reason}`; none is a
+422). It's kept on the business until it's reactivated, and is in the audit entry, for
+admins only: the owner's console says it's suspended, not why (D70).
 `uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)
