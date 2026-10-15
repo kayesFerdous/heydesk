@@ -25,6 +25,7 @@ from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.photos import PhotoService
 from heydesk.services.team import MESSENGER, TELEGRAM, TeamService
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class ChannelService:
         sessions: async_sessionmaker[AsyncSession],
         agents: AgentService,
         conversations: ConversationService,
+        photos: PhotoService,
         team: TeamService,
         telegram: TelegramApi,
         messenger: MessengerApi,
@@ -57,6 +59,7 @@ class ChannelService:
         self.sessions = sessions
         self.agents = agents
         self.conversations = conversations
+        self.photos = photos
         self.team = team
         self.telegram = telegram
         self.messenger = messenger
@@ -173,7 +176,6 @@ class ChannelService:
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
         text = message.get("text")
-        photo_url = first_photo(message)  # Messenger's (D62); Telegram's photos aren't read
         try:
             if channel.kind == TELEGRAM and text and text.startswith("/start owner_"):  # D43
                 await self.team.link_owner(channel, chat_id, text.removeprefix("/start owner_"))
@@ -182,10 +184,10 @@ class ChannelService:
                 await self.team.owner_wrote(channel, message)
                 return
             agent = await self.agents.by_id(channel.agent_id)
-            photo = None
-            if text is None and photo_url and agent.desk.takes_photos:
-                photo = await self.messenger.download(photo_url)  # its URL expires
-            if text is None and photo is None:  # a sticker, a voice note, a file
+            photo = await self._photo(channel, message) if agent.desk.takes_photos else None
+            if photo is not None:  # its words, if any, are Telegram's caption
+                text = message.get("caption") or ""
+            if text is None:  # a sticker, a voice note, a file
                 await self._send(channel, chat_id, NOT_TEXT)
             elif text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 await self.conversations.restart(agent, channel.kind, chat_id)
@@ -199,7 +201,7 @@ class ChannelService:
                 finally:
                     typing.cancel()
                 if reply.photos:
-                    await self._send_cards(channel, chat_id, reply.photos)
+                    await self._send_photos(channel, chat_id, reply.photos)
                 if reply.text:
                     await self._send(channel, chat_id, reply.text)
                 if reply.handoff:
@@ -216,16 +218,33 @@ class ChannelService:
     async def _send(self, channel: Channel, chat_id: str, text: str) -> None:
         await self.team.send(channel, chat_id, text)
 
-    async def _send_cards(
+    async def _photo(self, channel: Channel, message: dict[str, Any]) -> bytes | None:
+        """The photo a visitor sent, downloaded now (Facebook's URLs expire), or None."""
+        if channel.kind == TELEGRAM:  # D63: the same photo in several sizes, largest last
+            sizes = message.get("photo")
+            return (
+                await self.telegram.download(channel.token, sizes[-1]["file_id"]) if sizes else None
+            )
+        url = first_photo(message)  # D62
+        return await self.messenger.download(url) if url else None
+
+    async def _send_photos(
         self, channel: Channel, chat_id: str, photos: list[dict[str, str]]
     ) -> None:
-        """The products `show_photos` chose, as one carousel (D62). Facebook fetches each
-        photo from us, so its URL is made whole. If it fails, the text still goes."""
-        cards = [{**p, "url": self.settings.public_url + p["url"]} for p in photos]
+        """The products `show_photos` chose. On Messenger one carousel, which Facebook fetches
+        from us, so its URLs are made whole (D62); on Telegram each photo is uploaded, with its
+        name and price as the caption (D63). If it fails, the text still goes."""
         try:
-            await self.messenger.send_cards(channel.token, chat_id, cards)
-        except MessengerUnavailable as error:
-            log.warning("cards not sent: %s", error, extra={"channel_id": channel.id})
+            if channel.kind == MESSENGER:
+                cards = [{**p, "url": self.settings.public_url + p["url"]} for p in photos]
+                await self.messenger.send_cards(channel.token, chat_id, cards)
+                return
+            for p in photos:
+                jpeg = await self.photos.read(p["url"])
+                caption = f"{p['name']} · {p['price']}"
+                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption)
+        except (MessengerUnavailable, TelegramUnavailable) as error:
+            log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
 
     async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
         """ "typing…" lasts five seconds on Telegram; a reply can take longer."""

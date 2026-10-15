@@ -95,6 +95,10 @@ class PhotoService:
             count += 1
         return count
 
+    async def read(self, url: str) -> bytes:
+        """A saved photo's JPEG, to upload where a URL can't be fetched (Telegram, D63)."""
+        return await asyncio.to_thread(self.path(url).read_bytes)
+
     def path(self, url: str) -> Path:
         return self.media / url.removeprefix("/media/")
 

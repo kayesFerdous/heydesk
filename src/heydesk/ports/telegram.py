@@ -24,6 +24,14 @@ class TelegramApi(Protocol):
 
     async def send_message(self, token: str, chat_id: str, text: str) -> None: ...
 
+    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
+        """A photo uploaded from us, so it needs no public URL (D63)."""
+        ...
+
+    async def download(self, token: str, file_id: str) -> bytes:
+        """A photo the visitor sent, by the `file_id` in its message (bots get up to 20 MB)."""
+        ...
+
     async def send_typing(self, token: str, chat_id: str) -> None:
         """Shows "typing…" in the chat for about five seconds."""
         ...

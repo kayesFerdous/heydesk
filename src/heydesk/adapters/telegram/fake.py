@@ -7,6 +7,8 @@ class FakeTelegram:
     def __init__(self) -> None:
         self.webhooks: dict[str, tuple[str, str]] = {}  # token -> (url, secret)
         self.sent: list[tuple[str, str]] = []  # (chat_id, text), in order
+        self.photos: list[tuple[str, str]] = []  # (chat_id, caption) of each photo sent
+        self.files: dict[str, bytes] = {}  # what a visitor's photo's file_id downloads as
 
     async def get_me(self, token: str) -> str:
         if token == "bad":
@@ -21,6 +23,14 @@ class FakeTelegram:
 
     async def send_message(self, token: str, chat_id: str, text: str) -> None:
         self.sent.append((chat_id, text))
+
+    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
+        self.photos.append((chat_id, caption))
+
+    async def download(self, token: str, file_id: str) -> bytes:
+        if file_id not in self.files:
+            raise TelegramUnavailable("getFile: Bad Request: invalid file_id")
+        return self.files[file_id]
 
     async def send_typing(self, token: str, chat_id: str) -> None:
         pass

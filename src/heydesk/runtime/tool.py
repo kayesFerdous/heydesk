@@ -33,7 +33,7 @@ class ToolContext[S]:
     decider: Decider  # for the commit check
     agent_said: str  # the agent's last message before this turn: the read-back, if there was one
     visitor_said: str  # this turn's message: the yes, if there was one
-    # "web", "voice", "telegram", "messenger": the web chat and Messenger show photos (D57, D62)
+    # "web", "voice", "telegram", "messenger": all but voice show photos (D57, D62, D63)
     channel: str = "web"
 
     @property

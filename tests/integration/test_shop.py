@@ -573,6 +573,18 @@ def photo(colour: str) -> bytes:
     return out.getvalue()
 
 
+async def kurti_with_photo(client: AsyncClient) -> str:
+    """Gives the shop's kurti a red photo; returns its URL. The dev agent must be the shop."""
+    added = await client.post(
+        "/api/products/photos", files={"file": ("kurti.png", photo("red"), "image/png")}
+    )
+    url: str = added.json()["url"]
+    products = (await client.get("/api/products")).json()
+    next(p for p in products if p["code"] == "kurti")["photos"] = [url]
+    assert (await client.put("/api/products", json=products)).status_code == 200
+    return url
+
+
 def as_base64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 

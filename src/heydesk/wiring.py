@@ -154,7 +154,7 @@ def build_services(
         admin=AdminService(sessions, now),
         agents=agents,
         channels=ChannelService(
-            sessions, agents, conversations, team, telegram, messenger, settings, now
+            sessions, agents, conversations, photos, team, telegram, messenger, settings, now
         ),
         conversations=conversations,
         imports=imports,

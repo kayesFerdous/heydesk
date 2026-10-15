@@ -563,7 +563,7 @@ class ShowPhotosInput(BaseModel):
 
 async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
     """Each product's first photo, with its name and price, on the visitor's screen (D57)."""
-    if ctx.channel not in ("web", "messenger"):  # Messenger shows them as cards (D62)
+    if ctx.channel == "voice":  # Messenger and Telegram send them as photos (D62, D63)
         return fail("Photos can't be shown here. Describe the product from its line instead.")
     products = {p.code: p for p in await ctx.store.products()}
     unknown = [code for code in args.products if code not in products]

@@ -10,7 +10,7 @@ from httpx import AsyncClient
 
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
-from tests.integration.test_shop import photo
+from tests.integration.test_shop import kurti_with_photo, photo
 from tests.integration.test_team import from_owner, link_owner, to
 from tests.integration.test_telegram import send as to_telegram
 
@@ -111,13 +111,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
 ) -> None:
     services = app.state.services
     await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    added = await client.post(
-        "/api/products/photos", files={"file": ("kurti.png", photo("red"), "image/png")}
-    )
-    url = added.json()["url"]
-    products = (await client.get("/api/products")).json()
-    next(p for p in products if p["code"] == "kurti")["photos"] = [url]
-    await client.put("/api/products", json=products)
+    url = await kurti_with_photo(client)
     await connect(client)
     fake = services.channels.messenger
     fake.files[CDN] = photo("red")

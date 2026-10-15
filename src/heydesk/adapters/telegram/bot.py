@@ -22,27 +22,41 @@ class TelegramBot:
         return str(me["username"])
 
     async def set_webhook(self, token: str, url: str, secret: str) -> None:
-        await self._call(
-            token,
-            "setWebhook",
-            url=url,
-            secret_token=secret,
-            allowed_updates=["message"],  # not edits, reactions or group events
-            drop_pending_updates=True,  # what was sent before it was connected isn't answered
-        )
+        params = {
+            "url": url,
+            "secret_token": secret,
+            "allowed_updates": ["message"],  # not edits, reactions or group events
+            "drop_pending_updates": True,  # what was sent before it was connected isn't answered
+        }
+        await self._call(token, "setWebhook", json=params)
 
     async def delete_webhook(self, token: str) -> None:
         await self._call(token, "deleteWebhook")
 
     async def send_message(self, token: str, chat_id: str, text: str) -> None:
-        await self._call(token, "sendMessage", chat_id=chat_id, text=text)
+        await self._call(token, "sendMessage", json={"chat_id": chat_id, "text": text})
+
+    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
+        files = {"photo": ("photo.jpg", jpeg, "image/jpeg")}
+        data = {"chat_id": chat_id, "caption": caption}
+        await self._call(token, "sendPhoto", files=files, data=data)
+
+    async def download(self, token: str, file_id: str) -> bytes:
+        found = await self._call(token, "getFile", json={"file_id": file_id})
+        try:
+            res = await self.client.get(f"{API}/file/bot{token}/{found['file_path']}")
+            res.raise_for_status()
+        except httpx.HTTPError:
+            raise TelegramUnavailable("getFile: Telegram didn't send the photo") from None
+        return res.content
 
     async def send_typing(self, token: str, chat_id: str) -> None:
-        await self._call(token, "sendChatAction", chat_id=chat_id, action="typing")
+        await self._call(token, "sendChatAction", json={"chat_id": chat_id, "action": "typing"})
 
-    async def _call(self, token: str, method: str, **params: Any) -> Any:
+    async def _call(self, token: str, method: str, **request: Any) -> Any:
+        """`request` is httpx's: `json=` for most calls, `files=` and `data=` for a photo."""
         try:
-            res = await self.client.post(f"{API}/bot{token}/{method}", json=params)
+            res = await self.client.post(f"{API}/bot{token}/{method}", **request)
             body = res.json()
         except (httpx.HTTPError, ValueError):
             raise TelegramUnavailable(f"{method}: Telegram didn't answer") from None

@@ -7,7 +7,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from heydesk.models import Conversation
-from tests.conftest import new_business
+from heydesk.ports.llm import ToolCall
+from tests.conftest import SEEDS, new_business
+from tests.integration.test_shop import kurti_with_photo, photo
 
 TOKEN = "123456:a-token-from-botfather"
 CHAT = 555
@@ -143,3 +145,41 @@ async def test_disconnecting_stops_the_bot(app: FastAPI, client: AsyncClient) ->
 
     assert app.state.services.channels.telegram.webhooks == {}
     assert await send(client, path, secret, message("hi")) == 404
+
+
+def with_photo(caption: str | None = None) -> dict[str, Any]:
+    """A photo as Telegram sends it: the same picture in a few sizes, largest last."""
+    update = message(None)
+    sizes = [{"file_id": "small", "width": 90}, {"file_id": "large", "width": 1280}]
+    update["message"]["photo"] = sizes
+    if caption is not None:
+        update["message"]["caption"] = caption
+    return update
+
+
+async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await kurti_with_photo(client)
+    path, secret = await connect(app, client)
+    fake = services.channels.telegram
+    fake.files["large"] = photo("red")
+    llm = services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
+
+    await send(client, path, secret, with_photo("eta ache?"))
+
+    said = llm.requests[0].messages[-1]["content"]
+    assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
+    assert fake.photos == [(str(CHAT), "Cotton Kurti · ৳950")]
+    assert sent(app) == [(str(CHAT), "Is it this one?")]
+
+
+async def test_a_photo_to_a_desk_that_takes_none(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await connect(app, client)  # the restaurant
+    await send(client, path, secret, with_photo())
+    assert sent(app) == [
+        (str(CHAT), "I can only read text messages for now. Please type your question.")
+    ]
