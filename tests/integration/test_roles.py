@@ -295,3 +295,41 @@ async def test_the_overview_adds_up_turns_by_dhaka_day_and_business(app: FastAPI
 
 async def test_only_an_admin_sees_the_overview(client: AsyncClient) -> None:
     assert (await client.get("/api/admin/overview")).status_code == 404
+
+
+async def test_a_business_page_has_its_own_last_7_days_and_failures(app: FastAPI) -> None:
+    await new_business(app)  # "Cafe"
+    async with app.state.sessions() as s, s.begin():
+        cafe = await s.scalar(select(Workspace.id).where(Workspace.name == "Cafe"))
+        s.add_all(
+            [
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW - timedelta(days=2), error="timeout"),
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW - timedelta(hours=1), handed_off=True),
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW, error="503", conversation_id="c2"),
+                a_turn(DEV_WORKSPACE_ID, FIXED_NOW - timedelta(days=10), error="old"),  # too old
+                a_turn(cafe, FIXED_NOW, error="cafe's"),  # another business
+            ]
+        )
+    admin = await as_admin(app)
+
+    usage = (await admin.get(f"/api/admin/businesses/{DEV_WORKSPACE_ID}")).json()["usage"]
+    mine = (await admin.get(f"/api/admin/failed-turns?workspace_id={DEV_WORKSPACE_ID}")).json()
+    every = (await admin.get("/api/admin/failed-turns")).json()
+
+    assert (usage["turns"], usage["failed"], usage["handed_off"]) == (3, 2, 1)
+    assert [(f["error"], f["conversation_id"]) for f in mine] == [
+        ("503", "c2"),  # newest first
+        ("timeout", "c1"),
+        ("old", "c1"),  # the list isn't only this week
+    ]
+    assert mine[0]["business_name"] == "Dev" and mine[0]["business_status"] == "active"
+    assert len(every) == 4 and "cafe's" in {f["error"] for f in every}
+    assert (await admin.get("/api/admin/failed-turns?limit=1")).json()[0]["error"] in {
+        "503",
+        "cafe's",
+    }
+    await admin.aclose()
+
+
+async def test_only_an_admin_sees_failed_turns(client: AsyncClient) -> None:
+    assert (await client.get("/api/admin/failed-turns")).status_code == 404

@@ -83,6 +83,7 @@ class BusinessDetail:
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
+    usage: "Totals"  # its turns in the last 7 days (D73)
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,21 @@ class Overview:
     period: Totals
     per_day: list[DayRow]  # oldest first, every day even an empty one
     busiest: list[BusyBusiness]
+
+
+@dataclass(frozen=True)
+class FailedTurn:
+    """A turn that ended with the polite line (D73): when, where, and the error. No words."""
+
+    id: str
+    at: datetime
+    workspace_id: str
+    business_name: str
+    business_status: str
+    conversation_id: str
+    channel: str
+    llm: str
+    error: str
 
 
 class AdminService:
@@ -194,8 +210,13 @@ class AdminService:
             for ws, kind, email, n, last in rows
         ]
 
+    def since(self, days: int) -> datetime:
+        """The start of the first of the last `days` Dhaka days, today being the last."""
+        today = self.now().astimezone(DAY_ZONE).date()
+        return datetime.combine(today - timedelta(days=days - 1), time(), DAY_ZONE).astimezone(UTC)
+
     async def business(self, workspace_id: str) -> BusinessDetail:
-        week_ago = self.now() - timedelta(days=7)
+        week_ago = self.since(7)
         chats = select(func.count()).where(Conversation.workspace_id == workspace_id)
         async with self.sessions() as s:
             ws = await s.get(Workspace, workspace_id)
@@ -225,6 +246,9 @@ class AdminService:
                     Conversation.workspace_id == workspace_id
                 )
             )
+            week = await s.scalars(
+                select(Turn).where(Turn.workspace_id == workspace_id, Turn.at >= week_ago)
+            )
             return BusinessDetail(
                 id=ws.id,
                 name=ws.name,
@@ -243,6 +267,7 @@ class AdminService:
                 conversations_7_days=recent or 0,
                 waiting=waiting or 0,
                 last_activity_at=last,
+                usage=totals(week.all(), recent or 0),
             )
 
     async def overview(self, days: int = 7) -> Overview:
@@ -250,7 +275,7 @@ class AdminService:
         added up here: a few thousand a week is fine, and it reads more easily than SQL."""
         today = self.now().astimezone(DAY_ZONE).date()
         first = today - timedelta(days=days - 1)
-        start = datetime.combine(first, time(), DAY_ZONE).astimezone(UTC)
+        start = self.since(days)
         async with self.sessions() as s:
             turns = (await s.execute(select(Turn).where(Turn.at >= start))).scalars().all()
             started = list(
@@ -301,6 +326,40 @@ class AdminService:
             per_day=per_day,
             busiest=busiest,
         )
+
+    async def failed_turns(
+        self,
+        workspace_id: str | None = None,
+        *,
+        limit: int = PAGE,
+        before: datetime | None = None,
+    ) -> list[FailedTurn]:
+        """Newest first, every business's or one's. The next page is `before=` the last `at`."""
+        query = (
+            select(Turn, Workspace.name, Workspace.status)
+            .join(Workspace, Workspace.id == Turn.workspace_id)
+            .where(Turn.error != "")
+        )
+        if workspace_id:
+            query = query.where(Turn.workspace_id == workspace_id)
+        if before:
+            query = query.where(Turn.at < before)
+        async with self.sessions() as s:
+            rows = (await s.execute(query.order_by(Turn.at.desc()).limit(limit))).all()
+        return [
+            FailedTurn(
+                t.id,
+                t.at,
+                t.workspace_id,
+                name,
+                status,
+                t.conversation_id,
+                t.channel,
+                t.llm,
+                t.error,
+            )
+            for t, name, status in rows
+        ]
 
     async def set_business_status(self, workspace_id: str, status: str, reason: str = "") -> None:
         """A reason goes with a suspension (D70); reactivating clears it."""

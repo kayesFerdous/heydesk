@@ -385,7 +385,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
 | GET | `/api/auth/me` | Who you are: email, role, your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
-| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72) |
+| GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
@@ -448,6 +448,11 @@ turns (D71) for today and the last N days: turns, conversations started, tokens,
 providers only), failed turns, hand-offs, and the median and 95th-percentile first reply; one
 row a day, oldest first, empty days included; the 5 businesses with the most turns. A day is
 Dhaka's, as every business is there today. The rows are summed in Python, not SQL.
+A business's page also has its own last 7 days, the same sums (`usage`). **Failed turns**
+(`GET /api/admin/failed-turns?workspace_id=`, newest first, `limit` and `before` as the audit
+log, D73) are the turns with an error: when, the business and its status, the conversation, the
+channel and provider, the error. The admin opens one as the business (A1) at
+`/conversations?open=<id>`, which the audit log records like any opened conversation.
 `uv run heydesk create-user EMAIL PASSWORD` adds an owner to the dev workspace.
 
 Every error is `{"error": {"code", "message"}}`, with `fields` (path → problem)

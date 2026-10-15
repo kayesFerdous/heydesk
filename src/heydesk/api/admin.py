@@ -42,6 +42,18 @@ class SheetOut(BaseModel):
     problem: str  # empty: fine
 
 
+class TotalsOut(BaseModel):
+    turns: int
+    conversations: int  # started in those days
+    input_tokens: int
+    output_tokens: int
+    cost_micros: int  # millionths of a dollar; priced providers only (Groq), D71
+    failed: int  # turns that ended with the polite line
+    handed_off: int
+    first_reply_ms: int | None  # the median first reply
+    slow_first_reply_ms: int | None  # the 95th percentile
+
+
 class BusinessOut(BaseModel):
     id: str
     name: str
@@ -60,18 +72,7 @@ class BusinessOut(BaseModel):
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
-
-
-class TotalsOut(BaseModel):
-    turns: int
-    conversations: int  # started in those days
-    input_tokens: int
-    output_tokens: int
-    cost_micros: int  # millionths of a dollar; priced providers only (Groq), D71
-    failed: int  # turns that ended with the polite line
-    handed_off: int
-    first_reply_ms: int | None  # the median first reply
-    slow_first_reply_ms: int | None  # the 95th percentile
+    usage: TotalsOut  # its turns in the last 7 days (D73)
 
 
 class DayOut(BaseModel):
@@ -96,6 +97,18 @@ class OverviewOut(BaseModel):
     period: TotalsOut
     per_day: list[DayOut]  # oldest first
     busiest: list[BusyOut]  # the most turns first, up to 5
+
+
+class FailedTurnOut(BaseModel):
+    id: str
+    at: datetime
+    workspace_id: str
+    business_name: str
+    business_status: Literal["active", "suspended"]
+    conversation_id: str
+    channel: str
+    llm: str
+    error: str
 
 
 class BusinessStatusIn(BaseModel):
@@ -137,6 +150,15 @@ async def overview(
 ) -> OverviewOut:
     """What every agent did today and in the last `days` days, from the saved turns (D72)."""
     return OverviewOut.model_validate(asdict(await services.admin.overview(days)))
+
+
+@router.get("/failed-turns")
+async def failed_turns(
+    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
+) -> list[FailedTurnOut]:
+    """Turns that ended with the polite line, newest first, a page at a time (D73)."""
+    rows = await services.admin.failed_turns(workspace_id, limit=page.limit, before=page.before)
+    return [FailedTurnOut.model_validate(asdict(row)) for row in rows]
 
 
 @router.get("/businesses")
