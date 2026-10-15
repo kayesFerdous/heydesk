@@ -4,9 +4,9 @@ from typing import Any
 
 from fastapi import FastAPI
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
-from heydesk.models import Conversation
+from heydesk.models import Channel, Conversation
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
 from tests.integration.test_shop import kurti_with_photo, photo
@@ -60,6 +60,18 @@ async def test_an_owner_connects_their_bot_and_gets_its_link(
     assert body["owner_link"].startswith("https://t.me/spice_garden_bot?start=owner_")
     assert body["owner_linked"] is False
     assert TOKEN not in res.text  # the token never leaves the server
+
+
+async def test_the_token_is_encrypted_in_the_database(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await connect(app, client)
+    async with app.state.sessions() as s:
+        stored = await s.scalar(text("SELECT token FROM channels"))
+        channel = await s.scalar(select(Channel))
+    assert stored and TOKEN not in stored  # a copy of the database can't run the bot (D74)
+    assert channel is not None and channel.token == TOKEN  # the code reads it as it was given
+
+    assert await send(client, path, secret, message("hi")) == 200
+    assert sent(app)  # answered, with the token read back
 
 
 async def test_a_wrong_token_is_a_problem_on_the_field(client: AsyncClient) -> None:

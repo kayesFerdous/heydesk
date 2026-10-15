@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from heydesk.db import Base, new_id, utcnow
+from heydesk.db import Base, Encrypted, new_id, utcnow
 
 
 class PaymentAccount(Base):
@@ -17,6 +17,6 @@ class PaymentAccount(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), unique=True)
     store_id: Mapped[str] = mapped_column(String(100))
-    password: Mapped[str] = mapped_column(String(200))
+    password: Mapped[str] = mapped_column(Encrypted())  # encrypted in the database (D74)
     sandbox: Mapped[bool] = mapped_column(default=True)  # SSLCommerz's test mode: no real money
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

@@ -22,7 +22,7 @@ if config.config_file_name is not None:
 import heydesk.desks  # noqa: E402, F401  (registers every desk's tables on Base.metadata)
 import heydesk.models  # noqa: E402, F401  (registers the shared tables)
 from heydesk.config import Settings  # noqa: E402
-from heydesk.db import Base, UTCDateTime  # noqa: E402
+from heydesk.db import Base, Encrypted, UTCDateTime  # noqa: E402
 
 # the app's DATABASE_URL, not alembic.ini's
 config.set_main_option("sqlalchemy.url", Settings().DATABASE_URL)
@@ -30,10 +30,13 @@ target_metadata = Base.metadata
 
 
 def render_item(type_, obj, autogen_context):
-    """UTCDateTime only converts in Python; in the database it's a plain DateTime."""
+    """UTCDateTime and Encrypted only convert in Python; in the database they're plain types."""
     if type_ == "type" and isinstance(obj, UTCDateTime):
         return "sa.DateTime(timezone=True)"
+    if type_ == "type" and isinstance(obj, Encrypted):
+        return "sa.String(length=1000)"
     return False
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

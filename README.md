@@ -73,8 +73,8 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 - **Admins:** admins are made only from the command line, and the database confirms the role on
   every request. Owners get a 404 on admin routes. Every admin change goes to an insert-only
   audit log.
-- **Abuse:** login allows 10 tries in 15 minutes per address and email. Chat allows 6 messages a
-  minute per visitor and 60 per IP. Each visitor and each business has a daily cap, and a visitor
+- **Abuse:** login allows 10 tries in 15 minutes per address and email, and signup 5 an hour per
+  address. Chat allows 6 messages a minute per visitor and 60 per IP. Each visitor and each business has a daily cap, and a visitor
   who keeps going off-topic is blocked.
 - **Webhooks and payments:** Telegram posts must carry the bot's own random secret, and
   Messenger posts must carry Facebook's HMAC signature. A payment counts only after SSLCommerz's
@@ -84,9 +84,11 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 - **Data:**
   - Logs hold ids only, never message text, names or phone numbers.
   - Uploads are capped at 10 MB.
-  - Keys live in `.env`, which is git-ignored.
-- **Known gaps (next, [PLAN.md](PLAN.md) day C2):** the tokens and store passwords businesses
-  give us are stored as given, and signup has no rate limit.
+  - The bot tokens and store passwords businesses give us are encrypted in the database
+    (Fernet, with `SECRETS_KEY`), and no route returns them.
+  - Our own keys live in `.env`, which is git-ignored.
+- **Known limit:** a login token lasts 7 days, and changing the password doesn't end the ones
+  already made (design §12).
 
 ## Running it
 

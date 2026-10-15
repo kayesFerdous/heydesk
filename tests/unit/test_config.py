@@ -4,8 +4,9 @@ from pydantic import ValidationError
 from heydesk.config import Settings
 
 
-def test_production_refuses_fakes_and_an_empty_secret() -> None:
-    with pytest.raises(ValidationError, match="JWT_SECRET is empty.*LLM_PROVIDER is fake"):
+def test_production_refuses_fakes_and_empty_secrets() -> None:
+    match = "JWT_SECRET is empty; SECRETS_KEY is empty.*LLM_PROVIDER is fake"
+    with pytest.raises(ValidationError, match=match):
         Settings(APP_ENV="production", LLM_PROVIDER="fake", _env_file=None)  # type: ignore[call-arg]
 
 
@@ -13,6 +14,7 @@ def test_production_starts_when_configured() -> None:
     Settings(
         APP_ENV="production",
         JWT_SECRET="x",
+        SECRETS_KEY="y",
         LLM_PROVIDER="groq",
         DECIDER="jev",
         QDRANT_URL="https://example.qdrant.io",

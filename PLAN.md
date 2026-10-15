@@ -5,8 +5,8 @@ What's built, what's next, and how to know each step is done. How it works is in
 
 > **Now:** the product is built through D73 (15 Oct): four desks, web chat, voice, Telegram,
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
-> presentation:** day C1 (tidy the repo and docs) done 15 Oct, `scripts/check.sh` green; next is
-> C2 (security), then C3 (Docker and CI).
+> presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; next is C3
+> (Docker and CI).
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -45,15 +45,15 @@ built and how to run it. [x] (15 Oct)
 
 ### Day C2: security fixes
 
-- [ ] Signup checks the email before it makes the business, so a taken email leaves nothing behind
-- [ ] Signup is rate-limited per IP, like login (D52)
-- [ ] The secrets businesses give us (Telegram bot tokens, Messenger Page tokens, SSLCommerz
+- [x] Signup checks the email before it makes the business, so a taken email leaves nothing behind
+- [x] Signup is rate-limited per IP, like login (D52)
+- [x] The secrets businesses give us (Telegram bot tokens, Messenger Page tokens, SSLCommerz
       store passwords) are encrypted in the database with a key from `.env`; production refuses
       an empty key; a migration encrypts the rows already there
-- [ ] design §12: changing a password doesn't end logins already made (a token lasts 7 days)
+- [x] design §12: changing a password doesn't end logins already made (a token lasts 7 days)
 
 **Done when:** `scripts/check.sh` is green; tests show a taken email leaves no business, a fast
-signup gets a 429, and a stored token isn't readable in the table, while Telegram still works.
+signup gets a 429, and a stored token isn't readable in the table, while Telegram still works. [x] (15 Oct, D74)
 
 ### Day C3: Docker and CI
 

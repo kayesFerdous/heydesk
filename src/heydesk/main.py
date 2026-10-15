@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 from heydesk.api import include_routers
 from heydesk.api.dev import WEB_STATIC
 from heydesk.config import Settings
-from heydesk.db import make_engine, utcnow
+from heydesk.db import make_engine, use_secrets_key, utcnow
 from heydesk.errors import register_exception_handlers
 from heydesk.logs import RequestLogMiddleware, configure_logging
 from heydesk.ports.decider import Decider
@@ -48,6 +48,7 @@ def create_app(
 ) -> FastAPI:
     settings = settings or Settings()
     configure_logging(settings.LOG_LEVEL, settings.LOG_JSON)
+    use_secrets_key(settings.secrets_key)
     dev = settings.APP_ENV == "development"
 
     @asynccontextmanager

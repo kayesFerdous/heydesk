@@ -47,12 +47,14 @@ class UserService:
         self.now = now
 
     async def signup(self, email: str, password: str, workspace_name: str) -> str:
-        """A new business and its owner. Returns a token."""
-        workspace = Workspace(name=workspace_name, created_at=self.now())
+        """A new business and its owner, in one transaction: a taken email leaves nothing behind.
+        Returns a token."""
         async with self.sessions() as s, s.begin():
+            workspace = Workspace(name=workspace_name, created_at=self.now())
             s.add(workspace)
             await s.flush()
-        return await self.create_user(workspace.id, email, password)
+            user = await self._new_user(s, email, password, role="owner", ws=workspace.id)
+        return self._token(user)
 
     async def create_user(self, ws: str, email: str, password: str) -> str:
         """An owner in an existing business. Returns a token."""
@@ -150,18 +152,24 @@ class UserService:
             user.password_hash = hasher.hash(new)
 
     async def _add(self, email: str, password: str, *, role: str, ws: str | None) -> User:
-        email = email.strip().lower()
         async with self.sessions() as s, s.begin():
-            if await s.scalar(select(User.id).where(User.email == email)):
-                raise Conflict("There's already an account with that email. Log in instead.")
-            user = User(
-                workspace_id=ws,
-                role=role,
-                email=email,
-                password_hash=hasher.hash(password),
-                created_at=self.now(),
-            )
-            s.add(user)
+            return await self._new_user(s, email, password, role=role, ws=ws)
+
+    async def _new_user(
+        self, s: AsyncSession, email: str, password: str, *, role: str, ws: str | None
+    ) -> User:
+        """Adds a user in the caller's transaction; a 409 if the email is taken."""
+        email = email.strip().lower()
+        if await s.scalar(select(User.id).where(User.email == email)):
+            raise Conflict("There's already an account with that email. Log in instead.")
+        user = User(
+            workspace_id=ws,
+            role=role,
+            email=email,
+            password_hash=hasher.hash(password),
+            created_at=self.now(),
+        )
+        s.add(user)
         return user
 
     def _token(self, user: User) -> str:

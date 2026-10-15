@@ -1,4 +1,4 @@
-"""Rate limits (D52): how fast someone can send chat messages or try to log in.
+"""Rate limits (D52): how fast someone can send chat messages, log in or sign up.
 
 The daily limits (D51) stop slow timepass; these stop bursts, such as a script sending many
 messages a second or making a new visitor id for every message. Too many → a 429.
@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 CHAT_PER_VISITOR = "6/minute"
 CHAT_PER_IP = "60/minute"  # generous: on mobile data many people share one address
 LOGIN = "10/15 minutes"  # per address and email: stops password guessing
+SIGNUP = "5/hour"  # per address: stops a script making businesses
 
 
 class RateLimiter:
@@ -31,6 +32,9 @@ class RateLimiter:
 
     async def login(self, ip: str, email: str) -> None:
         await self._check(LOGIN, "login", ip, email.strip().lower())
+
+    async def signup(self, ip: str) -> None:
+        await self._check(SIGNUP, "signup", ip)
 
     async def _check(self, limit: str, what: str, *key: str) -> None:
         """Counts one hit; raises `TooFast` when there were too many."""

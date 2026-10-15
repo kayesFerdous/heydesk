@@ -355,9 +355,9 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
-| `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
+| `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token; encrypted, D74), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
-| `payment_accounts` | store_id, password, sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
+| `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
@@ -503,6 +503,7 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 | `POST /api/chat/{key}` | visitor_id | 6 a minute |
 | `POST /api/chat/{key}` | IP (a script making a new visitor_id each time) | 60 a minute |
 | `POST /api/auth/login` | IP and email | 10 in 15 minutes |
+| `POST /api/auth/signup` | IP (a script making businesses) | 5 an hour |
 
 The counts are in this server's memory: a restart clears them, and a second server process would
 keep its own. The IP is the real visitor's when a proxy on the same machine sends
@@ -898,11 +899,12 @@ version handles them.
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
-| Encrypting bot tokens at rest | Stored as they are; no route returns them |
+| Ending logins when a password changes | A login token lasts 7 days, and a new password doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
+| Changing `SECRETS_KEY` | It's set once; the secrets saved with the old key can't be read with a new one (D74) |
 | Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
 | Messenger: Facebook Login to connect a Page, the Get Started button, quick replies, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text only. A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
-| Payments: refunds, a restaurant's charge per area, an unpaid order that expires, encrypting store passwords | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid; passwords are stored as they are, like bot tokens, and no route returns them |
+| Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

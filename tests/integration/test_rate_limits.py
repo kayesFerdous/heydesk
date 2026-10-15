@@ -39,3 +39,17 @@ async def test_guessing_a_password_is_limited(app: FastAPI) -> None:
         assert (await anon.post("/api/auth/login", json=wrong)).status_code == 401
 
     assert (await anon.post("/api/auth/login", json=wrong)).status_code == 429
+
+
+async def test_signing_up_again_and_again_is_limited(app: FastAPI) -> None:
+    anon = AsyncClient(transport=ASGITransport(app), base_url="http://test")
+    for n in range(5):
+        body = {
+            "email": f"shop{n}@example.com",
+            "password": "a long password",
+            "workspace_name": "S",
+        }
+        assert (await anon.post("/api/auth/signup", json=body)).status_code == 201
+
+    body = {"email": "shop9@example.com", "password": "a long password", "workspace_name": "S"}
+    assert (await anon.post("/api/auth/signup", json=body)).status_code == 429

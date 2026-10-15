@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+from sqlalchemy import text
 
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.desks.clinic import CLINIC
@@ -240,6 +241,12 @@ async def test_the_owner_connects_the_business_s_own_store(
     shown = (await client.get("/api/agent/sslcommerz")).json()
     assert (shown["store_id"], shown["sandbox"]) == ("nakshi-test", True)
     assert "password" not in shown and "the-api-password" not in str(shown)
+    async with app.state.sessions() as s:
+        stored = await s.scalar(text("SELECT password FROM payment_accounts"))
+    assert stored and "the-api-password" not in stored  # encrypted in the database (D74)
+    assert (await app.state.services.payments.account(DEV_WORKSPACE_ID)).password == body[
+        "password"
+    ]
 
     assert (await client.delete("/api/agent/sslcommerz")).status_code == 204
     assert (await client.get("/api/agent/sslcommerz")).status_code == 404

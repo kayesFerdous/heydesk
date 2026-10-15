@@ -2,7 +2,9 @@
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 
+from heydesk.models import Workspace
 from tests.integration.test_restaurant import place_an_order
 
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
@@ -51,10 +53,13 @@ async def test_wrong_password_no_token_or_a_bad_token_is_401(app: FastAPI) -> No
     assert [r.status_code for r in (wrong, no_token, bad)] == [401, 401, 401]
 
 
-async def test_an_email_signs_up_once(app: FastAPI) -> None:
+async def test_an_email_signs_up_once_and_leaves_no_empty_business(app: FastAPI) -> None:
     second = await as_second_account(app)
     again = await second.post("/api/auth/signup", json=NEW | {"email": "second@example.com"})
     assert again.status_code == 409
+    async with app.state.sessions() as s:
+        cafes = await s.scalar(select(func.count()).where(Workspace.name == NEW["workspace_name"]))
+    assert cafes == 1  # only the first signup's business
     await second.aclose()
 
 

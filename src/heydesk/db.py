@@ -1,8 +1,11 @@
+import base64
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import DateTime, Dialect, MetaData
+from cryptography.fernet import Fernet
+from sqlalchemy import DateTime, Dialect, MetaData, String
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,6 +15,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import TypeDecorator
+
+from heydesk.config import DEV_SECRETS_KEY
 
 
 def utcnow() -> datetime:
@@ -42,6 +47,36 @@ class UTCDateTime(TypeDecorator[datetime]):
         if value is None:
             return None
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def secret_box(key: str) -> Fernet:
+    """Fernet (AES with an HMAC) from any long random string, such as `SECRETS_KEY`."""
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest()))
+
+
+_box = secret_box(DEV_SECRETS_KEY)  # development and tests; the app sets the real key
+
+
+def use_secrets_key(key: str) -> None:
+    """The key `Encrypted` columns use. `create_app` sets it from `SECRETS_KEY` at start."""
+    global _box
+    _box = secret_box(key)
+
+
+class Encrypted(TypeDecorator[str]):
+    """A secret a business gave us (a bot token, a store password): encrypted in the
+    database, plain text in Python. Without the key, a copy of the database can't use it.
+
+    The same text encrypts differently each time, so a query can't filter on it."""
+
+    impl = String(1000)  # a 500-character token is about 760 once encrypted
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect: Dialect) -> str | None:
+        return None if value is None else _box.encrypt(value.encode()).decode()
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> str | None:
+        return None if value is None else _box.decrypt(value.encode()).decode()
 
 
 class Base(DeclarativeBase):

@@ -4,6 +4,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-only-secret-never-used-in-production"  # production refuses an empty one
+DEV_SECRETS_KEY = "dev-only-key-never-used-in-production"  # the same for SECRETS_KEY
 
 
 class Settings(BaseSettings):
@@ -12,6 +13,9 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "test", "production"] = "development"
     DATABASE_URL: str = "sqlite+aiosqlite:///./heydesk.db"
     JWT_SECRET: str = ""  # required in production; development and tests use DEV_JWT_SECRET
+    # Encrypts the secrets businesses give us (bot tokens, store passwords) in the database.
+    # Required in production. Set it once: with another key the saved ones can't be read
+    SECRETS_KEY: str = ""
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]  # Vite dev server
 
     LLM_PROVIDER: Literal["gigalogy", "groq", "fake"] = "gigalogy"  # D14
@@ -99,6 +103,10 @@ class Settings(BaseSettings):
         return self.JWT_SECRET or DEV_JWT_SECRET
 
     @property
+    def secrets_key(self) -> str:
+        return self.SECRETS_KEY or DEV_SECRETS_KEY
+
+    @property
     def public_url(self) -> str:
         """Where a visitor's browser reaches this server: links in replies, payment returns."""
         return (self.PUBLIC_URL or "http://localhost:8000").rstrip("/")
@@ -110,6 +118,8 @@ class Settings(BaseSettings):
         problems = []
         if not self.JWT_SECRET:
             problems.append("JWT_SECRET is empty")
+        if not self.SECRETS_KEY:
+            problems.append("SECRETS_KEY is empty")
         if self.LLM_PROVIDER == "fake":
             problems.append("LLM_PROVIDER is fake")
         if self.DECIDER == "fake":
