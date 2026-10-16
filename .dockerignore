@@ -1,0 +1,22 @@
+# Only what the image needs: the code, the migrations and the seeds. Never secrets or data.
+.env
+.git
+.github
+.claude
+.venv
+.logs
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+*.db
+*.db-*
+*.pdf
+media/
+photos/
+qdrant_local/
+notes/
+proposal_uml/
+brand/
+tests/
+.DS_Store

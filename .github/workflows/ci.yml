@@ -1,10 +1,56 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch cancels the run still going
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  check:
+  check:  # tests, lint, format, types, import rules: scripts/check.sh, as before every commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - run: uv sync --locked
       - run: scripts/check.sh
+
+  audit:  # known vulnerabilities in the dependencies the server runs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv export --locked --no-dev --no-emit-project --no-hashes -o requirements.txt
+      - run: uvx pip-audit -r requirements.txt --disable-pip --no-deps
+
+  image:  # the Docker image builds and answers /health
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: heydesk:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start it with the fake providers and wait for /health
+        run: |
+          docker run -d --name heydesk -p 8000:8000 \
+            -e LLM_PROVIDER=fake -e DECIDER=fake -e EMBEDDER=fake heydesk:ci
+          for _ in $(seq 30); do
+            curl -fs http://localhost:8000/health && exit 0
+            sleep 2
+          done
+          docker logs heydesk
+          exit 1

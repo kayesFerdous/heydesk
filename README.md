@@ -62,7 +62,7 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 | Knowledge and photos | Gemini embeddings, hybrid (meaning + exact word) search in Qdrant |
 | Voice | Pipecat over WebRTC, Silero VAD, Deepgram speech-to-text, Piper speech |
 | Channels and payments | Telegram Bot API, Messenger (Graph API), SSLCommerz |
-| Tooling | uv, pytest, ruff, mypy (strict on the core), GitHub Actions |
+| Tooling | uv, pytest, ruff, mypy (strict on the core), Docker, GitHub Actions (checks, a dependency audit, the image) |
 
 ## Security
 
@@ -120,6 +120,18 @@ In `.env`, pick the providers:
   local folder. `EMBEDDER=fake` runs offline but only matches words.
 - **Voice:** Deepgram for speech-to-text (`DEEPGRAM_API_KEY`; `STT_PROVIDER=chorus` uses
   Gigalogy's Chorus instead) and Piper for speech, which runs locally.
+
+### With Docker
+
+```bash
+docker compose up --build
+```
+
+This runs the backend and Qdrant, and the dev page is at <http://localhost:8000>. The database
+and photos live in a Docker volume, and migrations run when the container starts. Settings come
+from `.env` if you have one. Without one, the fake providers run offline. For production, set
+`APP_ENV=production` with real providers, `JWT_SECRET` and `SECRETS_KEY`: the server refuses to
+start without them.
 
 ## Tests and checks
 

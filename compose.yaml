@@ -1,0 +1,33 @@
+# The backend and Qdrant on one machine: docker compose up --build, then http://localhost:8000
+# Settings come from .env when there is one; without it, the fake providers run offline.
+
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      DECIDER: ${DECIDER:-fake}
+      EMBEDDER: ${EMBEDDER:-fake}
+      QDRANT_URL: http://qdrant:6333  # the container below, not a cloud cluster
+      # The container's own paths, even when .env has local ones
+      DATABASE_URL: sqlite+aiosqlite:////data/heydesk.db
+      MEDIA_DIR: /data/media
+      LOG_JSON: "true"
+    volumes:
+      - heydesk-data:/data  # the SQLite database and the photos
+    depends_on: [qdrant]
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1  # the same minor version as qdrant-client
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  heydesk-data:
+  qdrant-data:

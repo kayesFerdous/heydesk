@@ -895,7 +895,7 @@ version handles them.
 | Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |
 | Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
-| Teams, roles, billing, the Vue app, phone numbers, deploy | Swagger and the dev page are the UI; the demo runs locally |
+| Teams, billing, phone numbers, hosting | One owner login per business; no plans or billing; voice in the browser only; a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
