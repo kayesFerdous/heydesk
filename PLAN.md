@@ -6,7 +6,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > **Now:** the product is built through D73 (15 Oct): four desks, web chat, voice, Telegram,
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
-> CI) built 16 Oct, and its last check is CI going green on GitHub after a push.
+> CI) done 16 Oct. Next: the open live checks below, then rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -62,7 +62,7 @@ signup gets a 429, and a stored token isn't readable in the table, while Telegra
 - [x] README: running it with Docker
 
 **Done when:** `docker compose up` serves `/health` and the dev chat with the fake model, and CI
-is green on GitHub. (16 Oct: compose serves both locally; CI waits for a push)
+is green on GitHub. [x] (16 Oct: compose locally; CI's check, audit and image green)
 
 ## Still open
 
