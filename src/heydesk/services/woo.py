@@ -1,7 +1,8 @@
 """A shop's list kept in its WooCommerce store, and our orders written there (D75).
 
-The owner links the store with a Read/Write key. Then every few minutes a sync pushes, then
-pulls: each order whose status changed since it was last written is created or moved in Woo,
+The owner links the store with a Read/Write key. An order saved in a chat is written at once,
+in the background, so the website can't sell the same last piece (D77). And every few minutes
+a sync pushes, then pulls: each order whose status changed since it was last written is created or moved in Woo,
 so Woo's stock takes it off or puts it back; then Woo's products become the list, with Woo's
 count less the orders not in Woo yet. A problem keeps the old list, and the owner hears once.
 """
@@ -102,6 +103,8 @@ class WooService:
         self.team = team
         self.api = api
         self.local_http = local_http  # development only: http://localhost is taken too
+        self.pushing: set[asyncio.Task[None]] = set()  # pushes running now; kept so they finish
+        self.lock = asyncio.Lock()  # one push at a time, or an order could be written twice
 
     async def link(self, ws: str, url: str, key: str, secret: str) -> WooLink:
         """Checks the key can read the products and write orders (without writing one),
@@ -170,7 +173,8 @@ class WooService:
         link = await self.get(ws)
         shop = await self._store(ws)
         store = WooStore(link.url, link.key, link.secret)
-        problem = await self._push(shop, store, link)
+        async with self.lock:
+            problem = await self._push(shop, store, link)
         ids, checked = link.ids, link.checked
         try:
             items = await self.api.products(store)
@@ -190,6 +194,27 @@ class WooService:
             await self.team.notify(ws, f"⚠️ Your WooCommerce store: {problem}")
         log.info("woo synced", extra={"workspace_id": ws, "problem": bool(problem)})
         return saved
+
+    def push_soon(self, ws: str) -> None:
+        """Writes the shop's changed orders into its store now, without waiting for it (a chat
+        turn calls this). A problem is left for the next sync, which tries again and tells the
+        owner."""
+        task = asyncio.create_task(self.push(ws))
+        self.pushing.add(task)
+        task.add_done_callback(self.pushing.discard)
+
+    async def push(self, ws: str) -> None:
+        async with self.sessions() as s:
+            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == ws))
+        if link is None:  # not linked: nothing to write
+            return
+        try:
+            async with self.lock:
+                await self._push(
+                    await self._store(ws), WooStore(link.url, link.key, link.secret), link
+                )
+        except Exception:
+            log.exception("woo push failed", extra={"workspace_id": ws})
 
     async def run(self, every: float) -> None:
         """Syncs every linked store, one after another, every `every` seconds, until

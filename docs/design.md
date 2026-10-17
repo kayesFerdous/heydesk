@@ -667,6 +667,7 @@ and the owner sees every order in one place, the website's and the agent's. Shop
 
 ```
 owner: pastes the store's address, a Read/Write key and its secret ─► PUT /api/agent/woo
+a chat turn saves or changes an order ─► push now, in the background (D77)
 every WOO_SYNC_MINUTES (2):
   push: each order whose status changed since it was last written ─► create or update it in Woo
   pull: Woo's published products ─► same as last time? stop
@@ -729,9 +730,13 @@ every WOO_SYNC_MINUTES (2):
   the zone), `payment_method: cod`, `customer_note` the note, each line with its product and
   variation id and **our** `subtotal`/`total` (the price the buyer said yes to, rule 1; Woo
   keeps it), the delivery charge as a shipping line, and `meta_data` with the order's code
-  (`O-106`) and, when it was paid online, the amount and reference. Writing happens only in
-  the sync, never in the tool, so a slow or down store never slows a chat: an order shows in
-  Woo's admin at most `WOO_SYNC_MINUTES` later.
+  (`O-106`) and, when it was paid online, the amount and reference. **A chat turn that saved or
+  changed an order pushes at once** (`WooService.push_soon`, started after the turn's alerts),
+  in the background, so Woo's stock drops within a second or two and its website can't sell
+  the same last piece; the chat never waits on the store (D77). A lock keeps one push at a
+  time, so the sync and a turn never write the same order twice. A push that fails says
+  nothing: the sync tries again and tells the owner. A move the owner makes in HeyDesk is
+  written by the sync, at most `WOO_SYNC_MINUTES` later.
 - **A problem is noted and the owner hears once**, as with a sheet (`problem`,
   `TeamService.notify`): the store can't be reached, the key stopped working, or an order
   couldn't be written ("O-106 wasn't added to WooCommerce: …"). The orders not written are tried

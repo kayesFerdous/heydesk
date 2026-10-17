@@ -2,6 +2,7 @@
 fields become ours, a Read key is refused, an order placed here is created in Woo with our
 prices and moved when it moves, and a pull doesn't undo an order not in Woo yet."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -171,6 +172,8 @@ async def test_an_order_placed_here_is_written_into_woo_and_its_stock_follows(
 
     woo.down = "Couldn't reach your store. Try again in a minute."
     await buy(world, agent, {"code": "LP-1", "size": "L", "colour": "Black", "quantity": 2})
+    await pushed(world)  # the push right after the order couldn't reach it either
+    assert woo.orders == {}
     link = await world.services.woo.sync(DEV_WORKSPACE_ID)
     assert link.problem.endswith(
         "wasn't written: Couldn't reach your store. Try again in a minute."
@@ -203,14 +206,33 @@ async def test_an_order_placed_here_is_written_into_woo_and_its_stock_follows(
     assert await stock(world, agent, "LP-1", "L", "Black") == 3  # back in Woo, and here
 
 
+async def test_an_order_is_in_woo_as_soon_as_it_is_saved(world: World) -> None:
+    agent = await world.agent("shop")
+    woo = FakeWoo()
+    world.services.woo.api = woo
+    await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
+    await buy(world, agent, {"code": "LP-1", "size": "L", "colour": "Black", "quantity": 1})
+    await pushed(world)  # no sync: the turn that saved it wrote it
+    [body] = woo.orders.values()
+    assert body["meta_data"][0]["value"] == "O-101"
+    [order] = await orders(world)
+    assert order.woo_id is not None
+
+
+async def pushed(world: World) -> None:
+    """Waits for the pushes the turns started in the background."""
+    await asyncio.gather(*world.services.woo.pushing)
+
+
 async def test_a_pull_doesnt_undo_an_order_not_in_woo_yet(world: World) -> None:
     agent = await world.agent("shop")
     woo = FakeWoo()
     world.services.woo.api = woo
     await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
-    await buy(world, agent, {"code": "TP-1", "quantity": 2})
-    woo.items[0] = tupi(stock=12)  # the store changed, and our order isn't there yet
     woo.create_order = refuse  # type: ignore[method-assign]
+    await buy(world, agent, {"code": "TP-1", "quantity": 2})
+    await pushed(world)
+    woo.items[0] = tupi(stock=12)  # the store changed, and our order isn't there yet
     link = await world.services.woo.sync(DEV_WORKSPACE_ID)
     assert "O-101 wasn't written" in link.problem
     assert await stock(world, agent, "TP-1") == 10  # Woo's 12, less our 2

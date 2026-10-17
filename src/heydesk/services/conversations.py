@@ -22,6 +22,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
 from heydesk.services.visitors import VisitorService
+from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class ConversationService:
         photos: PhotoService,
         team: TeamService,
         visitors: VisitorService,
+        woo: WooService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -60,6 +62,7 @@ class ConversationService:
         self.photos = photos
         self.team = team
         self.visitors = visitors
+        self.woo = woo
         self.settings = settings
         self.now = now
 
@@ -241,6 +244,8 @@ class ConversationService:
         """Tells the owner what the turn saved, and if the visitor wants a person."""
         for alert in ended.alerts:
             await self.team.alert(conv, alert)
+        if ended.alerts:  # an order saved or changed: into a linked WooCommerce store now (D77)
+            self.woo.push_soon(conv.workspace_id)
         if ended.handed_off:
             await self.team.alert(conv, handoff_alert([*conv.messages, *ended.added]))
 

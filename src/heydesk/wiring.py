@@ -151,8 +151,11 @@ def build_services(
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
     imports = ImportService(llm, settings.MODEL)
+    woo_service = WooService(
+        sessions, agents, team, woo or WooRest(), settings.APP_ENV == "development"
+    )
     conversations = ConversationService(
-        sessions, runtime, knowledge, photos, team, visitors, settings, now
+        sessions, runtime, knowledge, photos, team, visitors, woo_service, settings, now
     )
     return Services(
         admin=AdminService(sessions, now),
@@ -172,5 +175,5 @@ def build_services(
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
         team=team,
-        woo=WooService(sessions, agents, team, woo or WooRest(), settings.APP_ENV == "development"),
+        woo=woo_service,
     )
