@@ -24,6 +24,7 @@ from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
+from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
@@ -34,6 +35,7 @@ from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.sheets import FetchCsv
 from heydesk.ports.telegram import TelegramApi
+from heydesk.ports.woo import WooApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
@@ -49,6 +51,7 @@ from heydesk.services.sheets import SheetService
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
+from heydesk.services.woo import WooService
 
 
 def build_llm(settings: Settings) -> LanguageModel:
@@ -136,6 +139,7 @@ def build_services(
     messenger: MessengerApi | None = None,
     payments: PaymentGateway | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
+    woo: WooApi | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
@@ -168,4 +172,5 @@ def build_services(
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
         team=team,
+        woo=WooService(sessions, agents, team, woo or WooRest()),
     )

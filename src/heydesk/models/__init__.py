@@ -12,6 +12,7 @@ from heydesk.models.team_message import TeamMessage
 from heydesk.models.turn import Turn
 from heydesk.models.user import User
 from heydesk.models.visitor import Visitor
+from heydesk.models.woo_link import WooLink
 from heydesk.models.workspace import Workspace
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "Turn",
     "User",
     "Visitor",
+    "WooLink",
     "Workspace",
 ]

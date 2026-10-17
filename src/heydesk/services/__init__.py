@@ -13,6 +13,7 @@ from heydesk.services.sheets import SheetService
 from heydesk.services.team import TeamService
 from heydesk.services.users import UserService
 from heydesk.services.visitors import VisitorService
+from heydesk.services.woo import WooService
 
 
 @dataclass(frozen=True)
@@ -30,3 +31,4 @@ class Services:
     team: TeamService  # the owner's alerts, and the business's lines to a visitor
     users: UserService
     visitors: VisitorService
+    woo: WooService  # a shop's linked WooCommerce store (D75)

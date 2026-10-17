@@ -6,8 +6,8 @@ What's built, what's next, and how to know each step is done. How it works is in
 > **Now:** the product is built through D73 (15 Oct): four desks, web chat, voice, Telegram,
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
-> CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Next: the voice check,
-> then rehearsing the demo.
+> CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
+> store (D75), done 17 Oct. Next: the voice check, then rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -65,6 +65,26 @@ signup gets a 429, and a stored token isn't readable in the table, while Telegra
 **Done when:** `docker compose up` serves `/health` and the dev chat with the fake model, and CI
 is green on GitHub. [x] (16 Oct: compose locally; CI's check, audit and image green)
 
+### Day W1: a linked WooCommerce store (D75)
+
+- [x] `WooApi` port, `adapters/woo.py` and a fake; `products_from_woo` (fields, variations as
+      variants, another price another product)
+- [x] `woo_links`, and `woo_id`/`woo_sent` on `shop_orders` (one migration); `WooService`: link
+      (checks the key can read and write), get, unlink, sync (push, then pull), run; started in
+      the lifespan every `WOO_SYNC_MINUTES`
+- [x] Routes `/api/agent/woo` and `/api/agent/woo/sync`; a sheet or a store, not both;
+      `not_linked` covers the store
+- [x] Tests (the fake): the fields, an order placed is created in Woo with our prices, a cancel
+      moves it, a pull doesn't undo an order not written yet, a Read key is refused
+
+**Done when:** `scripts/check.sh` is green, and against the local WooCommerce in Docker: linking
+takes its products, an order placed in the dev chat shows in Woo's admin with its stock taken off,
+and cancelling it in HeyDesk puts the stock back in Woo. [x] (17 Oct: on WooCommerce 9.4.3 behind a
+local HTTPS proxy, a Read key was refused; O-101 for an L/Black, placed through the shop's tools with
+a scripted model and yes, showed in Woo's admin as #22 at our ৳2,510 and took Woo's count from 1 to 0;
+cancelled here, it was cancelled there and the count went back to 1. The dev chat with Maira and Jev
+is still to try)
+
 ## Still open
 
 Live checks that need a real account, a device or a person:
@@ -92,7 +112,7 @@ In `../heydesk-frontend`:
   last error of each Telegram or Messenger channel and linked sheet, on the business's page.
 - **Before real customers:** Postgres; "Forgot password?" by email; two-factor login and shorter
   sessions for admins.
-- **More sources for a shop's list:** WooCommerce after Google Sheets (D58).
+- **More sources for a shop's list:** Shopify, after Google Sheets (D58) and WooCommerce (D75).
 
 ## History
 

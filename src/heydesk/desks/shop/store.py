@@ -3,6 +3,7 @@
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
 them back, so two buyers can't get the last one."""
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ScalarResult, func, select
@@ -21,6 +22,7 @@ from heydesk.desks.shop.values import (
     counted,
     merge,
     products_from_csv,
+    take_off,
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
@@ -56,6 +58,54 @@ class ShopStore(Store):
             held = [line for lines in orders for line in lines]
             await self._replace(s, ProductRow, merge(found, ours, seen, held))
         return {p.code: counted(p) for p in found}
+
+    async def take_woo(self, found: list[Product]) -> None:
+        """The WooCommerce store's products become the list (D75), with Woo's count less the
+        orders that hold stock here but aren't in Woo yet. Photos are kept by code."""
+        ws = self.workspace_id
+        async with self.sessions() as s, s.begin():
+            photos = {
+                code: photos
+                for code, photos in await s.execute(
+                    select(ProductRow.code, ProductRow.photos).where(ProductRow.workspace_id == ws)
+                )
+            }
+            orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
+                select(ShopOrder.lines).where(
+                    ShopOrder.workspace_id == ws,
+                    ShopOrder.status.in_(HOLDS),
+                    ShopOrder.woo_id.is_(None),
+                )
+            )
+            held = [line for lines in orders for line in lines]
+            kept = [
+                take_off(p, [line for line in held if line["code"] == p.code]).model_copy(
+                    update={"photos": photos.get(p.code, [])}
+                )
+                for p in found
+            ]
+            await self._replace(s, ProductRow, kept)
+
+    async def orders_for_woo(self, since: datetime) -> list[ShopOrder]:
+        """The orders placed since the store was linked whose status changed since it was
+        last written there, oldest first (D75)."""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(ShopOrder)
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.created_at >= since,
+                    ShopOrder.status != ShopOrder.woo_sent,
+                )
+                .order_by(ShopOrder.created_at)
+            )
+            return list(rows)
+
+    async def woo_written(self, order_id: str, woo_id: int | None, status: str) -> None:
+        """The order is in Woo as `status` (ours) now."""
+        async with self.sessions() as s, s.begin():
+            order = await self._one(s, ShopOrder, order_id)
+            order.woo_id, order.woo_sent = woo_id, status
 
     async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
         """Takes the items out of stock and saves the order: `new`, or `unpaid` when its

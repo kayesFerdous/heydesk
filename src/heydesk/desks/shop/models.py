@@ -59,6 +59,9 @@ class ShopOrder(Taken, Payable, Base):
     address: Mapped[str] = mapped_column(String(300))
     note: Mapped[str] = mapped_column(default="")
     tracking: Mapped[str] = mapped_column(String(200), default="")  # the courier and its parcel id
+    # In a linked WooCommerce store (D75): its id there, and our status as last written ("" never)
+    woo_id: Mapped[int | None] = mapped_column(default=None)
+    woo_sent: Mapped[str] = mapped_column(String(20), default="")
 
     @property
     def due(self) -> int:

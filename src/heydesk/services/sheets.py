@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks import DESKS
 from heydesk.desks.csv_import import Suggestion
-from heydesk.errors import InvalidConfig, NotFound
-from heydesk.models import SheetLink
+from heydesk.errors import Conflict, InvalidConfig, NotFound
+from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
 from heydesk.services.imports import ImportService
@@ -76,6 +76,9 @@ class SheetService:
         its list. Unless `dry_run`, saves the link and takes the list from it, replacing a
         link already there."""
         agent = await self.agents.get(ws)
+        async with self.sessions() as s:
+            if await s.scalar(select(WooLink.id).where(WooLink.workspace_id == ws)):
+                raise Conflict("Unlink the WooCommerce store first: a list comes from one place.")
         text = await self._read(url)
         found = DESKS[agent.kind].read_list(text, mapping)
         if dry_run:

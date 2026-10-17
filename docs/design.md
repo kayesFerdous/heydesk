@@ -59,10 +59,10 @@ src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
 ├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore, PhotoIndex,
-│                        TelegramApi, MessengerApi, PaymentGateway, the sheet reader
+│                        TelegramApi, MessengerApi, PaymentGateway, the sheet reader, WooApi
 ├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM, JevDecider,
 │                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
-│                        Graph API, SSLCommerz, Google Sheets' CSV (D58)
+│                        Graph API, SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
@@ -74,7 +74,7 @@ src/heydesk/
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
-│                        knowledge, photos (D57), imports (D53), sheets (D58), channels (Telegram and
+│                        knowledge, photos (D57), imports (D53), sheets (D58), woo (D75), channels (Telegram and
 │                        Messenger, D42, D60), team (the owner's alerts, D43), payments (D47)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2)
@@ -357,6 +357,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
 | `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token; encrypted, D74), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
+| `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
 | `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
@@ -366,7 +367,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking. Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -408,6 +409,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57 |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
+| GET/PUT/DELETE, POST | `/api/agent/woo`, `/api/agent/woo/sync` | The shop's linked WooCommerce store: its state; link it with a Read/Write key; unlink it; sync now (D75) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with its id and a Page access token; disconnect it (D60, D61) |
 | GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
@@ -561,7 +563,7 @@ owner fills in the rest. An upload never fails because of the AI. Turning "৳1,
 **Later sources** (Shopify, a POS) are another step 1: something that returns rows as
 `{their field: text}`. Their field names are the same for every store, so their mapping is
 written once in code and the owner never sees step 2. Nothing in step 3 changes. The first
-one is a Google Sheet that stays linked (D58, below).
+one is a Google Sheet that stays linked (D58, below); the second, a WooCommerce store (D75).
 
 ### A linked Google Sheet (D58)
 
@@ -656,6 +658,94 @@ every SHEET_SYNC_MINUTES (5):
 | GET | `/api/agent/sheet` | The link, `synced_at`, `problem` |
 | DELETE | `/api/agent/sheet` | Stops syncing. The list stays as it is and can be edited again |
 | POST | `/api/agent/sheet/sync` | Syncs now; returns what GET does |
+
+### A linked WooCommerce store (D75)
+
+A shop with a website usually runs it on WooCommerce. Linked, its products are the shop's list,
+as with a sheet, and **our orders are written into WooCommerce**, so its stock takes them off
+and the owner sees every order in one place, the website's and the agent's. Shop desk only.
+
+```
+owner: pastes the store's address, a Read/Write key and its secret ─► PUT /api/agent/woo
+every WOO_SYNC_MINUTES (2):
+  push: each order whose status changed since it was last written ─► create or update it in Woo
+  pull: Woo's published products ─► same as last time? stop
+                                  ─► our list, less what's held by orders not in Woo yet
+```
+
+- **The link.** The owner makes a key in WooCommerce (*Settings → Advanced → REST API → Add
+  key*, permissions **Read/Write**) and pastes the store's address (`https://…`, nothing else
+  is taken: the key goes in a header) with the key and secret. Linking checks both: listing
+  products (a 401: "check the key and secret"), and `POST /orders` with a status Woo doesn't
+  know, which a Read/Write key gets a 400 for and a Read key a 401 ("make the key Read/Write"),
+  so nothing is written. The secret is encrypted like the other secrets (D74). A shop has a
+  sheet or a store, not both: linking one while the other is linked is a 409.
+- **The API** is `/wp-json/wc/v3/` with the key as Basic auth, over HTTPS (Woo takes it on no
+  other address: not `?rest_route=`, not plain HTTP). `adapters/woo.py` (httpx, 10s) behind the
+  `WooApi` port: `products(store)` (published only, 100 a page, each variable product's
+  variations fetched with it), `can_write(store)` (the check above), `create_order(store, body)
+  -> id`, `set_status(store, id, status)`. It raises `WooUnreachable` with a line for the owner. Tests use a fake.
+- **Their fields are the same in every store, so the match is in code** (`products_from_woo`,
+  `shop/values.py`), and the owner never sees a mapping:
+
+  | Ours | Woo's |
+  |---|---|
+  | code | `sku`, else `woo-<id>` |
+  | name, category | `name`; the first of `categories` |
+  | description | `short_description`, else `description`, without its HTML; other attributes ("Fabric: Linen") added as a line |
+  | price, was_price | `price`; `regular_price` when it's more than `price` (on sale, D54) |
+  | sizes, colours | the attribute named Size, and the one named Colour or Color (any case) |
+  | stock | `stock_quantity` when `manage_stock`, never below 0; else 0 when `outofstock`, else not counted |
+  | variants | a variable product's variations: `{size, colour, stock}` each, the same way (D56) |
+
+  A variable product whose variations cost differently is one product per price, as rows are
+  grouped (D59): the cheapest keeps the name, the others are named with their sizes or colours
+  ("Linen Panjabi (XXL)") and coded `<code>-<price>`. Photos stay ours, kept by code, as with a
+  sheet: the owner adds them in HeyDesk (D57).
+  `woo_links.ids` keeps each code's Woo ids (`{code: {"id": 11, "variations": {"M|White": 15}}}`),
+  for writing its order lines.
+- **Woo's stock is the count.** Woo takes off its website's orders, and ours once they're
+  written, and puts back what's cancelled (seen on WooCommerce 9.4: an order created `on-hold`
+  or `processing` takes its stock once; `cancelled` puts it back). So the pull takes Woo's
+  count as it is, with no `seen` and no shelf sum (D58's `merge` isn't used), **less the orders
+  that hold stock here but aren't in Woo yet** (`HOLDS` with no `woo_id`, `take_off`). That's
+  what keeps a pull from undoing an order placed a minute ago. `place_order` takes stock here
+  as always, so two buyers in the same minute still can't get the last one.
+- **Push, then pull.** Each sync first writes the orders that changed: `shop_orders.woo_sent`
+  is our status as last written ("" never). An order placed since the link was made whose
+  `status != woo_sent` is created (no `woo_id` yet) or moved:
+
+  ```python
+  WOO_STATUS = {  # ours → Woo's. Every one but returned holds or settles Woo's stock
+      "unpaid": "on-hold", "new": "processing", "confirmed": "processing",
+      "shipped": "processing", "delivered": "completed", "cancelled": "cancelled",
+  }  # returned: left as it is in Woo; the owner restocks there, as here
+  ```
+
+  An order cancelled before it was ever written is just marked sent. The body is the buyer as
+  billing and shipping (`first_name` the whole name, `phone`, `address_1` the address, `city`
+  the zone), `payment_method: cod`, `customer_note` the note, each line with its product and
+  variation id and **our** `subtotal`/`total` (the price the buyer said yes to, rule 1; Woo
+  keeps it), the delivery charge as a shipping line, and `meta_data` with the order's code
+  (`O-106`) and, when it was paid online, the amount and reference. Writing happens only in
+  the sync, never in the tool, so a slow or down store never slows a chat: an order shows in
+  Woo's admin at most `WOO_SYNC_MINUTES` later.
+- **A problem is noted and the owner hears once**, as with a sheet (`problem`,
+  `TeamService.notify`): the store can't be reached, the key stopped working, or an order
+  couldn't be written ("O-106 wasn't added to WooCommerce: …"). The orders not written are tried
+  again next sync, and the list stays as it was until a pull works. The next clean sync clears it.
+- **While linked, the store is the list:** the same 409 `sheet_linked` (`Store.not_linked`), and
+  `PUT /api/products` takes only photos. The owner moves orders in HeyDesk as before; each move
+  reaches Woo with the next push. A change made to our order in Woo's admin isn't read back.
+
+**Routes:**
+
+| Method | Path | What |
+|---|---|---|
+| PUT | `/api/agent/woo` | `{url, key, secret}` → checks the key (above), saves the link and takes the list; answers like GET |
+| GET | `/api/agent/woo` | The store's address, `synced_at`, `problem`, how many products. Never the key or secret |
+| DELETE | `/api/agent/woo` | Stops syncing. The list stays and can be edited again; orders already in Woo stay there |
+| POST | `/api/agent/woo/sync` | Syncs now (push, then pull); returns what GET does |
 
 ### Telegram (D42)
 
@@ -907,4 +997,5 @@ version handles them.
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
+| WooCommerce: its webhooks, a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | Every `WOO_SYNC_MINUTES` the sync pushes and pulls (a webhook needs a public address and a check of its signature); HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

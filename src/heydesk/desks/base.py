@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import PaymentAccount, SheetLink, TeamMessage
+from heydesk.models import PaymentAccount, SheetLink, TeamMessage, WooLink
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -34,7 +34,9 @@ class SheetLinked(Conflict):
     code = "sheet_linked"
 
     def __init__(self) -> None:
-        super().__init__("Your list comes from your Google Sheet: change it there.")
+        super().__init__(
+            "Your list comes from your Google Sheet or WooCommerce store: change it there."
+        )
 
 
 class TooLate(ValueError):
@@ -149,15 +151,18 @@ class Store:
         raise NotFound("This agent has no list to keep in a sheet.")
 
     async def linked(self) -> bool:
-        """A Google Sheet is the list (D58)."""
+        """A Google Sheet (D58) or a WooCommerce store (D75) is the list."""
         async with self.sessions() as s:
-            found = await s.scalar(
-                select(SheetLink.id).where(SheetLink.workspace_id == self.workspace_id)
-            )
-        return found is not None
+            for table in (SheetLink, WooLink):
+                found = await s.scalar(
+                    select(table.id).where(table.workspace_id == self.workspace_id)
+                )
+                if found is not None:
+                    return True
+        return False
 
     async def not_linked(self) -> None:
-        """409 while a Google Sheet is the list: an edit here would be undone by it (D58)."""
+        """409 while a sheet or a store is the list: an edit here would be undone by it (D58)."""
         if await self.linked():
             raise SheetLinked()
 
