@@ -561,5 +561,6 @@ def woo_category(item: dict[str, Any]) -> str:
 
 
 def plain_text(html_text: str) -> str:
-    """Woo's HTML as one line of plain text: "<p>Soft &amp; light</p>" → "Soft & light"."""
-    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", html_text)).split())
+    """Woo's HTML as one line of plain text: "<p>Soft <b>linen</b>.</p>" → "Soft linen."."""
+    words = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", html_text)).split())
+    return re.sub(r" ([.,;:!?])", r"\1", words)  # a tag ended right before it

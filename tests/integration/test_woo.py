@@ -41,7 +41,7 @@ def tupi(stock: int = 12) -> dict[str, Any]:
         "price": "300",
         "regular_price": "350",
         "short_description": "",
-        "description": "<p>White cotton <b>tupi</b> &amp; soft.</p>",
+        "description": "<p>White cotton <b>tupi</b>, &amp; soft.</p>",
         "categories": [{"name": "Uncategorized"}],
         "attributes": [],
         "manage_stock": True,
@@ -126,7 +126,7 @@ def test_woos_fields_become_ours() -> None:
     assert [p.code for p in found] == ["TP-1", "LP-1", "LP-1-2650"]
     tupi_, linen, xxl = found
     assert (tupi_.price, tupi_.was_price, tupi_.stock) == (30000, 35000, 12)
-    assert (tupi_.description, tupi_.category) == ("White cotton tupi & soft.", "Products")
+    assert (tupi_.description, tupi_.category) == ("White cotton tupi, & soft.", "Products")
     assert linen.category == "Panjabi & Kurta"
     assert linen.description == "Soft linen for Eid. Fabric: Linen."
     assert (linen.sizes, linen.colours) == (["M", "L"], ["White", "Black"])
