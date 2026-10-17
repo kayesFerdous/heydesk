@@ -681,7 +681,9 @@ every WOO_SYNC_MINUTES (2):
   so nothing is written. The secret is encrypted like the other secrets (D74). A shop has a
   sheet or a store, not both: linking one while the other is linked is a 409.
 - **The API** is `/wp-json/wc/v3/` with the key as Basic auth, over HTTPS (Woo takes it on no
-  other address: not `?rest_route=`, not plain HTTP). `adapters/woo.py` (httpx, 10s) behind the
+  other address: not `?rest_route=`, not plain HTTP). In development only, `http://localhost`
+  and `http://127.0.0.1` are taken too: the test shop in `dev/woo-shop` counts its API calls as
+  HTTPS, so no proxy or certificate is needed (D76). `adapters/woo.py` (httpx, 10s) behind the
   `WooApi` port: `products(store)` (published only, 100 a page, each variable product's
   variations fetched with it), `can_write(store)` (the check above), `create_order(store, body)
   -> id`, `set_status(store, id, status)`. It raises `WooUnreachable` with a line for the owner. Tests use a fake.

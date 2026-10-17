@@ -172,5 +172,5 @@ def build_services(
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
         team=team,
-        woo=WooService(sessions, agents, team, woo or WooRest()),
+        woo=WooService(sessions, agents, team, woo or WooRest(), settings.APP_ENV == "development"),
     )

@@ -1,0 +1,22 @@
+# A test WooCommerce shop for trying HeyDesk's WooCommerce link (D75). Not part of the app.
+#   docker compose up -d     start it (the first time, then run ./setup.sh once)
+#   docker compose stop      stop it; everything is kept
+#   docker compose down -v   delete it and all its data
+services:
+  db: # the database WordPress keeps everything in
+    image: mariadb:11
+    environment: {MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: wp, MARIADB_USER: wp, MARIADB_PASSWORD: wp}
+    volumes: [db:/var/lib/mysql] # kept when the container stops
+    restart: unless-stopped
+  wp: # WordPress and WooCommerce, served by PHP's own web server on :8088
+    image: wordpress:cli-php8.2
+    depends_on: [db]
+    user: "0:0"
+    working_dir: /var/www/html
+    entrypoint: ["php", "-S", "0.0.0.0:8088", "-t", "/var/www/html"]
+    ports: ["8088:8088"]
+    volumes: [wp:/var/www/html] # WordPress's files, kept when the container stops
+    restart: unless-stopped
+volumes:
+  db: {}
+  wp: {}

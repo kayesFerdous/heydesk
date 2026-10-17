@@ -86,9 +86,10 @@ class FakeWoo:
         self.orders: dict[int, dict[str, Any]] = {}
         self.writes = True  # a Read/Write key
         self.down = ""  # a problem for every call
+        self.url = URL  # the store's address
 
     async def products(self, store: WooStore) -> list[dict[str, Any]]:
-        assert (store.url, store.key, store.secret) == (URL, "ck_1", "cs_1")
+        assert (store.url, store.key, store.secret) == (self.url, "ck_1", "cs_1")
         self._check()
         return self.items
 
@@ -141,13 +142,20 @@ def test_woos_fields_become_ours() -> None:
     assert ids["LP-1-2650"]["variations"] == {"XXL|Black": 17}
 
 
-async def test_a_read_key_or_a_plain_address_is_refused(world: World) -> None:
+async def test_a_read_key_or_a_plain_address_is_refused_but_localhost_in_development(
+    world: World,
+) -> None:
     await world.agent("shop")
     woo = FakeWoo()
     world.services.woo.api = woo
     with pytest.raises(InvalidConfig, match="https"):
         await world.services.woo.link(DEV_WORKSPACE_ID, "http://shop.example.com", "ck_1", "cs_1")
-    woo.writes = False
+    world.services.woo.local_http = True  # development: the test shop on this machine
+    woo.url = "http://localhost:8088"
+    await world.services.woo.link(DEV_WORKSPACE_ID, "http://localhost:8088", "ck_1", "cs_1")
+    with pytest.raises(InvalidConfig, match="https"):
+        await world.services.woo.link(DEV_WORKSPACE_ID, "http://shop.example.com", "ck_1", "cs_1")
+    woo.url, woo.writes = URL, False
     with pytest.raises(InvalidConfig, match="Read/Write"):
         await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
 

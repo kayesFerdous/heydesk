@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -36,6 +37,7 @@ WOO_STATUS = {  # ours → Woo's. Every one but returned holds or settles Woo's 
 }  # returned: left as it is in Woo; the owner restocks there, as here
 READ_WRITE = "Make the key Read/Write in WooCommerce: we write your orders there."
 ONE_LIST = "Unlink the Google Sheet first: a shop's list comes from one place."
+LOCAL = ("localhost", "127.0.0.1")  # in development, the test shop in dev/woo-shop over plain HTTP
 
 
 def amount(minor: int) -> str:
@@ -93,11 +95,13 @@ class WooService:
         agents: AgentService,
         team: TeamService,
         api: WooApi,
+        local_http: bool = False,
     ) -> None:
         self.sessions = sessions
         self.agents = agents
         self.team = team
         self.api = api
+        self.local_http = local_http  # development only: http://localhost is taken too
 
     async def link(self, ws: str, url: str, key: str, secret: str) -> WooLink:
         """Checks the key can read the products and write orders (without writing one),
@@ -106,7 +110,8 @@ class WooService:
         if agent.kind != "shop":
             raise NotFound("Only a shop can link a WooCommerce store.")
         url = url.strip().rstrip("/")
-        if not url.startswith("https://"):
+        local = self.local_http and urlsplit(url).hostname in LOCAL
+        if not url.startswith("https://") and not local:
             raise InvalidConfig({"url": "Paste your store's address: https://…"})
         store = WooStore(url, key.strip(), secret.strip())
         async with self.sessions() as s:

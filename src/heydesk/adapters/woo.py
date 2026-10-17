@@ -1,7 +1,8 @@
 """WooCommerce's REST API (`/wp-json/wc/v3/`) over httpx, behind the `WooApi` port (D75).
 
 The key and secret go as Basic auth, which Woo takes only over HTTPS, and only on the
-`/wp-json/` address (not `?rest_route=`).
+`/wp-json/` address (not `?rest_route=`). The test shop in dev/woo-shop is plain HTTP and
+counts its API calls as HTTPS, so development can link http://localhost (D76).
 """
 
 from typing import Any
