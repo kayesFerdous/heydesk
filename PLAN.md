@@ -6,7 +6,8 @@ What's built, what's next, and how to know each step is done. How it works is in
 > **Now:** the product is built through D73 (15 Oct): four desks, web chat, voice, Telegram,
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
-> CI) done 16 Oct. Next: the open live checks below, then rehearsing the demo.
+> CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Next: the voice check,
+> then rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -68,11 +69,14 @@ is green on GitHub. [x] (16 Oct: compose locally; CI's check, audit and image gr
 
 Live checks that need a real account, a device or a person:
 
-- [ ] Telegram: an order placed in a real bot is saved only after a yes (D42); the owner's reply
+- [x] Telegram: an order placed in a real bot is saved only after a yes (D42); the owner's reply
       to an alert reaches a web and a Telegram visitor (D43); a product's photo gets "is it this
-      one?" (D63)
-- [ ] Messenger: a real Page answers, and a screenshot of a product gets its card (D60, D62).
+      one?" (D63) (17 Oct: "na thak" saved nothing, a yes saved O-106 and O-107; a photo matched
+      the Linen Panjabi; the owner's replies reached both visitors)
+- [x] Messenger: a real Page answers, and a screenshot of a product gets its card (D60, D62).
       Needs a Meta app, its secret and verify token in `.env`, a Page token and a tunnel
+      (17 Oct: the Page answered as the shop; a screenshot matched the Linen Panjabi, and its card
+      showed above the text)
 - [ ] Voice: the filler is heard while an order is saved; talking over it stops it; P50/P95 of
       the first sound in the README (`scripts/latency.py`)
 - [ ] Demo: two clean rehearsals in a row, and a backup video
