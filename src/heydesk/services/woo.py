@@ -270,7 +270,8 @@ class WooService:
     async def run(self, every: float) -> None:
         """Every `every` seconds, until cancelled (the app's lifespan starts it), syncs each
         store without webhooks, and each with them once every SAFETY_SECONDS, checking its
-        webhooks too. One store failing doesn't stop the others."""
+        webhooks too: a store linked without them (before D78, or with no public address
+        then) gets them now. One store failing doesn't stop the others."""
         while True:
             await asyncio.sleep(every)
             async with self.sessions() as s:
@@ -282,24 +283,26 @@ class WooService:
                 self.checked[ws] = time.monotonic()
                 try:
                     await self.sync(ws)
-                    if hooks:
-                        await self.keep_hooks(ws)
+                    await self.keep_hooks(ws)
                 except Exception:
                     log.exception("woo sync failed", extra={"workspace_id": ws})
 
     async def keep_hooks(self, ws: str) -> None:
         """Puts back our webhooks as they should be: one Woo turned off after failed posts is
         turned on, one pointing at an old address (a new tunnel) is pointed here, and one
-        deleted in Woo's admin is made again."""
+        deleted in Woo's admin is made again; a link with none gets them all. Nothing to do
+        with no public address."""
+        if not self.hook_base:
+            return
         link = await self.get(ws)
         store = WooStore(link.url, link.key, link.secret)
         url = f"{self.hook_base}/{ws}"
         hooks = dict(link.hooks)
+        secret = link.hook_secret or secrets.token_urlsafe(32)
         try:
             for topic in TOPICS:
                 found = await self.api.webhook(store, hooks[topic]) if topic in hooks else None
                 if found is None:
-                    secret = link.hook_secret or ""
                     hooks[topic] = await self.api.add_webhook(store, topic, url, secret)
                 elif found.get("status") != "active" or found.get("delivery_url") != url:
                     changes = {"status": "active", "delivery_url": url}
@@ -310,7 +313,8 @@ class WooService:
         finally:
             if hooks != link.hooks:
                 async with self.sessions() as s, s.begin():
-                    (await s.get_one(WooLink, link.id)).hooks = hooks  # a new dict, so it's seen
+                    saved = await s.get_one(WooLink, link.id)
+                    saved.hooks, saved.hook_secret = hooks, secret  # a new dict, so it's seen
 
     async def _add_hooks(self, store: WooStore, ws: str) -> tuple[dict[str, int], str | None]:
         """Makes our webhooks in the store. With no public address, or a store that won't

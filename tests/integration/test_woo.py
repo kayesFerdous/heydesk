@@ -336,3 +336,17 @@ async def test_the_safety_sync_puts_back_webhooks_woo_turned_off(world: World) -
     assert {h["status"] for h in woo.hooks.values()} == {"active"}
     assert {h["delivery_url"] for h in woo.hooks.values()} == {f"{HOOKS}/{DEV_WORKSPACE_ID}"}
     assert third not in (await service.get(DEV_WORKSPACE_ID)).hooks.values()
+
+
+async def test_a_store_linked_without_webhooks_gets_them_at_the_safety_sync(world: World) -> None:
+    await world.agent("shop")
+    woo = FakeWoo()
+    service = world.services.woo
+    service.api, service.hook_base = woo, ""  # no public address yet
+    await service.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
+    assert woo.hooks == {}
+    service.hook_base = HOOKS
+    await service.keep_hooks(DEV_WORKSPACE_ID)
+    link = await service.get(DEV_WORKSPACE_ID)
+    assert sorted(link.hooks) == sorted(TOPICS) and link.hook_secret
+    assert {h["secret"] for h in woo.hooks.values()} == {link.hook_secret}

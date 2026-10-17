@@ -752,7 +752,8 @@ sync:
   Woo sends them from its own queue, so one can be late, and turns one off after 5 failed
   posts; so every 30 minutes a **safety sync** runs anyway, and `keep_hooks` turns a webhook
   back on, points one at a new address (a new tunnel) and makes again one deleted in Woo's
-  admin. Without an `https://` `PUBLIC_URL` (Woo won't post to localhost) no webhooks are
+  admin. A store linked without webhooks (before D78, or before there was a public address)
+  gets them all at its next sync (D79). Without an `https://` `PUBLIC_URL` (Woo won't post to localhost) no webhooks are
   made and the store is synced every `WOO_SYNC_MINUTES`, as before.
 - **A problem is noted and the owner hears once**, as with a sheet (`problem`,
   `TeamService.notify`): the store can't be reached, the key stopped working, or an order

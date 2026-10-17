@@ -29,6 +29,15 @@ foreach (['M-White' => 4, 'L-White' => 0, 'XL-White' => 2, 'M-Black' => 5, 'L-Bl
   $var->save();
 }
 
+// Cash on delivery and one delivery charge everywhere, so the website's own checkout works
+update_option('woocommerce_cod_settings', ['enabled' => 'yes', 'title' => 'Cash on delivery',
+  'description' => 'Pay when it arrives.', 'enable_for_methods' => [], 'enable_for_virtual' => 'yes']);
+$zone = new WC_Shipping_Zone(0);  // "Locations not covered by your other zones": everywhere here
+if (!$zone->get_shipping_methods()) {
+  $method = $zone->add_shipping_method('flat_rate');
+  update_option("woocommerce_flat_rate_{$method}_settings", ['title' => 'Delivery', 'cost' => '100', 'tax_status' => 'none']);
+}
+
 // Two API keys for HeyDesk: one Read/Write (what linking needs), one Read only (refused)
 global $wpdb;
 foreach (['read_write', 'read'] as $permissions) {
