@@ -151,8 +151,14 @@ def build_services(
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
     imports = ImportService(llm, settings.MODEL)
+    public = settings.PUBLIC_URL.rstrip("/")
     woo_service = WooService(
-        sessions, agents, team, woo or WooRest(), settings.APP_ENV == "development"
+        sessions,
+        agents,
+        team,
+        woo or WooRest(),
+        local_http=settings.APP_ENV == "development",
+        hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
     conversations = ConversationService(
         sessions, runtime, knowledge, photos, team, visitors, woo_service, settings, now

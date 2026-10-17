@@ -1,5 +1,5 @@
-"""A shop's WooCommerce store (D75): its products, read every few minutes, and our orders,
-written into it so its stock takes them off."""
+"""A shop's WooCommerce store (D75): its products, read when its webhooks say something
+changed (D78), and our orders, written into it so its stock takes them off."""
 
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -32,3 +32,21 @@ class WooApi(Protocol):
         ...
 
     async def set_status(self, store: WooStore, order_id: int, status: str) -> None: ...
+
+    async def add_webhook(self, store: WooStore, topic: str, url: str, secret: str) -> int:
+        """Asks Woo to post to `url` when `topic` happens ("product.updated"), signed with
+        `secret`; returns the webhook's id."""
+        ...
+
+    async def webhook(self, store: WooStore, webhook_id: int) -> dict[str, Any] | None:
+        """The webhook as Woo gives it (its `status`: "active", or "disabled" after 5 failed
+        posts; its `delivery_url`), or None when it's gone."""
+        ...
+
+    async def update_webhook(
+        self, store: WooStore, webhook_id: int, changes: dict[str, Any]
+    ) -> None: ...
+
+    async def delete_webhook(self, store: WooStore, webhook_id: int) -> None:
+        """Gone already is fine."""
+        ...

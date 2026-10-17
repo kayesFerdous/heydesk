@@ -1,12 +1,14 @@
 """A shop's list kept in its WooCommerce store, and our orders written there (D75): the owner
-links it once with a Read/Write key, and it's synced every few minutes."""
+links it once with a Read/Write key, and the store's webhooks tell us when to sync (D78)."""
 
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, Workspace
+from heydesk.errors import NotFound
 from heydesk.models import WooLink
 
 router = APIRouter(tags=["woo"])
@@ -34,7 +36,7 @@ def woo_out(link: WooLink) -> WooOut:
 @router.put("/api/agent/woo")
 async def link_woo(body: WooIn, ws: Workspace, services: Svc) -> WooOut:
     """Checks the key, links the store and takes the products from it now. Then our orders are
-    written there, and it's synced every few minutes."""
+    written there, and it's synced when its webhooks say something changed."""
     return woo_out(await services.woo.link(ws, body.url, body.key, body.secret))
 
 
@@ -53,3 +55,20 @@ async def sync_woo(ws: Workspace, services: Svc) -> WooOut:
 async def unlink_woo(ws: Workspace, services: Svc) -> None:
     """Stops syncing. The list stays and can be edited here again."""
     await services.woo.unlink(ws)
+
+
+@router.post("/api/woo/hook/{ws}", include_in_schema=False)
+async def woo_webhook(
+    ws: str,
+    request: Request,
+    services: Svc,
+    signature: Annotated[str, Header(alias="X-WC-Webhook-Signature")] = "",
+) -> dict[str, bool]:
+    """A linked store says a product or an order changed: we sync in a moment. Woo's ping when
+    a webhook is made has no signature and needs only a 200."""
+    if not signature:
+        return {"ok": True}
+    if not await services.woo.hook_signed(ws, await request.body(), signature):
+        raise NotFound("Not found")
+    services.woo.sync_soon(ws)
+    return {"ok": True}

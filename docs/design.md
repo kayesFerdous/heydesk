@@ -410,6 +410,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | GET/PUT/DELETE, POST | `/api/agent/woo`, `/api/agent/woo/sync` | The shop's linked WooCommerce store: its state; link it with a Read/Write key; unlink it; sync now (D75) |
+| POST | `/api/woo/hook/{workspace_id}` | A linked store's webhook: checked by `X-WC-Webhook-Signature` with the link's secret, a sync started 2 seconds later (D78) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
 | GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with its id and a Page access token; disconnect it (D60, D61) |
 | GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
@@ -426,7 +427,7 @@ audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, defau
 conversations; `at` for the audit log). Fewer than `limit` rows means it was the
 last page.
 
-Everything under `/api` except chat, desks, auth and the Telegram webhook needs
+Everything under `/api` except chat, desks, auth and the Telegram, Messenger and Woo webhooks needs
 `Authorization: Bearer <token>`.
 
 **Two roles** (D23). An **owner** belongs to one business: the token says which
@@ -667,8 +668,11 @@ and the owner sees every order in one place, the website's and the agent's. Shop
 
 ```
 owner: pastes the store's address, a Read/Write key and its secret ─► PUT /api/agent/woo
+  ─► we make 5 webhooks in the store with that key (D78)
 a chat turn saves or changes an order ─► push now, in the background (D77)
-every WOO_SYNC_MINUTES (2):
+a webhook post (a product or an order changed in Woo) ─► sync 2 seconds later
+every 30 minutes (every WOO_SYNC_MINUTES when there are no webhooks): sync, and put back the webhooks
+sync:
   push: each order whose status changed since it was last written ─► create or update it in Woo
   pull: Woo's published products ─► same as last time? stop
                                   ─► our list, less what's held by orders not in Woo yet
@@ -737,6 +741,19 @@ every WOO_SYNC_MINUTES (2):
   time, so the sync and a turn never write the same order twice. A push that fails says
   nothing: the sync tries again and tells the owner. A move the owner makes in HeyDesk is
   written by the sync, at most `WOO_SYNC_MINUTES` later.
+- **Woo's webhooks say when to sync** (D78). Linking makes five in the store with the owner's
+  key, so the owner does nothing more: `product.created`, `product.updated`, `product.deleted`,
+  `order.created`, `order.updated`, each posting to `PUBLIC_URL/api/woo/hook/{workspace id}`
+  and signed with a secret made for the link (`hook_secret`, encrypted; the ids in `hooks`).
+  A post is checked (`X-WC-Webhook-Signature`: base64 of its HMAC-SHA256) and answered at
+  once; the sync starts 2 seconds later, and the posts that come meanwhile (an order and each
+  product it moved) join it. The body isn't read: a post only means "something changed".
+  Woo's ping when a webhook is made has no signature and gets a 200. Unlinking deletes them.
+  Woo sends them from its own queue, so one can be late, and turns one off after 5 failed
+  posts; so every 30 minutes a **safety sync** runs anyway, and `keep_hooks` turns a webhook
+  back on, points one at a new address (a new tunnel) and makes again one deleted in Woo's
+  admin. Without an `https://` `PUBLIC_URL` (Woo won't post to localhost) no webhooks are
+  made and the store is synced every `WOO_SYNC_MINUTES`, as before.
 - **A problem is noted and the owner hears once**, as with a sheet (`problem`,
   `TeamService.notify`): the store can't be reached, the key stopped working, or an order
   couldn't be written ("O-106 wasn't added to WooCommerce: …"). The orders not written are tried
@@ -753,6 +770,7 @@ every WOO_SYNC_MINUTES (2):
 | GET | `/api/agent/woo` | The store's address, `synced_at`, `problem`, how many products. Never the key or secret |
 | DELETE | `/api/agent/woo` | Stops syncing. The list stays and can be edited again; orders already in Woo stay there |
 | POST | `/api/agent/woo/sync` | Syncs now (push, then pull); returns what GET does |
+| POST | `/api/woo/hook/{workspace_id}` | Woo's webhooks: a signed post starts a sync 2 seconds later; no login (D78) |
 
 ### Telegram (D42)
 
@@ -1004,5 +1022,5 @@ version handles them.
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
-| WooCommerce: its webhooks, a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | Every `WOO_SYNC_MINUTES` the sync pushes and pulls (a webhook needs a public address and a check of its signature); HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
+| WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

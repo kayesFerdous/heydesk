@@ -24,4 +24,8 @@ class WooLink(Base):
     checked: Mapped[str] = mapped_column(String(64), default="")  # SHA-256 of the last products
     synced_at: Mapped[datetime | None] = mapped_column(default=None)  # the last good sync
     problem: Mapped[str] = mapped_column(default="")  # empty: fine
+    # the webhooks we made in the store, {topic: id}, and their signing secret (D78). None:
+    # there was no public address, so the store is polled every WOO_SYNC_MINUTES instead
+    hooks: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    hook_secret: Mapped[str | None] = mapped_column(Encrypted(), default=None)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)  # orders from then are written

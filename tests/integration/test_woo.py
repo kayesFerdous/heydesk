@@ -3,6 +3,9 @@ fields become ours, a Read key is refused, an order placed here is created in Wo
 prices and moved when it moves, and a pull doesn't undo an order not in Woo yet."""
 
 import asyncio
+import base64
+import hashlib
+import hmac
 from typing import Any
 
 import pytest
@@ -13,7 +16,7 @@ from heydesk.desks.shop.values import products_from_woo
 from heydesk.errors import InvalidConfig
 from heydesk.ports.woo import WooStore, WooUnreachable
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from heydesk.services.woo import WOO_STATUS
+from heydesk.services.woo import TOPICS, WOO_STATUS
 from tests.conftest import SEEDS, World
 from tests.integration.test_shop import buy, orders, stock
 
@@ -88,6 +91,7 @@ class FakeWoo:
         self.writes = True  # a Read/Write key
         self.down = ""  # a problem for every call
         self.url = URL  # the store's address
+        self.hooks: dict[int, dict[str, Any]] = {}  # the webhooks made in it
 
     async def products(self, store: WooStore) -> list[dict[str, Any]]:
         assert (store.url, store.key, store.secret) == (self.url, "ck_1", "cs_1")
@@ -109,6 +113,23 @@ class FakeWoo:
         if status == "cancelled":
             self._take(self.orders[order_id], +1)
         self.orders[order_id]["status"] = status
+
+    async def add_webhook(self, store: WooStore, topic: str, url: str, secret: str) -> int:
+        made = max(self.hooks, default=49) + 1
+        self.hooks[made] = {"topic": topic, "delivery_url": url, "secret": secret}
+        self.hooks[made]["status"] = "active"
+        return made
+
+    async def webhook(self, store: WooStore, webhook_id: int) -> dict[str, Any] | None:
+        return self.hooks.get(webhook_id)
+
+    async def update_webhook(
+        self, store: WooStore, webhook_id: int, changes: dict[str, Any]
+    ) -> None:
+        self.hooks[webhook_id] |= changes
+
+    async def delete_webhook(self, store: WooStore, webhook_id: int) -> None:
+        self.hooks.pop(webhook_id, None)
 
     def _check(self) -> None:
         if self.down:
@@ -221,7 +242,7 @@ async def test_an_order_is_in_woo_as_soon_as_it_is_saved(world: World) -> None:
 
 async def pushed(world: World) -> None:
     """Waits for the pushes the turns started in the background."""
-    await asyncio.gather(*world.services.woo.pushing)
+    await asyncio.gather(*world.services.woo.tasks)
 
 
 async def test_a_pull_doesnt_undo_an_order_not_in_woo_yet(world: World) -> None:
@@ -266,3 +287,52 @@ async def test_while_a_store_is_linked_the_list_is_changed_there(
     assert (await client.delete("/api/agent/woo")).status_code == 204
     assert (await client.get("/api/agent/woo")).status_code == 404
     assert (await client.post("/api/products/import", json=csv)).status_code == 200
+
+
+HOOKS = "https://heydesk.example.com/api/woo/hook"
+
+
+async def test_woos_webhooks_are_made_on_linking_and_a_signed_one_syncs(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    woo = FakeWoo()
+    service = app.state.services.woo
+    service.api, service.hook_base, service.hook_delay = woo, HOOKS, 0
+    await client.put("/api/agent/woo", json={"url": URL, "key": "ck_1", "secret": "cs_1"})
+    assert sorted(h["topic"] for h in woo.hooks.values()) == sorted(TOPICS)
+    [secret] = {h["secret"] for h in woo.hooks.values()}
+    assert {h["delivery_url"] for h in woo.hooks.values()} == {f"{HOOKS}/{DEV_WORKSPACE_ID}"}
+
+    woo.items[0] = tupi(stock=4)  # sold on the website
+    body = b'{"id": 10}'
+    signed = base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
+    path = f"/api/woo/hook/{DEV_WORKSPACE_ID}"
+    forged = await client.post(path, content=body, headers={"X-WC-Webhook-Signature": "abc"})
+    assert forged.status_code == 404
+    assert (await client.post(path, content=b"webhook_id=50")).status_code == 200  # Woo's ping
+    sent = await client.post(path, content=body, headers={"X-WC-Webhook-Signature": signed})
+    assert sent.status_code == 200
+    await asyncio.gather(*service.tasks)
+    [tupi_now] = [p for p in (await client.get("/api/products")).json() if p["code"] == "TP-1"]
+    assert tupi_now["stock"] == 4
+
+    await client.delete("/api/agent/woo")
+    assert woo.hooks == {}  # unlinking deletes them
+
+
+async def test_the_safety_sync_puts_back_webhooks_woo_turned_off(world: World) -> None:
+    await world.agent("shop")
+    woo = FakeWoo()
+    service = world.services.woo
+    service.api, service.hook_base = woo, HOOKS
+    await service.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
+    first, second, third = list(woo.hooks)[:3]
+    woo.hooks[first]["status"] = "disabled"  # 5 posts failed
+    woo.hooks[second]["delivery_url"] = "https://old-tunnel.example.com/api/woo/hook/x"
+    del woo.hooks[third]  # deleted in Woo's admin
+    await service.keep_hooks(DEV_WORKSPACE_ID)
+    assert len(woo.hooks) == len(TOPICS)
+    assert {h["status"] for h in woo.hooks.values()} == {"active"}
+    assert {h["delivery_url"] for h in woo.hooks.values()} == {f"{HOOKS}/{DEV_WORKSPACE_ID}"}
+    assert third not in (await service.get(DEV_WORKSPACE_ID)).hooks.values()

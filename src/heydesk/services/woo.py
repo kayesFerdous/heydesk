@@ -1,16 +1,25 @@
 """A shop's list kept in its WooCommerce store, and our orders written there (D75).
 
-The owner links the store with a Read/Write key. An order saved in a chat is written at once,
-in the background, so the website can't sell the same last piece (D77). And every few minutes
-a sync pushes, then pulls: each order whose status changed since it was last written is created or moved in Woo,
+The owner links the store with a Read/Write key, and we make webhooks in it with that key
+(D78): when a product or an order changes there, Woo posts to us and we sync. An order saved in
+a chat is written at once, in the background, so the website can't sell the same last piece
+(D77). Every 30 minutes a safety sync runs anyway and puts back a webhook Woo turned off; with
+no public address for webhooks, the store is synced every WOO_SYNC_MINUTES instead. A sync
+pushes, then pulls: each order whose status changed since it was last written is created or moved in Woo,
 so Woo's stock takes it off or puts it back; then Woo's products become the list, with Woo's
 count less the orders not in Woo yet. A problem keeps the old list, and the owner hears once.
 """
 
 import asyncio
+import base64
+import contextlib
 import hashlib
+import hmac
 import json
 import logging
+import secrets
+import time
+from collections.abc import Coroutine
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -38,6 +47,8 @@ WOO_STATUS = {  # ours → Woo's. Every one but returned holds or settles Woo's 
 }  # returned: left as it is in Woo; the owner restocks there, as here
 READ_WRITE = "Make the key Read/Write in WooCommerce: we write your orders there."
 ONE_LIST = "Unlink the Google Sheet first: a shop's list comes from one place."
+TOPICS = ("product.created", "product.updated", "product.deleted", "order.created", "order.updated")
+SAFETY_SECONDS = 30 * 60  # a store with webhooks is still synced this often, and they're checked
 LOCAL = ("localhost", "127.0.0.1")  # in development, the test shop in dev/woo-shop over plain HTTP
 
 
@@ -97,13 +108,22 @@ class WooService:
         team: TeamService,
         api: WooApi,
         local_http: bool = False,
+        hook_base: str = "",
     ) -> None:
         self.sessions = sessions
         self.agents = agents
         self.team = team
         self.api = api
         self.local_http = local_http  # development only: http://localhost is taken too
-        self.pushing: set[asyncio.Task[None]] = set()  # pushes running now; kept so they finish
+        # where Woo posts its webhooks: https://…/api/woo/hook. Empty: no public address, so
+        # no webhooks, and stores are synced every WOO_SYNC_MINUTES
+        self.hook_base = hook_base
+        self.hook_delay = (
+            2.0  # seconds: a burst of webhooks (an order and its products) is one sync
+        )
+        self.tasks: set[asyncio.Task[None]] = set()  # pushes and syncs running in the background
+        self.waiting: set[str] = set()  # workspaces with a sync on its way
+        self.checked: dict[str, float] = {}  # each workspace's last safety sync (monotonic)
         self.lock = asyncio.Lock()  # one push at a time, or an order could be written twice
 
     async def link(self, ws: str, url: str, key: str, secret: str) -> WooLink:
@@ -132,9 +152,11 @@ class WooService:
             raise InvalidConfig({"products": str(error)}) from None
         shop = await self._store(ws)
         await shop.take_woo(found)
+        hooks, hook_secret = await self._add_hooks(store, ws)
         async with self.sessions() as s, s.begin():
             old = await s.scalar(select(WooLink).where(WooLink.workspace_id == ws))
             if old is not None:
+                dropped = (WooStore(old.url, old.key, old.secret), old.hooks)
                 await s.delete(old)
                 await s.flush()
             link = WooLink(
@@ -147,9 +169,13 @@ class WooService:
                 checked=digest(items),
                 synced_at=shop.now(),
                 created_at=shop.now(),  # the orders placed from now on are written there
+                hooks=hooks,
+                hook_secret=hook_secret,
             )
             s.add(link)
-        log.info("woo linked", extra={"workspace_id": ws})
+        if old is not None:
+            await self._drop_hooks(*dropped)
+        log.info("woo linked", extra={"workspace_id": ws, "webhooks": bool(hooks)})
         return link
 
     async def get(self, ws: str) -> WooLink:
@@ -166,6 +192,8 @@ class WooService:
             link = await s.scalar(select(WooLink).where(WooLink.workspace_id == ws))
             if link is not None:
                 await s.delete(link)
+        if link is not None:
+            await self._drop_hooks(WooStore(link.url, link.key, link.secret), link.hooks)
 
     async def sync(self, ws: str) -> WooLink:
         """Pushes the orders that changed, then pulls the products. Never raises for the
@@ -199,9 +227,7 @@ class WooService:
         """Writes the shop's changed orders into its store now, without waiting for it (a chat
         turn calls this). A problem is left for the next sync, which tries again and tells the
         owner."""
-        task = asyncio.create_task(self.push(ws))
-        self.pushing.add(task)
-        task.add_done_callback(self.pushing.discard)
+        self._later(self.push(ws))
 
     async def push(self, ws: str) -> None:
         async with self.sessions() as s:
@@ -216,18 +242,106 @@ class WooService:
         except Exception:
             log.exception("woo push failed", extra={"workspace_id": ws})
 
+    async def hook_signed(self, ws: str, body: bytes, signature: str) -> bool:
+        """Woo signs each webhook post: base64 of its HMAC-SHA256 with the secret we gave it."""
+        async with self.sessions() as s:
+            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == ws))
+        if link is None or not link.hook_secret:
+            return False
+        digest = hmac.new(link.hook_secret.encode(), body, hashlib.sha256).digest()
+        return hmac.compare_digest(base64.b64encode(digest).decode(), signature)
+
+    def sync_soon(self, ws: str) -> None:
+        """A webhook said something changed in the store: sync in a moment, without making Woo
+        wait. The webhooks that come in the meantime join that one sync."""
+        if ws in self.waiting:
+            return
+        self.waiting.add(ws)
+        self._later(self._sync_after_delay(ws))
+
+    async def _sync_after_delay(self, ws: str) -> None:
+        await asyncio.sleep(self.hook_delay)
+        self.waiting.discard(ws)
+        try:
+            await self.sync(ws)
+        except Exception:
+            log.exception("woo sync failed", extra={"workspace_id": ws})
+
     async def run(self, every: float) -> None:
-        """Syncs every linked store, one after another, every `every` seconds, until
-        cancelled (the app's lifespan starts it). One store failing doesn't stop the others."""
+        """Every `every` seconds, until cancelled (the app's lifespan starts it), syncs each
+        store without webhooks, and each with them once every SAFETY_SECONDS, checking its
+        webhooks too. One store failing doesn't stop the others."""
         while True:
             await asyncio.sleep(every)
             async with self.sessions() as s:
-                linked = list(await s.scalars(select(WooLink.workspace_id)))
-            for ws in linked:
+                linked = list(await s.execute(select(WooLink.workspace_id, WooLink.hooks)))
+            for ws, hooks in linked:
+                last = self.checked.get(ws)
+                if hooks and last is not None and time.monotonic() - last < SAFETY_SECONDS:
+                    continue  # its webhooks keep it up to date
+                self.checked[ws] = time.monotonic()
                 try:
                     await self.sync(ws)
+                    if hooks:
+                        await self.keep_hooks(ws)
                 except Exception:
                     log.exception("woo sync failed", extra={"workspace_id": ws})
+
+    async def keep_hooks(self, ws: str) -> None:
+        """Puts back our webhooks as they should be: one Woo turned off after failed posts is
+        turned on, one pointing at an old address (a new tunnel) is pointed here, and one
+        deleted in Woo's admin is made again."""
+        link = await self.get(ws)
+        store = WooStore(link.url, link.key, link.secret)
+        url = f"{self.hook_base}/{ws}"
+        hooks = dict(link.hooks)
+        try:
+            for topic in TOPICS:
+                found = await self.api.webhook(store, hooks[topic]) if topic in hooks else None
+                if found is None:
+                    secret = link.hook_secret or ""
+                    hooks[topic] = await self.api.add_webhook(store, topic, url, secret)
+                elif found.get("status") != "active" or found.get("delivery_url") != url:
+                    changes = {"status": "active", "delivery_url": url}
+                    await self.api.update_webhook(store, hooks[topic], changes)
+                    log.info("woo webhook put back", extra={"workspace_id": ws, "topic": topic})
+        except WooUnreachable:  # the sync tells the owner when the store can't be reached
+            return
+        finally:
+            if hooks != link.hooks:
+                async with self.sessions() as s, s.begin():
+                    (await s.get_one(WooLink, link.id)).hooks = hooks  # a new dict, so it's seen
+
+    async def _add_hooks(self, store: WooStore, ws: str) -> tuple[dict[str, int], str | None]:
+        """Makes our webhooks in the store. With no public address, or a store that won't
+        make them, there are none and the store is synced every few minutes instead."""
+        if not self.hook_base:
+            return {}, None
+        secret = secrets.token_urlsafe(32)
+        hooks: dict[str, int] = {}
+        try:
+            for topic in TOPICS:
+                hooks[topic] = await self.api.add_webhook(
+                    store, topic, f"{self.hook_base}/{ws}", secret
+                )
+        except WooUnreachable:
+            log.warning("woo webhooks not made", extra={"workspace_id": ws})
+            await self._drop_hooks(store, hooks)
+            return {}, None
+        return hooks, secret
+
+    async def _drop_hooks(self, store: WooStore, hooks: dict[str, int]) -> None:
+        """Deletes our webhooks from the store. One it won't delete is left: it posts to a
+        workspace with no link, which gets a 404, and Woo turns it off after 5."""
+        for webhook_id in hooks.values():
+            with contextlib.suppress(WooUnreachable):
+                await self.api.delete_webhook(store, webhook_id)
+
+    def _later(self, work: Coroutine[Any, Any, None]) -> None:
+        """Runs `work` in the background, kept so it isn't dropped halfway."""
+        task = asyncio.create_task(work)
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
 
     async def _push(self, shop: ShopStore, store: WooStore, link: WooLink) -> str:
         """Writes each order that changed. Stops at the first that can't be written, which

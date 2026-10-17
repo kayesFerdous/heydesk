@@ -49,8 +49,37 @@ class WooRest:
     async def set_status(self, store: WooStore, order_id: int, status: str) -> None:
         await self._call(store, "PUT", f"orders/{order_id}", json={"status": status})
 
+    async def add_webhook(self, store: WooStore, topic: str, url: str, secret: str) -> int:
+        body = {"name": f"HeyDesk: {topic}", "topic": topic, "delivery_url": url}
+        body |= {"secret": secret, "status": "active"}
+        made = (await self._call(store, "POST", "webhooks", json=body)).json().get("id")
+        if not isinstance(made, int):
+            raise WooUnreachable("WooCommerce didn't make the webhook.")
+        return made
+
+    async def webhook(self, store: WooStore, webhook_id: int) -> dict[str, Any] | None:
+        response = await self._send(store, "GET", f"webhooks/{webhook_id}")
+        if response.status_code == 404:
+            return None
+        found: dict[str, Any] = self._check(response).json()
+        return found
+
+    async def update_webhook(
+        self, store: WooStore, webhook_id: int, changes: dict[str, Any]
+    ) -> None:
+        await self._call(store, "PUT", f"webhooks/{webhook_id}", json=changes)
+
+    async def delete_webhook(self, store: WooStore, webhook_id: int) -> None:
+        path = f"webhooks/{webhook_id}"
+        response = await self._send(store, "DELETE", path, params={"force": "true"})
+        if response.status_code != 404:
+            self._check(response)
+
     async def _call(self, store: WooStore, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        response = await self._send(store, method, path, **kwargs)
+        return self._check(await self._send(store, method, path, **kwargs))
+
+    def _check(self, response: httpx.Response) -> httpx.Response:
+        """The response when it worked; otherwise `WooUnreachable` with a line for the owner."""
         if response.is_success:
             return response
         if response.status_code == 401:
