@@ -29,6 +29,22 @@
       "port": 8000
     },
     {
+      "name": "heydesk-fake-shop",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
