@@ -4,20 +4,55 @@
     {
       "name": "heydesk",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "heydesk.main:app", "--reload", "--port", "8000"],
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "heydesk-fake",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["LLM_PROVIDER=fake", "uv", "run", "uvicorn", "heydesk.main:app", "--port", "8000"],
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "../heydesk-frontend", "run", "serve"],
+      "runtimeArgs": [
+        "--dir",
+        "../heydesk-frontend",
+        "run",
+        "serve"
+      ],
       "port": 8080
+    },
+    {
+      "name": "widget-test",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--no-project",
+        "python",
+        "-m",
+        "http.server",
+        "5500",
+        "--directory",
+        "../heydesk-frontend/dev/widget-test"
+      ],
+      "port": 5500
     }
   ]
 }

@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. Next: W4 and W5, the bubble and the owner's page; then the voice check and rehearsing the demo.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. Next: W5, the owner's page; then the voice check and rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -112,16 +112,19 @@ the tests do it on the dev agent; a transparent PNG logo comes back as a 256 px 
 
 ### Day W4: the bubble on any website (`../heydesk-frontend`)
 
-- [ ] `public/widget.js` (plain JS, under 3 KB): the bubble in the business's colour and logo, on
+- [x] `public/widget.js` (plain JS, 3.5 KB compressed with its comments): the bubble in the business's colour and logo, on
       its side; it opens a window holding `/embed/:key` in an iframe; the nudge after 5 seconds,
       once a day; a red dot when the team replies while it's closed; the iframe loads when the
       page is idle, so the first open is instant
-- [ ] `/embed/:key`: the customer chat (`AgentChat`) in a window: a header with the logo, name
+- [x] `/embed/:key`: the customer chat (`AgentChat`) in a window: a header with the logo, name
       and "Replies instantly", and a close button; a welcome with the greeting and the starters
-- [ ] The conversation is kept in the browser, so it stays when the visitor changes page or reloads
+- [x] The conversation is kept in the browser, so it stays when the visitor changes page or reloads
 
 **Done when:** a plain HTML page on another port with the one line shows the bubble, a chat
-there carries on after going to a second page, and a team reply shows the red dot.
+there carries on after going to a second page, and a team reply shows the red dot. [x] (18 Oct,
+with the fake model: `dev/widget-test` on :5500 showed the bubble and the nudge; a starter was
+answered; on the second page the window was still open with the conversation; a team line added
+while it was closed showed the red dot; full screen at phone size)
 
 ### Day W5: the owner's page and polish (`../heydesk-frontend`)
 
