@@ -77,3 +77,8 @@ def test_documents_are_named_with_when_to_search_them() -> None:
     assert "The business has added documents: Menu guide, Allergens." in prompt(
         documents=["Menu guide", "Allergens"]
     )
+
+
+def test_on_voice_a_misheard_name_is_matched_to_a_listed_one_and_checked() -> None:
+    text = build_system_prompt(agent(), DESK, "voice", FIXED_NOW, [])
+    assert "can be misheard" in text and "take the closest listed one and check it" in text

@@ -25,6 +25,7 @@ from heydesk.desks.shop.values import (
     OrderEdit,
     ShopConfig,
     cart_text,
+    find_products,
     lines_text,
     match_zone,
     mobile,
@@ -36,6 +37,41 @@ from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ShopStore]
+
+
+class FindProductInput(BaseModel):
+    query: str = Field(
+        min_length=1,
+        max_length=200,
+        description="What they're looking for: a name, a group, a colour or what it's for",
+    )
+
+
+async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
+    """For a shop with too many products to list in the prompt (D80): the closest ones, as
+    the prompt's own lines."""
+    found = find_products(await ctx.store.products(), args.query)
+    if not found:
+        return fail(
+            f"Nothing in the shop matches {args.query!r}. Try other words (a group, a colour), "
+            "or ask what it's like. Don't say the shop doesn't have it yet."
+        )
+    currency = ctx.agent.currency
+    return ToolResult(ok=True, data={"products": [p.line(currency) for p in found]})
+
+
+FIND_PRODUCT = Tool(
+    name="find_product",
+    description=(
+        "Look up the shop's products by a name, a group, a colour or what it's for. Returns up "
+        "to 8, each with its code, price, sizes, colours and stock. Use it when the Products "
+        "section says to."
+    ),
+    input_model=FindProductInput,
+    run=find_product,
+    label="Looking for it…",
+    filler="Let me look.",
+)
 
 
 class CartLine(BaseModel):
@@ -596,6 +632,7 @@ SHOW_PHOTOS = Tool(
 )
 
 TOOLS = [
+    FIND_PRODUCT,
     UPDATE_CART,
     PLACE_ORDER,
     TRACK_ORDER,

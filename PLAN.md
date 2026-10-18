@@ -7,7 +7,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
-> store (D75), done 17 Oct. Next: the voice check, then rehearsing the demo.
+> store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Next: the voice check, then rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -84,6 +84,17 @@ local HTTPS proxy, a Read key was refused; O-101 for an L/Black, placed through 
 a scripted model and yes, showed in Woo's admin as #22 at our ৳2,510 and took Woo's count from 1 to 0;
 cancelled here, it was cancelled there and the count went back to 1. The dev chat with Maira and Jev
 is still to try)
+
+### Day W2: long lists, returning buyers, misheard names (D80, D81)
+
+- [x] Over 60 products, the shop's prompt lists only the groups, and `find_product` looks them
+      up by plain words (a linked WooCommerce store can have hundreds)
+- [x] A buyer back on Telegram or Messenger gets `# Their last order`: offered once, used after a yes
+- [x] Voice: a misheard name is taken as the closest listed one and checked with the caller
+
+**Done when:** `scripts/check.sh` is green, and tests show a long list gives only the groups and
+`find_product` finds the right line, and a second Telegram conversation has the last order's
+details while another chat doesn't. [x] (18 Oct; how Maira uses them live is still to try)
 
 ## Still open
 

@@ -14,6 +14,8 @@ from heydesk.runtime.speech import money
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
 OWN = -1  # `Product.counter`: the product's own stock, not a variant's
+LONG_LIST = 60  # more products than this, and the prompt lists the groups, not each one (D80)
+FOUND = 8  # the most products find_product returns
 
 
 class Variant(BaseModel):
@@ -198,6 +200,30 @@ def photo_line(products: list[Product], matches: list[tuple[str, float]] | None)
     if not names:
         return "[Photo. Nothing in the shop looks like it.]"
     return f"[Photo. Closest products in the shop: {', '.join(names)}]"
+
+
+def groups_text(products: list[Product]) -> str:
+    """Each group and how many products it has, in the shop's order: "Panjabi (80), Saree (60)"."""
+    counts: dict[str, int] = {}
+    for p in products:
+        counts[p.category] = counts.get(p.category, 0) + 1
+    return ", ".join(f"{group} ({n})" for group, n in counts.items())
+
+
+def find_products(products: list[Product], query: str) -> list[Product]:
+    """The products whose words match `query` best, at most `FOUND` (D80). A word in the name
+    or group counts twice, one in the sizes, colours or description once; a tie keeps the
+    shop's order. Plain word matching: "lal" doesn't find Red."""
+    words = {w for w in re.findall(r"\w+", query.lower()) if len(w) > 1}
+
+    def score(p: Product) -> int:
+        named = f"{p.name} {p.category}".lower()
+        rest = " ".join([p.description, *p.sizes, *p.colours]).lower()
+        return sum(2 if w in named else 1 if w in rest else 0 for w in words)
+
+    scored = [(score(p), i, p) for i, p in enumerate(products)]
+    best = sorted((s for s in scored if s[0]), key=lambda s: (-s[0], s[1]))
+    return [p for _, _, p in best[:FOUND]]
 
 
 BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")

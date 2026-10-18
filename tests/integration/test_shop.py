@@ -22,17 +22,19 @@ from heydesk.desks.shop.tools import (
     ChangeOrderInput,
     ExchangeInput,
     FindOrderInput,
+    FindProductInput,
     PlaceOrderInput,
     ShowPhotosInput,
     UpdateCartInput,
     change_order,
+    find_product,
     place_order,
     request_exchange,
     show_photos,
     track_order,
     update_cart,
 )
-from heydesk.desks.shop.values import mobile, products_from_csv, stock_cell
+from heydesk.desks.shop.values import LONG_LIST, Product, mobile, products_from_csv, stock_cell
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -690,3 +692,60 @@ async def test_show_photos_works_only_on_the_web_chat(world: World) -> None:
     assert not on_call.ok and "can't be shown here" in on_call.data["error"]
     no_photo = await show_photos(make_ctx(store, agent=agent.config), args)
     assert (no_photo.photos, no_photo.data["no_photo"]) == (None, ["Cotton Kurti"])
+
+
+async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world: World) -> None:
+    """A WooCommerce store can have hundreds of products: over LONG_LIST, the prompt lists
+    only the groups, and find_product returns the closest lines (D80)."""
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    tees = [
+        Product(code=f"tee-{n}", name=f"Basic Tee {n}", price=50000, category="T-shirts")
+        for n in range(LONG_LIST)
+    ]
+    await store.replace_products([*await store.products(), *tees])
+    text = await SHOP.prompt(agent.config, store)
+
+    assert "[kurti]" not in text and "[tee-1]" not in text
+    assert "products, too many to list here. Groups: " in text
+    assert f"T-shirts ({LONG_LIST})" in text
+    assert "Look a product up with find_product" in text
+
+    ctx = make_ctx(store, agent=agent.config)
+    found = await find_product(ctx, FindProductInput(query="silk panjabi"))
+    assert found.ok
+    assert found.data["products"][0].startswith("- Silk Panjabi [panjabi-silk] ৳3,200")
+    assert len((await find_product(ctx, FindProductInput(query="tee"))).data["products"]) == 8
+    nothing = await find_product(ctx, FindProductInput(query="umbrella"))
+    assert not nothing.ok and "Try other words" in nothing.data["error"]
+    added = await update_cart(ctx, cart({"code": "tee-3", "quantity": 1}))
+    assert added.ok  # the cart still takes any code
+
+
+async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: World) -> None:
+    """A new Telegram conversation from the same chat has the last order's name, mobile, area
+    and address in the prompt, to offer again (D81). Its first conversation didn't."""
+    agent = await world.agent("shop")
+    talk = world.services.conversations
+    world.decider.script = [NO, YES]
+    world.llm.script = [
+        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
+        ToolCall("c2", "place_order", DETAILS),
+        READ_BACK,
+    ]
+    await talk.reply(agent, "telegram", "chat-7", "a black kurti, size M…")
+    assert "# Their last order" not in world.llm.requests[0].system
+    world.llm.script = [ToolCall("c3", "place_order", DETAILS), "Done: O-101."]
+    await talk.reply(agent, "telegram", "chat-7", "yes")
+    assert len(await orders(world)) == 1
+
+    world.clock.advance(hours=13)
+    world.llm.script = ["Hi again!"]
+    await talk.reply(agent, "telegram", "chat-7", "aro ekta lagbe")
+    system = world.llm.requests[-1].system
+    assert "# Their last order" in system
+    assert "name Kayes; mobile 01712345678; area Inside Dhaka; address House 12, Road 5" in system
+
+    world.llm.script = ["Hi!"]
+    await talk.reply(agent, "telegram", "chat-8", "hello")  # another chat: nothing to offer
+    assert "# Their last order" not in world.llm.requests[-1].system

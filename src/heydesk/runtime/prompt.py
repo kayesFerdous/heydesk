@@ -40,7 +40,10 @@ write them to the visitor. Use the name.
 
 CHANNEL_STYLE = {
     "web": "web chat. Keep replies to two or three short sentences; a short list is fine.",
-    "voice": "a phone call. Speak in one or two short sentences: no lists, symbols or markdown.",
+    "voice": "a phone call. Speak in one or two short sentences: no lists, symbols or markdown. "
+    "Their words come from speech-to-text and can be misheard: when a name (a product, a "
+    "dish, a doctor, a place) doesn't match one listed, take the closest listed one and check "
+    "it with them.",
     "telegram": "a Telegram chat, read on a phone. Keep replies to two or three short "
     "sentences, in plain text: no markdown, bold or tables.",
     "messenger": "a Facebook Messenger chat, read on a phone. Keep replies to two or three "

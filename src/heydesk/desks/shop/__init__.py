@@ -10,10 +10,12 @@ from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import (
+    LONG_LIST,
     PRODUCT_COLUMNS,
     Product,
     ShopConfig,
     cart_text,
+    groups_text,
     photo_line,
     products_from_csv,
 )
@@ -36,7 +38,7 @@ Reply in the same language and letters as the visitor's last message:
 - English: reply in English.
 Keep product names and prices as they are listed.
 Say prices openly, exactly as listed: never ask them to message for the price.
-Only offer products from the list.
+Only offer products from the Products section or from find_product.
 If you can't tell which product they mean ("this one"), ask for its name.
 
 # Helping them choose
@@ -129,15 +131,36 @@ class ShopDesk(Desk):
             free = money(config.free_delivery_over, config.currency)
             delivery.append(f"Delivery is free on orders of {free} or more.")
 
-        products = ["# Products", "Each line: name [code] price, sizes, colours: description"]
         listed = await store.products()
-        for category in dict.fromkeys(p.category for p in listed):
-            products.append(f"{category}:")
-            products += [p.line(config.currency) for p in listed if p.category == category]
+        products = ["# Products"]
+        if len(listed) > LONG_LIST:  # too many for every call: the model looks them up (D80)
+            products.append(
+                f"The shop has {len(listed)} products, too many to list here. "
+                f"Groups: {groups_text(listed)}."
+            )
+            products.append(
+                "Look a product up with find_product before you say anything about it (its "
+                "price, sizes, colours or stock), and use the codes it gives. If it finds "
+                "nothing, try other words before you say the shop doesn't have it."
+            )
+        else:
+            products.append("Each line: name [code] price, sizes, colours: description")
+            for category in dict.fromkeys(p.category for p in listed):
+                products.append(f"{category}:")
+                products += [p.line(config.currency) for p in listed if p.category == category]
         if not listed:
             products.append("No products listed yet.")
 
         sections = [ROLE, "\n".join(about), "\n".join(delivery), "\n".join(products)]
+        last = await store.last_order_before()
+        if last:  # a buyer back on Telegram or Messenger (D81)
+            sections.append(
+                "# Their last order\n"
+                f"This buyer ordered here before, with: name {last.name}; mobile {last.phone}; "
+                f"area {last.zone}; address {last.address}.\n"
+                "When you need the delivery details, offer once to use these again, and use "
+                "them only if they say yes. Don't bring them up before then."
+            )
         if config.size_guide.strip():
             sections.append(f"# Size guide\n{config.size_guide.strip()}")
         return "\n\n".join(s for s in sections if s != "# The shop")
