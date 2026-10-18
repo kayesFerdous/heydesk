@@ -119,3 +119,22 @@ async def test_the_owner_pages_through_messages(app: FastAPI, client: AsyncClien
     one = await client.get(f"/api/messages/{older[0]['id']}")
     assert one.json() == older[0]
     assert (await client.get("/api/messages", params={"limit": 101})).status_code == 422
+
+
+async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncClient) -> None:
+    runtime = app.state.services.conversations.runtime
+    runtime.llm.script = [ToolCall("c", "handoff_to_human", {}), "Someone will call you."]
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a person please"}
+    )
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
+    [waiting] = (await client.get("/api/conversations", params={"status": "needs_human"})).json()
+    assert waiting["id"] == conv_id
+
+    handled = await client.patch(f"/api/conversations/{conv_id}", json={"status": "active"})
+    assert handled.json()["status"] == "active"
+    assert (await client.get("/api/conversations", params={"status": "needs_human"})).json() == []
+    again = await client.patch(f"/api/conversations/{conv_id}", json={"status": "active"})
+    assert again.json()["error"]["code"] == "invalid_transition"
+    other = await client.patch(f"/api/conversations/{conv_id}", json={"status": "needs_human"})
+    assert other.status_code == 422

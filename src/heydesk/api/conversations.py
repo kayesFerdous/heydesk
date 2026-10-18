@@ -17,7 +17,7 @@ class ConversationOut(BaseModel):
 
     id: str
     channel: str
-    status: str  # active / needs_human
+    status: str  # active / needs_human / human (the team is answering, D43)
     created_at: datetime
     updated_at: datetime
 
@@ -80,6 +80,20 @@ async def conversation(
             said.append(Line(role=m["role"], text=m["content"], photo=m.get("photo", "")))
     return ConversationWithMessages(
         **ConversationOut.model_validate(conv).model_dump(), messages=said
+    )
+
+
+class HandBackIn(BaseModel):
+    status: Literal["active"]  # the only move: a person dealt with it, the agent answers again
+
+
+@router.patch("/api/conversations/{conversation_id}")
+async def hand_back(
+    conversation_id: str, body: HandBackIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """Marks a hand-off handled (D83). 409 `invalid_transition` if nobody was waiting."""
+    return ConversationOut.model_validate(
+        await services.conversations.hand_back(ws, conversation_id)
     )
 
 

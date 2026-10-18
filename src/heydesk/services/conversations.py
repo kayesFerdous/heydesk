@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.desks import tools_for
-from heydesk.errors import ConversationFull, HeyDeskError, NotFound, UnreadablePhoto
+from heydesk.errors import (
+    ConversationFull,
+    HeyDeskError,
+    InvalidTransition,
+    NotFound,
+    UnreadablePhoto,
+)
 from heydesk.models import Conversation, Turn
 from heydesk.runtime.events import Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
@@ -216,6 +222,17 @@ class ConversationService:
     async def get(self, ws: str, conversation_id: str) -> Conversation:
         async with self.sessions() as s:
             return await self._get_by_id(s, ws, conversation_id)
+
+    async def hand_back(self, ws: str, conversation_id: str) -> Conversation:
+        """The owner dealt with a hand-off from the console: the agent answers again, as
+        after `/done` on Telegram (D83)."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            if conv.status == "active":
+                raise InvalidTransition("This conversation isn't waiting for a person.")
+            conv.status = "active"
+        log.info("hand-off handled", extra={"conversation_id": conv.id})
+        return conv
 
     async def _run(
         self, turn: TurnInput, conv: Conversation, agent: LiveAgent, visitor: str
