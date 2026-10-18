@@ -1,5 +1,7 @@
 """What every business edits about its agent (design §5). Each desk adds its own fields."""
 
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.runtime.schedule import WeeklyHours
@@ -8,11 +10,27 @@ from heydesk.runtime.schedule import WeeklyHours
 # a customer's notes may contain braces.
 PLACEHOLDERS = ("business_name",)
 
+LOGO = r"^(/media/[\w-]+/logo/[0-9a-f]{32}\.jpg)?$"  # one of ours, saved by PhotoService
+
 
 class Handoff(BaseModel):
     message: str = "Let me get a member of our team to help you."
     phone: str | None = None
     email: str | None = None
+
+
+class Widget(BaseModel):
+    """How the chat looks on the business's own website (D82): the bubble and its window."""
+
+    colour: str = Field(default="#0f766e", pattern=r"^#[0-9a-fA-F]{6}$")  # the bubble and header
+    side: Literal["right", "left"] = "right"
+    # The line that pops out of the bubble after a few seconds; empty: none
+    nudge: str = Field(default="Hi! Can I help you?", max_length=120)
+    # Tap-to-ask buttons on the welcome screen; each desk has its own
+    starters: list[Annotated[str, Field(min_length=1, max_length=60)]] = Field(
+        default_factory=list, max_length=4
+    )
+    logo: str = Field(default="", pattern=LOGO)  # set by POST /api/agent/logo; empty: initials
 
 
 class AgentConfig(BaseModel):
@@ -32,6 +50,7 @@ class AgentConfig(BaseModel):
     notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
     faq: str = Field(default="", max_length=20000)
     handoff: Handoff = Handoff()
+    widget: Widget = Widget()  # a desk sets its own starters
 
     def fill(self, text: str) -> str:
         """Customer text with `{business_name}` and friends filled in."""

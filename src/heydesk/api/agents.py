@@ -3,9 +3,9 @@
 Edits are live from the next message. Problems come back per field.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, File, UploadFile, status
 from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, Workspace
@@ -66,6 +66,28 @@ async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
 @router.get("/api/agent")
 async def read(services: Svc, ws: Workspace) -> AgentOut:
     return out(await services.agents.get(ws))
+
+
+class LogoOut(BaseModel):
+    url: str  # also saved as the agent's `widget.logo`
+
+
+LOGO_SIDE = 256  # px: a logo is shown small, in the bubble and the chat's header
+
+
+@router.post("/api/agent/logo")
+async def add_logo(
+    file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP picture, up to 10 MB")],
+    services: Svc,
+    ws: Workspace,
+) -> LogoOut:
+    """The business's logo for the website chat (D82): saved small and set on the widget."""
+    widget = (await services.agents.get(ws)).config.widget  # 404 before anything is saved
+    photo = await services.photos.save(ws, "logo", await file.read(), LOGO_SIDE)
+    await services.agents.update(
+        ws, {"widget": widget.model_copy(update={"logo": photo.url}).model_dump()}
+    )
+    return LogoOut(url=photo.url)
 
 
 @router.patch("/api/agent")

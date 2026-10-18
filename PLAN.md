@@ -7,7 +7,8 @@ What's built, what's next, and how to know each step is done. How it works is in
 > Messenger, payments, the owner's API and the admin panel's phases 1–2. **Cleanup before the
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
-> store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Next: the voice check, then rehearsing the demo.
+> store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
+> chat's settings (D82), done 18 Oct. Next: W4 and W5, the bubble and the owner's page; then the voice check and rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -95,6 +96,42 @@ is still to try)
 **Done when:** `scripts/check.sh` is green, and tests show a long list gives only the groups and
 `find_product` finds the right line, and a second Telegram conversation has the last order's
 details while another chat doesn't. [x] (18 Oct; how Maira uses them live is still to try)
+
+### Day W3: the website chat's settings (D82)
+
+- [x] `widget` in every agent's config: colour, side, nudge (the line that pops out of the
+      bubble), up to 4 starters (tap-to-ask buttons) and a logo; each desk has its own starters
+- [x] `GET /api/chat/{key}` returns the widget's settings, filled in like the greeting
+- [x] `POST /api/agent/logo`: the business's logo, saved small and set on the widget
+- [x] Tests: defaults per desk, a bad colour or a fifth starter is a 422, the logo is set and
+      shown in the chat info
+
+**Done when:** `scripts/check.sh` is green, and `GET /api/chat/{key}` for the dev agent shows its
+desk's starters, then the owner's colour, starters and logo after they're saved. [x] (18 Oct:
+the tests do it on the dev agent; a transparent PNG logo comes back as a 256 px JPEG on white)
+
+### Day W4: the bubble on any website (`../heydesk-frontend`)
+
+- [ ] `public/widget.js` (plain JS, under 3 KB): the bubble in the business's colour and logo, on
+      its side; it opens a window holding `/embed/:key` in an iframe; the nudge after 5 seconds,
+      once a day; a red dot when the team replies while it's closed; the iframe loads when the
+      page is idle, so the first open is instant
+- [ ] `/embed/:key`: the customer chat (`AgentChat`) in a window: a header with the logo, name
+      and "Replies instantly", and a close button; a welcome with the greeting and the starters
+- [ ] The conversation is kept in the browser, so it stays when the visitor changes page or reloads
+
+**Done when:** a plain HTML page on another port with the one line shows the bubble, a chat
+there carries on after going to a second page, and a team reply shows the red dot.
+
+### Day W5: the owner's page and polish (`../heydesk-frontend`)
+
+- [ ] A "Website chat" page: colour, side, nudge, starters and logo, a live preview, and Copy code
+      with short steps for WordPress, Wix and Shopify
+- [ ] Animations (the bubble turns into ✕, the window opens smoothly, less motion when the device
+      asks), full screen on phones with the typing box above the keyboard, Esc closes
+
+**Done when:** the line pasted into the local WooCommerce shop (`dev/woo-shop`) shows the bubble,
+an order placed through it shows in Woo, and screenshots on a desktop and a phone look right.
 
 ## Still open
 

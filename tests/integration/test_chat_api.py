@@ -18,7 +18,9 @@ def parse(body: str) -> list[tuple[str, dict[str, object]]]:
 async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -> None:
     res = await client.get(f"/api/chat/{DEV_KEY}")
     assert res.status_code == 200
-    assert res.json() == {
+    info = res.json()
+    del info["widget"]  # the website chat's look: tests in test_agents_api.py (D82)
+    assert info == {
         "name": "Spice Garden assistant",
         "greeting": "Hi, welcome to Spice Garden! Hungry? I can help with the menu or take your order.",
         "photos": False,  # only a shop takes photos (D57)

@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from heydesk.desks import csv_import
-from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.speech import money
 
 
@@ -199,6 +199,9 @@ def menu_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Menu
 
 
 class RestaurantConfig(AgentConfig):
+    widget: Widget = Widget(
+        starters=["What's on the menu?", "I'd like to order", "Are you open now?"]
+    )
     greeting: str = (
         "Hi, welcome to {business_name}! Hungry? I can help with the menu or take your order."
     )

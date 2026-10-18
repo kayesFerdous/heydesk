@@ -6,7 +6,7 @@ from typing import ClassVar
 from pydantic import Field
 
 from heydesk.desks.base import Desk, Store, missing_basics
-from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.tool import Tool
 
 ROLE = """\
@@ -21,6 +21,7 @@ phone so the team can call back; that's optional, and a no is fine."""
 
 
 class ReceptionistConfig(AgentConfig):
+    widget: Widget = Widget(starters=["What do you do?", "When are you open?", "Leave a message"])
     about: str = Field(default="", max_length=4000)  # what the business does, who's on the team
     services: str = Field(default="", max_length=8000)  # what it offers, with prices if any
 

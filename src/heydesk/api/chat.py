@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from heydesk.api.deps import ClientIp, Svc
 from heydesk.api.sse import to_sse
 from heydesk.errors import UnreadablePhoto
+from heydesk.runtime.config import Widget
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ class AgentOut(BaseModel):
     name: str
     greeting: str  # the page shows it on load; the first turn stores it (D8)
     photos: bool  # the visitor can send a photo: the page shows its button (D57)
+    widget: Widget  # how the chat looks on the business's website (D82)
 
 
 MAX_PHOTO = 2_000_000  # bytes: the page makes a photo smaller before it sends it
@@ -33,7 +35,16 @@ class ChatIn(BaseModel):
 @router.get("/api/chat/{public_key}")
 async def agent(public_key: str, services: Svc) -> AgentOut:
     found = await services.agents.by_key(public_key)  # 404 if unknown
-    return AgentOut(name=found.config.name, greeting=found.greeting, photos=found.desk.takes_photos)
+    config = found.config
+    widget = config.widget.model_copy(
+        update={
+            "nudge": config.fill(config.widget.nudge),
+            "starters": [config.fill(s) for s in config.widget.starters],
+        }
+    )
+    return AgentOut(
+        name=config.name, greeting=found.greeting, photos=found.desk.takes_photos, widget=widget
+    )
 
 
 @router.post("/api/chat/{public_key}")

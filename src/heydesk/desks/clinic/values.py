@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heydesk.desks import csv_import
-from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.schedule import DAYS
 from heydesk.runtime.speech import clock_time, money
 
@@ -155,6 +155,9 @@ def doctors_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[D
 
 
 class ClinicConfig(AgentConfig):
+    widget: Widget = Widget(
+        starters=["Which doctors are in today?", "Request an appointment", "What are the fees?"]
+    )
     greeting: str = (
         "Hello, thanks for contacting {business_name}. "
         "I can help you find a doctor or request an appointment."

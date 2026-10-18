@@ -9,7 +9,7 @@ from typing import Any, Self
 from pydantic import BaseModel, Field, model_validator
 
 from heydesk.desks import csv_import
-from heydesk.runtime.config import AgentConfig
+from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.speech import money
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
@@ -162,6 +162,9 @@ def match_zone(zones: list[Zone], said: str) -> Zone:
 
 
 class ShopConfig(AgentConfig):
+    widget: Widget = Widget(
+        starters=["What's new?", "Track my order", "What's the delivery charge?"]
+    )
     greeting: str = (
         "Hi, welcome to {business_name}! I can tell you about our products and prices, "
         "take your order, or check on one you've placed."

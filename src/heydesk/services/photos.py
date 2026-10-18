@@ -6,6 +6,7 @@ visitor's is embedded only to search it.
 
     media/<workspace_id>/products/<id>.jpg   a product's, in the index
     media/<workspace_id>/chat/<id>.jpg       a visitor's, kept for the owner's view
+    media/<workspace_id>/logo/<id>.jpg       the business's logo, for the website chat (D82)
 """
 
 import asyncio
@@ -58,11 +59,11 @@ class PhotoService:
             ) from error
         return photo
 
-    async def save(self, ws: str, folder: str, data: bytes) -> Photo:
-        """A JPEG of at most `LARGEST_SIDE`, written to the business's `folder`."""
+    async def save(self, ws: str, folder: str, data: bytes, largest: int = LARGEST_SIDE) -> Photo:
+        """A JPEG of at most `largest` px, written to the business's `folder`."""
         if len(data) > MAX_UPLOAD:
             raise UnreadablePhoto("A photo can be up to 10 MB.")
-        jpeg = await asyncio.to_thread(to_jpeg, data)
+        jpeg = await asyncio.to_thread(to_jpeg, data, largest)
         url = f"/media/{ws}/{folder}/{uuid.uuid4().hex}.jpg"
         path = self.path(url)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,14 +109,18 @@ class PhotoService:
             self._ready = True
 
 
-def to_jpeg(data: bytes) -> bytes:
-    """Any picture Pillow reads (JPEG, PNG, WebP…) as a JPEG of at most `LARGEST_SIDE`. Gemini
+def to_jpeg(data: bytes, largest: int = LARGEST_SIDE) -> bytes:
+    """Any picture Pillow reads (JPEG, PNG, WebP…) as a JPEG of at most `largest` px. Gemini
     takes only JPEG and PNG, so every photo is kept as a JPEG."""
     try:
         image = Image.open(io.BytesIO(data))
-        image.thumbnail((LARGEST_SIDE, LARGEST_SIDE))
+        image.thumbnail((largest, largest))
+        flat = Image.new(
+            "RGB", image.size, "white"
+        )  # a transparent PNG (a logo) on white, not black
+        flat.paste(image.convert("RGBA"), mask=image.convert("RGBA"))
         out = io.BytesIO()
-        image.convert("RGB").save(out, "JPEG", quality=85)
+        flat.save(out, "JPEG", quality=85)
     except (UnidentifiedImageError, OSError, ValueError) as error:
         raise UnreadablePhoto("That file isn't a photo we can read. Try a JPEG or PNG.") from error
     return out.getvalue()

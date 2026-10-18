@@ -1,7 +1,10 @@
 """Desks and the business's agent through the API (design §9)."""
 
+import io
+
 from fastapi import FastAPI
 from httpx import AsyncClient
+from PIL import Image
 
 from tests.conftest import DEV_KEY, new_business
 
@@ -81,3 +84,51 @@ async def test_edits_are_live_from_the_next_message(app: FastAPI, client: AsyncC
 
     live = await app.state.services.agents.by_key(DEV_KEY)
     assert (live.config.faq, live.config.notes) == ("Open on Eid.", "Be formal.")
+
+
+# The website chat (D82)
+
+
+async def test_the_chat_info_has_the_desks_own_starters(client: AsyncClient) -> None:
+    widget = (await client.get(f"/api/chat/{DEV_KEY}")).json()["widget"]
+
+    assert widget == {
+        "colour": "#0f766e",
+        "side": "right",
+        "nudge": "Hi! Can I help you?",
+        "starters": ["What's on the menu?", "I'd like to order", "Are you open now?"],
+        "logo": "",
+    }
+
+
+async def test_a_bad_colour_or_a_fifth_starter_is_refused(client: AsyncClient) -> None:
+    colour = await client.patch("/api/agent", json={"widget": {"colour": "green"}})
+    assert colour.status_code == 422 and "widget.colour" in colour.json()["error"]["fields"]
+
+    five = await client.patch(
+        "/api/agent", json={"widget": {"starters": ["a", "b", "c", "d", "e"]}}
+    )
+    assert five.status_code == 422 and "widget.starters" in five.json()["error"]["fields"]
+
+    theirs = await client.patch("/api/agent", json={"widget": {"logo": "https://x.com/a.png"}})
+    assert theirs.status_code == 422  # only a logo saved by POST /api/agent/logo
+
+
+async def test_the_owners_widget_and_logo_show_in_the_chat_info(client: AsyncClient) -> None:
+    saved = {"colour": "#B91C1C", "side": "left", "nudge": "", "starters": ["{business_name}?"]}
+    assert (await client.patch("/api/agent", json={"widget": saved})).status_code == 200
+    see_through = io.BytesIO()
+    Image.new("RGBA", (600, 400), (0, 0, 0, 0)).save(see_through, "PNG")
+
+    logo = await client.post(
+        "/api/agent/logo", files={"file": ("logo.png", see_through.getvalue(), "image/png")}
+    )
+    widget = (await client.get(f"/api/chat/{DEV_KEY}")).json()["widget"]
+
+    assert logo.status_code == 200 and widget["logo"] == logo.json()["url"]
+    business = (await client.get("/api/agent")).json()["config"]["business_name"]
+    assert widget["starters"] == [f"{business}?"]  # filled in like the greeting
+    assert (widget["colour"], widget["side"], widget["nudge"]) == ("#B91C1C", "left", "")
+    picture = Image.open(io.BytesIO((await client.get(widget["logo"])).content))
+    assert picture.size == (256, 171)  # made small
+    assert picture.getpixel((0, 0)) == (255, 255, 255)  # transparent is white, not black

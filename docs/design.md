@@ -106,7 +106,7 @@ when `takes_bookings` is on, D64) then the shared ones: `take_message`, `handoff
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas, each with a charge, usual days and the `places` buyers name in it, D54), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas, each with a charge, usual days and the `places` buyers name in it, D54), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -385,7 +385,7 @@ SQLAlchemy doesn't see in-place edits.
 | Method | Path | Does |
 |---|---|---|
 | GET | `/` | Dev chat page (development only) |
-| GET | `/api/chat/{key}` | Agent name, greeting, and `photos` (true when it takes photos, D57) |
+| GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
@@ -394,6 +394,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
+| POST | `/api/agent/logo` | The business's logo (multipart): saved as a 256 px JPEG (transparent is white) and set as `widget.logo` → `{url}` (D82) |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
 | GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
 | POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
@@ -404,7 +405,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422 |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
-| GET | `/media/…` | A photo: a product's (`<workspace_id>/products/<id>.jpg`) or one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57) |
+| GET | `/media/…` | A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status and set its `tracking` (D45) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57 |
@@ -1026,4 +1027,5 @@ version handles them.
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
+| Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |
