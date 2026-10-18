@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, built 18 Oct; its order in Woo is still to try. Next: the voice check and rehearsing the demo.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: the voice check and rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -134,11 +134,13 @@ while it was closed showed the red dot; full screen at phone size)
       asks), full screen on phones with the typing box above the keyboard, Esc closes
 
 **Done when:** the line pasted into the local WooCommerce shop (`dev/woo-shop`) shows the bubble,
-an order placed through it shows in Woo, and screenshots on a desktop and a phone look right. [ ] (18 Oct: the owner's
+an order placed through it shows in Woo, and screenshots on a desktop and a phone look right. [x] (18 Oct: the owner's
 "Chat bubble" section saved a red colour, the left side, a new line, a fourth question and a logo, and
 the test site showed them all. The line in the WordPress shop's footer showed the shop's bubble, and it
-looked right at 1280 px and at phone width, with the fake model. Still to do: an order placed through it
-reaching Woo, which needs Maira and Jev, and the typing box with a real phone's keyboard)
+looked right at 1280 px and at phone width, with the fake model. Then with Maira and Jev, through the
+bubble on the shop: 1 Cotton Tupi to Mirpur 10 was read back at ৳360 (৳300 and ৳60 delivery), and the
+yes saved O-103, which showed in Woo as #73 at ৳360 and took Woo's count from 11 to 10. Maira mixed
+Bangla into English replies. Not tried: the typing box with a real phone's keyboard)
 
 ## Still open
 
