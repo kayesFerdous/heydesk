@@ -50,11 +50,24 @@ CHANNEL_STYLE = {
     "short sentences, in plain text: no markdown, bold or tables.",
 }
 
+# A call in Bangla (D84, D86): our Bangla voice reads Bangla letters only and drops the rest
+BANGLA_VOICE = (
+    "Speak Bangla, in Bangla letters only. Write every English name or word in Bangla letters "
+    '("কটন টুপি", "ডেলিভারি"): the voice can\'t read English letters. Keep prices, times and '
+    "codes as the tools give them (৳360, 7:30 pm, O-104): they are said for you."
+)
+
 
 def build_system_prompt(
-    agent: AgentConfig, desk: str, channel: str, now: datetime, documents: list[str]
+    agent: AgentConfig,
+    desk: str,
+    channel: str,
+    now: datetime,
+    documents: list[str],
+    voice_language: str = "en",
 ) -> str:
-    """`desk` is the desk's own section, already written for this business."""
+    """`desk` is the desk's own section, already written for this business. `voice_language`
+    is what calls speak, the server's `VOICE_LANGUAGE` (D86)."""
     sections = [PLATFORM_RULES, agent.fill(desk).strip()]
     if agent.notes.strip():
         sections.append("# Notes from the business\n" + agent.fill(agent.notes).strip())
@@ -62,7 +75,7 @@ def build_system_prompt(
         sections.append("# FAQ\n" + agent.fill(agent.faq).strip())
     if documents:
         sections.append(documents_section(documents))
-    sections.append(right_now(channel, now, agent.timezone, agent.hours))
+    sections.append(right_now(channel, now, agent.timezone, agent.hours, voice_language))
     return "\n\n".join(sections) + "\n"
 
 
@@ -87,7 +100,9 @@ def documents_section(titles: list[str]) -> str:
     )
 
 
-def right_now(channel: str, now: datetime, timezone: str, hours: WeeklyHours) -> str:
+def right_now(
+    channel: str, now: datetime, timezone: str, hours: WeeklyHours, voice_language: str
+) -> str:
     """The channel, the time, and the next two weeks, so "next Friday" has a date. Python
     marks the off days, so the model never works out which days are open (rule 1)."""
     local = now.astimezone(ZoneInfo(timezone))
@@ -95,6 +110,7 @@ def right_now(channel: str, now: datetime, timezone: str, hours: WeeklyHours) ->
     lines = [
         "# Right now",
         f"Channel: {CHANNEL_STYLE[channel]}",
+        *([BANGLA_VOICE] if channel == "voice" and voice_language == "bn" else []),
         f"Now: {local:%A} {local.day} {local:%B %Y}, {local:%H:%M}",
     ]
     if hours.is_set():

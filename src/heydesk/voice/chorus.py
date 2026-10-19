@@ -21,7 +21,7 @@ TIMEOUT_S = 20.0
 
 
 class ChorusSTT(SegmentedSTTService):
-    def __init__(self, project_key: str, api_key: str, language: str = "en") -> None:
+    def __init__(self, project_key: str, api_key: str, language: str) -> None:
         super().__init__()
         self.language = language
         self.client = httpx.AsyncClient(

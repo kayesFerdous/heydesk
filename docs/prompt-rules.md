@@ -114,6 +114,10 @@ Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
   the caller (the documents section said this only for its searches). Telegram
   and Messenger are sent as plain text, so they ask for no markdown: `**bold**` would show its
   asterisks (D42, D60).
+- **A call in Bangla** (`VOICE_LANGUAGE=bn` on the server, voice only, D86) gets one more line after Channel
+  (`BANGLA_VOICE`): speak Bangla in Bangla letters, write English names and words in Bangla
+  letters ("কটন টুপি"), and keep prices, times and codes as the tools give them. The Bangla
+  voice drops Latin letters, and `speakable()` says the numbers in Bangla (D84).
 - **Today** and **(closed)** appear only once the owner has set hours (D40).
   When every day is closed, every day is marked closed.
 

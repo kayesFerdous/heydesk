@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: the voice check and rehearsing the demo.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -141,6 +141,32 @@ looked right at 1280 px and at phone width, with the fake model. Then with Maira
 bubble on the shop: 1 Cotton Tupi to Mirpur 10 was read back at ৳360 (৳300 and ৳60 delivery), and the
 yes saved O-103, which showed in Woo as #73 at ৳360 and took Woo's count from 11 to 10. Maira mixed
 Bangla into English replies. Not tried: the typing box with a real phone's keyboard)
+
+### Day V1: a Bangla voice (D84)
+
+Why and the options compared: [docs/product-gaps.md](docs/product-gaps.md) §1. The voice is
+`EMTIAZZ/bangladeshi-bangla-tts-vits` (VITS, Apache 2.0, a Bangladeshi accent): on 19 Oct it made
+each test sentence in 0.6–1.3 s on the M2's CPU, about 7× faster than real time.
+
+- [ ] `tts_server/`, its own uv project (torch and coqui-tts stay out of HeyDesk's): loads the
+      model once, downloading it on first start; `POST /speak {text}` returns 16-bit PCM
+- [ ] `voice/bangla_tts.py`: a Pipecat TTS service, shaped like `voice/chorus.py`, that sends each
+      sentence to `BANGLA_TTS_URL`
+- [ ] `VOICE_LANGUAGE` on the server (`bn`, the default, or `en`, D86): a `bn` call uses Deepgram
+      with `language=bn` to hear and the Bangla voice to speak; `en` is Deepgram and Piper
+- [ ] `speakable()` in Bangla: money, times, phone numbers and order codes in Bangla words
+      ("৳360" → "তিনশো ষাট টাকা"); 1–99 is a lookup table, then শো, হাজার, লাখ
+- [ ] A voice rule for `bn` agents: reply in Bangla script, and write English names in Bangla
+      letters ("কটন টুপি"), since the voice drops Latin letters (docs/prompt-rules.md)
+- [ ] design.md §10 and D84
+- [ ] `tts_server/kaggle_tts.ipynb` (D85): the same `/speak` on a free Kaggle T4 with a more natural
+      voice (BanglaBox or OmniVoice), behind a Cloudflare tunnel whose URL goes in `.env`
+- [ ] `tts_server/kaggle_stt.ipynb` and `voice/whisper_stt.py` (D87): our Bangla–English Whisper on
+      its own Kaggle T4; `STT_PROVIDER=whisper` sends each utterance to `WHISPER_STT_URL`
+
+**Done when:** `scripts/check.sh` is green; tests give the Bangla spoken forms; and a browser
+voice call to a `bn` agent hears a question in Bangla, answers in the Bangladeshi voice, and
+reads an order's total back correctly.
 
 ## Still open
 

@@ -123,7 +123,12 @@ class ConversationService:
             photo_line = await desk.photo_line(store, matches)
         turn = TurnInput(
             system=build_system_prompt(
-                config, await desk.prompt(config, store), channel, now, agent.documents
+                config,
+                await desk.prompt(config, store),
+                channel,
+                now,
+                agent.documents,
+                self.settings.VOICE_LANGUAGE,
             ),
             tools=tools_for(desk, config, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,

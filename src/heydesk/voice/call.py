@@ -34,6 +34,7 @@ from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.piper.tts import PiperTTSService
+from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -46,9 +47,11 @@ from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
 from heydesk.services.conversations import ConversationService
+from heydesk.voice.bangla_tts import BanglaTTS
 from heydesk.voice.chorus import ChorusSTT
+from heydesk.voice.whisper_stt import WhisperSTT
 
-VOICE = "en_US-lessac-medium"  # Piper, free and local, until the real TTS lands
+VOICE = "en_US-lessac-medium"  # Piper, free and local, when VOICE_LANGUAGE is `en`
 PAUSE_S = 0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
 BARGE_IN_S = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
 BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
@@ -139,8 +142,11 @@ class Agent(FrameProcessor):
 class Speakable(BaseTextFilter):
     """Each sentence in words just before it's spoken: "৳450" → "four hundred and fifty taka"."""
 
+    def __init__(self, language: str) -> None:
+        self.language = language
+
     async def filter(self, text: str) -> str:
-        return speakable(text)
+        return speakable(text, self.language)
 
 
 class FirstSound(BaseObserver):
@@ -170,14 +176,24 @@ async def run_call(
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
+    language = settings.VOICE_LANGUAGE  # what every call hears and speaks (D86)
     stt: FrameProcessor
     if settings.STT_PROVIDER == "deepgram":
-        stt = DeepgramSTTService(api_key=settings.DEEPGRAM_API_KEY)
+        stt = DeepgramSTTService(
+            api_key=settings.DEEPGRAM_API_KEY,
+            settings=DeepgramSTTService.Settings(language=Language(language)),
+        )
+    elif settings.STT_PROVIDER == "whisper":
+        stt = WhisperSTT(settings.WHISPER_STT_URL, language)
     else:
-        stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY)
-    tts = PiperTTSService(
-        settings=PiperTTSService.Settings(voice=VOICE), text_filters=[Speakable()]
-    )
+        stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY, language)
+    tts: FrameProcessor
+    if language == "bn":
+        tts = BanglaTTS(settings.BANGLA_TTS_URL, text_filters=[Speakable(language)])
+    else:
+        tts = PiperTTSService(
+            settings=PiperTTSService.Settings(voice=VOICE), text_filters=[Speakable(language)]
+        )
     pipeline = Pipeline(
         [
             transport.input(),

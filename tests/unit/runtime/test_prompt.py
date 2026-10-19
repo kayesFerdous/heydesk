@@ -1,5 +1,10 @@
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.prompt import CHANNEL_STYLE, PLATFORM_RULES, build_system_prompt
+from heydesk.runtime.prompt import (
+    BANGLA_VOICE,
+    CHANNEL_STYLE,
+    PLATFORM_RULES,
+    build_system_prompt,
+)
 from tests.conftest import FIXED_NOW
 
 DESK = "# Your role\nYou are the host for {business_name}. Use {braces} as you like."
@@ -82,3 +87,13 @@ def test_documents_are_named_with_when_to_search_them() -> None:
 def test_on_voice_a_misheard_name_is_matched_to_a_listed_one_and_checked() -> None:
     text = build_system_prompt(agent(), DESK, "voice", FIXED_NOW, [])
     assert "can be misheard" in text and "take the closest listed one and check it" in text
+
+
+def test_a_call_in_bangla_is_told_to_write_everything_in_bangla_letters() -> None:
+    def right_now(channel: str, language: str) -> str:
+        text = build_system_prompt(agent(), DESK, channel, FIXED_NOW, [], language)
+        return text.split("# Right now\n")[1]
+
+    assert BANGLA_VOICE in right_now("voice", "bn")
+    assert BANGLA_VOICE not in right_now("web", "bn")  # the chat shows Latin letters fine
+    assert BANGLA_VOICE not in right_now("voice", "en")

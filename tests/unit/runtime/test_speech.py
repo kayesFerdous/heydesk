@@ -40,3 +40,23 @@ def test_clock_time_display() -> None:
 )
 def test_speakable(said: str, spoken: str) -> None:
     assert speakable(said) == spoken
+
+
+@pytest.mark.parametrize(
+    ("said", "spoken"),
+    [
+        ("মোট ৳360।", "মোট তিনশো ষাট টাকা।"),
+        ("মোট ৳১,০৪৫.৫০", "মোট এক হাজার পঁয়তাল্লিশ টাকা পঞ্চাশ পয়সা"),  # Bangla digits too
+        ("৳150000", "এক লাখ পঞ্চাশ হাজার টাকা"),
+        ("7:30 pm এ", "সন্ধ্যা সাতটা বেজে ত্রিশ মিনিট এ"),
+        ("সন্ধ্যা 7:30 pm এ", "সন্ধ্যা সাতটা বেজে ত্রিশ মিনিট এ"),  # not সন্ধ্যা twice
+        ("10:00 থেকে 19:00", "দশটা থেকে সন্ধ্যা সাতটা"),  # a bare 10:00 gets no part of day
+        ("12:15 am", "রাত বারোটা বেজে পনের মিনিট"),
+        ("অর্ডার O-104।", "অর্ডার ও একশো চার।"),
+        ("ফোন 01712-345678", "ফোন শূন্য এক সাত এক দুই তিন চার পাঁচ ছয় সাত আট"),
+        ("৭টায়", "সাতটায়"),
+        ("2 × কটন টুপি", "দুই কটন টুপি"),
+    ],
+)
+def test_speakable_in_bangla(said: str, spoken: str) -> None:
+    assert speakable(said, "bn") == spoken

@@ -1,0 +1,17 @@
+[project]
+name = "heydesk-tts"
+version = "0.1.0"
+description = "The Bangla voice for HeyDesk's calls, as a small local server (D84)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "coqui-tts[bn,codec]>=0.27.5",
+    "fastapi>=0.120",
+    "huggingface-hub>=0.30",
+    "torch==2.11.*",
+    "torchaudio==2.11.*",
+    "transformers<5",  # coqui-tts 0.27 imports a helper transformers 5 removed
+    "uvicorn>=0.38",
+]
+
+[tool.uv]
+package = false

@@ -60,6 +60,35 @@
       "port": 8000
     },
     {
+      "name": "heydesk-bangla-shop",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop-bn.yaml",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "bangla-tts",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--directory",
+        "tts_server",
+        "uvicorn",
+        "server:app",
+        "--port",
+        "8010"
+      ],
+      "port": 8010
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [

@@ -77,8 +77,9 @@ src/heydesk/
 │                        knowledge, photos (D57), imports (D53), sheets (D58), woo (D75), channels (Telegram and
 │                        Messenger, D42, D60), team (the owner's alerts, D43), payments (D47)
 ├── api/                 routes: read the request, call one service or store, return
-├── voice/               the voice channel (M2)
+├── voice/               the voice channel (M2); bangla_tts.py, the Bangla voice's client (D84)
 └── web/static/          the dev chat page
+tts_server/              the Bangla voice: its own uv project, run beside HeyDesk (D84)
 ```
 
 Imports point inwards: `api`/`voice` → `services` → `desks` → `runtime` → `ports`. A desk's
@@ -961,8 +962,33 @@ A `voice/` package turns speech into `start_turn(channel="voice")` calls and
 the turn's events back into speech, with Pipecat (D18): the browser's audio over
 WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
 (streamed; `STT_PROVIDER=chorus` switches to Chorus, one upload per utterance
-after 0.5s of silence, D39) and Piper for text-to-speech until
-the real one is added.
+after 0.5s of silence, D39; `STT_PROVIDER=whisper` to our Whisper, D87) and Piper for
+text-to-speech.
+
+- **Bangla (D84, D86):** the server's `VOICE_LANGUAGE` (`bn`, the default, or `en`) says what
+  every call hears and speaks, whatever the agent. A `bn` call asks Deepgram for Bangla
+  (`language=bn`) and speaks with our Bangla voice:
+  `voice/bangla_tts.py` (`BanglaTTS`) sends each sentence to `BANGLA_TTS_URL`, a small server in
+  `tts_server/` (its own uv project, so torch stays out of HeyDesk's) running
+  `EMTIAZZ/bangladeshi-bangla-tts-vits` (VITS, Apache 2.0, a Bangladeshi accent) on the CPU.
+  `POST /speak {text}` returns the sentence as 16-bit PCM, its rate in `X-Sample-Rate`. That voice
+  reads Bangla letters only, so the call's prompt asks for Bangla letters throughout
+  (`BANGLA_VOICE`), and `speakable(text, "bn")` says money, times, phone numbers and codes in
+  Bangla words ("৳360" → "তিনশো ষাট টাকা", "7:30 pm" → "সন্ধ্যা সাতটা বেজে ত্রিশ মিনিট",
+  "O-104" → "ও একশো চার"), with num2words's Bangla and the spoken শো for its শত.
+- **Bangla on a free GPU, for demos (D85):** `tts_server/kaggle_tts.ipynb` serves the same
+  `POST /speak` from a Kaggle T4, with a model that sounds more natural than VITS: BanglaBox
+  (`Banglabox/chatterbox-bangla-tts`, a Bangla Chatterbox) or OmniVoice (`k2-fsa/OmniVoice`,
+  non-commercial). Both clone one of BanglaBox's reference voices. A Cloudflare quick tunnel gives
+  the notebook a public URL. The notebook prints that URL as a `BANGLA_TTS_URL=` line for `.env`,
+  and the URL changes on every run.
+- **Our Whisper on a free GPU, for demos (D87):** `tts_server/kaggle_stt.ipynb` serves
+  `kayees/whisper-medium-bn-en-cs-faster` (Whisper medium fine-tuned on Bangla–English mixed
+  speech, faster-whisper int8) from its own Kaggle session and tunnel, or with `MODEL =
+  "bengaliai"` BengaliAI's Bangla Whisper medium, converted to CTranslate2 float16 at start, to
+  compare. `voice/whisper_stt.py`
+  (`WhisperSTT`, shaped like Chorus) posts each utterance's 16 kHz WAV to
+  `WHISPER_STT_URL/transcribe?language=<VOICE_LANGUAGE>` and gets `{"text": …}` back.
 
 - **Sentences:** the reply's tokens go straight to Pipecat's TTS, which speaks them
   sentence by sentence, so speech starts after the first sentence.
@@ -1014,6 +1040,7 @@ version handles them.
 | Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |
 | Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
+| Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams, billing, phone numbers, hosting | One owner login per business; no plans or billing; voice in the browser only; a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
