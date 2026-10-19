@@ -17,6 +17,7 @@ from heydesk.desks.shop.values import (
     OWN,
     NewOrder,
     OrderCancel,
+    OrderConfirm,
     OrderEdit,
     Product,
     counted,
@@ -214,6 +215,13 @@ class ShopStore(Store):
         if found is None:
             raise NotFound("There's no such order.")
         await self.move_order(found.id, "cancelled")
+
+    async def confirm_order(self, confirm: Confirmed[OrderConfirm]) -> ShopOrder:
+        """The buyer said yes on the shop's confirmation call (D88): `new` → `confirmed`."""
+        found = await self.order(confirm.value.number)
+        if found is None:
+            raise NotFound("There's no such order.")
+        return await self.move_order(found.id, "confirmed")
 
     async def move_order(
         self, order_id: str, status: str, tracking: str | None = None

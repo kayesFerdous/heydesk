@@ -2,6 +2,13 @@
 # file. Calls are in Bangla when VOICE_LANGUAGE is `bn`, and the local VITS voice drops Latin
 # letters, so an English greeting would open its calls in silence.
 greeting: আসসালামু আলাইকুম, নকশি থ্রেডসে আপনাকে স্বাগতম। আমি কীভাবে সাহায্য করতে পারি?
+# Calls to confirm new orders (D89), on for the demo: {code} and {total} are said in Bangla words
+calls:
+  enabled: true
+  wait_minutes: 0
+  start: "08:00"
+  end: "23:00"
+  opening: আসসালামু আলাইকুম, আমি নকশি থ্রেডস থেকে বলছি। আপনার অর্ডার {code}, মোট {total}, ক্যাশ অন ডেলিভারি। অর্ডারটি কি কনফার্ম করে পাঠিয়ে দেবো?
 name: Nakshi Threads assistant
 business_name: Nakshi Threads
 timezone: Asia/Dhaka

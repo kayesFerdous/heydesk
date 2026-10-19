@@ -3,6 +3,7 @@
 
 from heydesk.models.agent import Agent
 from heydesk.models.audit import AuditEvent
+from heydesk.models.call import Call
 from heydesk.models.channel import Channel
 from heydesk.models.conversation import Conversation
 from heydesk.models.document import Document
@@ -18,6 +19,7 @@ from heydesk.models.workspace import Workspace
 __all__ = [
     "Agent",
     "AuditEvent",
+    "Call",
     "Channel",
     "Conversation",
     "Document",

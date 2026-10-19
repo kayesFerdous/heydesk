@@ -1006,6 +1006,53 @@ text-to-speech.
   short "mm-hmm" doesn't, and isn't a turn. The old turn is saved before the next
   one starts.
 
+### Confirmation calls (D88, D89)
+
+A shop can turn on calls (`calls.enabled`, off by default): the agent then phones each buyer
+who placed an order, reads it back and asks them to confirm it. There is no phone carrier, and
+none is planned: the buyer's "phone" is a web page, `/phone` (dev only), open on a real phone. It
+asks for a mobile number once, then waits on `GET /api/phone/rings?number=…` (SSE; a comment
+every 15 s keeps a tunnel open).
+
+```
+order saved `new`, calls on ─► a `calls` row: queued, due `wait_minutes` later
+queue worker, every CALL_QUEUE_SECONDS:
+  ringing for RING_SECONDS, or declined ─► missed
+  fewer than MAX_LIVE_CALLS ringing or talking? the next due queued call:
+     "Call now" first, then the earliest due, then the oldest
+     calls off for its business, or outside its calling hours ─► it waits
+     its order isn't `new` any more ─► done: skipped
+     no /phone page open for its mobile ─► missed
+     else ─► ringing: `ring {call, business, order}` to the page
+  missed ─► tries left? queued again `retry_minutes` later : done, no answer, the owner told
+Answer ─► POST /api/voice/offer?call=<id> ─► talking: a new `voice` conversation with the first
+          line and `state.calling`; run_call says that line first, then goes on as any call
+"yes" ─► confirm_order: Jev checks the line and the yes ─► `new` → `confirmed`, an alert
+the call ends ─► done; its outcome from the order: confirmed, cancelled, or no decision
+```
+
+- **The shop's settings** (`ShopConfig.calls`, edited like the rest of the config):
+  `enabled`, `wait_minutes` (1), `start` and `end` (10:00–20:00, the business's time), `tries`
+  (2), `retry_minutes` (30), and `opening`, the call's first line, with `{code}` and `{total}`
+  filled in by Python: "Hello, this is {business_name} calling about your order {code}, total
+  {total}, paid in cash on delivery. Shall we confirm it and send it out?" The Bangla seed has it
+  in Bangla letters. It is the read-back `confirm_order` checks.
+- **The queue** is the `calls` table: `status` queued → ringing → talking → done; `outcome`
+  confirmed, cancelled, no_answer, no_decision, skipped (the order moved on first) or stopped
+  (the owner cancelled the call); `tries`, `next_try_at`, `priority` (1 after "Call now"). An
+  order has at most one call that isn't done. `MAX_LIVE_CALLS` (1) is for the whole server: the
+  Bangla voice speaks one sentence at a time.
+- **On the call** the shop's note (prompt-rules §7) says what the call is for. `cancel_order`,
+  `change_order` and `track_order` with no code mean the order the call is about. After
+  `confirm_order` or `cancel_order` succeeds, the call ends itself once the goodbye is spoken.
+- **The owner** sees the queue on the Calls page and the call on each order: `GET /api/calls`
+  (`view=waiting`, in queue order with each one's place; `view=done`, newest first; or
+  `order_id=`), `POST /api/calls {order_id}` to call a `new` order now (409 while calls are off or
+  it has a call waiting), `POST /api/calls/{id}/now` to move a queued call to the front, and
+  `DELETE /api/calls/{id}` to stop one that is queued.
+- **The phone page's rings** are kept in memory: a page per mobile, the newest wins. A ring lost
+  in a restart is a missed call after `RING_SECONDS`.
+
 ## 11. Testing
 
 - Unit tests for `runtime/` and `domain/` with `FakeLLM`, `FakeDecider` and the fixed clock
@@ -1041,7 +1088,7 @@ version handles them.
 | Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
-| Teams, billing, phone numbers, hosting | One owner login per business; no plans or billing; voice in the browser only; a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
+| Teams, billing, phone numbers, hosting | One owner login per business; no plans or billing; voice in the browser only (a confirmation call rings a `/phone` page, D88, D89); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
@@ -1055,4 +1102,5 @@ version handles them.
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
+| Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. One call at a time for the whole server. The shop only (D88, D89) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

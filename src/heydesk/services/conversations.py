@@ -24,6 +24,7 @@ from heydesk.runtime.events import Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
+from heydesk.services.calls import CallService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
@@ -59,6 +60,7 @@ class ConversationService:
         team: TeamService,
         visitors: VisitorService,
         woo: WooService,
+        calls: CallService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -69,6 +71,7 @@ class ConversationService:
         self.team = team
         self.visitors = visitors
         self.woo = woo
+        self.calls = calls
         self.settings = settings
         self.now = now
 
@@ -251,6 +254,8 @@ class ConversationService:
                 if isinstance(event, TurnEnded):
                     await self._save(conv, event)
                     await self._alert(conv, event)
+                    if event.alerts:  # a new shop order: its buyer may get a call (D89)
+                        await self.calls.after_turn(agent, conv.id)
                     await self.visitors.after_turn(agent, visitor, event.tools)
                 yield event
 

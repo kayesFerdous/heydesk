@@ -142,6 +142,10 @@ class AgentService:
     async def by_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
 
+    async def by_workspace(self, ws: str) -> LiveAgent:
+        """The business's agent, for a service that acts for its owner (D89)."""
+        return await self._live(Agent.workspace_id == ws)
+
     async def by_id(self, agent_id: str) -> LiveAgent:
         """For a messaging app, which knows its agent by id (D42)."""
         return await self._live(Agent.id == agent_id)

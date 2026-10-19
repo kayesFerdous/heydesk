@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -167,6 +167,67 @@ each test sentence in 0.6–1.3 s on the M2's CPU, about 7× faster than real ti
 **Done when:** `scripts/check.sh` is green; tests give the Bangla spoken forms; and a browser
 voice call to a `bn` agent hears a question in Bangla, answers in the Bangladeshi voice, and
 reads an order's total back correctly.
+
+### Day V2: the shop calls the buyer to confirm (D88)
+
+We have no phone carrier yet (Telnyx, Twilio), so for the demo the "phone" is a web page on a
+real phone: `/phone` waits for calls to one mobile number, rings, and on Answer opens the same
+WebRTC call as the Call button. A carrier replaces the page later; the call itself stays.
+
+- [x] `ShopConfig.confirm_call`: the call's first line, with `{code}` and `{total}`; Bangla in
+      `shop-bn.yaml`
+- [x] `services/calls.py` (`CallService`): the phone pages waiting per mobile; after a turn that
+      placed an order (`new`), it rings that mobile's page `CONFIRM_CALL_AFTER_SECONDS` later
+- [x] `GET /api/phone/rings?number=` (SSE: `ring {call, business}`), and `call=` on
+      `POST /api/voice/offer`: the call starts in a new voice conversation that already has the
+      first line, with `state.calling` the order; the agent says that line first
+- [x] `confirm_order` (shop): after a yes to that line, `new` → `confirmed`, with an alert;
+      `cancel_order`, `change_order` and `track_order` need no code on the call
+- [x] The shop's note on the call (docs/prompt-rules.md)
+- [x] `/phone`: the number once, then standby; a ringtone and vibration with Answer / Decline;
+      the call with a timer and Hang up
+- [x] design.md §10 and D88
+
+**Done when:** `scripts/check.sh` is green; tests show an order rings the buyer's waiting phone
+page, a yes on the call confirms it and nothing else does; and in the browser, an order in the
+chat makes `/phone` ring, and answering it starts the call with the confirmation line.
+
+### Day V3: confirmation calls, optional, with a queue (D89)
+
+Turns D88's demo into a feature a shop turns on. The phone is still the `/phone` page: no phone
+carrier is planned.
+
+- [x] `calls` in the shop's config: `enabled` (off by default), `wait_minutes`, calling hours
+      (`start`, `end`), `tries`, `retry_minutes`, and `opening` (D88's `confirm_call`)
+- [x] A `calls` table, the queue: queued → ringing → talking → done, with an outcome (confirmed,
+      cancelled, no answer, no decision, skipped, stopped), tries and the next try's time
+- [x] An order saved `new` while calls are on is queued `wait_minutes` later; the queue worker
+      (every `CALL_QUEUE_SECONDS`) calls the next one due: "Call now" first, then the earliest,
+      inside the calling hours, while fewer than `MAX_LIVE_CALLS` are live, and only while the
+      order is still `new`
+- [x] Not answered in `RING_SECONDS`, declined, or no page open: tried again `retry_minutes`
+      later, up to `tries`; then `no answer` and an alert for the owner
+- [x] The call ends itself after the goodbye once the order is confirmed or cancelled; when it
+      ends, its outcome comes from the order
+- [x] Owner routes: `GET /api/calls` (waiting in queue order, or done; or one order's),
+      `POST /api/calls` (call this order), `POST /api/calls/{id}/now`, `DELETE /api/calls/{id}`
+- [x] design.md, D89, docs for the frontend (`../heydesk-frontend/docs/api.md`)
+
+**Done when:** `scripts/check.sh` is green; tests show nothing is queued while calls are off,
+the queue calls in order inside the hours, a missed call is tried again and then alerts the
+owner, and only a yes on the call confirms the order. [x] (19 Oct, D89)
+
+### Day V4: the calls in the owner's console (`../heydesk-frontend`)
+
+- [x] Settings → Calls: the switch, the wait, the calling hours, the tries and the first line,
+      with a link to the demo phone
+- [x] A Calls page: Waiting in queue order (#1, #2…) with Call now and Cancel; Done grouped by
+      day with the outcome, Call again and the transcript. It refreshes every 5 s
+- [x] A shop order in the Inbox shows its call, and a new one has "Call to confirm"
+- [x] English and Bangla; architecture.md
+
+**Done when:** in the browser, with calls on, an order in the chat appears on the Calls page,
+rings `/phone`, and after a yes on the call shows Confirmed there and on the order.
 
 ## Still open
 

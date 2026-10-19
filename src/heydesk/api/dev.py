@@ -18,3 +18,10 @@ async def chat_page(request: Request) -> HTMLResponse:
     key = request.query_params.get("key") or request.app.state.dev_agent_key
     page = await asyncio.to_thread((WEB_STATIC / "index.html").read_text, encoding="utf-8")
     return HTMLResponse(page.replace("__AGENT_KEY__", html.escape(key, quote=True)))
+
+
+@router.get("/phone")
+async def phone_page() -> HTMLResponse:
+    """A web page that acts as the buyer's phone for the shop's confirmation call (D88)."""
+    page = await asyncio.to_thread((WEB_STATIC / "phone.html").read_text, encoding="utf-8")
+    return HTMLResponse(page)

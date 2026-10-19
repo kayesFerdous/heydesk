@@ -40,6 +40,7 @@ from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
+from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.imports import ImportService
@@ -160,12 +161,14 @@ def build_services(
         local_http=settings.APP_ENV == "development",
         hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
+    calls = CallService(sessions, agents, team, llm, settings, now)
     conversations = ConversationService(
-        sessions, runtime, knowledge, photos, team, visitors, woo_service, settings, now
+        sessions, runtime, knowledge, photos, team, visitors, woo_service, calls, settings, now
     )
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
+        calls=calls,
         channels=ChannelService(
             sessions, agents, conversations, photos, team, telegram, messenger, settings, now
         ),

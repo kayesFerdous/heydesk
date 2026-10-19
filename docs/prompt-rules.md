@@ -141,6 +141,12 @@ last message; Banglish gets Banglish, with an example without a price), then the
 ignored: Banglish got English or Bangla letters. At the end it held for Banglish, Bangla
 letters and English (13 Oct).
 
+On the shop's confirmation call (D88), the note also has `# This call`: the shop phoned the
+buyer about order O-104, and its first line (quoted) already read the order back and asked them
+to confirm. A clear yes → `confirm_order`; a cancel or a change → `cancel_order` or
+`change_order` with no code; then thank them and say goodbye. Without it the model would greet again
+and ask how it can help, as on a call the visitor makes.
+
 ## Backed by Python, not just the prompt
 
 A prompt rule can be ignored, so the ones that matter are also enforced in code:

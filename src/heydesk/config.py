@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     CLOUDFLARE_TURN_KEY_ID: str = ""
     CLOUDFLARE_TURN_API_TOKEN: str = ""
     MAX_CALL_SECONDS: int = 300  # a call hangs up after this long
+    # Calls to confirm shop orders (D89): the queue is checked this often; a ring not answered
+    # this long is missed; at most this many calls ring or talk at once, on the whole server
+    CALL_QUEUE_SECONDS: int = 5
+    RING_SECONDS: int = 30
+    MAX_LIVE_CALLS: int = 1
 
     DEV_AGENT_KIND: str = "restaurant"  # its desk: restaurant, clinic, receptionist or shop
     DEV_AGENT_SEED: str = "examples/agents/restaurant.yaml"

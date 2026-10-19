@@ -17,6 +17,7 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
+    EndWorkerFrame,
     Frame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
@@ -42,10 +43,11 @@ from pipecat.utils.text.base_text_filter import BaseTextFilter
 
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError
-from heydesk.runtime.events import HandOff, Token, ToolStarted
+from heydesk.runtime.events import HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
+from heydesk.services.calls import Answered
 from heydesk.services.conversations import ConversationService
 from heydesk.voice.bangla_tts import BanglaTTS
 from heydesk.voice.chorus import ChorusSTT
@@ -54,23 +56,33 @@ from heydesk.voice.whisper_stt import WhisperSTT
 VOICE = "en_US-lessac-medium"  # Piper, free and local, when VOICE_LANGUAGE is `en`
 PAUSE_S = 0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
 BARGE_IN_S = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
+GOODBYE_S = 1.5  # after the last word of a settled shop call, it hangs up (D89)
 BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
 
 
 class Agent(FrameProcessor):
     """Runs a turn for each thing the caller says and passes the reply on to be spoken."""
 
-    def __init__(self, conversations: ConversationService, agent: LiveAgent, visitor: str) -> None:
+    def __init__(
+        self,
+        conversations: ConversationService,
+        agent: LiveAgent,
+        visitor: str,
+        conversation_id: str | None = None,
+    ) -> None:
         super().__init__()
         self.conversations = conversations
         self.agent = agent
         self.visitor = visitor  # the caller's page token, for the limits (D51)
-        self.conversation_id: str | None = None  # one conversation per call
+        # One conversation per call: made by the first turn, or by the shop's call (D88)
+        self.conversation_id = conversation_id
         self.turn: asyncio.Task[None] | None = None  # the running turn, in its own task
         self.interrupt: asyncio.Event | None = None  # that turn's stop flag
         self.speaking = False  # the agent's audio is playing
         self.over_agent = False  # the caller started talking while the agent was busy
         self.barge_in: asyncio.Task[None] | None = None
+        self.over = False  # the shop's call settled its order: hang up once the goodbye is said
+        self.hang_up: asyncio.Task[None] | None = None
 
     def busy(self) -> bool:
         return self.speaking or (self.turn is not None and not self.turn.done())
@@ -82,6 +94,11 @@ class Agent(FrameProcessor):
             return
         if isinstance(frame, BotStartedSpeakingFrame | BotStoppedSpeakingFrame):
             self.speaking = isinstance(frame, BotStartedSpeakingFrame)
+            if self.hang_up:  # more words (the next sentence): not yet
+                await self.cancel_task(self.hang_up)
+                self.hang_up = None
+            if self.over and not self.busy():
+                self.hang_up = self.create_task(self.end_after(GOODBYE_S))
         elif isinstance(frame, VADUserStartedSpeakingFrame):
             self.over_agent = self.busy()
             if self.over_agent:
@@ -98,6 +115,10 @@ class Agent(FrameProcessor):
         if self.turn:
             await asyncio.wait([self.turn])  # wait, don't cancel: it saves what it had
         self.turn = self.create_task(self.reply(text))
+
+    async def end_after(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        await self.push_frame(EndWorkerFrame())  # ends the call once the audio has played
 
     async def stop_after(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
@@ -136,6 +157,8 @@ class Agent(FrameProcessor):
             elif isinstance(event, HandOff) and event.message not in spoken:
                 # There's no card on a call: a failure's polite line is said out loud
                 await self.push_frame(LLMTextFrame(f" {event.message}"))
+            elif isinstance(event, TurnEnded) and event.state.get("calling", {}).get("over"):
+                self.over = True  # the goodbye is on its way (D89)
         await self.push_frame(LLMFullResponseEndFrame())
 
 
@@ -172,7 +195,10 @@ async def run_call(
     services: Services,
     agent: LiveAgent,
     visitor: str,
+    answered: Answered | None = None,
 ) -> None:
+    """A call the visitor made, or with `answered`, the shop's call they answered on
+    `/phone` (D88): that one starts with its own first line, not the greeting."""
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
@@ -199,7 +225,12 @@ async def run_call(
             transport.input(),
             VADProcessor(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=PAUSE_S))),
             stt,
-            Agent(services.conversations, agent, visitor),
+            Agent(
+                services.conversations,
+                agent,
+                visitor,
+                answered.conversation_id if answered else None,
+            ),
             tts,
             transport.output(),
         ]
@@ -210,7 +241,10 @@ async def run_call(
 
     @transport.event_handler("on_client_connected")
     async def on_connected(transport: SmallWebRTCTransport, client: object) -> None:
-        await task.queue_frame(TTSSpeakFrame(agent.greeting))  # what the first turn stores (D8)
+        if answered:  # already stored in its conversation (D88)
+            await task.queue_frame(TTSSpeakFrame(answered.said))
+        else:
+            await task.queue_frame(TTSSpeakFrame(agent.greeting))  # what the first turn stores (D8)
 
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(transport: SmallWebRTCTransport, client: object) -> None:

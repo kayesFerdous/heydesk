@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Phone</title>
+<!-- The buyer's phone for the shop's confirmation call (D88): we have no phone carrier yet,
+     so this page, open on a real phone, waits for one mobile number's calls. -->
+<style>
+  :root { --bg: #0b1220; --text: #f1f5f9; --muted: #94a3b8; --green: #22c55e; --red: #ef4444; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; justify-content: center;
+  }
+  main {
+    width: 100%; max-width: 420px; min-height: 100%; padding: 48px 24px 40px;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+  }
+  section { display: none; flex: 1; width: 100%; flex-direction: column; align-items: center; }
+  section.shown { display: flex; }
+  .small { color: var(--muted); font-size: 14px; }
+  .clock { font-size: 64px; font-weight: 200; letter-spacing: 1px; margin-top: 24px; }
+  .number { font-size: 22px; margin: 8px 0 4px; letter-spacing: 1px; }
+  .avatar {
+    width: 112px; height: 112px; border-radius: 50%; margin: 32px 0 16px;
+    display: grid; place-items: center; font-size: 44px; font-weight: 600;
+    background: #1e293b;
+  }
+  .ringing .avatar { animation: pulse 1.2s ease-out infinite; }
+  @keyframes pulse {
+    from { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); }
+    to { box-shadow: 0 0 0 28px rgba(34, 197, 94, 0); }
+  }
+  .caller { font-size: 30px; font-weight: 500; margin: 0; }
+  .spacer { flex: 1; }
+  .buttons { display: flex; gap: 72px; margin-bottom: 24px; }
+  .round {
+    width: 76px; height: 76px; border: 0; border-radius: 50%; color: white; font-size: 30px;
+    cursor: pointer; display: grid; place-items: center;
+  }
+  .round svg { width: 34px; height: 34px; fill: currentColor; }
+  .answer { background: var(--green); }
+  .decline, .hang-up { background: var(--red); }
+  .decline svg, .hang-up svg { transform: rotate(135deg); }
+  .label { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  form { width: 100%; margin-top: 40px; display: flex; flex-direction: column; gap: 12px; }
+  input {
+    width: 100%; padding: 14px 16px; border-radius: 12px; border: 1px solid #334155;
+    background: #111a2e; color: var(--text); font-size: 20px; text-align: center;
+    letter-spacing: 1px;
+  }
+  button.wide {
+    padding: 14px; border: 0; border-radius: 12px; background: var(--green); color: #052e16;
+    font-size: 17px; font-weight: 600; cursor: pointer;
+  }
+  .error { color: #fca5a5; min-height: 20px; font-size: 14px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.on { background: var(--green); }
+  .dot.off { background: var(--red); }
+  a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <section id="setup" class="shown">
+    <p class="small">This page is the buyer's phone for the demo</p>
+    <form id="setup-form">
+      <label class="small" for="number">This phone's mobile number</label>
+      <input id="number" inputmode="tel" autocomplete="tel" placeholder="01712345678" required>
+      <button class="wide" type="submit">Wait for calls</button>
+      <div class="error" id="setup-error" role="alert"></div>
+    </form>
+  </section>
+
+  <section id="standby">
+    <div class="clock" id="clock">--:--</div>
+    <div class="small" id="date"></div>
+    <div class="spacer"></div>
+    <div class="number" id="my-number"></div>
+    <div class="small"><span class="dot off" id="dot"></span><span id="line">Connecting…</span></div>
+    <p><a href="#" id="change">Change number</a></p>
+  </section>
+
+  <section id="ringing" class="ringing">
+    <p class="small">Incoming call</p>
+    <div class="avatar" id="ring-initial">S</div>
+    <p class="caller" id="ring-business">The shop</p>
+    <p class="small" id="ring-about"></p>
+    <div class="spacer"></div>
+    <div class="buttons">
+      <div>
+        <button class="round decline" id="decline" aria-label="Decline">
+          <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+        </button>
+        <div class="label">Decline</div>
+      </div>
+      <div>
+        <button class="round answer" id="answer" aria-label="Answer">
+          <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+        </button>
+        <div class="label">Answer</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="in-call">
+    <div class="avatar" id="call-initial">S</div>
+    <p class="caller" id="call-business">The shop</p>
+    <p class="small" id="call-status">Connecting…</p>
+    <div class="spacer"></div>
+    <div>
+      <button class="round hang-up" id="hang-up" aria-label="Hang up">
+        <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>
+      </button>
+      <div class="label">Hang up</div>
+    </div>
+  </section>
+</main>
+<script src="phone.js" type="module"></script>
+</body>
+</html>

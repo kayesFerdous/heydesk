@@ -4,6 +4,7 @@ them. Pure."""
 import html
 import re
 from dataclasses import dataclass
+from datetime import time
 from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -161,6 +162,32 @@ def match_zone(zones: list[Zone], said: str) -> Zone:
     raise ValueError(f"Which delivery area: {names}? Ask.")
 
 
+class CallSettings(BaseModel):
+    """The shop's calls to confirm new orders (D88, D89): off until the owner turns them on."""
+
+    enabled: bool = False
+    wait_minutes: int = Field(default=1, ge=0, le=240)  # after the order, before the call
+    start: time = time(10)  # calls only between these, in the business's time
+    end: time = time(20)
+    tries: int = Field(default=2, ge=1, le=5)  # rings before it gives up
+    retry_minutes: int = Field(default=30, ge=1, le=1440)  # between them
+    # The call's first line; Python fills in {code} and {total}. The buyer says yes to it.
+    opening: str = Field(
+        default=(
+            "Hello, this is {business_name} calling about your order {code}, total {total}, "
+            "paid in cash on delivery. Shall we confirm it and send it out?"
+        ),
+        min_length=1,
+        max_length=500,
+    )
+
+    @model_validator(mode="after")
+    def hours_in_order(self) -> Self:
+        if self.end <= self.start:
+            raise ValueError("The calling hours must end after they start.")
+        return self
+
+
 class ShopConfig(AgentConfig):
     widget: Widget = Widget(
         starters=["What's new?", "Track my order", "What's the delivery charge?"]
@@ -169,6 +196,7 @@ class ShopConfig(AgentConfig):
         "Hi, welcome to {business_name}! I can tell you about our products and prices, "
         "take your order, or check on one you've placed."
     )
+    calls: CallSettings = CallSettings()  # calls to confirm new orders (D88, D89)
     delivery: list[Zone] = Field(
         default_factory=list
     )  # where the shop delivers, and the charge for each
@@ -298,6 +326,13 @@ class NewOrder:
 
 @dataclass(frozen=True)
 class OrderCancel:
+    number: int
+
+
+@dataclass(frozen=True)
+class OrderConfirm:
+    """The buyer said yes on the shop's confirmation call (D88)."""
+
     number: int
 
 

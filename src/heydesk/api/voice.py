@@ -1,11 +1,16 @@
-"""The browser's WebRTC handshake for a voice call; the call itself runs in `voice/` (design §10)."""
+"""The browser's WebRTC handshake for a voice call; the call itself runs in `voice/` (design §10).
+
+Also the `/phone` page's side (D88): it waits here for its mobile's calls, and answers one by
+making the same offer with `call=`."""
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 import httpx
 from aiortc import RTCIceServer
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import StreamingResponse
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCPatchRequest,
@@ -13,6 +18,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
 )
 
+from heydesk.api.sse import frame
 from heydesk.voice.call import run_call
 
 router = APIRouter(include_in_schema=False)
@@ -20,6 +26,7 @@ handler = SmallWebRTCRequestHandler()  # keeps the open peer connections
 calls: set[asyncio.Task[None]] = set()  # running calls, so they aren't garbage-collected
 TURN_URL = "https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers"
 STUN_ONLY = [{"urls": ["stun:stun.cloudflare.com:3478"]}]
+STILL_HERE_S = 15  # a comment this often keeps a tunnel from closing a quiet stream
 
 
 async def ice_servers(request: Request) -> list[dict[str, Any]]:
@@ -48,17 +55,30 @@ async def offer(
     request: Request,
     visitor: Annotated[str, Query(min_length=8, max_length=64)],
     key: str | None = None,
+    call: str | None = None,
 ) -> dict[str, Any] | None:
-    """`visitor` is the page's token, as in web chat: a call shares the visitor's limits (D51)."""
+    """`visitor` is the page's token, as in web chat: a call shares the visitor's limits (D51).
+    `call` is a ring the `/phone` page answered: the shop's call to confirm an order (D89)."""
     state = request.app.state
-    agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
-    await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429 if limited
+    answered = await state.services.calls.answer(call) if call else None  # 404 if it ended
+    if answered:
+        agent = answered.agent
+    else:
+        agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
+        await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429: limited
     handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])
 
+    async def talk(connection: SmallWebRTCConnection) -> None:
+        try:
+            await run_call(
+                connection, state.settings, state.services, agent, f"web:{visitor}", answered
+            )
+        finally:
+            if answered:  # its outcome, from the order (D89)
+                await state.services.calls.ended(answered.call_id)
+
     async def start(connection: SmallWebRTCConnection) -> None:
-        call = asyncio.create_task(
-            run_call(connection, state.settings, state.services, agent, f"web:{visitor}")
-        )
+        call = asyncio.create_task(talk(connection))
         calls.add(call)
         call.add_done_callback(calls.discard)
 
@@ -68,3 +88,33 @@ async def offer(
 @router.patch("/api/voice/offer")
 async def ice(body: SmallWebRTCPatchRequest) -> None:
     await handler.handle_patch_request(body)
+
+
+@router.get("/api/phone/rings")
+async def rings(number: str, request: Request) -> StreamingResponse:
+    """The `/phone` page waits here for its mobile's calls (D88): `ready {number}`, then a
+    `ring {call, business, order}` for each one."""
+    calls = request.app.state.services.calls
+    mobile = calls.number(number)  # 400 if it isn't a mobile number
+
+    async def stream() -> AsyncIterator[str]:
+        queue = calls.listen(mobile)
+        try:
+            yield frame("ready", {"number": mobile})
+            while True:
+                try:
+                    ring = await asyncio.wait_for(queue.get(), STILL_HERE_S)
+                except TimeoutError:
+                    yield ": still here\n\n"
+                    continue
+                yield frame("ring", ring)
+        finally:
+            calls.leave(mobile, queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@router.post("/api/phone/decline", status_code=204)
+async def decline(call: str, request: Request) -> None:
+    """The buyer tapped Decline: a missed call, tried again later (D89)."""
+    await request.app.state.services.calls.missed(call)

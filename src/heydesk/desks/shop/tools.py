@@ -22,6 +22,7 @@ from heydesk.desks.shop.values import (
     STATUS_WORDS,
     NewOrder,
     OrderCancel,
+    OrderConfirm,
     OrderEdit,
     ShopConfig,
     cart_text,
@@ -304,9 +305,14 @@ class FindOrderInput(BaseModel):
 
 
 async def _find(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolResult:
-    """With no code, the one order placed in this conversation (D55). Otherwise the order, if
-    the code and the mobile both match: one answer for a wrong code and a wrong number, so a
-    stranger can't find out whose order a code is."""
+    """With no code, the order the shop's call is about (D88), or the one placed in this
+    conversation (D55). Otherwise the order, if the code and the mobile both match: one answer
+    for a wrong code and a wrong number, so a stranger can't find out whose order a code is."""
+    calling = ctx.state.get("calling")
+    if not code.strip() and calling:
+        found = await ctx.store.order(calling["number"])
+        if found:
+            return found
     if not code.strip():
         here = await ctx.store.orders_here()
         if len(here) == 1:
@@ -390,7 +396,18 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     if confirmed is None:
         return ask_for_yes(read_back, "cancel_order")
     await ctx.store.cancel_order(confirmed)
-    return ToolResult(ok=True, data={"done": read_back}, alert=f"❌ Order {found.code} cancelled")
+    return ToolResult(
+        ok=True,
+        data={"done": read_back},
+        state=_call_over(ctx),
+        alert=f"❌ Order {found.code} cancelled",
+    )
+
+
+def _call_over(ctx: Ctx) -> dict[str, Any] | None:
+    """On the shop's call (D89), the order is settled: the call ends after the goodbye."""
+    calling = ctx.state.get("calling")
+    return {"calling": {**calling, "over": True}} if calling else None
 
 
 CANCEL_ORDER = Tool(
@@ -405,6 +422,54 @@ CANCEL_ORDER = Tool(
     run=cancel_order,
     label="Finding your order…",
     timeout_s=10.0,
+)
+
+
+class ConfirmOrderInput(BaseModel):
+    pass
+
+
+async def confirm_order(ctx: Ctx, args: ConfirmOrderInput) -> ToolResult:
+    """On the shop's confirmation call (D88): the call's first line read the order back, so
+    after a clear yes to it the order is `confirmed`."""
+    calling = ctx.state.get("calling")
+    if not calling:
+        return fail("Only the shop's call confirms an order. Say the shop will call them.")
+    found = await ctx.store.order(calling["number"])
+    if found is None or found.status != "new":
+        status = STATUS_WORDS[found.status] if found else "gone"
+        return fail(f"Order {calling['code']} is {status}: nothing to confirm. Tell them.")
+    confirmed = await confirm(
+        ctx.decider, OrderConfirm(found.number), calling["said"], ctx.agent_said, ctx.visitor_said
+    )
+    if confirmed is None:
+        return ask_for_yes(calling["said"], "confirm_order")
+    await ctx.store.confirm_order(confirmed)
+    zones = cast(ShopConfig, ctx.agent).delivery
+    zone = next((z for z in zones if z.name == found.zone), None)
+    takes = f" Delivery usually takes {zone.days}." if zone and zone.days else ""
+    return ToolResult(
+        ok=True,
+        data={
+            "next": f"Thank them: order {found.code} is confirmed and will be sent out.{takes} "
+            "Then say goodbye."
+        },
+        state=_call_over(ctx),
+        alert=f"✅ Order {found.code} confirmed by the buyer on the shop's call",
+    )
+
+
+CONFIRM_ORDER = Tool(
+    name="confirm_order",
+    description=(
+        "On the shop's call to confirm an order: call it when the buyer says yes to the order "
+        "your first line read back. Needs nothing else."
+    ),
+    input_model=ConfirmOrderInput,
+    run=confirm_order,
+    label="Confirming your order…",
+    filler="One moment.",
+    timeout_s=10.0,  # the commit check is a network call
 )
 
 
@@ -638,6 +703,7 @@ TOOLS = [
     TRACK_ORDER,
     CHANGE_ORDER,
     CANCEL_ORDER,
+    CONFIRM_ORDER,
     REQUEST_EXCHANGE,
     SHOW_PHOTOS,
 ]
