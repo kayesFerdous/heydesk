@@ -68,6 +68,9 @@ class Pathao:
         said = str(data.get("order_status_slug") or data.get("order_status") or "")
         return Tracked(said, ENDINGS.get(said.lower().replace(" ", "_")))
 
+    async def record(self, account: CourierAccount, phone: str) -> str | None:
+        return None  # Pathao's merchant API has no buyer record
+
     async def _token(self, account: CourierAccount) -> str:
         key = (account.sandbox, account.key, account.username)
         kept = self.tokens.get(key)

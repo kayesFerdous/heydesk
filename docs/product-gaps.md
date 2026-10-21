@@ -104,6 +104,8 @@ exist (`courier-fraud-checker-bd` on PyPI). But they log in to the courier porta
 own account, can break when a portal changes, and RedX now needs an OTP to log in. We already warn
 the owner about a phone with past returns *in our own data* (D54). Showing the courier ratio in the
 same alert would be the feature shop owners would notice most. Check each courier's terms first.
+*Done for Steadfast through its official API (D91): a linked courier's fraud score goes to the
+owner for each new order.*
 
 **Recommendation:** the Telegram button and the Messenger quick reply first (free, a day's work,
 no new service). Then an OTP only for web orders over a set amount, behind an `Sms` port with an

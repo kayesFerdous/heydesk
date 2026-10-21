@@ -370,7 +370,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (the linked courier's parcel and its last words, D90). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (the linked courier's parcel and its last words, D90), courier_record (the buyer's mobile across the courier's merchants, D91). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -789,7 +789,8 @@ owner: picks a courier and pastes its keys ─► PUT /api/agent/courier (checke
 order → confirmed (a yes on the shop's call, or the owner) ─► book now, in the background
   booked ─► shipped, tracking "Steadfast 123456", the owner told: pack it for the rider
   refused ─► stays confirmed, problem noted, the owner told once; tried again next round
-every COURIER_SYNC_MINUTES:
+every COURIER_SYNC_MINUTES (and after each order saved):
+  look up each unsent order's mobile once (Steadfast) ─► courier_record, the owner told (D91)
   book each confirmed order with no parcel yet
   ask the courier about each shipped one ─► its words in courier_status, for track_order
                                          ─► delivered / returned when the courier says so
@@ -819,12 +820,20 @@ every COURIER_SYNC_MINUTES:
   → `delivered`; Steadfast's `cancelled` (the parcel is coming back) and Pathao's `Return` →
   `returned`, and the owner hears it. Polling, no webhooks: Steadfast's need setting by hand in
   its panel, and Pathao's aren't signed.
+- **The buyer's record** (D91, Steadfast only): before an order is confirmed, the round asks
+  Steadfast's fraud score for its mobile (`GET /fraud_check/score/{phone}`: delivery and
+  cancellation ratios and fraud reports across all of Steadfast's merchants). Python writes
+  the line, "Steadfast: 86% delivered, 14% cancelled, 1 fraud report" (or "no finished parcels
+  yet"), saves it in `courier_record` and sends it to the owner, so it's there before the
+  shop's call or the owner's confirm. Once per order; a failed lookup is tried next round and
+  is never a `problem`. It's a hint for the owner: nothing is refused because of it, and the
+  agent isn't told. Pathao's API has no such lookup (`record` returns None).
 - **After booking, the buyer can't cancel or change it** (`shipped`, as before): the tool
   offers a message for the team, and the owner cancels it in the courier's panel. Neither API
   cancels a parcel.
 - **The APIs.** `adapters/courier/steadfast.py`: `https://portal.packzy.com/api/v1`,
   `Api-Key` and `Secret-Key` headers, `POST /create_order`, `GET /status_by_cid/{id}`,
-  `GET /get_balance`. There's no sandbox: a booking is a real parcel. `adapters/courier/pathao.py`:
+  `GET /get_balance`, `GET /fraud_check/score/{phone}`. There's no sandbox: a booking is a real parcel. `adapters/courier/pathao.py`:
   `https://api-hermes.pathao.com`, or `https://courier-api-sandbox.pathao.com` with Pathao's
   published test login; a token from `POST /aladdin/api/v1/issue-token`, kept until it
   expires; `GET /aladdin/api/v1/stores`, `POST /aladdin/api/v1/orders`,

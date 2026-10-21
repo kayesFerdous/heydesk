@@ -24,6 +24,7 @@ class FakeCourier:
         self.parcels: dict[str, Parcel] = {}
         self.says: dict[str, Tracked] = {}
         self.down = ""  # a problem for every booking
+        self.records: dict[str, str] = {}  # what it knows about mobiles
 
     async def check(self, account: CourierAccount) -> int | None:
         if account.secret != "secret-1":
@@ -40,6 +41,21 @@ class FakeCourier:
 
     async def status(self, account: CourierAccount, parcel_id: str) -> Tracked:
         return self.says[parcel_id]
+
+    async def record(self, account: CourierAccount, phone: str) -> str | None:
+        return self.records.get(phone)
+
+
+async def test_a_new_orders_mobile_is_looked_up_once(world: World) -> None:
+    await world.agent("shop")
+    courier = await linked(world)
+    courier.records["01712345678"] = "Steadfast: 60% delivered, 2 fraud reports"
+    await confirmed(world.sessions, 101, status="new")
+    await world.services.courier.sync(DEV_WORKSPACE_ID)
+    courier.records["01712345678"] = "changed"  # known already: not asked again
+    await world.services.courier.sync(DEV_WORKSPACE_ID)
+    [order] = await orders(world)
+    assert order.courier_record == "Steadfast: 60% delivered, 2 fraud reports"
 
 
 async def confirmed(

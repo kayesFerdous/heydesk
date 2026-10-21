@@ -140,6 +140,16 @@ class CourierService:
         api, acct, name = self.apis[link.kind], account(link), NAMES[link.kind]
         async with self.locks[ws]:
             problem = ""
+            for order in await shop.orders_to_look_up():  # before it's confirmed (D91)
+                try:
+                    record = await api.record(acct, order.phone)
+                except CourierError:  # only a hint: tried again next round
+                    log.warning("courier record failed", extra={"workspace_id": ws})
+                    break
+                if record is None:  # this courier can't tell
+                    break
+                await shop.record_found(order.id, record)
+                await self.team.notify(ws, f"🔎 {order.code}, the buyer's mobile on {record}")
             for order in await shop.orders_for_courier("confirmed"):
                 try:
                     booked = await api.book(acct, parcel(order))

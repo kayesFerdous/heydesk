@@ -125,6 +125,25 @@ class ShopStore(Store):
             )
             return list(rows)
 
+    async def orders_to_look_up(self) -> list[ShopOrder]:
+        """The orders not sent yet whose mobile's courier record isn't known (D91)."""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(ShopOrder)
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.status.in_(HOLDS),
+                    ShopOrder.courier_record == "",
+                )
+                .order_by(ShopOrder.created_at)
+            )
+            return list(rows)
+
+    async def record_found(self, order_id: str, record: str) -> None:
+        async with self.sessions() as s, s.begin():
+            order = await self._one(s, ShopOrder, order_id)
+            order.courier_record = record[:200]
+
     async def parcel_booked(self, order_id: str, parcel_id: str, tracking: str) -> None:
         """The courier has the order's parcel: it's `shipped`, unless it moved meanwhile."""
         async with self.sessions() as s, s.begin():

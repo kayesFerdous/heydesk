@@ -46,6 +46,7 @@ class ShopOrderOut(BaseModel):
     tracking: str
     parcel_id: str  # booked with the linked courier (D90); empty: not booked by us
     courier_status: str  # the courier's last words about it
+    courier_record: str  # the mobile across the courier's merchants (D91); "" not known
     created_at: datetime
     updated_at: datetime
 

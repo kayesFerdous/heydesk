@@ -241,7 +241,9 @@ rings `/phone`, and after a yes on the call shows Confirmed there and on the ord
 - [x] Routes `/api/agent/courier` and `/api/agent/courier/sync`; `track_order` gives the
       courier's words
 - [x] Tests (a fake courier): only confirmed orders are booked, once; a refusal stays confirmed
-      and is tried again; delivered and returned follow the courier; a wrong key is a 400
+      and is tried again; delivered and returned follow the courier; a wrong key is a 422
+- [x] D91: a new order's mobile is looked up with Steadfast's fraud score once; the line is
+      saved on the order and sent to the owner
 
 **Done when:** `scripts/check.sh` is green, and against Pathao's sandbox: linking takes its test
 store, an order confirmed in the dev chat is booked there with the right cash to collect, and
@@ -250,7 +252,8 @@ its status comes back.
 ### Day K2: the courier in the owner's console (`../heydesk-frontend`)
 
 - [ ] Settings → Courier: pick Steadfast or Pathao, paste the keys, see a problem
-- [ ] An order shows its parcel, the courier's words and a link to track it
+- [ ] An order shows its parcel, the courier's words, the buyer's courier record (D91) and a
+      link to track it
 
 **Done when:** in the browser, the courier links, and a confirmed order shows its parcel.
 

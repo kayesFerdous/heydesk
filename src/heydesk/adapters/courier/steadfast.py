@@ -19,6 +19,15 @@ ENDINGS: dict[str, Ending] = {  # Steadfast's final words → the order's last s
 }
 
 
+def percent(ratio: object) -> int | None:
+    """A ratio as a whole percent; None when nothing has finished. ponytail: its scale isn't
+    documented, so 0–1 is taken as a fraction and more as a percent already."""
+    if ratio is None:
+        return None
+    value = float(str(ratio))
+    return round(value * 100 if value <= 1 else value)
+
+
 class Steadfast:
     def __init__(self, timeout: float = 15.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
@@ -48,6 +57,20 @@ class Steadfast:
         data = await self._call(account, "GET", f"status_by_cid/{parcel_id}")
         said = str(data.get("delivery_status", ""))
         return Tracked(said, ENDINGS.get(said))
+
+    async def record(self, account: CourierAccount, phone: str) -> str | None:
+        """Its fraud score: the mobile's record across Steadfast's merchants (D91). The old
+        `/fraud_check/{phone}` with counts was retired on 27 Sep 2026."""
+        data = await self._call(account, "GET", f"fraud_check/score/{phone}")
+        data = {**data, **(data.get("data") or {})}  # seen at both levels
+        delivered = percent(data.get("delivery_ratio"))
+        cancelled = percent(data.get("cancellation_ratio"))
+        reports = int(data.get("total_reports") or 0)
+        said = [f"{delivered}% delivered" if delivered is not None else "no finished parcels yet"]
+        if cancelled:
+            said.append(f"{cancelled}% cancelled")
+        said.append(f"{reports} fraud report" + ("" if reports == 1 else "s"))
+        return "Steadfast: " + ", ".join(said)
 
     async def _call(
         self, account: CourierAccount, method: str, path: str, **kwargs: Any

@@ -67,3 +67,24 @@ async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
     assert "recipient_city" not in booking  # Pathao finds it from the address
     assert (booking["store_id"], booking["amount_to_collect"]) == (9, 360)
     assert sent[2].headers["Authorization"] == "Bearer t1"
+
+
+async def test_steadfasts_fraud_score_is_a_line_for_the_owner() -> None:
+    answers = iter(
+        [
+            {"delivery_ratio": 0.857, "cancellation_ratio": 0.143, "total_reports": 1},
+            {"data": {"delivery_ratio": None, "total_reports": 0}},
+        ]
+    )
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/fraud_check/score/01712345678")
+        return httpx.Response(200, json=next(answers))
+
+    steadfast = Steadfast()
+    steadfast.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    account = CourierAccount("steadfast", "k", "s")
+    said = await steadfast.record(account, "01712345678")
+    assert said == "Steadfast: 86% delivered, 14% cancelled, 1 fraud report"
+    said = await steadfast.record(account, "01712345678")
+    assert said == "Steadfast: no finished parcels yet, 0 fraud reports"
