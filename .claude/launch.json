@@ -44,6 +44,21 @@
       "port": 8000
     },
     {
+      "name": "heydesk-fake-nomail",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "BREVO_API_KEY=",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "heydesk-fake-shop",
       "runtimeExecutable": "env",
       "runtimeArgs": [

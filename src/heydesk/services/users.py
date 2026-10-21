@@ -16,6 +16,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Literal
 
 import jwt
@@ -31,22 +32,22 @@ TOKEN_DAYS = 7
 WRONG_CODE = "That code is wrong or has expired. Ask for a new one."
 CODE_MINUTES = 15  # a code works in its window and the next: 15 to 30 minutes
 type Purpose = Literal["verify", "reset"]
-EMAILS: dict[Purpose, tuple[str, str]] = {  # subject, text; CODE is replaced
+# Each email with a code: its subject, heading, the line above the code, the note below.
+EMAILS: dict[Purpose, tuple[str, str, str, str]] = {
     "verify": (
         "Your HeyDesk code: CODE",
-        (
-            "Your code to verify your email is CODE. It works for 15 minutes.\n\n"
-            "If you didn't sign up for HeyDesk, you can ignore this email."
-        ),
+        "Verify your email",
+        "Enter this code in HeyDesk to finish creating your account.",
+        "If you didn't sign up for HeyDesk, you can ignore this email.",
     ),
     "reset": (
         "Your HeyDesk password code: CODE",
-        (
-            "Your code to set a new password is CODE. It works for 15 minutes.\n\n"
-            "If you didn't ask for it, ignore this email: your password stays as it is."
-        ),
+        "Set a new password",
+        "Enter this code in HeyDesk to choose a new password.",
+        "If you didn't ask for it, ignore this email: your password stays as it is.",
     ),
 }
+EMAIL_HTML = (Path(__file__).parent / "email_code.html").read_text(encoding="utf-8")
 hasher = PasswordHash.recommended()  # argon2
 
 
@@ -256,10 +257,17 @@ class UserService:
 
     async def _send_code(self, user: User, purpose: Purpose) -> None:
         code = self._code(user, purpose, self._window())
-        subject, text = EMAILS[purpose]
-        await self.mailer.send(
-            user.email, subject.replace("CODE", code), text.replace("CODE", code)
+        subject, heading, intro, note = EMAILS[purpose]
+        text = (
+            f"{intro}\n\n{code}\n\nIt works for 15 minutes. Don't share it with anyone.\n\n{note}"
         )
+        html = (
+            EMAIL_HTML.replace("HEADING", heading)
+            .replace("INTRO", intro)
+            .replace("NOTE", note)
+            .replace("CODE", code)
+        )
+        await self.mailer.send(user.email, subject.replace("CODE", code), text, html)
 
     def _check_code(self, user: User, purpose: Purpose, code: str) -> None:
         window = self._window()

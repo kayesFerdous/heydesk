@@ -18,12 +18,13 @@ class Brevo:
         )
         self.sender = sender
 
-    async def send(self, to: str, subject: str, text: str) -> None:
+    async def send(self, to: str, subject: str, text: str, html: str = "") -> None:
         body = {
             "sender": {"name": "HeyDesk", "email": self.sender},
             "to": [{"email": to}],
             "subject": subject,
             "textContent": text,
+            **({"htmlContent": html} if html else {}),
         }
         try:
             response = await self.client.post("/smtp/email", json=body)
@@ -40,6 +41,6 @@ class ConsoleMailer:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []  # (to, subject, text)
 
-    async def send(self, to: str, subject: str, text: str) -> None:
-        self.sent.append((to, subject, text))
+    async def send(self, to: str, subject: str, text: str, html: str = "") -> None:
+        self.sent.append((to, subject, text))  # the html is the same words, in a layout
         print(f"--- email to {to}: {subject}\n{text}\n---", flush=True)
