@@ -64,11 +64,6 @@ class ShopOrder(Taken, Payable, Base):
     # In a linked WooCommerce store (D75): its id there, and our status as last written ("" never)
     woo_id: Mapped[int | None] = mapped_column(default=None)
     woo_sent: Mapped[str] = mapped_column(String(20), default="")
-    # Booked with the linked courier (D90): its parcel id, and its last words about it
-    parcel_id: Mapped[str] = mapped_column(String(50), default="")
-    courier_status: Mapped[str] = mapped_column(String(100), default="")
-    # the buyer's mobile across the courier's merchants, for the owner (D91); "" not looked up
-    courier_record: Mapped[str] = mapped_column(String(200), default="")
 
     @property
     def due(self) -> int:

@@ -417,8 +417,6 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
         data["usually_takes"] = zone.days
     if found.tracking:
         data["courier"] = found.tracking
-    if found.courier_status:  # the linked courier's own words (D90)
-        data["courier_says"] = found.courier_status
     return ToolResult(ok=True, data=data)
 
 

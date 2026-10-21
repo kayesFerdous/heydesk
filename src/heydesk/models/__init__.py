@@ -6,7 +6,6 @@ from heydesk.models.audit import AuditEvent
 from heydesk.models.call import Call
 from heydesk.models.channel import Channel
 from heydesk.models.conversation import Conversation
-from heydesk.models.courier_link import CourierLink
 from heydesk.models.document import Document
 from heydesk.models.payment_account import PaymentAccount
 from heydesk.models.sheet_link import SheetLink
@@ -23,7 +22,6 @@ __all__ = [
     "Call",
     "Channel",
     "Conversation",
-    "CourierLink",
     "Document",
     "PaymentAccount",
     "SheetLink",

@@ -25,7 +25,6 @@ from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import CallService
-from heydesk.services.courier import CourierService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
@@ -62,7 +61,6 @@ class ConversationService:
         visitors: VisitorService,
         woo: WooService,
         calls: CallService,
-        courier: CourierService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -74,7 +72,6 @@ class ConversationService:
         self.visitors = visitors
         self.woo = woo
         self.calls = calls
-        self.courier = courier
         self.settings = settings
         self.now = now
 
@@ -276,7 +273,6 @@ class ConversationService:
             await self.team.alert(conv, alert)
         if ended.alerts:  # an order saved or changed: into a linked WooCommerce store now (D77)
             self.woo.push_soon(conv.workspace_id)
-            self.courier.book_soon(conv.workspace_id)  # a confirmed one is booked now (D90)
         if ended.handed_off:
             await self.team.alert(conv, handoff_alert([*conv.messages, *ended.added]))
 

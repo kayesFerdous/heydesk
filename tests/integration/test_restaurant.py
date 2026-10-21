@@ -54,10 +54,10 @@ async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
         f"/api/chat/{DEV_KEY}",
         json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
     )
-    # the turn's Woo push and courier round run in the background on the test's one shared
+    # the turn's Woo push runs in the background on the test's one shared
     # connection: a session they close mid-test would roll back the test's own writes
     services = app.state.services
-    await asyncio.gather(*services.woo.tasks, *services.courier.tasks)
+    await asyncio.gather(*services.woo.tasks)
     return conv_id
 
 
