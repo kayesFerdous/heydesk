@@ -297,8 +297,8 @@ with no call.
 - [x] A third role, `moderator`; `team_events` (one migration)
 - [x] `/api/team/members`: list, add by email (an invite email with a reset code), send it
       again, remove; `/api/team/activity`
-- [x] A moderator: the inbox, records and lists, but a 403 on the settings (`/api/agent`, but
-      reading the agent) and the team; removed → out on the next request
+- [x] A moderator: the inbox, records and lists, and reading the settings, but a 403 on changing
+      them, the Telegram bot and the team; removed → out on the next request
 - [x] Each owner's and moderator's write that succeeds is in the activity, with their email
 - [x] design.md, D97, the frontend's `docs/api.md`
 

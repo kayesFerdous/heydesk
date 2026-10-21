@@ -54,19 +54,25 @@ async def test_an_invited_moderator_joins_with_the_emailed_code(
     assert again.status_code == 409  # they've joined
 
 
-async def test_a_moderator_runs_the_inbox_but_not_the_settings_or_team(
+async def test_a_moderator_runs_the_inbox_and_reads_but_doesnt_change_the_settings(
     app: FastAPI, client: AsyncClient
 ) -> None:
     await invite(client)
     moderator = await join(app)
-    for path in ("/api/conversations", "/api/orders", "/api/menu", "/api/agent"):
+    for path in (
+        "/api/conversations",
+        "/api/orders",
+        "/api/menu",
+        "/api/agent",
+        "/api/agent/documents",
+    ):
         assert (await moderator.get(path)).status_code == 200, path
     menu = (await moderator.get("/api/menu")).json()
     assert (await moderator.put("/api/menu", json=menu)).status_code == 200
     for method, path in (
         ("PATCH", "/api/agent"),
+        ("POST", "/api/agent/documents"),
         ("GET", "/api/agent/telegram"),
-        ("GET", "/api/agent/documents"),
         ("GET", "/api/team/members"),
         ("POST", "/api/team/members"),
     ):

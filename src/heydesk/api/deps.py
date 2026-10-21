@@ -51,7 +51,7 @@ async def current_workspace(
     """The business every business route is scoped by (rule 6).
 
     An owner: their own, whatever the request says. A moderator: theirs too, after the
-    database confirms they're still on the team, and never its settings or team (D97). An
+    database confirms they're still on the team, and never changing its settings (D97). An
     admin: the one in the X-Business header, after the database confirms they're still an
     admin. An admin's writes, and their reads of one thing (a conversation), go to the audit
     log; an owner's and a moderator's writes that succeed go to the business's activity.
@@ -75,11 +75,12 @@ async def current_workspace(
 
 
 def owners_only(method: str, path: str) -> bool:
-    """The agent's settings (everything under /api/agent but reading the agent itself) and the
-    team are the owner's; a moderator gets the rest: the inbox, the records, the lists (D97)."""
-    if path.startswith("/api/team"):
+    """The team, the Telegram bot (its link makes you the one who gets the alerts) and any
+    change to the agent's settings are the owner's. A moderator gets the rest: the inbox, the
+    records, the lists, and reading the settings, such as whether a sheet is linked (D97)."""
+    if path.startswith(("/api/team", "/api/agent/telegram")):
         return True
-    return path.startswith("/api/agent") and not (method == "GET" and path == "/api/agent")
+    return path.startswith("/api/agent") and method != "GET"
 
 
 async def _admin_business(
