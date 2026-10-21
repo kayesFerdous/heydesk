@@ -72,7 +72,7 @@ async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
 async def test_steadfasts_fraud_score_is_a_line_for_the_owner() -> None:
     answers = iter(
         [
-            {"delivery_ratio": 0.857, "cancellation_ratio": 0.143, "total_reports": 1},
+            {"delivery_ratio": 86, "cancellation_ratio": 14, "total_reports": 1},
             {"data": {"delivery_ratio": None, "total_reports": 0}},
         ]
     )

@@ -1,8 +1,7 @@
 """Steadfast Courier behind the `CourierApi` port (D90), over httpx.
 
 The API key and secret go as headers on every call. Steadfast has no sandbox: a booking is a
-real parcel. Its docs are in the merchant panel; the paths here are the ones its own
-WordPress plugin uses.
+real parcel. Its docs are the API guide in the merchant panel (steadfast.com.bd/user/api/guide).
 """
 
 from typing import Any
@@ -19,15 +18,6 @@ ENDINGS: dict[str, Ending] = {  # Steadfast's final words → the order's last s
 }
 
 
-def percent(ratio: object) -> int | None:
-    """A ratio as a whole percent; None when nothing has finished. ponytail: its scale isn't
-    documented, so 0–1 is taken as a fraction and more as a percent already."""
-    if ratio is None:
-        return None
-    value = float(str(ratio))
-    return round(value * 100 if value <= 1 else value)
-
-
 class Steadfast:
     def __init__(self, timeout: float = 15.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
@@ -41,7 +31,7 @@ class Steadfast:
             "invoice": parcel.code,
             "recipient_name": parcel.name,
             "recipient_phone": parcel.phone,
-            "recipient_address": parcel.address[:250],
+            "recipient_address": parcel.address[:490],
             "cod_amount": parcel.cod,
             "note": parcel.note[:480],
             "item_description": parcel.items[:255],
@@ -63,8 +53,8 @@ class Steadfast:
         `/fraud_check/{phone}` with counts was retired on 27 Sep 2026."""
         data = await self._call(account, "GET", f"fraud_check/score/{phone}")
         data = {**data, **(data.get("data") or {})}  # seen at both levels
-        delivered = percent(data.get("delivery_ratio"))
-        cancelled = percent(data.get("cancellation_ratio"))
+        delivered = data.get("delivery_ratio")  # whole percents; None when nothing has finished
+        cancelled = data.get("cancellation_ratio")
         reports = int(data.get("total_reports") or 0)
         said = [f"{delivered}% delivered" if delivered is not None else "no finished parcels yet"]
         if cancelled:
@@ -88,8 +78,10 @@ class Steadfast:
             data: dict[str, Any] = response.json()
         except ValueError:
             data = {}
-        if response.status_code in (401, 403):
+        if response.status_code == 401:
             raise CourierError("Steadfast refused the keys: check the API key and secret key.")
+        if response.status_code == 403:
+            raise CourierError("Steadfast says the account isn't active: check its KYC in the panel.")
         if response.is_success and data.get("status", 200) == 200:
             return data
         said = data.get("message") or "; ".join(str(e) for e in data.get("errors", {}).values())
