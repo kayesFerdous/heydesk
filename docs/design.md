@@ -359,6 +359,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
 | `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token; encrypted, D74), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
+| `courier_links` | agent_id (unique), kind (`steadfast` or `pathao`), key, secret (encrypted), username, password (encrypted), store_id, sandbox, problem (empty: fine). One per agent, shops only (D90) |
 | `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
 | `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
@@ -369,7 +370,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (the linked courier's parcel and its last words, D90). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -775,6 +776,69 @@ sync:
 | DELETE | `/api/agent/woo` | Stops syncing. The list stays and can be edited again; orders already in Woo stay there |
 | POST | `/api/agent/woo/sync` | Syncs now (push, then pull); returns what GET does |
 | POST | `/api/woo/hook/{workspace_id}` | Woo's webhooks: a signed post starts a sync 2 seconds later; no login (D78) |
+
+### A linked courier (D90)
+
+The agent runs the delivery as well as the order: once an order is confirmed, **it books the
+parcel with the shop's courier**, and later **it reads the courier's status** and moves the order
+to delivered or returned. The owner only packs the parcel and hands it to the rider. Shop desk
+only; one courier per shop: Steadfast or Pathao.
+
+```
+owner: picks a courier and pastes its keys ─► PUT /api/agent/courier (checked with the courier)
+order → confirmed (a yes on the shop's call, or the owner) ─► book now, in the background
+  booked ─► shipped, tracking "Steadfast 123456", the owner told: pack it for the rider
+  refused ─► stays confirmed, problem noted, the owner told once; tried again next round
+every COURIER_SYNC_MINUTES:
+  book each confirmed order with no parcel yet
+  ask the courier about each shipped one ─► its words in courier_status, for track_order
+                                         ─► delivered / returned when the courier says so
+```
+
+- **The link** (`courier_links`, one per agent): `kind` (`steadfast` or `pathao`), `key` and
+  `secret` (encrypted, D74); for Pathao also `username`, `password` (encrypted), `store_id`
+  and `sandbox`. Linking checks the keys: Steadfast's balance, or a Pathao token and its stores
+  (`store_id` is the first active one unless given). A wrong key is a 422 with the courier's
+  reason; no route returns a secret.
+- **Booking** (`CourierApi.book`): the order's code as the courier's invoice (unique per
+  merchant, so a retry can't book twice), the name, the mobile, the address and the area as one
+  line, the note, and the cash to collect, `total - paid` in whole taka (Python, rule 1). The
+  courier finds the place from the address: Steadfast always did, and Pathao's city, zone and
+  area can be left out (its "auto address", 2025). Pathao also needs a weight: 0.5 kg, a
+  normal 48-hour delivery, a parcel. Booked, the order is `shipped` with `parcel_id` and
+  `tracking` ("Steadfast 123456"), and the owner hears: "📦 O-101 is booked with Steadfast
+  (123456). Pack it; the rider will pick it up."
+- **When.** Only `confirmed` orders with no `parcel_id` are booked: a fake order never becomes a
+  parcel. The confirmation call's yes (D89) and the owner's move both book at once
+  (`CourierService.book_soon`); the round every `COURIER_SYNC_MINUTES` catches the rest. A
+  lock keeps one booking round per business at a time. An order the owner marks shipped by
+  hand isn't booked.
+- **Status** (`CourierApi.status`): the courier's own words, saved in `courier_status` and
+  given by `track_order` ("the courier says: in transit"). The adapter maps the final ones:
+  Steadfast's `delivered` and `partial_delivered`, Pathao's `Delivered` and `Partial_Delivery`
+  → `delivered`; Steadfast's `cancelled` (the parcel is coming back) and Pathao's `Return` →
+  `returned`, and the owner hears it. Polling, no webhooks: Steadfast's need setting by hand in
+  its panel, and Pathao's aren't signed.
+- **After booking, the buyer can't cancel or change it** (`shipped`, as before): the tool
+  offers a message for the team, and the owner cancels it in the courier's panel. Neither API
+  cancels a parcel.
+- **The APIs.** `adapters/courier/steadfast.py`: `https://portal.packzy.com/api/v1`,
+  `Api-Key` and `Secret-Key` headers, `POST /create_order`, `GET /status_by_cid/{id}`,
+  `GET /get_balance`. There's no sandbox: a booking is a real parcel. `adapters/courier/pathao.py`:
+  `https://api-hermes.pathao.com`, or `https://courier-api-sandbox.pathao.com` with Pathao's
+  published test login; a token from `POST /aladdin/api/v1/issue-token`, kept until it
+  expires; `GET /aladdin/api/v1/stores`, `POST /aladdin/api/v1/orders`,
+  `GET /aladdin/api/v1/orders/{id}/info`. Both raise `CourierError` with a line for the owner.
+  Tests use a fake.
+
+**Routes:**
+
+| Method | Path | What |
+|---|---|---|
+| PUT | `/api/agent/courier` | `{kind, key, secret, username?, password?, store_id?, sandbox?}` → checks it with the courier and links it; answers like GET |
+| GET | `/api/agent/courier` | `kind`, `store_id`, `sandbox`, `problem`. Never a secret |
+| DELETE | `/api/agent/courier` | Unlinks. Parcels already booked stay with the courier; their status isn't read any more |
+| POST | `/api/agent/courier/sync` | Books and checks now; returns what GET does |
 
 ### Telegram (D42)
 

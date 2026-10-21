@@ -7,6 +7,7 @@ from heydesk.api import (
     calls,
     chat,
     conversations,
+    courier,
     dev,
     documents,
     health,
@@ -36,6 +37,7 @@ def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:
     app.include_router(payments.router)
     app.include_router(sheets.router)
     app.include_router(woo.router)
+    app.include_router(courier.router)
     app.include_router(restaurant.router)  # each desk's own routes
     app.include_router(clinic.router)
     app.include_router(shop.router)

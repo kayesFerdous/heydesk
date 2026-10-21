@@ -10,6 +10,8 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
+from heydesk.adapters.courier.pathao import Pathao
+from heydesk.adapters.courier.steadfast import Steadfast
 from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.decider.jev import JevDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
@@ -26,6 +28,7 @@ from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
+from heydesk.ports.courier import CourierApi
 from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
@@ -43,6 +46,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.courier import CourierService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
@@ -141,6 +145,7 @@ def build_services(
     payments: PaymentGateway | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
     woo: WooApi | None = None,
+    couriers: dict[str, CourierApi] | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
@@ -162,8 +167,21 @@ def build_services(
         hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
     calls = CallService(sessions, agents, team, llm, settings, now)
+    courier = CourierService(
+        sessions, agents, team, couriers or {"steadfast": Steadfast(), "pathao": Pathao()}
+    )
     conversations = ConversationService(
-        sessions, runtime, knowledge, photos, team, visitors, woo_service, calls, settings, now
+        sessions,
+        runtime,
+        knowledge,
+        photos,
+        team,
+        visitors,
+        woo_service,
+        calls,
+        courier,
+        settings,
+        now,
     )
     return Services(
         admin=AdminService(sessions, now),
@@ -173,6 +191,7 @@ def build_services(
             sessions, agents, conversations, photos, team, telegram, messenger, settings, now
         ),
         conversations=conversations,
+        courier=courier,
         imports=imports,
         knowledge=knowledge,
         photos=photos,

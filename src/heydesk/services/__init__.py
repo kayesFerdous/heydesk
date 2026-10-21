@@ -5,6 +5,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.courier import CourierService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.payments import PaymentService
@@ -24,6 +25,7 @@ class Services:
     calls: CallService  # the shop's call to confirm an order, to a /phone page (D88)
     channels: ChannelService
     conversations: ConversationService
+    courier: CourierService  # a shop's courier, which the agent books (D90)
     imports: ImportService
     knowledge: KnowledgeService
     payments: PaymentService

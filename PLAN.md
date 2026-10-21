@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct; its live check waits for Pathao's sandbox (down on 21 Oct).
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -228,6 +228,31 @@ owner, and only a yes on the call confirms the order. [x] (19 Oct, D89)
 
 **Done when:** in the browser, with calls on, an order in the chat appears on the Calls page,
 rings `/phone`, and after a yes on the call shows Confirmed there and on the order.
+
+### Day K1: the agent books the courier (D90)
+
+- [x] `ports/courier.py` (`CourierApi`, `CourierAccount`, `Parcel`, `Booked`, `Tracked`,
+      `CourierError`); `adapters/courier/steadfast.py` and `pathao.py` (httpx; Pathao's token
+      kept until it expires)
+- [x] `courier_links`, and `parcel_id`/`courier_status` on `shop_orders` (one migration)
+- [x] `CourierService`: link (checked with the courier), get, unlink; `book_soon` after the
+      call's yes and the owner's confirm; `run` every `COURIER_SYNC_MINUTES` books what's left
+      and reads each shipped parcel's status; the owner told on booking, a return and a problem
+- [x] Routes `/api/agent/courier` and `/api/agent/courier/sync`; `track_order` gives the
+      courier's words
+- [x] Tests (a fake courier): only confirmed orders are booked, once; a refusal stays confirmed
+      and is tried again; delivered and returned follow the courier; a wrong key is a 400
+
+**Done when:** `scripts/check.sh` is green, and against Pathao's sandbox: linking takes its test
+store, an order confirmed in the dev chat is booked there with the right cash to collect, and
+its status comes back.
+
+### Day K2: the courier in the owner's console (`../heydesk-frontend`)
+
+- [ ] Settings → Courier: pick Steadfast or Pathao, paste the keys, see a problem
+- [ ] An order shows its parcel, the courier's words and a link to track it
+
+**Done when:** in the browser, the courier links, and a confirmed order shows its parcel.
 
 ## Still open
 

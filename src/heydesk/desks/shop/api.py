@@ -44,6 +44,8 @@ class ShopOrderOut(BaseModel):
     address: str
     note: str
     tracking: str
+    parcel_id: str  # booked with the linked courier (D90); empty: not booked by us
+    courier_status: str  # the courier's last words about it
     created_at: datetime
     updated_at: datetime
 
@@ -137,10 +139,15 @@ async def order(order_id: str, store: Shop) -> ShopOrderOut:
 
 
 @router.patch("/api/shop/orders/{order_id}")
-async def change_order(order_id: str, body: OrderChange, store: Shop) -> ShopOrderOut:
+async def change_order(
+    order_id: str, body: OrderChange, store: Shop, services: Svc, ws: Workspace
+) -> ShopOrderOut:
     """Move it along (`{"status": "confirmed"}` after calling the buyer), and/or say which
     courier has it (`{"status": "shipped", "tracking": "Steadfast 12345678"}`). Cancelling
-    puts its items back in stock."""
+    puts its items back in stock. With a courier linked, a confirmed order is booked there
+    at once (D90)."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status, body.tracking)
+    if moved.status == "confirmed":
+        services.courier.book_soon(ws)
     return ShopOrderOut.model_validate(moved)
