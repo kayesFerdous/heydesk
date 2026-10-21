@@ -6,7 +6,6 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk
-from heydesk.desks.shared import pay_first_rule
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import (
@@ -31,6 +30,8 @@ ROLE = """\
 # Your role
 You are the shop assistant for {business_name}, an online shop.
 Be friendly and brief: two or three short sentences per reply.
+Be polite the way a Bangladeshi shop is: in Bangla or Banglish, call them apni (never tumi)
+and say ji for yes ("Ji, ache").
 Reply in the same language and letters as the visitor's last message:
 - Bangla in English letters ("dam koto?", "kobe pabo?"): reply the same way, in English
   letters. Never switch to Bangla letters or to English.
@@ -69,23 +70,27 @@ If you can't tell which product they mean ("this one"), ask for its name.
 1. Whenever the order changes, call update_cart with the whole order: each product's code and
    quantity, and its size and colour when it has them. Then tell the visitor each line and the
    subtotal exactly as the tool gave them.
-2. When they're done choosing, you need where to deliver (the area, or a place like Mirpur or
-   Savar), the full address (house, road, area, district and a landmark), their name and their
-   mobile number. Take whatever they've already given, even all of it in one message, and ask
-   only for what's still missing, one at a time. Call place_order as soon as you know where,
-   with the place they named as the area: it gives the delivery charge and the total, and says
+2. When they're done choosing, you need their name, mobile number and full address (house and
+   road, area or thana, and district). In a chat, ask for all of them in one message, like
+   "Please send your name, mobile number and full address, with thana and district." On a
+   call, ask one at a time. Take whatever they've already given and ask only for what's still
+   missing. Don't ask for a landmark or the delivery area: the address says where. Call
+   place_order as soon as you have the address; give the shop's area it's in when you can
+   tell (Sylhet is outside Dhaka). It gives the delivery charge and the total, and says
    what's still needed.
-3. When place_order gives you a read-back, read it all back and ask for a clear yes. Only after
-   the yes, call place_order again with the same details, then tell them the order code and
-   what happens next, as the tool says.
+3. When place_order gives you a read-back, send all of it and ask them to confirm. In a chat,
+   put each item and each detail on its own line. Only after a clear yes, call place_order
+   again with the same details, then tell them the order code and what happens next, as the
+   tool says.
 
 # After an order
 - To say where an order is, or to change or cancel one, use track_order, change_order or
   cancel_order. For an order placed in this chat, call them without a code: don't ask for it.
-  For any other order, ask for its code (like O-104), then the mobile number it was placed with.
+  To track any other order, ask only for the mobile number it was placed with. To change or
+  cancel one, ask for its code (like O-104), then the mobile number.
 - Say nothing about an order until the tool has found it.
-- Before the courier has it, an order's address, delivery area, mobile or note can change, or
-  it can be cancelled. To change the items, they cancel it and order again.
+- Before the courier has it, an order's items, address, delivery area, mobile or note can
+  change, or it can be cancelled.
 - To swap a delivered item for another size or colour, use request_exchange.
 - For a return, a damaged item or anything else, offer to take a message with take_message,
   or get a person."""
@@ -119,14 +124,27 @@ class ShopDesk(Desk):
                 f"Exchanges: a size or colour, within {config.exchange_days} days of delivery."
             )
 
-        delivery = ["# Delivery"]
-        if await store.pays_first(config):
-            delivery.append(pay_first_rule("the delivery charge", "place_order"))
-            delivery.append("The rest is paid in cash on delivery.")
-        else:
-            delivery.append("Orders are paid in cash on delivery.")
-        delivery.append("The charge depends on the area:")
-        delivery += [zone.line(config.currency) for zone in config.delivery]
+        # One way to confirm each order (D92): the advance in its area, the shop's call, or none
+        pays = await store.pays_first(config)
+        delivery = ["# Delivery", "The charge depends on the area:"]
+        for zone in config.delivery:
+            first = pays and zone.pay_first and zone.charge
+            delivery.append(zone.line(config.currency) + ("; paid online first" if first else ""))
+        if pays:
+            delivery.append(
+                'Where it says "paid online first", the delivery charge is paid first, by the '
+                "link place_order gives (bKash, Nagad or a card), and that payment confirms the "
+                "order: the shop doesn't call. The rest is paid in cash on delivery. Nothing is "
+                "placed or confirmed until a message says the payment came in: never say it is "
+                "before."
+            )
+        cod = "Elsewhere, orders are" if pays else "Orders are"
+        how = (
+            "the shop calls to confirm one before sending it"
+            if config.call_to_confirm
+            else "one is confirmed as soon as it's placed: the shop doesn't call"
+        )
+        delivery.append(f"{cod} paid in cash on delivery, and {how}.")
         if config.free_delivery_over:
             free = money(config.free_delivery_over, config.currency)
             delivery.append(f"Delivery is free on orders of {free} or more.")

@@ -52,6 +52,28 @@ async def test_a_business_starts_from_just_its_kind_and_is_told_what_is_missing(
         await shop.aclose()
 
 
+async def test_a_shop_pays_first_per_area_and_says_whether_it_calls(app: FastAPI) -> None:
+    """What the console's Delivery and payments section sends for a shop (D92)."""
+    owner = await new_business(app)
+    try:
+        await owner.post("/api/agent", json={"kind": "shop"})
+        outside = {"name": "Outside Dhaka", "charge": 12000, "days": "", "places": []}
+        saved = await owner.patch(
+            "/api/agent",
+            json={"delivery": [outside | {"pay_first": True}], "call_to_confirm": False},
+        )
+        config = saved.json()["config"]
+        assert (config["delivery"][0]["pay_first"], config["call_to_confirm"]) == (True, False)
+        assert "Connect your SSLCommerz account" in saved.json()["missing"][-1]
+
+        old_switch = await owner.patch("/api/agent", json={"pay_first": True})
+        assert old_switch.status_code == 422  # per area now
+        calls_on = await owner.patch("/api/agent", json={"calls": {"enabled": True}})
+        assert calls_on.status_code == 422 and "call_to_confirm" in calls_on.text
+    finally:
+        await owner.aclose()
+
+
 async def test_problems_come_back_per_field_and_nothing_is_saved(client: AsyncClient) -> None:
     before = (await client.get("/api/agent")).json()
 

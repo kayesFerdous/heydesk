@@ -138,6 +138,9 @@ class Zone(BaseModel):
     charge: int = Field(ge=0)  # minor units
     days: str = Field(default="", max_length=50)  # how long it usually takes
     places: list[str] = []  # what buyers say instead of the area's name
+    # The buyer pays this area's charge online first, and that confirms the order (D92): BD
+    # shops ask it outside Dhaka, where a refused parcel costs the most
+    pay_first: bool = False
 
     def line(self, currency: str) -> str:
         line = f"- {self.name}: {money(self.charge, currency)}"
@@ -192,10 +195,10 @@ class ShopConfig(AgentConfig):
     widget: Widget = Widget(
         starters=["What's new?", "Track my order", "What's the delivery charge?"]
     )
-    greeting: str = (
-        "Hi, welcome to {business_name}! I can tell you about our products and prices, "
-        "take your order, or check on one you've placed."
-    )
+    greeting: str = "Assalamu alaikum! Welcome to {business_name}. How can we help you?"
+    # A cash-on-delivery order waits for the shop's call before it's sent (by hand, or
+    # `calls`); off: it's confirmed when placed (D92)
+    call_to_confirm: bool = True
     calls: CallSettings = CallSettings()  # calls to confirm new orders (D88, D89)
     delivery: list[Zone] = Field(
         default_factory=list
@@ -206,9 +209,17 @@ class ShopConfig(AgentConfig):
     # A delivered order's size or colour can be swapped within this many days (D55); 0: the
     # agent takes no exchange requests
     exchange_days: int = Field(default=0, ge=0, le=60)
-    # The buyer pays the delivery charge online first (SSLCommerz), and the rest on delivery.
-    # The order is placed only when the payment comes in (D47)
-    pay_first: bool = False
+
+    @property
+    def pay_first(self) -> bool:
+        """Some area's charge is paid online first (D47, D92): `Store.pays_first` reads it."""
+        return any(zone.pay_first for zone in self.delivery)
+
+    @model_validator(mode="after")
+    def calls_need_call_to_confirm(self) -> Self:
+        if self.calls.enabled and not self.call_to_confirm:
+            raise ValueError("Calls confirm orders: turn on call_to_confirm to use them.")
+        return self
 
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:
         if self.free_delivery_over and subtotal >= self.free_delivery_over:
@@ -297,8 +308,8 @@ STATUS_WORDS = {  # what track_order says about each status
     "cancelled": "cancelled",
 }
 CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
-# The address, area, mobile or note can change until the courier has it. An unpaid order
-# isn't placed yet: cancel it and order again
+# The items, address, area, mobile or note can change until the courier has it. An unpaid
+# order isn't placed yet: cancel it and order again
 CHANGEABLE = {"new", "confirmed"}
 # Sold but still on the shelf: a count from a linked sheet includes them (D58)
 HOLDS = {"unpaid", "new", "confirmed"}
@@ -317,7 +328,9 @@ class NewOrder:
     name: str
     phone: str
     note: str = ""
-    pay_first: bool = False  # saved as unpaid until the delivery charge is paid online (D47)
+    # "unpaid" until its delivery charge is paid online (D47), "new" until the shop's call,
+    # "confirmed" when the shop doesn't call (D92)
+    status: str = "new"
 
     @property
     def total(self) -> int:
@@ -338,10 +351,13 @@ class OrderConfirm:
 
 @dataclass(frozen=True)
 class OrderEdit:
-    """An order's delivery details after a change the visitor said yes to (D55). Every field
-    is the new value, or the old one where nothing changed. Money in minor units."""
+    """An order after a change the visitor said yes to (D55): its items (D92) or delivery
+    details. Every field is the new value, or the old one where nothing changed. Money in
+    minor units."""
 
     number: int
+    lines: list[dict[str, Any]]  # {code, name, size, colour, quantity, price}
+    subtotal: int
     address: str
     zone: str
     delivery_charge: int

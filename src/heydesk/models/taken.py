@@ -56,9 +56,10 @@ class Taken:
 class Payable:
     """A mixin for a table whose rows a visitor can be asked to pay for online first (D47):
     a shop's delivery charge, a restaurant's order, a clinic's doctor's fee. Such a row is
-    saved `unpaid`, and only `PaymentService.settle` makes it `new`."""
+    saved `unpaid`, and only `PaymentService.settle` moves it on, to `PAID_STATUS`."""
 
     PAY_FOR: ClassVar[str]  # what the payment is for: "the delivery charge"
+    PAID_STATUS: ClassVar[str] = FIRST_STATUS  # where the payment moves it
 
     currency: Mapped[str] = mapped_column(String(3))
     paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first

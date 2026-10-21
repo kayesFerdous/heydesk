@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct; its live check waits for Pathao's sandbox (down on 21 Oct).
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct; its live check waits for Pathao's sandbox (down on 21 Oct). Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next.
 > **Dates:** started Wed 30 Sep 2026 · demo Mon 26 Oct.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -256,6 +256,26 @@ its status comes back.
       link to track it
 
 **Done when:** in the browser, the courier links, and a confirmed order shows its parcel.
+
+### Day S1: the shop agent like a BD f-shop (D92, docs/shop-research.md)
+
+- [x] One way to confirm an order: the advance per delivery area (`Zone.pay_first`, a migration
+      from the shop-wide switch) confirms it with no call; `call_to_confirm` (on by default) for
+      cash on delivery, or confirmed at once
+- [x] The details in one message in a chat (one at a time on a call); the area from the
+      address; no landmark asked for
+- [x] `track_order` by the mobile alone, and this buyer's last order on Telegram or Messenger
+- [x] `change_order` changes the items before the courier has it, with the stock swapped
+- [x] The prompt: apni and ji, the read-back one detail per line, "the delivery man calls before
+      he comes", bKash, Nagad or a card for the link; a plain "Assalamu alaikum" greeting
+- [x] A live test of Banglish yes words with Jev (`tests/integration/test_live_yes.py`)
+- [x] heydesk-web: each area's "Paid online first", "Call to confirm cash-on-delivery
+      orders", a paid order marked confirmed, the Policies box asking for the door rules
+
+**Done when:** `scripts/check.sh` is green; the live yes test passes (costs Jev quota); and in the
+dev chat, in Banglish, one message gets the name, mobile and address asked for together, a
+Sylhet order with an SSLCommerz sandbox store asks for the advance and, once paid, is confirmed
+with no call.
 
 ## Still open
 

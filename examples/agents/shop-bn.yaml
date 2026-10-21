@@ -23,12 +23,14 @@ delivery:
               Rampura, Bashundhara, Farmgate, Old Dhaka]}
   - {name: Dhaka suburbs, charge: 10000, days: "2–3 days",
      places: [Savar, Ashulia, Gazipur, Tongi, Keraniganj, Narayanganj]}
-  - {name: Outside Dhaka, charge: 12000, days: "3–5 days",
+  - {name: Outside Dhaka, charge: 12000, days: "3–5 days", pay_first: true,
      places: [Chittagong, Chattogram, Sylhet, Khulna, Rajshahi, Barishal, Rangpur, Mymensingh,
               Cumilla, Comilla, Bogura]}
 free_delivery_over: 300000
 policies: |
   Check the parcel in front of the rider before paying. If something is wrong, don't take it.
+  If you refuse a parcel that matches its photo, pay the delivery charge to the rider.
+  A delivery charge paid first isn't refunded if you cancel.
   Exchange within 3 days for a different size, if the tag is on. No refunds on sale items.
 exchange_days: 3  # the agent takes size or colour exchange requests this long after delivery
 size_guide: |

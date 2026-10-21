@@ -107,7 +107,7 @@ when `takes_bookings` is on, D64) then the shared ones: `take_message`, `handoff
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
 subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas, each with a charge, usual days and the `places` buyers name in it, D54), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant, clinic and shop each `pay_first` (D47, D48), which needs something to take (a 422 otherwise); each sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
+`services`, the shop `delivery` (its areas, each with a charge, usual days, the `places` buyers name in it, D54, and `pay_first`, D92), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; `calls.enabled` needs it, D92), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant and clinic each `pay_first` (D47, D48), which needs something to take (a 422 otherwise), where the shop has it per delivery area (D92); each sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -248,10 +248,10 @@ merged into the conversation's `state`, saved with the turn.
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45) |
-| `place_order` | shop | **yes** | `area` (one of the shop's delivery areas, or a place in one: "Mirpur 10" is Inside Dhaka, D54), `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. Takes the items out of stock (the product's, or the variant's) as it saves. Returns its code, `O-101`, what to say next (the call, the cash for the rider, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). With `pay_first` (and a charge), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment places it (D47) |
-| `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the code and the mobile it was placed with: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, the courier the owner gave, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
-| `change_order` | shop | **yes** | Found like `track_order`; then any of a new `address`, `area` (or a place in one), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). A new area works out the delivery charge and total again; not once its charge was paid online. The items can't change: cancel and order again. Reads back only what changes; alerts the owner (D55) |
-| `cancel_order` | shop | **yes** | Found like `track_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
+| `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `area` (one of the shop's delivery areas, or a place in one: "Mirpur 10" is Inside Dhaka, D54); with no `area`, the address's place finds it (D92). Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`Checks(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
+| `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or on Telegram and Messenger nothing finds this buyer's last order (D92), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, the courier the owner gave, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
+| `change_order` | shop | **yes** | Found like `track_order`, except the mobile alone: a change needs the code (or the order from this chat, or this buyer's last). Then any of new `items` (the whole list, checked and priced as `update_cart`'s, with the order's own items counted as on the shelf, D92), `address`, `area` (or a place in one), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). New items or a new area work out the delivery charge (free or not) and total again; not once its charge was paid online. The store swaps the stock in one transaction. Reads back only what changes; alerts the owner (D55) |
+| `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `track_order`; only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
 | `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Not on a call: there it says photos can't be shown here. Messenger gets a carousel (D62), Telegram a photo each (D63) (D57) |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
@@ -370,7 +370,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (the linked courier's parcel and its last words, D90), courier_record (the buyer's mobile across the courier's merchants, D91). Code `O-101`; unpaid → new (the delivery charge was paid; or the owner moves it) → confirmed (the shop called the buyer) → shipped → delivered or returned; new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, tracking, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (the linked courier's parcel and its last words, D90), courier_record (the buyer's mobile across the courier's merchants, D91). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92); confirmed → shipped → delivered or returned; unpaid, new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -786,7 +786,8 @@ only; one courier per shop: Steadfast or Pathao.
 
 ```
 owner: picks a courier and pastes its keys ─► PUT /api/agent/courier (checked with the courier)
-order → confirmed (a yes on the shop's call, or the owner) ─► book now, in the background
+order → confirmed (a yes on the shop's call, the owner, or placed confirmed, D92) ─► book now
+  (a paid advance is booked by the next round)
   booked ─► shipped, tracking "Steadfast 123456", the owner told: pack it for the rider
   refused ─► stays confirmed, problem noted, the owner told once; tried again next round
 every COURIER_SYNC_MINUTES (and after each order saved):
@@ -987,11 +988,13 @@ owner replies /done ─► `active` again: the agent answers, and sees what the 
 ### Paying first (D47–D49)
 
 A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz,
-into the business's **own** store, before anything is placed. What's paid is the table's `Payable.due`:
+into the business's **own** store, before anything is placed. The shop sets it per delivery area
+(`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the table's
+`Payable.due`, and the payment moves the row to its `PAID_STATUS`:
 
 | Desk | Pays first (`PAY_FOR`) | Then |
 |---|---|---|
-| Shop | the delivery charge | the rest in cash on delivery |
+| Shop | the delivery charge, in an area with `pay_first` | `confirmed`, with no call: the advance is the confirmation (D92); the rest in cash on delivery |
 | Restaurant | the delivery charge, for a delivery (pickup pays nothing first) | the rest on delivery |
 | Clinic | a deposit the owner sets, copied onto the appointment | the clinic phones to confirm |
 
@@ -1001,8 +1004,8 @@ off, sets the amounts and connects the store on the frontend's Agent → Payment
 **Each business's own store (D49).** `payment_accounts` holds its SSLCommerz store id,
 store password and test mode; `PUT /api/agent/sslcommerz` checks them with SSLCommerz first
 (it opens a ৳10 session no one pays; a 400 carries SSLCommerz's reason) and no route returns
-the password. The agent asks for payment only when `pay_first` is on **and** a store is
-connected (`Store.pays_first`): without one, the prompt says nothing about paying, the tools
+the password. The agent asks for payment only when `pay_first` is on (a shop: in some area,
+`ShopConfig.pay_first`) **and** a store is connected (`Store.pays_first`): without one, the prompt says nothing about paying, the tools
 place orders as before, and `missing` says "Connect your SSLCommerz account…".
 `services/payments.py` (`PaymentService`, its `PAYABLE` tables), `api/payments.py` (the
 pages) and the `PaymentGateway` port (`adapters/payments/sslcommerz.py`; `PAYMENTS=fake` for
@@ -1017,7 +1020,8 @@ SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN
     /api/payments/sslcommerz/<id>)
     ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
        for this row (its tran_id), this amount
-    ─► UPDATE … WHERE status = 'unpaid' → new, paid, payment_ref (only the first post wins)
+    ─► UPDATE … WHERE status = 'unpaid' → PAID_STATUS (new; a shop order confirmed), paid,
+       payment_ref (only the first post wins)
     ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
        the bot sends it on Telegram) and the owner's alert
 ```
@@ -1027,7 +1031,21 @@ SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN
   browser posts is never trusted; only `val_id`, asked about with the business's own store.
 - The link opens a fresh session each time, so it doesn't run out. The row's id is long and
   random: the link is its own key, like the Telegram webhook's channel id.
-- The owner can still move `unpaid` → `new` (paid some other way) or cancel it.
+- The owner can still move `unpaid` → `new` (a shop order: `confirmed`) when it was paid some
+  other way, or cancel it.
+
+### How a shop order is confirmed (D92)
+
+Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
+
+| The order | Confirmed by | It's saved | The buyer hears |
+|---|---|---|---|
+| Its area has `pay_first` (and a store is connected) | the advance: the delivery charge paid online | `unpaid`, then `confirmed` by the payment | "Payment received… your order is confirmed; pay the rest to the delivery man" |
+| Cash on delivery, `call_to_confirm` on (the default) | the shop's call: by hand, or `calls` (D89) | `new`, then `confirmed` after the call | "The shop will call … to confirm it before sending it" |
+| Cash on delivery, `call_to_confirm` off | nothing | `confirmed` at once, so a linked courier books it (D90) | "It's confirmed and will be sent out" |
+
+A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
+needs `call_to_confirm` (a 422 otherwise).
 
 ## 10. Voice (M2)
 

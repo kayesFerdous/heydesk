@@ -28,7 +28,7 @@ from heydesk.desks.shop.values import (
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
 from heydesk.models import Conversation
-from heydesk.models.taken import FIRST_STATUS, UNPAID, next_number
+from heydesk.models.taken import next_number
 
 
 class OutOfStock(ValueError):
@@ -161,9 +161,9 @@ class ShopStore(Store):
                 self._move(order, ending)
 
     async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
-        """Takes the items out of stock and saves the order: `new`, or `unpaid` when its
-        delivery charge is paid first (D47). Raises OutOfStock, and saves nothing, if there
-        aren't enough left."""
+        """Takes the items out of stock and saves the order as its status says: `unpaid` when
+        its delivery charge is paid first (D47), `new` for the shop's call, or `confirmed`
+        (D92). Raises OutOfStock, and saves nothing, if there aren't enough left."""
         o = order.value
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
@@ -174,7 +174,7 @@ class ShopStore(Store):
                 number=await next_number(s, ShopOrder, self.workspace_id),
                 created_at=now,
                 updated_at=now,
-                status=UNPAID if o.pay_first else FIRST_STATUS,
+                status=o.status,
                 name=o.name,
                 phone=o.phone,
                 lines=o.lines,
@@ -237,9 +237,21 @@ class ShopStore(Store):
         """The orders placed in this conversation, newest first (D55)."""
         return await self.here(ShopOrder)
 
+    async def latest_order(self, phone: str) -> ShopOrder | None:
+        """The newest order placed with this mobile (D92): buyers know their number, not the
+        order's code."""
+        async with self.sessions() as s:
+            return await s.scalar(
+                select(ShopOrder)
+                .where(ShopOrder.workspace_id == self.workspace_id, ShopOrder.phone == phone)
+                .order_by(ShopOrder.created_at.desc(), ShopOrder.number.desc())
+                .limit(1)
+            )
+
     async def change_order(self, edit: Confirmed[OrderEdit]) -> ShopOrder:
-        """New delivery details, and the total again with the new charge. Raises TooLate if
-        the courier has it by now."""
+        """New items (their stock swapped: the old back, the new out, D92) or delivery details,
+        and the total again. Raises TooLate if the courier has it by now, and OutOfStock, with
+        nothing changed, if there aren't enough of the new items."""
         e = edit.value
         async with self.sessions() as s, s.begin():
             order = await s.scalar(
@@ -251,6 +263,10 @@ class ShopStore(Store):
                 raise NotFound("There's no such order.")
             if order.status not in CHANGEABLE:
                 raise TooLate(order.status)
+            if e.lines != order.lines:
+                await self._stock(s, order.lines, +1)
+                await self._stock(s, e.lines, -1)
+                order.lines, order.subtotal = e.lines, e.subtotal
             order.address, order.zone, order.phone, order.note = e.address, e.zone, e.phone, e.note
             order.delivery_charge = e.delivery_charge
             order.total = order.subtotal + e.delivery_charge

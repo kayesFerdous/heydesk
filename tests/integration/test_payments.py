@@ -1,6 +1,7 @@
 """Paying first (D47, D48): with `pay_first` on, what a desk takes is saved unpaid, and only a
-payment the gateway vouches for, for the right amount, places it. The shop and the restaurant
-take the delivery charge, the clinic a deposit the owner sets."""
+payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
+charge in the areas that pay first, and that payment confirms the order (D92); the restaurant
+takes its delivery charge, the clinic a deposit the owner sets."""
 
 from typing import Any, cast
 
@@ -37,12 +38,23 @@ async def paying_first(
     services: Services, kind: str, **settings: object
 ) -> tuple[LiveAgent, FakePayments]:
     """The dev agent as a `kind` with `pay_first` on (and `settings`) and an SSLCommerz store
-    connected, and its fake gateway."""
+    connected, and its fake gateway. A shop pays first inside Dhaka only."""
     await services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
-    await services.agents.update(DEV_WORKSPACE_ID, {"pay_first": True, **settings})
+    await services.agents.update(DEV_WORKSPACE_ID, {**pay_first(services, kind), **settings})
     await services.payments.connect(DEV_WORKSPACE_ID, "nakshi-test", "store-password", True)
     agent = await services.agents.by_key(f"dev-{kind}")
     return agent, cast(FakePayments, services.payments.gateway)
+
+
+def pay_first(services: Services, kind: str) -> dict[str, Any]:
+    """The setting that turns paying first on: the shop's is each area's (D92)."""
+    if kind != "shop":
+        return {"pay_first": True}
+    zones = [
+        {"name": "Inside Dhaka", "charge": 6000, "places": ["Mirpur"], "pay_first": True},
+        {"name": "Outside Dhaka", "charge": 12000, "places": ["Sylhet"]},
+    ]
+    return {"delivery": zones}
 
 
 async def take(world: World, agent: LiveAgent, first: list[Any], tool: ToolCall) -> str:
@@ -65,9 +77,10 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
     world: World,
 ) -> None:
     agent, gateway = await paying_first(world.services, "shop")
-    assert "The delivery charge is paid online first" in await SHOP.prompt(
-        agent.config, world.store(agent)
-    )
+    prompt = await SHOP.prompt(agent.config, world.store(agent))
+    assert "- Inside Dhaka: ৳60 (Mirpur); paid online first" in prompt
+    assert "- Outside Dhaka: ৳120 (Sylhet)\n" in prompt  # cash on delivery, and the shop calls
+    assert "Elsewhere, orders are paid in cash on delivery, and the shop calls" in prompt
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
     conv = await world.say(agent, None, [*first, ToolCall("c2", "place_order", SHOP_DETAILS), "…"])
     assert "the delivery charge ৳60 paid online first, then ৳950 in cash on delivery" in (
@@ -92,11 +105,14 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
         order.id, "v1"
     )  # the visitor's return and the gateway's notice: once is enough
     placed = await found(world, conv)
-    assert (placed.status, placed.paid, placed.payment_ref) == ("new", 6000, "B2")
+    # the advance confirms it: no call (D92)
+    assert (placed.status, placed.paid, placed.payment_ref) == ("confirmed", 6000, "B2")
     said = (await world.conversation(conv)).messages
     assert said[-1]["by"] == "team"
     assert said[-1]["content"].startswith("✅ Payment received: ৳60 for the delivery charge.")
-    assert "The rest, ৳950, is paid in cash on delivery" in said[-1]["content"]
+    assert "Your order O-101 is confirmed" in said[-1]["content"]
+    assert "Pay the rest, ৳950, to the delivery man" in said[-1]["content"]
+    assert "call you" not in said[-1]["content"]
     assert sum("Payment received" in str(m["content"]) for m in said) == 1
 
     tracked = await track_order(
@@ -104,6 +120,16 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
         FindOrderInput(code="O-101", phone="01712345678"),
     )
     assert (tracked.data["paid_online"], tracked.data["cash_on_delivery"]) == ("৳60", "৳950")
+
+
+async def test_a_shop_takes_the_advance_only_in_the_areas_that_pay_first(world: World) -> None:
+    agent, _ = await paying_first(world.services, "shop")
+    sylhet = SHOP_DETAILS | {"area": "", "address": "Zindabazar, Sylhet"}  # the area from it
+    first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
+    conv = await take(world, agent, first, ToolCall("c2", "place_order", sylhet))
+    assert "pay_link" not in await world.tool_said(conv)
+    [order] = await world.store(agent, conv).orders_here()
+    assert (order.zone, order.status, order.total) == ("Outside Dhaka", "new", 107000)
 
 
 async def test_the_restaurant_takes_the_delivery_charge_first_but_not_for_pickup(
@@ -200,7 +226,8 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
     notice = await client.post(f"/api/payments/sslcommerz/{order['id']}", data={"val_id": "v1"})
     assert notice.json() == {"ok": True}
     back = await client.post(f"/pay/{order['id']}/back", data={"val_id": "v1"})
-    assert "Payment received. The rest, ৳950" in back.text
+    assert "Payment received. Your order O-101 is confirmed" in back.text
+    assert "Pay the rest, ৳950" in back.text
     assert (await client.get(f"/api/shop/orders/{order['id']}")).json()["paid"] == 6000
     assert "Payment received" in (await client.get(f"/pay/{order['id']}")).text  # not again
     assert (await client.get("/pay/nothing-here")).status_code == 404
@@ -209,7 +236,7 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
 async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world: World) -> None:
     services = world.services
     await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    await services.agents.update(DEV_WORKSPACE_ID, {"pay_first": True})  # but no store yet
+    await services.agents.update(DEV_WORKSPACE_ID, pay_first(services, "shop"))  # no store yet
     agent = await services.agents.by_key("dev-shop")
     assert "paid online first" not in await SHOP.prompt(agent.config, world.store(agent))
     assert (

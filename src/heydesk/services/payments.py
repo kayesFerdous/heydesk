@@ -25,7 +25,7 @@ from heydesk.desks.restaurant.models import Order
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import Conversation, PaymentAccount
-from heydesk.models.taken import FIRST_STATUS, UNPAID
+from heydesk.models.taken import UNPAID
 from heydesk.ports.payments import Account, Checkout, PaymentGateway, PaymentUnavailable
 from heydesk.runtime.speech import money
 from heydesk.services.team import TeamService
@@ -139,7 +139,7 @@ class PaymentService:
                 update(table)
                 .where(table.id == record.id, table.status == UNPAID)
                 .values(
-                    status=FIRST_STATUS,
+                    status=record.PAID_STATUS,
                     paid=paid.amount,
                     payment_ref=paid.reference,
                     updated_at=self.now(),

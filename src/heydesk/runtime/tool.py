@@ -61,9 +61,12 @@ def fail(hint: str) -> ToolResult:
 class Checks:
     """Checks a tool's details one by one and remembers what's missing or wrong, so the model
     hears about all of it at once and knows what to ask next. A tool takes each detail with
-    `take`, and if any came back None, returns `result()`."""
+    `take`, and if any came back None, returns `result()`. `together`: the model asks for
+    everything still needed in one message, as a chat does; otherwise one question at a time,
+    as a call does."""
 
-    def __init__(self) -> None:
+    def __init__(self, together: bool = False) -> None:
+        self.together = together
         self.missing: list[str] = []
         self.problems: dict[str, str] = {}
 
@@ -85,7 +88,11 @@ class Checks:
             data["problems"] = self.problems
         if self.missing:
             data["still_needed"] = self.missing
-        data["next"] = f"Ask for the {first}, one question at a time."
+        if self.together:
+            needed = ", ".join([*self.problems, *self.missing])
+            data["next"] = f"Ask for all of these in one message: {needed}."
+        else:
+            data["next"] = f"Ask for the {first}, one question at a time."
         return ToolResult(ok=False, data=data)
 
 

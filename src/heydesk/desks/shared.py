@@ -31,7 +31,8 @@ def awaiting_payment(
         data={
             "code": code,
             "pay_link": link,
-            "next": f"Send them the link to pay {pay_for}, {amount}. It isn't placed or "
+            "next": f"Send them the link to pay {pay_for}, {amount}, by bKash, Nagad or a card. "
+            "It isn't placed or "
             "confirmed until it's paid: don't say it is. A message will appear here when the "
             "payment comes in.",
         },

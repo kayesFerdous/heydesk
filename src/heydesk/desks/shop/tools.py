@@ -24,6 +24,7 @@ from heydesk.desks.shop.values import (
     OrderCancel,
     OrderConfirm,
     OrderEdit,
+    Product,
     ShopConfig,
     cart_text,
     find_products,
@@ -88,15 +89,18 @@ class UpdateCartInput(BaseModel):
     )
 
 
-async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
-    products = {p.code: p for p in await ctx.store.products()}
-    unknown = [line.code for line in args.lines if line.code not in products]
+def _priced(
+    products: dict[str, Product], given: list[CartLine]
+) -> list[dict[str, Any]] | ToolResult:
+    """The lines as an order keeps them, with the shop's prices, the same product, size and
+    colour added up; or what's wrong with them. Stock isn't checked here."""
+    unknown = [line.code for line in given if line.code not in products]
     if unknown:
         return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
 
     wanted: dict[tuple[str, str, str], int] = {}  # the same product, size and colour is added up
     problems = []
-    for line in args.lines:
+    for line in given:
         product = products[line.code]
         try:
             key = (
@@ -110,28 +114,7 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
         wanted[key] = wanted.get(key, 0) + line.quantity
     if problems:
         return fail(" ".join(problems))
-
-    needed: dict[tuple[str, int], int] = {}  # (code, counter) → how many, from each count
-    for (code, size, colour), qty in wanted.items():
-        counter = products[code].counter(size, colour)
-        if counter is not None:
-            needed[(code, counter)] = needed.get((code, counter), 0) + qty
-    short = []
-    for (code, counter), qty in needed.items():
-        product, left = products[code], products[code].count(counter)
-        if qty > left:
-            others = f" (left: {product.left()})" if counter != OWN and product.left() else ""
-            short.append(
-                f"{product.what(counter)}: "
-                + (f"only {left} left" if left else "sold out")
-                + others
-            )
-    if short:
-        return fail(f"Not enough in stock. {'; '.join(short)}. Tell the visitor.")
-
-    config = cast(ShopConfig, ctx.agent)
-    currency = config.currency
-    lines: list[dict[str, Any]] = [
+    return [
         {
             "code": code,
             "name": products[code].name,
@@ -142,6 +125,47 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
         }
         for (code, size, colour), qty in wanted.items()
     ]
+
+
+def _short(
+    products: dict[str, Product],
+    lines: list[dict[str, Any]],
+    held: list[dict[str, Any]] | None = None,
+) -> str:
+    """What there isn't enough of for `lines`, for the model to tell the visitor; "" when
+    there's enough. `held` are an order's own items, still counted as on the shelf for it."""
+    needed: dict[tuple[str, int], int] = {}  # (code, counter) → how many, from each count
+    for line, sign in [(line, 1) for line in lines] + [(line, -1) for line in held or []]:
+        product = products.get(line["code"])
+        counter = product.counter(line["size"], line["colour"]) if product else None
+        if counter is not None:
+            key = (line["code"], counter)
+            needed[key] = needed.get(key, 0) + sign * line["quantity"]
+    short = []
+    for (code, counter), qty in needed.items():
+        product, left = products[code], products[code].count(counter)
+        if qty > left:
+            others = f" (left: {product.left()})" if counter != OWN and product.left() else ""
+            short.append(
+                f"{product.what(counter)}: "
+                + (f"only {left} left" if left else "sold out")
+                + others
+            )
+    return f"Not enough in stock. {'; '.join(short)}. Tell the visitor." if short else ""
+
+
+async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
+    products = {p.code: p for p in await ctx.store.products()}
+    lines = _priced(products, args.lines)
+    if isinstance(lines, ToolResult):
+        return lines
+
+    short = _short(products, lines)
+    if short:
+        return fail(short)
+
+    config = cast(ShopConfig, ctx.agent)
+    currency = config.currency
     subtotal = sum(line["price"] * line["quantity"] for line in lines)
     said = [
         f"{lines_text([line])} = {money(line['price'] * line['quantity'], currency)}"
@@ -173,11 +197,13 @@ UPDATE_CART = Tool(
 class PlaceOrderInput(BaseModel):
     area: str = Field(
         default="",
-        description="Where to deliver: one of the shop's areas, or the place they named, "
-        "like Mirpur or Savar",
+        description="The shop's delivery area the address is in. Empty: it's found from the "
+        "address's place, like Mirpur or Savar",
     )
     address: str = Field(
-        default="", description="The full address: house, road, area, district, a landmark"
+        default="",
+        description="The full address: house and road, area or thana, district; a landmark "
+        "if they gave one",
     )
     name: str = Field(default="", description="The name for the order")
     phone: str = Field(default="", description="The buyer's mobile number, for the rider")
@@ -189,9 +215,13 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if not cart.get("lines"):
         return fail("There's no order yet. Take it with update_cart first.")
     config = cast(ShopConfig, ctx.agent)
-    check = Checks()
-    zone = check.take("area", args.area, lambda said: match_zone(config.delivery, said))
+    check = Checks(together=ctx.channel != "voice")  # a chat asks for it all at once (D92)
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
+    zone = (  # the address usually names the area's place: "Mirpur 10" (D54, D92)
+        check.take("area", args.area or args.address, lambda s: match_zone(config.delivery, s))
+        if args.area.strip() or args.address.strip()
+        else None  # asked for with the address
+    )
     name = check.take("name", args.name, parse.name)
     phone = check.take("phone", args.phone, mobile)
 
@@ -215,12 +245,18 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         name=name,
         phone=phone,
         note=" ".join(args.note.split())[:500],
-        pay_first=charge > 0 and await ctx.store.pays_first(config),
+        status=(  # one way to confirm it (D92): the advance, the shop's call, or none
+            "unpaid"
+            if charge and zone.pay_first and await ctx.store.pays_first(config)
+            else "new"
+            if config.call_to_confirm
+            else "confirmed"
+        ),
     )
     how = (
         f"the delivery charge {data['delivery']} paid online first, then "
         f"{money(cart['subtotal'], currency)} in cash on delivery"
-        if order.pay_first
+        if order.status == "unpaid"
         else "paid in cash on delivery"
     )
     read_back = (
@@ -236,17 +272,22 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     except OutOfStock as error:
         return fail(f"Sold out since the order was made: {error}. Tell the visitor.")
     code = saved.code
-    if order.pay_first:  # the owner hears about it once it's paid (D47)
+    if order.status == "unpaid":  # the owner hears about it once it's paid (D47)
         link = ctx.store.pay_link(saved.id)
         return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}})
     takes = f" Delivery usually takes {zone.days}." if zone.days else ""
+    sent = (
+        f"that the shop will call {phone} to confirm it before sending it"
+        if order.status == "new"
+        else "that it's confirmed and will be sent out"
+    )
     return ToolResult(
         ok=True,
         data={
             "code": code,
             "total": data["total"],
-            "next": f"Tell them the code {code}, that the shop will call {phone} to confirm "
-            f"before sending it, and that they pay {data['total']} to the rider.{takes}",
+            "next": f"Tell them the code {code}, {sent}, and that they pay {data['total']} to "
+            f"the delivery man, who calls before he comes.{takes}",
         },
         state={"cart": {}},
         alert=await _order_alert(ctx.store, code, read_back, phone, cart["lines"]),
@@ -282,12 +323,13 @@ async def _order_alert(
 PLACE_ORDER = Tool(
     name="place_order",
     description=(
-        "Place a cash-on-delivery order: the delivery area, the full address, the name and the "
-        "mobile number. Call it as soon as you have the area: it gives the delivery charge and "
-        "the total, and says what's still needed. When it has everything it gives you what to "
-        "read back; call it again with the same details after a clear yes. Returns the order "
-        "code; tell it to the visitor. If the shop takes the delivery charge first, it returns "
-        "a payment link instead, and the order waits for the payment."
+        "Place a cash-on-delivery order: the full address, the name and the mobile number, and "
+        "the delivery area if the address doesn't make it clear. Call it as soon as you have the "
+        "address: it gives the delivery charge and the total, and says what's still needed. "
+        "When it has everything it gives you what to read back; call it again with the same "
+        "details after a clear yes. Returns the order code; tell it to the visitor. If the "
+        "delivery charge is paid first, it returns a payment link instead, and the order waits "
+        "for the payment."
     ),
     input_model=PlaceOrderInput,
     run=place_order,
@@ -304,10 +346,12 @@ class FindOrderInput(BaseModel):
     phone: str = Field(default="", description="The mobile number the order was placed with")
 
 
-async def _find(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolResult:
+async def _find(ctx: Ctx, code: str, phone: str, by_phone: bool = False) -> ShopOrder | ToolResult:
     """With no code, the order the shop's call is about (D88), or the one placed in this
-    conversation (D55). Otherwise the order, if the code and the mobile both match: one answer
-    for a wrong code and a wrong number, so a stranger can't find out whose order a code is."""
+    conversation (D55); with `by_phone`, the latest one with that mobile (D92); or this buyer's
+    last one on Telegram or Messenger (D81, D92). Otherwise the order, if the code and the mobile
+    both match: one answer for a wrong code and a wrong number, so a stranger can't find out
+    whose order a code is."""
     calling = ctx.state.get("calling")
     if not code.strip() and calling:
         found = await ctx.store.order(calling["number"])
@@ -320,6 +364,19 @@ async def _find(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolResult:
         if here:
             codes = ", ".join(o.code for o in here)
             return fail(f"This chat has several orders: {codes}. Ask which one.")
+        if by_phone and phone.strip():  # buyers know their number, not the code
+            try:
+                latest = await ctx.store.latest_order(mobile(phone))
+            except ValueError as error:
+                return fail(str(error))
+            if latest is None:
+                return fail("No order was placed with that mobile number. Ask them to check it.")
+            return latest
+        before = await ctx.store.last_order_before()  # the same buyer, back on Telegram
+        if before:
+            return before
+        if by_phone:
+            return fail("Ask for the mobile number the order was placed with.")
         return fail(
             "Ask for the order code (like O-104), then the mobile number it was placed with."
         )
@@ -339,7 +396,7 @@ async def _find(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolResult:
 
 
 async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
-    found = await _find(ctx, args.code, args.phone)
+    found = await _find(ctx, args.code, args.phone, by_phone=True)
     if isinstance(found, ToolResult):
         return found
     data = {
@@ -368,8 +425,9 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
 TRACK_ORDER = Tool(
     name="track_order",
     description=(
-        "Where an order is. For the order placed in this chat, call it with no code. Otherwise "
-        "first ask for its code (like O-104), then the mobile number it was placed with. "
+        "Where an order is. For the order placed in this chat, or this buyer's last one, call "
+        "it with nothing. Otherwise the mobile number it was placed with is enough: it finds "
+        "the latest order with it; a code (like O-104) and the mobile find an older one. "
         "Returns its status, items, total and the courier if it has one."
     ),
     input_model=FindOrderInput,
@@ -482,11 +540,15 @@ class ChangeOrderInput(FindOrderInput):
     )
     new_phone: str = Field(default="", description="A new mobile number for the rider")
     note: str = Field(default="", description="A new note for the shop")
+    items: list[CartLine] = Field(
+        default_factory=list,
+        description="Only if the items change: every product in the order, not just the change",
+    )
 
 
 async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
-    """New delivery details before the courier has it (D55). Python works out a new area's
-    charge and the total again; the items can't change here."""
+    """New items (D92) or delivery details before the courier has it (D55). Python works out
+    the subtotal, a new charge and the total again; the store swaps the stock as it saves."""
     found = await _find(ctx, args.code, args.phone)
     if isinstance(found, ToolResult):
         return found
@@ -495,12 +557,24 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
             f"Order {found.code} is {STATUS_WORDS[found.status]}: it can't be changed now. "
             "Offer to take a message for the team."
         )
-    if not any(f.strip() for f in (args.address, args.area, args.new_phone, args.note)):
+    if not args.items and not any(
+        f.strip() for f in (args.address, args.area, args.new_phone, args.note)
+    ):
         return fail(
-            "Ask what they want to change: the address, the delivery area, the mobile or the "
-            "note. To change the items, they cancel and order again."
+            "Ask what they want to change: the items, the address, the delivery area, the "
+            "mobile or the note."
         )
     config = cast(ShopConfig, ctx.agent)
+    lines, subtotal = found.lines, found.subtotal
+    if args.items:
+        products = {p.code: p for p in await ctx.store.products()}
+        priced = _priced(products, args.items)
+        if isinstance(priced, ToolResult):
+            return priced
+        short = _short(products, priced, found.lines)
+        if short:
+            return fail(short)
+        lines, subtotal = priced, sum(line["price"] * line["quantity"] for line in priced)
     check = Checks()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
@@ -517,9 +591,16 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     def money_of(amount: int) -> str:
         return money(amount, found.currency) if amount else "free"
 
-    charge = config.delivery_charge(zone, found.subtotal) if zone else found.delivery_charge
+    where = zone or next((z for z in config.delivery if z.name == found.zone), None)
+    charge = (  # a paid charge stays as it was; new items can make it free, or not
+        config.delivery_charge(where, subtotal)
+        if where and (zone or args.items) and not found.paid
+        else found.delivery_charge
+    )
     edit = OrderEdit(
         number=found.number,
+        lines=lines,
+        subtotal=subtotal,
         address=address or found.address,
         zone=zone.name if zone else found.zone,
         delivery_charge=charge,
@@ -529,13 +610,14 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     changes = [
         f"{label}: {old} → {new}"
         for label, old, new in (
+            ("items", lines_text(found.lines), lines_text(lines)),
             ("address", found.address, edit.address),
             ("delivery area", found.zone, edit.zone),
             ("delivery", money_of(found.delivery_charge), money_of(edit.delivery_charge)),
             (
                 "total",
                 money(found.total, found.currency),
-                money(found.subtotal + edit.delivery_charge, found.currency),
+                money(subtotal + edit.delivery_charge, found.currency),
             ),
             ("mobile", found.phone, edit.phone),
             ("note", found.note or "none", edit.note or "none"),
@@ -552,6 +634,8 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         await ctx.store.change_order(confirmed)
     except TooLate:
         return fail(f"Order {found.code} has just gone to the courier. Offer a message.")
+    except OutOfStock as error:  # sold since the read-back
+        return fail(f"Not enough in stock now: {error}. Tell the visitor.")
     return ToolResult(
         ok=True,
         data={"done": read_back, "next": "Tell them the order is changed."},
@@ -562,11 +646,11 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
 CHANGE_ORDER = Tool(
     name="change_order",
     description=(
-        "Change an order's address, delivery area, mobile or note before the courier has it. "
-        "For the order placed in this chat, no code is needed; otherwise ask for its code, "
-        "then the mobile it was placed with. Give only what changes. The first call gives what "
-        "to read back, with any new delivery charge and total; call again after a clear yes. "
-        "The items can't change: they cancel and order again."
+        "Change an order's items, address, delivery area, mobile or note before the courier has "
+        "it. For the order placed in this chat, no code is needed; otherwise ask for its code, "
+        "then the mobile it was placed with. Give only what changes; new items are the whole "
+        "new list. The first call gives what to read back, with any new subtotal, delivery "
+        "charge and total; call again after a clear yes."
     ),
     input_model=ChangeOrderInput,
     run=change_order,

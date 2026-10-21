@@ -1,7 +1,7 @@
 """The shop desk: products with sizes, colours and stock; a cash-on-delivery order Python adds
-up, saved only after a yes and taken out of stock; tracking, changing and cancelling it (the
-one from this chat, or with the code and the buyer's mobile); an exchange request once it's
-delivered; the owner's products and orders routes; and photos: the owner's, a visitor's sent to
+up, saved only after a yes and taken out of stock, and confirmed by the shop's call or at once
+(D92); tracking it (the one from this chat, by the buyer's mobile, or with its code), changing
+its items or details and cancelling it; an exchange request once it's delivered; the owner's products and orders routes; and photos: the owner's, a visitor's sent to
 find a product, and the ones the agent shows (D57)."""
 
 import base64
@@ -161,11 +161,17 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
     kurti = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
 
     ctx = make_ctx(store, state=kurti, agent=agent.config)
-    no_area = await place_order(ctx, PlaceOrderInput())
+    nothing = await place_order(ctx, PlaceOrderInput())  # a chat asks for it all at once
     assert (
-        no_area.data["next"] == "Ask for the area, one question at a time."
-        and "total" not in no_area.data
+        nothing.data["next"] == "Ask for all of these in one message: address, name, phone."
+        and "total" not in nothing.data
     )
+    on_a_call = await place_order(
+        make_ctx(store, state=kurti, agent=agent.config, channel="voice"), PlaceOrderInput()
+    )
+    assert on_a_call.data["next"] == "Ask for the address, one question at a time."
+    from_the_address = await place_order(ctx, PlaceOrderInput(address="Road 3, Uttara, Dhaka"))
+    assert from_the_address.data["delivery"] == "৳60"  # Uttara is inside Dhaka
     wrong_area = await place_order(ctx, PlaceOrderInput(area="Teknaf"))  # not one of its places
     assert "Inside Dhaka or Dhaka suburbs or Outside Dhaka" in wrong_area.data["problems"]["area"]
 
@@ -231,7 +237,11 @@ async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world:
     assert "🛍️ New order O-102" in placed.alert
     assert "⚠️ This mobile before: 1 cancelled" in placed.alert
     assert "📦 Running low: Silk Panjabi: 1 left" in placed.alert
-    assert "pay ৳3,200 to the rider. Delivery usually takes 1–2 days." in placed.data["next"]
+    assert "the shop will call 01712345678 to confirm it" in placed.data["next"]
+    assert (
+        "pay ৳3,200 to the delivery man, who calls before he comes. Delivery usually takes 1–2 "
+        "days." in placed.data["next"]
+    )
     assert "This mobile" not in str(placed.data)  # for the owner, never the visitor
 
 
@@ -387,8 +397,39 @@ async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:
     await world.say(agent, order.conversation_id, [no_code, "It's received."], "amar order kothay?")
     assert "the shop will call to confirm it" in await world.tool_said(str(order.conversation_id))
 
-    elsewhere = await world.say(agent, None, [no_code, "Which code?"], "amar order kothay?")
-    assert "Ask for the order code" in await world.tool_said(elsewhere)  # another chat
+    elsewhere = await world.say(agent, None, [no_code, "Your number?"], "amar order kothay?")
+    assert "Ask for the mobile number" in await world.tool_said(elsewhere)  # another chat
+    by_phone = ToolCall("t", "track_order", {"phone": "01712-345678"})  # no code: buyers forget
+    await world.say(agent, elsewhere, [by_phone, "It's received."], "01712-345678")
+    assert '"order": "O-101"' in await world.tool_said(elsewhere)
+    stranger = ToolCall("t", "track_order", {"phone": "01811111111"})
+    await world.say(agent, elsewhere, [stranger, "Not found."], "01811111111")
+    assert "No order was placed with that mobile" in await world.tool_said(elsewhere)
+
+    world.decider.script = [YES]
+    cancel = ToolCall("x", "cancel_order", {"phone": "01712345678"})  # changing needs the code
+    await world.say(agent, elsewhere, [cancel, "Which code?"], "cancel it")
+    assert "Ask for the order code" in await world.tool_said(elsewhere)
+
+
+async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: World) -> None:
+    agent = await world.agent("shop")
+    no_call = agent.config.model_copy(update={"call_to_confirm": False})
+    assert "one is confirmed as soon as it's placed: the shop doesn't call" in await SHOP.prompt(
+        no_call, world.store(agent)
+    )
+    state = (await update_cart(make_ctx(world.store(agent), agent=no_call), cart(KURTI))).state
+    ctx = make_ctx(world.store(agent), state=state, agent=no_call)
+    ctx.decider.script = [YES]
+    placed = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
+    assert "that it's confirmed and will be sent out" in placed.data["next"]
+    assert "will call" not in placed.data["next"]
+    [order] = await orders(world)
+    assert order.status == "confirmed"  # the courier can book it now (D90)
+
+    calls = agent.config.calls.model_copy(update={"enabled": True})
+    with pytest.raises(ValueError, match="turn on call_to_confirm"):
+        type(no_call).model_validate(no_call.model_dump() | {"calls": calls.model_dump()})
 
 
 async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
@@ -424,6 +465,23 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
 
     nothing = await change_order(ctx(), ChangeOrderInput())
     assert "Ask what they want to change" in nothing.data["error"]
+
+    two = ChangeOrderInput.model_validate({"items": [KURTI | {"quantity": 2}]})  # D92
+    world.decider.script = [NO]
+    asked = await change_order(ctx(), two)
+    assert asked.data["read_back"] == (
+        "Change order O-101: items: 1 × Cotton Kurti (M, Black) → 2 × Cotton Kurti (M, Black); "
+        "total: ৳1,070 → ৳2,020"
+    )
+    world.decider.script = [YES]
+    assert (await change_order(ctx(), two)).ok
+    [more] = await orders(world)
+    assert (more.subtotal, more.total, more.lines[0]["quantity"]) == (190000, 202000, 2)
+    sold_out = {"code": "jamdani-saree", "quantity": 1, "colour": "Red"}
+    swap = ChangeOrderInput.model_validate({"items": [sold_out]})
+    refused = await change_order(ctx(), swap)
+    assert "Not enough in stock" in refused.data["error"]
+    assert (await orders(world))[0].lines == more.lines  # nothing changed
     await store.move_order(changed.id, "confirmed")
     await store.move_order(changed.id, "shipped")
     late = await change_order(ctx(), ChangeOrderInput(note="ring twice"))
@@ -745,6 +803,9 @@ async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: Wor
     system = world.llm.requests[-1].system
     assert "# Their last order" in system
     assert "name Kayes; mobile 01712345678; area Inside Dhaka; address House 12, Road 5" in system
+    world.llm.script = [ToolCall("t", "track_order", {}), "It's received."]
+    await talk.reply(agent, "telegram", "chat-7", "ager order ta kothay?")  # no code (D92)
+    assert '"order": "O-101"' in str(world.llm.requests[-1].messages)
 
     world.llm.script = ["Hi!"]
     await talk.reply(agent, "telegram", "chat-8", "hello")  # another chat: nothing to offer

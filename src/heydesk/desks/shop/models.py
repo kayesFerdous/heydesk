@@ -35,14 +35,16 @@ class ShopOrder(Taken, Payable, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
     When the shop takes payment first, the order starts `unpaid` (its items held) and only
-    the payment check makes it `new` (D47); no tool can."""
+    the payment check moves it on (D47); no tool can. The advance is the confirmation, so a
+    paid order is `confirmed`, with no call (D92)."""
 
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
     LETTER: ClassVar[str] = "O"
     PAY_FOR: ClassVar[str] = "the delivery charge"
+    PAID_STATUS: ClassVar[str] = "confirmed"
     FLOW: ClassVar[dict[str, set[str]]] = {
-        "unpaid": {"new", "cancelled"},  # paid online; or the owner took it another way
+        "unpaid": {"confirmed", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "cancelled"},  # the shop calls the buyer to confirm
         "confirmed": {"shipped", "cancelled"},
         "shipped": {"delivered", "returned"},  # with the courier
@@ -78,6 +80,6 @@ class ShopOrder(Taken, Payable, Base):
     def after(self) -> str:
         cod = money(self.total - self.paid, self.currency)
         return (
-            f"The rest, {cod}, is paid in cash on delivery. The shop will call you to confirm "
-            "before sending it."
+            f"Your order {self.code} is confirmed and will be sent out. Pay the rest, {cod}, to "
+            "the delivery man, who calls before he comes."
         )
