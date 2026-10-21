@@ -36,6 +36,12 @@ class Unavailable(NotFound):
     code = "unavailable"
 
 
+class EmailNotVerified(Forbidden):
+    """The right password, but the emailed code isn't typed yet (D94): the client asks for it."""
+
+    code = "email_not_verified"
+
+
 class Unauthorized(HeyDeskError):
     status_code = 401
     code = "unauthorized"

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.desks import DESKS
 from heydesk.desks.base import Desk, Store
 from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
-from heydesk.models import Agent, User, Workspace
+from heydesk.models import Agent, Workspace
 from heydesk.runtime.config import AgentConfig
 from heydesk.services.knowledge import KnowledgeService
 
@@ -122,17 +122,12 @@ class AgentService:
     async def get(self, ws: str) -> AgentInfo:
         async with self.sessions() as s:
             agent = await self._get(s, ws)
-            unverified = await _unverified(s, ws)
         desk = DESKS[agent.kind]
         config = desk.config_model.model_validate(agent.config)
         store = desk.store(self.sessions, ws, self.now)
         missing = await desk.missing(config, store)
         if getattr(config, "pay_first", False) and not await store.pays_first(config):
             missing.append("Connect your SSLCommerz account to take payments first.")
-        if unverified:
-            missing.append(
-                "Verify your email with the code we sent you: until then, no one can chat."
-            )
         return AgentInfo(agent.id, agent.public_key, agent.kind, config, missing)
 
     async def store(self, ws: str, kind: str | None = None) -> Store:
@@ -159,10 +154,9 @@ class AgentService:
         async with self.sessions() as s:
             agent = await s.scalar(select(Agent).where(where))
             business = await s.get(Workspace, agent.workspace_id) if agent else None
-            unverified = agent and await _unverified(s, agent.workspace_id)
         if agent is None or business is None:
             raise NotFound("There's no agent with that key.")
-        if business.status != "active" or unverified:
+        if business.status != "active":
             raise Unavailable("This assistant isn't available right now.")
         desk = DESKS[agent.kind]
         return LiveAgent(
@@ -205,10 +199,3 @@ class AgentService:
         if agent is None:
             raise NotFound("This business has no agent yet. Create one first.")
         return agent
-
-
-async def _unverified(s: AsyncSession, ws: str) -> bool:
-    """An owner who hasn't typed the emailed code yet (D93): their agent doesn't answer.
-    The dev business has no owner from signup, so it always answers."""
-    query = select(User.id).where(User.workspace_id == ws, User.email_verified_at.is_(None))
-    return await s.scalar(query.limit(1)) is not None

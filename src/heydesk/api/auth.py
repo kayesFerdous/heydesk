@@ -26,12 +26,13 @@ class LoginIn(BaseModel):
     password: str
 
 
-class CodeIn(BaseModel):
-    code: str = CODE
-
-
-class ForgotIn(BaseModel):
+class EmailIn(BaseModel):
     email: str = EMAIL
+
+
+class CodeIn(BaseModel):
+    email: str = EMAIL
+    code: str = CODE
 
 
 class ResetIn(BaseModel):
@@ -57,41 +58,41 @@ class BusinessOut(BaseModel):
 
 class MeOut(BaseModel):
     email: str
-    email_verified: bool  # False: their agent doesn't answer until they type the emailed code
     role: Literal["admin", "owner"]
     business: BusinessOut | None  # an owner's business; None for an admin
 
 
-@router.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> TokenOut:
-    """A new business and its owner. Admins are made from the command line, never here."""
+@router.post("/api/auth/signup", status_code=status.HTTP_204_NO_CONTENT)
+async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> None:
+    """A new business and its owner, and an email with a code; `verify` logs them in (D94).
+    Admins are made from the command line, never here."""
     await services.rate_limits.signup(ip)  # 429: a script making businesses
-    return TokenOut(
-        token=await services.users.signup(body.email, body.password, body.workspace_name)
-    )
+    await services.users.signup(body.email, body.password, body.workspace_name)
 
 
 @router.post("/api/auth/login")
 async def login(body: LoginIn, services: Svc, ip: ClientIp) -> TokenOut:
+    """A 403 `email_not_verified` for the right password before the code is typed (D94)."""
     await services.rate_limits.login(ip, body.email)  # 429: password guessing (D52)
     return TokenOut(token=await services.users.login(body.email, body.password))
 
 
-@router.post("/api/auth/verify", status_code=status.HTTP_204_NO_CONTENT)
-async def verify_email(body: CodeIn, principal: User, services: Svc) -> None:
-    """The code emailed at signup; a 403 if it's wrong or expired."""
-    await services.rate_limits.check_code(principal.user_id)  # 429: guessing the code
-    await services.users.verify_email(principal.user_id, body.code)
+@router.post("/api/auth/verify")
+async def verify_email(body: CodeIn, services: Svc) -> TokenOut:
+    """The code emailed at signup → logged in. A 403 if it's wrong or expired."""
+    await services.rate_limits.check_code(body.email)  # 429: guessing the code
+    return TokenOut(token=await services.users.verify_email(body.email, body.code))
 
 
 @router.post("/api/auth/verify/resend", status_code=status.HTTP_204_NO_CONTENT)
-async def resend_code(principal: User, services: Svc, ip: ClientIp) -> None:
-    await services.rate_limits.send_code(ip, principal.user_id)
-    await services.users.resend_code(principal.user_id)
+async def resend_code(body: EmailIn, services: Svc, ip: ClientIp) -> None:
+    """Always a 204, so it doesn't say whether the email has an account."""
+    await services.rate_limits.send_code(ip, body.email)
+    await services.users.resend_code(body.email)
 
 
 @router.post("/api/auth/forgot", status_code=status.HTTP_204_NO_CONTENT)
-async def forgot_password(body: ForgotIn, services: Svc, ip: ClientIp) -> None:
+async def forgot_password(body: EmailIn, services: Svc, ip: ClientIp) -> None:
     """Emails a reset code. Always a 204, so it doesn't say whether the email has an account."""
     await services.rate_limits.send_code(ip, body.email)
     await services.users.forgot_password(body.email)
@@ -120,7 +121,6 @@ async def me(principal: User, services: Svc) -> MeOut:
     user, business = await services.users.me(principal)
     return MeOut(
         email=user.email,
-        email_verified=user.email_verified_at is not None,
         role="admin" if user.role == "admin" else "owner",
         business=BusinessOut(
             id=business.id,

@@ -4,8 +4,8 @@ A token carries the user (`sub`), their role and, for an owner, their business (
 Every business route is scoped by it. An admin has no business of their own: they name
 one per request, and the database (not the token) says they're still an admin.
 
-Email codes (D93): six digits that verify an owner's email after signup, or let them set a
-new password. Nothing is stored: a code is an HMAC of the user, what it's for, their password
+Email codes (D93, D94): six digits that verify an owner's email after signup (no login until
+then), or let them set a new password. Nothing is stored: a code is an HMAC of the user, what it's for, their password
 hash and a 15-minute window, and checking it makes it again. So it expires by itself, and a
 reset code stops working once the password changes. The rate limits stop guessing.
 """
@@ -23,7 +23,7 @@ from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.errors import Conflict, Forbidden, NotFound, Unauthorized
+from heydesk.errors import Conflict, EmailNotVerified, Forbidden, NotFound, Unauthorized
 from heydesk.models import AuditEvent, User, Workspace
 from heydesk.ports.mailer import Mailer
 
@@ -76,9 +76,9 @@ class UserService:
         self.mailer = mailer
         self.now = now
 
-    async def signup(self, email: str, password: str, workspace_name: str) -> str:
+    async def signup(self, email: str, password: str, workspace_name: str) -> None:
         """A new business and its owner, in one transaction: a taken email leaves nothing behind.
-        Returns a token, and emails a code: the agent answers once they type it (D93)."""
+        No token yet: it emails a code, and `verify_email` logs them in (D94)."""
         async with self.sessions() as s, s.begin():
             workspace = Workspace(name=workspace_name, created_at=self.now())
             s.add(workspace)
@@ -87,31 +87,29 @@ class UserService:
                 s, email, password, role="owner", ws=workspace.id, verified=False
             )
         await self._send_code(user, "verify")
-        return self._token(user)
 
-    async def resend_code(self, user_id: str) -> None:
-        """A new email with the verify code; nothing if they're already verified."""
-        async with self.sessions() as s:
-            user = await s.get(User, user_id)
-        if user is None:
-            raise Unauthorized("Log in again.")
-        if user.email_verified_at is None:
+    async def resend_code(self, email: str) -> None:
+        """Another email with the verify code. An unknown or verified email gets nothing, and
+        the route says nothing, so no one learns who has an account."""
+        user = await self._by_email(email)
+        if user is not None and user.email_verified_at is None:
             await self._send_code(user, "verify")
 
-    async def verify_email(self, user_id: str, code: str) -> None:
+    async def verify_email(self, email: str, code: str) -> str:
+        """The code from the signup email → verified, and a token: their first login."""
         async with self.sessions() as s, s.begin():
-            user = await s.get(User, user_id)
+            user = await s.scalar(select(User).where(User.email == email.strip().lower()))
             if user is None:
-                raise Unauthorized("Log in again.")
+                raise Forbidden(WRONG_CODE)
             if user.email_verified_at is None:
                 self._check_code(user, "verify", code)
                 user.email_verified_at = self.now()
+        return self._token(user)
 
     async def forgot_password(self, email: str) -> None:
         """Emails a reset code. An unknown email does nothing and says nothing, so no one
         learns who has an account."""
-        async with self.sessions() as s:
-            user = await s.scalar(select(User).where(User.email == email.strip().lower()))
+        user = await self._by_email(email)
         if user is not None:
             await self._send_code(user, "reset")
 
@@ -165,11 +163,16 @@ class UserService:
             user.password_hash = hasher.hash(password)
 
     async def login(self, email: str, password: str) -> str:
-        async with self.sessions() as s:
-            user = await s.scalar(select(User).where(User.email == email.strip().lower()))
+        user = await self._by_email(email)
         if user is None or not hasher.verify(password, user.password_hash):
             raise Unauthorized("Wrong email or password.")
+        if user.email_verified_at is None:  # the right password, but no code typed yet (D94)
+            raise EmailNotVerified("Verify your email first: type the code we sent you.")
         return self._token(user)
+
+    async def _by_email(self, email: str) -> User | None:
+        async with self.sessions() as s:
+            return await s.scalar(select(User).where(User.email == email.strip().lower()))
 
     def principal(self, token: str) -> Principal:
         try:

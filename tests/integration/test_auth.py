@@ -5,18 +5,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from heydesk.models import Workspace
-from tests.conftest import emailed_code
+from tests.conftest import emailed_code, new_business
 from tests.integration.test_restaurant import place_an_order
 
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
 
 
 async def as_second_account(app: FastAPI) -> AsyncClient:
-    anon = AsyncClient(transport=ASGITransport(app), base_url="http://test")
-    signed_up = await anon.post("/api/auth/signup", json=NEW)
-    assert signed_up.status_code == 201
-    anon.headers["Authorization"] = f"Bearer {signed_up.json()['token']}"
-    return anon
+    return await new_business(app, NEW["email"].lower())
 
 
 async def test_a_second_account_cant_see_the_first_accounts_agent(
@@ -82,24 +78,35 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     await second.aclose()
 
 
-async def test_a_new_owners_agent_answers_once_they_type_the_emailed_code(app: FastAPI) -> None:
-    second = await as_second_account(app)
-    key = (await second.post("/api/agent", json={"kind": "restaurant"})).json()["public_key"]
+async def test_a_new_owner_logs_in_only_after_typing_the_emailed_code(app: FastAPI) -> None:
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as anon:
+        assert (await anon.post("/api/auth/signup", json=NEW)).status_code == 204
+        login = {"email": "second@example.com", "password": NEW["password"]}
 
-    # Signed up: logged in, but the chat waits for the code (D93)
-    assert (await second.get("/api/auth/me")).json()["email_verified"] is False
-    chat = await second.get(f"/api/chat/{key}")
-    assert chat.status_code == 404 and chat.json()["error"]["code"] == "unavailable"
-    assert "Verify your email" in " ".join((await second.get("/api/agent")).json()["missing"])
+        # The right password, but no code yet: no token (D94)
+        early = await anon.post("/api/auth/login", json=login)
+        assert early.status_code == 403
+        assert early.json()["error"]["code"] == "email_not_verified"
 
-    code = emailed_code(app, "second@example.com")
-    wrong = "000000" if code != "000000" else "111111"
-    assert (await second.post("/api/auth/verify", json={"code": wrong})).status_code == 403
-    assert (await second.post("/api/auth/verify", json={"code": code})).status_code == 204
+        code = emailed_code(app, "second@example.com")
+        wrong = "000000" if code != "000000" else "111111"
+        bad = await anon.post("/api/auth/verify", json={"email": NEW["email"], "code": wrong})
+        good = await anon.post("/api/auth/verify", json={"email": NEW["email"], "code": code})
 
-    assert (await second.get("/api/auth/me")).json()["email_verified"] is True
-    assert (await second.get(f"/api/chat/{key}")).status_code == 200
-    await second.aclose()
+        assert bad.status_code == 403
+        assert good.status_code == 200 and good.json()["token"]
+        assert (await anon.post("/api/auth/login", json=login)).status_code == 200
+
+
+async def test_resend_says_nothing_about_who_has_an_account(app: FastAPI) -> None:
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as anon:
+        await anon.post("/api/auth/signup", json=NEW)
+        known = await anon.post("/api/auth/verify/resend", json={"email": NEW["email"]})
+        unknown = await anon.post("/api/auth/verify/resend", json={"email": "nobody@example.com"})
+
+    assert known.status_code == unknown.status_code == 204
+    sent_to = [to for to, *_ in app.state.services.users.mailer.sent]
+    assert sent_to.count("second@example.com") == 2 and "nobody@example.com" not in sent_to
 
 
 async def test_a_forgotten_password_is_reset_with_the_emailed_code_once(

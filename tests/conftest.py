@@ -203,10 +203,10 @@ async def new_business(app: FastAPI, email: str = "second@example.com") -> Async
     """A client logged in to a new business, which has no agent yet."""
     anon = AsyncClient(transport=ASGITransport(app), base_url="http://test")
     body = {"email": email, "password": "another long one", "workspace_name": "Cafe"}
-    signed_up = await anon.post("/api/auth/signup", json=body)
-    anon.headers["Authorization"] = f"Bearer {signed_up.json()['token']}"
-    verified = await anon.post("/api/auth/verify", json={"code": emailed_code(app, email)})
-    assert verified.status_code == 204
+    assert (await anon.post("/api/auth/signup", json=body)).status_code == 204
+    code = emailed_code(app, email)
+    verified = await anon.post("/api/auth/verify", json={"email": email, "code": code})
+    anon.headers["Authorization"] = f"Bearer {verified.json()['token']}"
     return anon
 
 

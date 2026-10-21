@@ -49,7 +49,7 @@ async def test_signing_up_again_and_again_is_limited(app: FastAPI) -> None:
             "password": "a long password",
             "workspace_name": "S",
         }
-        assert (await anon.post("/api/auth/signup", json=body)).status_code == 201
+        assert (await anon.post("/api/auth/signup", json=body)).status_code == 204
 
     body = {"email": "shop9@example.com", "password": "a long password", "workspace_name": "S"}
     assert (await anon.post("/api/auth/signup", json=body)).status_code == 429

@@ -390,12 +390,13 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
-| POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}`. Signup emails a 6-digit code (D93) |
-| POST | `/api/auth/verify` | `{code}`: the code from the signup email → 204; a 403 if it's wrong or expired. Logged in |
-| POST | `/api/auth/verify/resend` | Another email with the code → 204; nothing if already verified. Logged in |
+| POST | `/api/auth/signup` | A new business and its owner → 204, and an email with a 6-digit code; no token until it's typed (D93, D94) |
+| POST | `/api/auth/login` | → `{token}`; a 401 for a wrong email or password; a 403 `email_not_verified` for the right one before the code is typed (D94) |
+| POST | `/api/auth/verify` | `{email, code}`: the code from the signup email → `{token}`, the first login; a 403 if it's wrong or expired |
+| POST | `/api/auth/verify/resend` | `{email}` → 204, always: another email with the code if the account exists and isn't verified |
 | POST | `/api/auth/forgot` | `{email}` → 204, always: an email with a reset code if the account exists (D93) |
 | POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}`; a 403 if the code is wrong, expired or used |
-| GET | `/api/auth/me` | Who you are: email, `email_verified`, role, your business |
+| GET | `/api/auth/me` | Who you are: email, role, your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
@@ -450,9 +451,10 @@ the ordinary routes (an owner's header is ignored). The database, not the token,
 says someone is still an admin. Every admin write, and every admin read of one
 thing (one conversation), is saved to `audit_events`. A suspended business's chat
 answers 404 `unavailable`; its owner can still log in.
-**Email codes** (D93). Signup logs the owner in and emails a 6-digit code. Until they type it
-(`POST /api/auth/verify`), their agent's chat answers 404 `unavailable`, like a suspended one,
-and `GET /api/agent` lists it in `missing`; everything else works. A forgotten password is
+**Email codes** (D93, D94). Signup emails a 6-digit code and gives no token: the owner can't
+log in until they type it (`POST /api/auth/verify`, which logs them in). Login with the right
+password before that is a 403 `email_not_verified`, so the client shows the code screen, which
+can ask for another email (`/verify/resend`). A forgotten password is
 `POST /api/auth/forgot` then `POST /api/auth/reset` with the emailed code, which also verifies
 the email. No code is stored: it's an HMAC (with `JWT_SECRET`) of the user, the purpose
 (`verify` or `reset`), their password hash and a 15-minute window, made again to check it, so
@@ -525,8 +527,8 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 | `POST /api/chat/{key}` | IP (a script making a new visitor_id each time) | 60 a minute |
 | `POST /api/auth/login` | IP and email | 10 in 15 minutes |
 | `POST /api/auth/signup` | IP (a script making businesses) | 5 an hour |
-| `POST /api/auth/forgot`, `/verify/resend` | email (or user), and IP: a full inbox, our 300 free emails a day | 3 an hour, 10 an hour |
-| `POST /api/auth/verify`, `/reset` | email (or user): guessing the 6 digits | 5 in 15 minutes |
+| `POST /api/auth/forgot`, `/verify/resend` | email, and IP: a full inbox, our 300 free emails a day | 3 an hour, 10 an hour |
+| `POST /api/auth/verify`, `/reset` | email: guessing the 6 digits | 5 in 15 minutes |
 
 The counts are in this server's memory: a restart clears them, and a second server process would
 keep its own. The IP is the real visitor's when a proxy on the same machine sends
