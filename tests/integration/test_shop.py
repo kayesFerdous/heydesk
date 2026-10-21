@@ -34,7 +34,14 @@ from heydesk.desks.shop.tools import (
     track_order,
     update_cart,
 )
-from heydesk.desks.shop.values import LONG_LIST, Product, mobile, products_from_csv, stock_cell
+from heydesk.desks.shop.values import (
+    LONG_LIST,
+    STATUS_WORDS,
+    Product,
+    mobile,
+    products_from_csv,
+    stock_cell,
+)
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -270,7 +277,7 @@ async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world:
     assert await stock(world, agent, "panjabi-cotton", "L", "White") == 3  # back in stock
 
 
-async def test_the_owner_moves_orders_along_and_the_buyer_sees_the_courier(
+async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
@@ -306,17 +313,14 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_the_courier(
     early = await client.patch(url, json={"status": "shipped"})
     assert early.status_code == 409  # call the buyer to confirm first
     await client.patch(url, json={"status": "confirmed"})
-    shipped = await client.patch(url, json={"status": "shipped", "tracking": "Steadfast 12345678"})
-    assert (shipped.json()["status"], shipped.json()["tracking"]) == (
-        "shipped",
-        "Steadfast 12345678",
-    )
+    shipped = await client.patch(url, json={"status": "shipped"})
+    assert shipped.json()["status"] == "shipped"
 
     store = await services.agents.store(DEV_WORKSPACE_ID, "shop")
     found = FindOrderInput(code="O-101", phone="01712345678")
     tracked = await track_order(make_ctx(store, agent=agent.config), found)
-    assert (tracked.data["courier"], tracked.data["usually_takes"]) == (
-        "Steadfast 12345678",
+    assert (tracked.data["status"], tracked.data["usually_takes"]) == (
+        STATUS_WORDS["shipped"],
         "1–2 days",
     )
 
@@ -425,7 +429,7 @@ async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: 
     assert "that it's confirmed and will be sent out" in placed.data["next"]
     assert "will call" not in placed.data["next"]
     [order] = await orders(world)
-    assert order.status == "confirmed"  # the courier can book it now (D90)
+    assert order.status == "confirmed"  # ready for the owner to send
 
     calls = agent.config.calls.model_copy(update={"enabled": True})
     with pytest.raises(ValueError, match="turn on call_to_confirm"):

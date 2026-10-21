@@ -56,10 +56,8 @@ if Jev is down nothing is saved.
 
 In the owner's tab:
 
-1. The **Inbox** has O-101. Confirm it (the shop calls the buyer first), then ship it with a
-   tracking line such as `Steadfast 12345678`.
-2. Back in the customer chat: *amar order kothay?* → shipped, with the tracking line, and no
-   code needed in the same chat.
+1. The **Inbox** has O-101. Confirm it (the shop calls the buyer first), then mark it shipped.
+2. Back in the customer chat: *amar order kothay?* → shipped, with no code needed in the same chat.
 3. The products page: change the Silk Panjabi's price and save. In the chat: *silk panjabi er
    dam koto?* → the new price. An edit is live on the next message; there's no publish step.
 

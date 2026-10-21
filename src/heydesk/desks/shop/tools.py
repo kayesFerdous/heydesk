@@ -415,8 +415,6 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:
         data["usually_takes"] = zone.days
-    if found.tracking:
-        data["courier"] = found.tracking
     return ToolResult(ok=True, data=data)
 
 
@@ -426,7 +424,7 @@ TRACK_ORDER = Tool(
         "Where an order is. For the order placed in this chat, or this buyer's last one, call "
         "it with nothing. Otherwise the mobile number it was placed with is enough: it finds "
         "the latest order with it; a code (like O-104) and the mobile find an older one. "
-        "Returns its status, items, total and the courier if it has one."
+        "Returns its status, items and total."
     ),
     input_model=FindOrderInput,
     run=track_order,

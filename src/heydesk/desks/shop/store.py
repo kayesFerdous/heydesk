@@ -239,20 +239,15 @@ class ShopStore(Store):
             raise NotFound("There's no such order.")
         return await self.move_order(found.id, "confirmed")
 
-    async def move_order(
-        self, order_id: str, status: str, tracking: str | None = None
-    ) -> ShopOrder:
+    async def move_order(self, order_id: str, status: str) -> ShopOrder:
         """The owner moves an order along (or the buyer cancels it). A cancelled order's items
-        go back in stock. `tracking` is the courier and its parcel id, for track_order."""
+        go back in stock."""
         async with self.sessions() as s, s.begin():
             order = await self._one(s, ShopOrder, order_id)
             if status != order.status:
                 self._move(order, status)
                 if status == "cancelled":
                     await self._stock(s, order.lines, +1)
-            if tracking is not None:
-                order.tracking = tracking.strip()
-                order.updated_at = self.now()
         return order
 
     async def _stock(self, s: AsyncSession, lines: list[dict[str, Any]], sign: int) -> None:

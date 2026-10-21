@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
 from heydesk.desks.csv_import import Suggestion
@@ -43,16 +43,12 @@ class ShopOrderOut(BaseModel):
     zone: str
     address: str
     note: str
-    tracking: str
     created_at: datetime
     updated_at: datetime
 
 
 class OrderChange(BaseModel):
     status: str | None = None  # where it may go depends on where it is: see the 409 message
-    tracking: str | None = Field(
-        default=None, max_length=200, description="The courier and its parcel id, for the buyer"
-    )
 
 
 @router.get("/api/products")
@@ -138,9 +134,8 @@ async def order(order_id: str, store: Shop) -> ShopOrderOut:
 
 @router.patch("/api/shop/orders/{order_id}")
 async def change_order(order_id: str, body: OrderChange, store: Shop) -> ShopOrderOut:
-    """Move it along (`{"status": "confirmed"}` after calling the buyer), and/or say which
-    courier has it (`{"status": "shipped", "tracking": "Steadfast 12345678"}`). Cancelling
-    puts its items back in stock."""
+    """Move it along (`{"status": "confirmed"}` after calling the buyer, `shipped` once the
+    owner has booked the courier). Cancelling puts its items back in stock."""
     found = await store.get(ShopOrder, order_id)
-    moved = await store.move_order(order_id, body.status or found.status, body.tracking)
+    moved = await store.move_order(order_id, body.status or found.status)
     return ShopOrderOut.model_validate(moved)
