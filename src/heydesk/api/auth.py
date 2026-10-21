@@ -13,6 +13,8 @@ router = APIRouter(tags=["auth"])
 
 EMAIL = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
 CODE = Field(pattern=r"^\s*\d{6}\s*$")
+type Role = Literal["admin", "owner", "moderator"]
+ROLES: dict[str, Role] = {"admin": "admin", "owner": "owner", "moderator": "moderator"}
 
 
 class SignupIn(BaseModel):
@@ -58,8 +60,8 @@ class BusinessOut(BaseModel):
 
 class MeOut(BaseModel):
     email: str
-    role: Literal["admin", "owner"]
-    business: BusinessOut | None  # an owner's business; None for an admin
+    role: Role  # a moderator runs the inbox, not settings
+    business: BusinessOut | None  # an owner's or moderator's business; None for an admin
 
 
 @router.post("/api/auth/signup", status_code=status.HTTP_204_NO_CONTENT)
@@ -100,7 +102,8 @@ async def forgot_password(body: EmailIn, services: Svc, ip: ClientIp) -> None:
 
 @router.post("/api/auth/reset")
 async def reset_password(body: ResetIn, services: Svc) -> TokenOut:
-    """The emailed code and a new password → logged in. A 403 if the code is wrong or expired."""
+    """The emailed code and a new password → logged in. A 403 if the code is wrong or expired.
+    An invited moderator joins this way, with the code in their invite (D97)."""
     await services.rate_limits.check_code(body.email)  # 429: guessing the code
     return TokenOut(
         token=await services.users.reset_with_code(body.email, body.code, body.new_password)
@@ -121,7 +124,7 @@ async def me(principal: User, services: Svc) -> MeOut:
     user, business = await services.users.me(principal)
     return MeOut(
         email=user.email,
-        role="admin" if user.role == "admin" else "owner",
+        role=ROLES[user.role],
         business=BusinessOut(
             id=business.id,
             name=business.name,

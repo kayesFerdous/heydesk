@@ -182,6 +182,7 @@ class AdminService:
         )
         owner = (
             select(User.workspace_id, func.min(User.email).label("email"))
+            .where(User.role == "owner")  # not a moderator (D97)
             .group_by(User.workspace_id)
             .subquery()
         )
@@ -224,7 +225,9 @@ class AdminService:
                 raise NotFound("There's no such business.")
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))
             owners = await s.scalars(
-                select(User).where(User.workspace_id == workspace_id).order_by(User.created_at)
+                select(User)
+                .where(User.workspace_id == workspace_id, User.role == "owner")
+                .order_by(User.created_at)
             )
             channels = await s.scalars(
                 select(Channel)

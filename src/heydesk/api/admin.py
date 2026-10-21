@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, model_validator
 
+from heydesk.api.auth import ROLES, Role
 from heydesk.api.deps import Admin, Paged, Svc
 from heydesk.services.users import temporary_password
 
@@ -125,7 +126,7 @@ class BusinessStatusIn(BaseModel):
 class UserRowOut(BaseModel):
     id: str
     email: str
-    role: Literal["admin", "owner"]
+    role: Role
     workspace_id: str | None
     business_name: str | None
     created_at: datetime
@@ -188,7 +189,7 @@ async def users(admin: Admin, services: Svc) -> list[UserRowOut]:
         UserRowOut(
             id=user.id,
             email=user.email,
-            role="admin" if user.role == "admin" else "owner",
+            role=ROLES[user.role],
             workspace_id=user.workspace_id,
             business_name=name,
             created_at=user.created_at,

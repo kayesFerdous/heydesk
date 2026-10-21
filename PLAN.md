@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Day T1, moderators (D97), built 21 Oct; T2, their screens, is next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -291,6 +291,29 @@ with no call.
 - [x] Login → "Forgot password?" → email → code and new password → logged in
 
 **Done when:** in the browser, a new owner verifies and a forgotten password is reset.
+
+### Day T1: moderators (D97)
+
+- [x] A third role, `moderator`; `team_events` (one migration)
+- [x] `/api/team/members`: list, add by email (an invite email with a reset code), send it
+      again, remove; `/api/team/activity`
+- [x] A moderator: the inbox, records and lists, but a 403 on the settings (`/api/agent`, but
+      reading the agent) and the team; removed → out on the next request
+- [x] Each owner's and moderator's write that succeeds is in the activity, with their email
+- [x] design.md, D97, the frontend's `docs/api.md`
+
+**Done when:** `scripts/check.sh` is green; tests show an invited moderator joins with the code,
+is refused the settings, is out at once when removed, and their changes stay in the activity. [x] (21 Oct)
+
+### Day T2: the team screens (`../heydesk-frontend`)
+
+- [ ] Settings → Team: the members (owner, moderators, invited), add by email, send again,
+      remove (with a confirm); the activity, newest first
+- [ ] A moderator's console: no Agent settings or Team, and a 403 shown as "only the owner"
+- [ ] The reset screen says an invited moderator joins there
+
+**Done when:** in the browser, an owner adds a moderator, who joins with the emailed code, sees
+the inbox but not the settings, and is logged out once removed.
 
 ## Still open
 

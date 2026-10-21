@@ -47,6 +47,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
@@ -182,6 +183,7 @@ def build_services(
         settings,
         now,
     )
+    users = UserService(sessions, settings.jwt_secret, build_mailer(settings), now)
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
@@ -192,11 +194,12 @@ def build_services(
         conversations=conversations,
         imports=imports,
         knowledge=knowledge,
+        members=MemberService(sessions, users, now),
         photos=photos,
         payments=PaymentService(
             sessions, payments or build_payments(settings), team, settings, now
         ),
-        users=UserService(sessions, settings.jwt_secret, build_mailer(settings), now),
+        users=users,
         visitors=visitors,
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),

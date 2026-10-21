@@ -8,12 +8,13 @@ from heydesk.db import Base, new_id, utcnow
 
 class User(Base):
     """Someone who logs in (D23). An owner belongs to one business (workspace) and sees
-    only it. An admin runs the platform and belongs to none: the one kind of user without
-    a workspace, and a CHECK keeps the two together."""
+    only it; a moderator is someone the owner added to it, who runs the inbox but not the
+    settings (D97). An admin runs the platform and belongs to none: the one kind of user
+    without a workspace, and a CHECK keeps the two together."""
 
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("role IN ('admin', 'owner')", name="role"),
+        CheckConstraint("role IN ('admin', 'owner', 'moderator')", name="role"),
         CheckConstraint("(role = 'admin') = (workspace_id IS NULL)", name="admin_has_no_workspace"),
     )
 
@@ -22,6 +23,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(10), default="owner")
     email: Mapped[str] = mapped_column(String(320), unique=True)  # stored lowercased
     password_hash: Mapped[str] = mapped_column(String(200))
-    # Set when they type the code we emailed them (D93). Until then their agent doesn't answer
+    # Set when they type the code we emailed them (D93): an owner's signup code, or the code
+    # an invited moderator sets their password with (D97). Until then they can't log in
     email_verified_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

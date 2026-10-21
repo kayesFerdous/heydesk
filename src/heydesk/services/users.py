@@ -5,13 +5,15 @@ Every business route is scoped by it. An admin has no business of their own: the
 one per request, and the database (not the token) says they're still an admin.
 
 Email codes (D93, D94): six digits that verify an owner's email after signup (no login until
-then), or let them set a new password. Nothing is stored: a code is an HMAC of the user, what it's for, their password
+then), or let them set a new password. An invited moderator (D97) joins with a reset code:
+the invite emails one, and setting a password with it verifies the email. Nothing is stored: a code is an HMAC of the user, what it's for, their password
 hash and a 15-minute window, and checking it makes it again. So it expires by itself, and a
 reset code stops working once the password changes. The rate limits stop guessing.
 """
 
 import hashlib
 import hmac
+import html
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,8 +34,10 @@ TOKEN_DAYS = 7
 WRONG_CODE = "That code is wrong or has expired. Ask for a new one."
 CODE_MINUTES = 15  # a code works in its window and the next: 15 to 30 minutes
 type Purpose = Literal["verify", "reset"]
+type Email = Literal["verify", "reset", "invite"]  # an invite carries a reset code
 # Each email with a code: its subject, heading, the line above the code, the note below.
-EMAILS: dict[Purpose, tuple[str, str, str, str]] = {
+# BUSINESS and INVITER are filled in for an invite, last, as they're the owner's own words.
+EMAILS: dict[Email, tuple[str, str, str, str]] = {
     "verify": (
         "Your HeyDesk code: CODE",
         "Verify your email",
@@ -46,6 +50,18 @@ EMAILS: dict[Purpose, tuple[str, str, str, str]] = {
         "Enter this code in HeyDesk to choose a new password.",
         "If you didn't ask for it, ignore this email: your password stays as it is.",
     ),
+    "invite": (
+        "Your code to join BUSINESS on HeyDesk: CODE",
+        "Join BUSINESS on HeyDesk",
+        (
+            "You've been added to the team as a moderator. On HeyDesk's login page, choose "
+            "Forgot password, then enter this email, this code and a new password."
+        ),
+        (
+            "INVITER added you. After 15 minutes, Forgot password sends a new code. If you "
+            "don't know them, ignore this email."
+        ),
+    ),
 }
 EMAIL_HTML = (Path(__file__).parent / "email_code.html").read_text(encoding="utf-8")
 hasher = PasswordHash.recommended()  # argon2
@@ -56,7 +72,7 @@ class Principal:
     """Who a token says is calling. `workspace_id` is None only for an admin."""
 
     user_id: str
-    role: str  # "admin" | "owner"
+    role: str  # "admin" | "owner" | "moderator"
     workspace_id: str | None
 
     @property
@@ -84,17 +100,18 @@ class UserService:
             workspace = Workspace(name=workspace_name, created_at=self.now())
             s.add(workspace)
             await s.flush()
-            user = await self._new_user(
+            user = await self.new_user(
                 s, email, password, role="owner", ws=workspace.id, verified=False
             )
-        await self._send_code(user, "verify")
+        await self.send_code(user, "verify")
 
     async def resend_code(self, email: str) -> None:
         """Another email with the verify code. An unknown or verified email gets nothing, and
-        the route says nothing, so no one learns who has an account."""
+        the route says nothing, so no one learns who has an account. An invited moderator
+        gets nothing either: they join with a password (Forgot password, D97)."""
         user = await self._by_email(email)
-        if user is not None and user.email_verified_at is None:
-            await self._send_code(user, "verify")
+        if user is not None and user.role == "owner" and user.email_verified_at is None:
+            await self.send_code(user, "verify")
 
     async def verify_email(self, email: str, code: str) -> str:
         """The code from the signup email → verified, and a token: their first login."""
@@ -112,7 +129,7 @@ class UserService:
         learns who has an account."""
         user = await self._by_email(email)
         if user is not None:
-            await self._send_code(user, "reset")
+            await self.send_code(user, "reset")
 
     async def reset_with_code(self, email: str, code: str, password: str) -> str:
         """A new password from the emailed code; the email is verified too (they read it).
@@ -195,6 +212,16 @@ class UserService:
             role = await s.scalar(select(User.role).where(User.id == principal.user_id))
         return role == "admin"
 
+    async def still_moderator(self, principal: Principal) -> bool:
+        """The database's word: a moderator the owner removed is out at once (D97)."""
+        async with self.sessions() as s:
+            role = await s.scalar(
+                select(User.role).where(
+                    User.id == principal.user_id, User.workspace_id == principal.workspace_id
+                )
+            )
+        return role == "moderator"
+
     async def me(self, principal: Principal) -> tuple[User, Workspace | None]:
         async with self.sessions() as s:
             user = await s.get(User, principal.user_id)
@@ -228,9 +255,9 @@ class UserService:
 
     async def _add(self, email: str, password: str, *, role: str, ws: str | None) -> User:
         async with self.sessions() as s, s.begin():
-            return await self._new_user(s, email, password, role=role, ws=ws)
+            return await self.new_user(s, email, password, role=role, ws=ws)
 
-    async def _new_user(
+    async def new_user(
         self,
         s: AsyncSession,
         email: str,
@@ -238,7 +265,7 @@ class UserService:
         *,
         role: str,
         ws: str | None,
-        verified: bool = True,  # only signup's need a code: the command line's are trusted
+        verified: bool = True,  # signup's and invites need a code: the command line's are trusted
     ) -> User:
         """Adds a user in the caller's transaction; a 409 if the email is taken."""
         email = email.strip().lower()
@@ -255,19 +282,30 @@ class UserService:
         s.add(user)
         return user
 
-    async def _send_code(self, user: User, purpose: Purpose) -> None:
-        code = self._code(user, purpose, self._window())
-        subject, heading, intro, note = EMAILS[purpose]
+    async def send_code(
+        self, user: User, email: Email, business: str = "", inviter: str = ""
+    ) -> None:
+        """An email with a code. The template's words are swapped from the code out, and the
+        business's name last, so nothing an owner typed can be swapped again."""
+        code = self._code(user, "verify" if email == "verify" else "reset", self._window())
+        subject, heading, intro, note = EMAILS[email]
+
+        def fill(line: str, escape: bool = False) -> str:
+            name, who = (
+                (html.escape(business), html.escape(inviter)) if escape else (business, inviter)
+            )
+            return line.replace("CODE", code).replace("INVITER", who).replace("BUSINESS", name)
+
         text = (
             f"{intro}\n\n{code}\n\nIt works for 15 minutes. Don't share it with anyone.\n\n{note}"
         )
-        html = (
-            EMAIL_HTML.replace("HEADING", heading)
+        page = (
+            EMAIL_HTML.replace("CODE", code)
+            .replace("NOTE", fill(note, escape=True))
             .replace("INTRO", intro)
-            .replace("NOTE", note)
-            .replace("CODE", code)
+            .replace("HEADING", fill(heading, escape=True))
         )
-        await self.mailer.send(user.email, subject.replace("CODE", code), text, html)
+        await self.mailer.send(user.email, fill(subject), fill(text), page)
 
     def _check_code(self, user: User, purpose: Purpose, code: str) -> None:
         window = self._window()

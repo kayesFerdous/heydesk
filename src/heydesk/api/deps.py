@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
@@ -7,7 +8,7 @@ from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-from heydesk.errors import HeyDeskError, NotFound, Unauthorized
+from heydesk.errors import Forbidden, HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
 from heydesk.services.users import Principal
 
@@ -46,16 +47,44 @@ async def current_workspace(
     request: Request,
     services: Annotated[Services, Depends(get_services)],
     principal: Annotated[Principal, Depends(current_user)],
-) -> str:
+) -> AsyncIterator[str]:
     """The business every business route is scoped by (rule 6).
 
-    An owner: their own, whatever the request says. An admin: the one in the X-Business
-    header, after the database confirms they're still an admin. An admin's writes, and
-    their reads of one thing (a conversation), go to the audit log.
+    An owner: their own, whatever the request says. A moderator: theirs too, after the
+    database confirms they're still on the team, and never its settings or team (D97). An
+    admin: the one in the X-Business header, after the database confirms they're still an
+    admin. An admin's writes, and their reads of one thing (a conversation), go to the audit
+    log; an owner's and a moderator's writes that succeed go to the business's activity.
     """
-    if not principal.is_admin:
-        assert principal.workspace_id is not None  # an owner's token always has one
-        return principal.workspace_id
+    route = request.scope.get("route")
+    path = route.path if isinstance(route, APIRoute) else request.url.path
+    target = ",".join(f"{k}={v}" for k, v in request.path_params.items())
+    action = f"{request.method} {path}"
+    if principal.is_admin:
+        yield await _admin_business(request, services, principal, action, target)
+        return
+    assert principal.workspace_id is not None  # an owner's or moderator's token always has one
+    if principal.role == "moderator":
+        if not await services.users.still_moderator(principal):
+            raise Unauthorized("Log in again.")  # removed from the team: out at once
+        if owners_only(request.method, path):
+            raise Forbidden("Only the business's owner can do this.")
+    yield principal.workspace_id
+    if request.method != "GET":  # reached only when the route didn't raise
+        await services.members.record(principal, action, target)
+
+
+def owners_only(method: str, path: str) -> bool:
+    """The agent's settings (everything under /api/agent but reading the agent itself) and the
+    team are the owner's; a moderator gets the rest: the inbox, the records, the lists (D97)."""
+    if path.startswith("/api/team"):
+        return True
+    return path.startswith("/api/agent") and not (method == "GET" and path == "/api/agent")
+
+
+async def _admin_business(
+    request: Request, services: Services, principal: Principal, action: str, target: str
+) -> str:
     if not await services.users.still_admin(principal):
         raise Unauthorized("Log in again.")
     business = request.headers.get(BUSINESS_HEADER, "")
@@ -63,10 +92,7 @@ async def current_workspace(
         raise BusinessRequired(f"Pick a business first ({BUSINESS_HEADER} header).")
     await services.admin.require_business(business)
     if request.method != "GET" or request.path_params:
-        route = request.scope.get("route")
-        path = route.path if isinstance(route, APIRoute) else request.url.path
-        target = ",".join(f"{k}={v}" for k, v in request.path_params.items())
-        await services.admin.audit(principal.user_id, business, f"{request.method} {path}", target)
+        await services.admin.audit(principal.user_id, business, action, target)
     return business
 
 
@@ -99,7 +125,8 @@ def page(
 
 
 type Svc = Annotated[Services, Depends(get_services)]
-type Workspace = Annotated[str, Depends(current_workspace)]
+# "function": the activity line is written once the route returns, before the response
+type Workspace = Annotated[str, Depends(current_workspace, scope="function")]
 type User = Annotated[Principal, Depends(current_user)]
 type Admin = Annotated[Principal, Depends(admin_only)]
 type Paged = Annotated[Page, Depends(page)]

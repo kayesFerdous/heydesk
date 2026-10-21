@@ -351,8 +351,9 @@ Every table has `workspace_id` (except `workspaces`).
 | Table | Columns |
 |---|---|
 | `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70) |
-| `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash, email_verified_at (empty until the emailed code is typed, D93) |
+| `users` | workspace_id (empty for an admin), role (`owner`/`moderator`/`admin`, D97), email, password_hash, email_verified_at (empty until the emailed code is typed, D93; for a moderator, until they join) |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
+| `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
@@ -395,8 +396,10 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/verify/resend` | `{email}` → 204, always: another email with the code if the account exists and isn't verified |
 | POST | `/api/auth/forgot` | `{email}` → 204, always: an email with a reset code if the account exists (D93) |
 | POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}`; a 403 if the code is wrong, expired or used |
-| GET | `/api/auth/me` | Who you are: email, role, your business |
+| GET | `/api/auth/me` | Who you are: email, role (`owner`, `moderator` or `admin`), your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
+| GET/POST/DELETE | `/api/team/members` | The owner's team (D97): everyone in the business (`active`, or `invited` until they join); add a moderator by `{email}` → 201, and an email with a code; `POST …/{id}/invite` sends it again; `DELETE …/{id}` removes one, out at once. A 409 for an email with an account, or past 10 moderators |
+| GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
@@ -438,8 +441,18 @@ last page.
 Everything under `/api` except chat, desks, auth and the Telegram, Messenger and Woo webhooks needs
 `Authorization: Bearer <token>`.
 
-**Two roles** (D23). An **owner** belongs to one business: the token says which
-(rule 6), and they only ever see it. An **admin** runs the platform and belongs to
+**Three roles** (D23, D97). An **owner** belongs to one business: the token says which
+(rule 6), and they only ever see it. A **moderator** is someone the owner added to it:
+they run the inbox (conversations, messages, orders, bookings, appointments, calls, the
+lists) but not the settings or the team: everything under `/api/agent` except `GET
+/api/agent`, and `/api/team`, is a 403 for them (`deps.owners_only`). The owner adds one by
+email; the user is made with a password no one knows and the email has a reset code, so
+they join with `POST /api/auth/reset` (or, once it's expired, Forgot password), which
+verifies them. One account per email, so an email that has one can't be added. Removing a
+moderator deletes the user, and the database is asked on every one of their requests, so
+they're out at once. Every write an owner or moderator makes, once the route succeeds, is a
+`team_events` row (the route and the ids in its path; the dependency writes it after the
+route returns), which the owner reads at `/api/team/activity`. An **admin** runs the platform and belongs to
 none: made only by `uv run heydesk create-admin EMAIL [PASSWORD]`, never by signup.
 The command line also lists admins (`admins`), deletes one with no audit entries
 (`delete-admin EMAIL`), and replaces a forgotten password, an admin's or an owner's
@@ -1123,7 +1136,8 @@ version handles them.
 | Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
-| Teams, billing, phone numbers, hosting | One owner login per business; no plans or billing; voice in the browser only (a confirmation call rings a `/phone` page, D88, D89); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
+| Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only (a confirmation call rings a `/phone` page, D88, D89); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |

@@ -7,6 +7,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
@@ -26,6 +27,7 @@ class Services:
     conversations: ConversationService
     imports: ImportService
     knowledge: KnowledgeService
+    members: MemberService  # the business's moderators and what its team did (D97)
     payments: PaymentService
     photos: PhotoService
     rate_limits: RateLimiter
