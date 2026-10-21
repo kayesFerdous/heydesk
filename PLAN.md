@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -315,6 +315,23 @@ is refused the settings, is out at once when removed, and their changes stay in 
 
 **Done when:** in the browser, an owner adds a moderator, who joins with the emailed code, sees
 the inbox but not the settings, and is logged out once removed. [x] (21 Oct)
+
+### Day S2: delivery areas by district (D98)
+
+- [x] `desks/shop/districts.py`: the 64 districts, in English and Bangla, with the old spellings
+- [x] `Zone.districts`; `places` only for thanas that go elsewhere; an area with neither is
+      everywhere else (one at most); `match_zone`: a place, then the district, then everywhere
+      else
+- [x] `place_order` and `change_order` take `district` (the model reads it off the address)
+      instead of `area`; the prompt lists districts, not every place
+- [x] Both consoles: a Districts field per area, places as "go here instead"; the Vue one sets
+      its one pay-first switch on every area (it sent the shop-wide one, refused since D92)
+- [ ] Live: in the dev chat, a Feni address gets Outside Dhaka's charge, "Bank Colony, Savar"
+      Dhaka suburbs, and "Agrabad, Chittagong" Outside Dhaka, with no area asked for (costs
+      model quota)
+
+**Done when:** `scripts/check.sh` is green [x]; in the browser, an area's districts save
+("ঢাকা" as Dhaka) and "Mirpur" is refused [x] (21 Oct); the live chat check above passes.
 
 ## Still open
 

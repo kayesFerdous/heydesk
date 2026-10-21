@@ -8,18 +8,13 @@ currency: BDT
 handoff:
   message: Let me get someone from our team. You can also call or WhatsApp us.
   phone: "+880 1800 000000"
-# Each area's places are what buyers say instead of its name: "Mirpur 10" is Inside Dhaka.
+# Each area covers its districts, and its places: thanas that go there, not with their
+# district (Savar is in Dhaka, but a suburb). The one with neither is everywhere else (D98).
 delivery:
-  - {name: Inside Dhaka, charge: 6000, days: "1–2 days",
-     places: [Mirpur, Uttara, Dhanmondi, Gulshan, Banani, Mohammadpur, Motijheel, Badda,
-              Rampura, Bashundhara, Farmgate, Old Dhaka]}
-  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days",
-     places: [Savar, Ashulia, Gazipur, Tongi, Keraniganj, Narayanganj]}
-  # Paid online first outside Dhaka, as BD shops do (D92): that confirms the order. It needs the
-  # shop's SSLCommerz store; without one, it's cash on delivery like the others
-  - {name: Outside Dhaka, charge: 12000, days: "3–5 days", pay_first: true,
-     places: [Chittagong, Chattogram, Sylhet, Khulna, Rajshahi, Barishal, Rangpur, Mymensingh,
-              Cumilla, Comilla, Bogura]}
+  - {name: Inside Dhaka, charge: 6000, days: "1–2 days", districts: [Dhaka]}
+  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days", districts: [Gazipur, Narayanganj],
+     places: [Savar, Ashulia, Keraniganj, Dhamrai, Dohar, Tongi]}
+  - {name: Outside Dhaka, charge: 12000, days: "3–5 days", pay_first: true}
 free_delivery_over: 300000
 policies: |
   Check the parcel in front of the rider before paying. If something is wrong, don't take it.

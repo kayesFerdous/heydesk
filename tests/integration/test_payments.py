@@ -27,7 +27,7 @@ YES = {"read_back": 0.95, "said_yes": 0.95}
 NO = {"read_back": 0.1, "said_yes": 0.1}
 SHOP_ORDER = {"lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}]}
 SHOP_DETAILS = {
-    "area": "inside dhaka",
+    "district": "Dhaka",
     "address": "House 12, Road 5, Mirpur 10, Dhaka",
     "name": "Kayes",
     "phone": "01712345678",
@@ -51,8 +51,8 @@ def pay_first(services: Services, kind: str) -> dict[str, Any]:
     if kind != "shop":
         return {"pay_first": True}
     zones = [
-        {"name": "Inside Dhaka", "charge": 6000, "places": ["Mirpur"], "pay_first": True},
-        {"name": "Outside Dhaka", "charge": 12000, "places": ["Sylhet"]},
+        {"name": "Inside Dhaka", "charge": 6000, "districts": ["Dhaka"], "pay_first": True},
+        {"name": "Outside Dhaka", "charge": 12000},
     ]
     return {"delivery": zones}
 
@@ -78,8 +78,10 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
 ) -> None:
     agent, gateway = await paying_first(world.services, "shop")
     prompt = await SHOP.prompt(agent.config, world.store(agent))
-    assert "- Inside Dhaka: ৳60 (Mirpur); paid online first" in prompt
-    assert "- Outside Dhaka: ৳120 (Sylhet)\n" in prompt  # cash on delivery, and the shop calls
+    assert "- Inside Dhaka: ৳60 (Dhaka); paid online first" in prompt
+    assert (
+        "- Outside Dhaka: ৳120 (everywhere else)\n" in prompt
+    )  # cash on delivery, and the shop calls
     assert "Elsewhere, orders are paid in cash on delivery, and the shop calls" in prompt
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
     conv = await world.say(agent, None, [*first, ToolCall("c2", "place_order", SHOP_DETAILS), "…"])
@@ -124,7 +126,7 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
 
 async def test_a_shop_takes_the_advance_only_in_the_areas_that_pay_first(world: World) -> None:
     agent, _ = await paying_first(world.services, "shop")
-    sylhet = SHOP_DETAILS | {"area": "", "address": "Zindabazar, Sylhet"}  # the area from it
+    sylhet = SHOP_DETAILS | {"district": "Sylhet", "address": "Zindabazar, Sylhet"}
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
     conv = await take(world, agent, first, ToolCall("c2", "place_order", sylhet))
     assert "pay_link" not in await world.tool_said(conv)

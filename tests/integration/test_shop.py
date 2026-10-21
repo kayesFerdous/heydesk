@@ -50,7 +50,7 @@ from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_busin
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
 PANJABIS = {"code": "panjabi-cotton", "quantity": 2, "size": "L", "colour": "White"}
 DETAILS = {
-    "area": "inside dhaka",
+    "district": "Dhaka",
     "address": "House 12, Road 5, Mirpur 10, Dhaka, near the Shah Ali mosque",
     "name": "Kayes",
     "phone": "০১৭১২-৩৪৫৬৭৮",  # typed in Bangla digits
@@ -107,7 +107,8 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
 
     assert "never ask them to message for the price" in text
     assert "Never switch to Bangla letters or to English." in text
-    assert "- Inside Dhaka: ৳60, usually 1–2 days (Mirpur, Uttara, Dhanmondi," in text
+    assert "- Inside Dhaka: ৳60, usually 1–2 days (Dhaka)" in text
+    assert "- Outside Dhaka: ৳120, usually 3–5 days (everywhere else)" in text
     assert "Delivery is free on orders of ৳3,000 or more." in text
     assert "- Cotton Kurti [kurti] ৳950, sizes S/M/L/XL, colours Black/Mustard" in text
     assert "- Jamdani Saree [jamdani-saree] ৳6,500, colours Off-white/Red: Handwoven" in text
@@ -177,17 +178,25 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
         make_ctx(store, state=kurti, agent=agent.config, channel="voice"), PlaceOrderInput()
     )
     assert on_a_call.data["next"] == "Ask for the address, one question at a time."
-    from_the_address = await place_order(ctx, PlaceOrderInput(address="Road 3, Uttara, Dhaka"))
-    assert from_the_address.data["delivery"] == "৳60"  # Uttara is inside Dhaka
-    wrong_area = await place_order(ctx, PlaceOrderInput(area="Teknaf"))  # not one of its places
-    assert "Inside Dhaka or Dhaka suburbs or Outside Dhaka" in wrong_area.data["problems"]["area"]
+    no_district = await place_order(ctx, PlaceOrderInput(address="Road 3, Uttara"))
+    assert no_district.data["still_needed"] == ["district", "name", "phone"]
+    not_a_district = await place_order(ctx, PlaceOrderInput(district="Teknaf"))  # an upazila
+    assert "isn't a district" in not_a_district.data["problems"]["district"]
 
-    just_the_area = await place_order(ctx, PlaceOrderInput(area="outside"))
-    assert (just_the_area.data["delivery"], just_the_area.data["total"]) == ("৳120", "৳1,070")
-    for place, charge in [("Mirpur 10", "৳60"), ("Savar, Dhaka", "৳100"), ("chittagong", "৳120")]:
-        by_place = await place_order(ctx, PlaceOrderInput(area=place))
-        assert by_place.data["delivery"] == charge, place
-    assert just_the_area.data["still_needed"] == ["address", "name", "phone"]
+    just_the_district = await place_order(ctx, PlaceOrderInput(district="Feni"))  # listed nowhere
+    assert (just_the_district.data["delivery"], just_the_district.data["total"]) == (
+        "৳120",
+        "৳1,070",
+    )
+    assert just_the_district.data["still_needed"] == ["address", "name", "phone"]
+    for address, district, charge in [
+        ("Road 3, Uttara", "Dhaka", "৳60"),
+        ("Bank Colony, Savar", "Dhaka", "৳100"),  # a place goes before its district
+        ("Tongi, Gazipur", "gazipur district", "৳100"),
+        ("Agrabad", "Chittagong", "৳120"),  # the old spelling, and everywhere else
+    ]:
+        found = await place_order(ctx, PlaceOrderInput(address=address, district=district))
+        assert found.data["delivery"] == charge, address
 
     all_there = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
     assert all_there.data["read_back"] == (
@@ -197,7 +206,7 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
     )
     big = (await update_cart(make_ctx(store, agent=agent.config), cart(PANJABIS))).state
     free = await place_order(
-        make_ctx(store, state=big, agent=agent.config), PlaceOrderInput(area="inside dhaka")
+        make_ctx(store, state=big, agent=agent.config), PlaceOrderInput(district="Dhaka")
     )
     assert (free.data["delivery"], free.data["total"]) == ("free", "৳3,700")  # over ৳3,000
     assert await orders(world) == []
@@ -448,7 +457,10 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
         return make_ctx(store, agent=agent.config, decider=world.decider)
 
     world.decider.script = [NO]
-    asked = await change_order(ctx(), ChangeOrderInput(area="Sylhet", address="Zindabazar, Sylhet"))
+    no_district = await change_order(ctx(), ChangeOrderInput(address="Zindabazar, Sylhet"))
+    assert "district too" in no_district.data["error"]
+    sylhet = ChangeOrderInput(district="Sylhet", address="Zindabazar, Sylhet")
+    asked = await change_order(ctx(), sylhet)
     assert asked.data["read_back"] == (
         "Change order O-101: address: House 12, Road 5, Mirpur 10, Dhaka, near the Shah Ali "
         "mosque → Zindabazar, Sylhet; delivery area: Inside Dhaka → Outside Dhaka; delivery: "
@@ -458,7 +470,7 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     assert unchanged.zone == "Inside Dhaka"  # no yes, no change
 
     world.decider.script = [YES]
-    done = await change_order(ctx(), ChangeOrderInput(area="Sylhet", address="Zindabazar, Sylhet"))
+    done = await change_order(ctx(), sylhet)
     assert done.ok and done.alert and "✏️ Order O-101 changed" in done.alert
     [changed] = await orders(world)
     assert (changed.zone, changed.delivery_charge, changed.total) == (
@@ -500,7 +512,7 @@ async def test_the_area_stays_once_its_charge_was_paid_online(world: World) -> N
         (await s.get(ShopOrder, order.id)).paid = 6000  # type: ignore[union-attr]
 
     ctx = make_ctx(world.store(agent, order.conversation_id), agent=agent.config)
-    refused = await change_order(ctx, ChangeOrderInput(area="outside"))
+    refused = await change_order(ctx, ChangeOrderInput(district="Sylhet", address="Zindabazar"))
     assert "was paid online, so the area can't change" in refused.data["error"]
 
 

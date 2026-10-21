@@ -194,17 +194,19 @@ UPDATE_CART = Tool(
 )
 
 
+DISTRICT = (  # the model reads the district off the address; Python picks the area (D98)
+    "The address's district, in English, even if they didn't write it: Mirpur or Uttara → "
+    "Dhaka, Patenga → Chattogram, Savar → Dhaka"
+)
+
+
 class PlaceOrderInput(BaseModel):
-    area: str = Field(
-        default="",
-        description="The shop's delivery area the address is in. Empty: it's found from the "
-        "address's place, like Mirpur or Savar",
-    )
     address: str = Field(
         default="",
         description="The full address: house and road, area or thana, district; a landmark "
         "if they gave one",
     )
+    district: str = Field(default="", description=DISTRICT)
     name: str = Field(default="", description="The name for the order")
     phone: str = Field(default="", description="The buyer's mobile number, for the rider")
     note: str = Field(default="", description="Optional: anything the shop should know")
@@ -217,9 +219,11 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     config = cast(ShopConfig, ctx.agent)
     check = Checks(together=ctx.channel != "voice")  # a chat asks for it all at once (D92)
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
-    zone = (  # the address usually names the area's place: "Mirpur 10" (D54, D92)
-        check.take("area", args.area or args.address, lambda s: match_zone(config.delivery, s))
-        if args.area.strip() or args.address.strip()
+    zone = (  # Python finds the area from the district and the address's places (D98)
+        check.take(
+            "district", args.district, lambda d: match_zone(config.delivery, d, args.address)
+        )
+        if args.district.strip() or args.address.strip()
         else None  # asked for with the address
     )
     name = check.take("name", args.name, parse.name)
@@ -323,8 +327,8 @@ async def _order_alert(
 PLACE_ORDER = Tool(
     name="place_order",
     description=(
-        "Place a cash-on-delivery order: the full address, the name and the mobile number, and "
-        "the delivery area if the address doesn't make it clear. Call it as soon as you have the "
+        "Place a cash-on-delivery order: the full address with its district, the name and the "
+        "mobile number. Call it as soon as you have the "
         "address: it gives the delivery charge and the total, and says what's still needed. "
         "When it has everything it gives you what to read back; call it again with the same "
         "details after a clear yes. Returns the order code; tell it to the visitor. If the "
@@ -531,9 +535,7 @@ CONFIRM_ORDER = Tool(
 
 class ChangeOrderInput(FindOrderInput):
     address: str = Field(default="", description="A new full address, if it changes")
-    area: str = Field(
-        default="", description="A new delivery area, or the place they named, if it changes"
-    )
+    district: str = Field(default="", description="With a new address: " + DISTRICT)
     new_phone: str = Field(default="", description="A new mobile number for the rider")
     note: str = Field(default="", description="A new note for the shop")
     items: list[CartLine] = Field(
@@ -554,12 +556,11 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
             "Offer to take a message for the team."
         )
     if not args.items and not any(
-        f.strip() for f in (args.address, args.area, args.new_phone, args.note)
+        f.strip() for f in (args.address, args.district, args.new_phone, args.note)
     ):
-        return fail(
-            "Ask what they want to change: the items, the address, the delivery area, the "
-            "mobile or the note."
-        )
+        return fail("Ask what they want to change: the items, the address, the mobile or the note.")
+    if args.address.strip() and not args.district.strip():
+        return fail("Give the new address's district too (Mirpur → Dhaka); ask if you can't tell.")
     config = cast(ShopConfig, ctx.agent)
     lines, subtotal = found.lines, found.subtotal
     if args.items:
@@ -574,7 +575,9 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     check = Checks()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
-    zone = check.take("area", args.area, lambda said: match_zone(config.delivery, said))
+    zone = check.take(
+        "district", args.district, lambda d: match_zone(config.delivery, d, args.address)
+    )
     phone = check.take("new_phone", args.new_phone, mobile)
     if check.problems:
         return fail(" ".join(check.problems.values()))
@@ -642,7 +645,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
 CHANGE_ORDER = Tool(
     name="change_order",
     description=(
-        "Change an order's items, address, delivery area, mobile or note before the courier has "
+        "Change an order's items, address, mobile or note before the courier has "
         "it. For the order placed in this chat, no code is needed; otherwise ask for its code, "
         "then the mobile it was placed with. Give only what changes; new items are the whole "
         "new list. The first call gives what to read back, with any new subtotal, delivery "

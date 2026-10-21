@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from datetime import time
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heydesk.desks import csv_import
+from heydesk.desks.shop.districts import district
 from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.speech import money
 
@@ -131,38 +132,56 @@ class Product(BaseModel):
 
 
 class Zone(BaseModel):
-    """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days", and the
-    places in it that buyers name ("Mirpur", "Uttara")."""
+    """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days". It covers
+    its `districts`, and its `places`: thanas or areas that go here rather than with their
+    district ("Savar" in Dhaka suburbs, though Savar is in Dhaka). One with neither covers
+    everywhere else (D98)."""
 
     name: str = Field(min_length=1, max_length=100)
     charge: int = Field(ge=0)  # minor units
     days: str = Field(default="", max_length=50)  # how long it usually takes
-    places: list[str] = []  # what buyers say instead of the area's name
+    districts: list[str] = []  # of Bangladesh's 64, spelled as in `DISTRICTS`
+    places: list[str] = []
     # The buyer pays this area's charge online first, and that confirms the order (D92): BD
     # shops ask it outside Dhaka, where a refused parcel costs the most
     pay_first: bool = False
 
+    @field_validator("districts")
+    @classmethod
+    def known_districts(cls, names: list[str]) -> list[str]:
+        return [district(name) for name in names if name.strip()]
+
+    @property
+    def everywhere_else(self) -> bool:
+        return not self.districts and not any(p.strip() for p in self.places)
+
     def line(self, currency: str) -> str:
         line = f"- {self.name}: {money(self.charge, currency)}"
         line += f", usually {self.days}" if self.days else ""
-        return line + (f" ({', '.join(self.places)})" if self.places else "")
+        return line + f" ({', '.join(self.districts + self.places) or 'everywhere else'})"
 
 
-def match_zone(zones: list[Zone], said: str) -> Zone:
-    """The one delivery area `said` names: by its name ("inside dhaka", "outside"), or by a
-    place in it ("Mirpur 10" → Inside Dhaka). Raises ValueError."""
-    text = " ".join(said.lower().split())
-    for zone in zones:
-        if zone.name.lower() == text:
-            return zone
-    by_name = [z for z in zones if text and text in z.name.lower()]
-    if len(by_name) == 1:
-        return by_name[0]
-    by_place = [z for z in zones if any(p.lower() in text for p in z.places if p.strip())]
-    if len(by_place) == 1:
-        return by_place[0]
-    names = " or ".join(z.name for z in zones)
-    raise ValueError(f"Which delivery area: {names}? Ask.")
+def _words(text: str) -> str:
+    return " " + " ".join(re.sub(r"[,.;:/()\-]", " ", text.lower()).split()) + " "
+
+
+def match_zone(zones: list[Zone], said_district: str, address: str = "") -> Zone:
+    """The delivery area of an address in `said_district` (D98): the one naming a place in the
+    address ("Savar" → Dhaka suburbs), else the one with its district, else the one for
+    everywhere else. Raises ValueError."""
+    name = district(said_district)
+    # ponytail: a place matches anywhere in the address ("Nawabganj" is in "Chapai Nawabganj");
+    # tie places to a district if owners hit that
+    words = _words(address)
+    for covers in (
+        lambda z: any(_words(p) in words for p in z.places if p.strip()),
+        lambda z: name in z.districts,
+        lambda z: z.everywhere_else,
+    ):
+        found = next((z for z in zones if covers(z)), None)
+        if found:
+            return found
+    raise ValueError(f"The shop doesn't deliver to {name}. Say so, kindly.")
 
 
 class CallSettings(BaseModel):
@@ -219,6 +238,15 @@ class ShopConfig(AgentConfig):
     def calls_need_call_to_confirm(self) -> Self:
         if self.calls.enabled and not self.call_to_confirm:
             raise ValueError("Calls confirm orders: turn on call_to_confirm to use them.")
+        return self
+
+    @model_validator(mode="after")
+    def one_area_for_everywhere_else(self) -> Self:
+        if sum(zone.everywhere_else for zone in self.delivery) > 1:
+            raise ValueError(
+                "Only one delivery area can be for everywhere else: give the others their "
+                "districts or places."
+            )
         return self
 
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:

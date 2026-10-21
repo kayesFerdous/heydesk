@@ -75,9 +75,8 @@ If you can't tell which product they mean ("this one"), ask for its name.
    "Please send your name, mobile number and full address, with thana and district." On a
    call, ask one at a time. Take whatever they've already given and ask only for what's still
    missing. Don't ask for a landmark or the delivery area: the address says where. Call
-   place_order as soon as you have the address; give the shop's area it's in when you can
-   tell (Sylhet is outside Dhaka). It gives the delivery charge and the total, and says
-   what's still needed.
+   place_order as soon as you have the address, with its district (Mirpur → Dhaka): it finds
+   the delivery area, gives the charge and the total, and says what's still needed.
 3. When place_order gives you a read-back, send all of it and ask them to confirm. In a chat,
    put each item and each detail on its own line. Only after a clear yes, call place_order
    again with the same details, then tell them the order code and what happens next, as the
@@ -89,8 +88,8 @@ If you can't tell which product they mean ("this one"), ask for its name.
   To track any other order, ask only for the mobile number it was placed with. To change or
   cancel one, ask for its code (like O-104), then the mobile number.
 - Say nothing about an order until the tool has found it.
-- Before the courier has it, an order's items, address, delivery area, mobile or note can
-  change, or it can be cancelled.
+- Before the courier has it, an order's items, address, mobile or note can change, or it can
+  be cancelled.
 - To swap a delivered item for another size or colour, use request_exchange.
 - For a return, a damaged item or anything else, offer to take a message with take_message,
   or get a person."""
@@ -126,7 +125,11 @@ class ShopDesk(Desk):
 
         # One way to confirm each order (D92): the advance in its area, the shop's call, or none
         pays = await store.pays_first(config)
-        delivery = ["# Delivery", "The charge depends on the area:"]
+        # Each area's districts and places, not every place in it (D98)
+        delivery = [
+            "# Delivery",
+            "The charge depends on the area; a place named in one goes there:",
+        ]
         for zone in config.delivery:
             first = pays and zone.pay_first and zone.charge
             delivery.append(zone.line(config.currency) + ("; paid online first" if first else ""))
@@ -200,7 +203,7 @@ class ShopDesk(Desk):
                 f"\n# This call\nThe shop phoned the buyer about order {calling['code']}. Your "
                 f'first line was: "{calling["said"]}" It read the order back and asked them to '
                 "confirm. If they say yes, call confirm_order. If they want to cancel it, or to "
-                "change the address, delivery area or mobile, use cancel_order or change_order "
+                "change the address or mobile, use cancel_order or change_order "
                 "with no code. Then thank them and say goodbye. Don't greet them again.\n"
             )
         return note

@@ -70,6 +70,16 @@ async def test_a_shop_pays_first_per_area_and_says_whether_it_calls(app: FastAPI
         assert old_switch.status_code == 422  # per area now
         calls_on = await owner.patch("/api/agent", json={"calls": {"enabled": True}})
         assert calls_on.status_code == 422 and "call_to_confirm" in calls_on.text
+
+        dhaka = {"name": "Inside Dhaka", "charge": 6000, "districts": ["dhaka", "চট্টগ্রাম"]}
+        spelled = await owner.patch("/api/agent", json={"delivery": [dhaka, outside]})
+        assert spelled.json()["config"]["delivery"][0]["districts"] == ["Dhaka", "Chattogram"]
+        not_one = await owner.patch(
+            "/api/agent", json={"delivery": [dhaka | {"districts": ["Mirpur"]}, outside]}
+        )
+        assert not_one.status_code == 422 and "isn't a district" in not_one.text
+        two_else = await owner.patch("/api/agent", json={"delivery": [outside, outside]})
+        assert two_else.status_code == 422 and "everywhere else" in two_else.text
     finally:
         await owner.aclose()
 
