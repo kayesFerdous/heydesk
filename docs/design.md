@@ -351,7 +351,7 @@ Every table has `workspace_id` (except `workspaces`).
 | Table | Columns |
 |---|---|
 | `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70) |
-| `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash |
+| `users` | workspace_id (empty for an admin), role (`owner`/`admin`), email, password_hash, email_verified_at (empty until the emailed code is typed, D93) |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
@@ -390,8 +390,12 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
-| POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}` |
-| GET | `/api/auth/me` | Who you are: email, role, your business |
+| POST | `/api/auth/signup`, `/api/auth/login` | A new business and its owner, or a login → `{token}`. Signup emails a 6-digit code (D93) |
+| POST | `/api/auth/verify` | `{code}`: the code from the signup email → 204; a 403 if it's wrong or expired. Logged in |
+| POST | `/api/auth/verify/resend` | Another email with the code → 204; nothing if already verified. Logged in |
+| POST | `/api/auth/forgot` | `{email}` → 204, always: an email with a reset code if the account exists (D93) |
+| POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}`; a 403 if the code is wrong, expired or used |
+| GET | `/api/auth/me` | Who you are: email, `email_verified`, role, your business |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
@@ -446,6 +450,16 @@ the ordinary routes (an owner's header is ignored). The database, not the token,
 says someone is still an admin. Every admin write, and every admin read of one
 thing (one conversation), is saved to `audit_events`. A suspended business's chat
 answers 404 `unavailable`; its owner can still log in.
+**Email codes** (D93). Signup logs the owner in and emails a 6-digit code. Until they type it
+(`POST /api/auth/verify`), their agent's chat answers 404 `unavailable`, like a suspended one,
+and `GET /api/agent` lists it in `missing`; everything else works. A forgotten password is
+`POST /api/auth/forgot` then `POST /api/auth/reset` with the emailed code, which also verifies
+the email. No code is stored: it's an HMAC (with `JWT_SECRET`) of the user, the purpose
+(`verify` or `reset`), their password hash and a 15-minute window, made again to check it, so
+it works for 15 to 30 minutes and a reset code is spent when the password changes. Email goes
+through the `Mailer` port: Brevo's API (`BREVO_API_KEY`, from `MAIL_FROM`, both required in
+production), or, without a key, printed in the terminal. A user made on the command line is
+verified already, and so is everyone from before D93 (the migration).
 An admin's page for one business (`GET /api/admin/businesses/{id}`, D69) has its
 desk, agent and chat key, owners, connected channels, payments (sandbox or live),
 documents, a linked sheet's last sync and problem, and counts of conversations (all,
@@ -511,6 +525,8 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 | `POST /api/chat/{key}` | IP (a script making a new visitor_id each time) | 60 a minute |
 | `POST /api/auth/login` | IP and email | 10 in 15 minutes |
 | `POST /api/auth/signup` | IP (a script making businesses) | 5 an hour |
+| `POST /api/auth/forgot`, `/verify/resend` | email (or user), and IP: a full inbox, our 300 free emails a day | 3 an hour, 10 an hour |
+| `POST /api/auth/verify`, `/reset` | email (or user): guessing the 6 digits | 5 in 15 minutes |
 
 The counts are in this server's memory: a restart clears them, and a second server process would
 keep its own. The IP is the real visitor's when a proxy on the same machine sends
@@ -1183,7 +1199,7 @@ version handles them.
 | Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
-| Ending logins when a password changes | A login token lasts 7 days, and a new password doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
+| Ending logins when a password changes | A login token lasts 7 days, and a new password (changed, or reset with the emailed code, D93) doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
 | Changing `SECRETS_KEY` | It's set once; the secrets saved with the old key can't be read with a new one (D74) |
 | Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
 | Messenger: Facebook Login to connect a Page, the Get Started button, quick replies, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text only. A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |

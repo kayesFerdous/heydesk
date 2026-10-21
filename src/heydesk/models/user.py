@@ -22,4 +22,6 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(10), default="owner")
     email: Mapped[str] = mapped_column(String(320), unique=True)  # stored lowercased
     password_hash: Mapped[str] = mapped_column(String(200))
+    # Set when they type the code we emailed them (D93). Until then their agent doesn't answer
+    email_verified_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

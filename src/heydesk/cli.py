@@ -21,7 +21,13 @@ from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.users import UserService, temporary_password
-from heydesk.wiring import build_embedder, build_knowledge_store, build_photo_index, build_qdrant
+from heydesk.wiring import (
+    build_embedder,
+    build_knowledge_store,
+    build_mailer,
+    build_photo_index,
+    build_qdrant,
+)
 
 USAGE = """usage: heydesk [COMMAND]
   (none)                           the dev server
@@ -38,7 +44,7 @@ async def user_service() -> AsyncIterator[UserService]:
     settings = Settings()
     engine, sessions = make_engine(settings.DATABASE_URL)
     try:
-        yield UserService(sessions, settings.jwt_secret, utcnow)
+        yield UserService(sessions, settings.jwt_secret, build_mailer(settings), utcnow)
     finally:
         await engine.dispose()
 
@@ -49,9 +55,9 @@ async def create_user(email: str, password: str) -> None:
     async with sessions() as s, s.begin():
         if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
             s.add(Workspace(id=DEV_WORKSPACE_ID, name="Dev", created_at=utcnow()))
-    token = await UserService(sessions, settings.jwt_secret, utcnow).create_user(
-        DEV_WORKSPACE_ID, email, password
-    )
+    token = await UserService(
+        sessions, settings.jwt_secret, build_mailer(settings), utcnow
+    ).create_user(DEV_WORKSPACE_ID, email, password)
     await engine.dispose()
     print(f"Created {email} in the dev workspace. A token for the API (7 days):\n{token}")
 

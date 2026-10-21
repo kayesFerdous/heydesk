@@ -205,7 +205,15 @@ async def new_business(app: FastAPI, email: str = "second@example.com") -> Async
     body = {"email": email, "password": "another long one", "workspace_name": "Cafe"}
     signed_up = await anon.post("/api/auth/signup", json=body)
     anon.headers["Authorization"] = f"Bearer {signed_up.json()['token']}"
+    verified = await anon.post("/api/auth/verify", json={"code": emailed_code(app, email)})
+    assert verified.status_code == 204
     return anon
+
+
+def emailed_code(app: FastAPI, email: str) -> str:
+    """The code in the last email to `email` (the test mailer keeps them, D93)."""
+    subject = [sub for to, sub, _ in app.state.services.users.mailer.sent if to == email][-1]
+    return subject[-6:]
 
 
 @pytest.fixture

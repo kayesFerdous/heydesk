@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from heydesk.models import Workspace
+from tests.conftest import emailed_code
 from tests.integration.test_restaurant import place_an_order
 
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
@@ -79,3 +80,49 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     assert moved.status_code == 404
     assert (await client.get("/api/orders")).json()[0]["status"] == "new"
     await second.aclose()
+
+
+async def test_a_new_owners_agent_answers_once_they_type_the_emailed_code(app: FastAPI) -> None:
+    second = await as_second_account(app)
+    key = (await second.post("/api/agent", json={"kind": "restaurant"})).json()["public_key"]
+
+    # Signed up: logged in, but the chat waits for the code (D93)
+    assert (await second.get("/api/auth/me")).json()["email_verified"] is False
+    chat = await second.get(f"/api/chat/{key}")
+    assert chat.status_code == 404 and chat.json()["error"]["code"] == "unavailable"
+    assert "Verify your email" in " ".join((await second.get("/api/agent")).json()["missing"])
+
+    code = emailed_code(app, "second@example.com")
+    wrong = "000000" if code != "000000" else "111111"
+    assert (await second.post("/api/auth/verify", json={"code": wrong})).status_code == 403
+    assert (await second.post("/api/auth/verify", json={"code": code})).status_code == 204
+
+    assert (await second.get("/api/auth/me")).json()["email_verified"] is True
+    assert (await second.get(f"/api/chat/{key}")).status_code == 200
+    await second.aclose()
+
+
+async def test_a_forgotten_password_is_reset_with_the_emailed_code_once(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as anon:
+        # An unknown email gets the same 204 and no email: it doesn't say who has an account
+        nobody = await anon.post("/api/auth/forgot", json={"email": "nobody@example.com"})
+        assert nobody.status_code == 204
+        assert not [
+            to for to, *_ in app.state.services.users.mailer.sent if to.startswith("nobody")
+        ]
+
+        await anon.post("/api/auth/forgot", json={"email": "Owner@Example.com"})
+        code = emailed_code(app, "owner@example.com")
+        reset = {"email": "owner@example.com", "code": code, "new_password": "a brand new one"}
+
+        done = await anon.post("/api/auth/reset", json=reset)
+        again = await anon.post("/api/auth/reset", json=reset | {"new_password": "a third one!"})
+        old = {"email": "owner@example.com", "password": "a long password"}
+        new = {"email": "owner@example.com", "password": "a brand new one"}
+
+        assert done.status_code == 200 and done.json()["token"]
+        assert again.status_code == 403  # the password changed, so the code is spent
+        assert (await anon.post("/api/auth/login", json=old)).status_code == 401
+        assert (await anon.post("/api/auth/login", json=new)).status_code == 200

@@ -19,6 +19,9 @@ CHAT_PER_VISITOR = "6/minute"
 CHAT_PER_IP = "60/minute"  # generous: on mobile data many people share one address
 LOGIN = "10/15 minutes"  # per address and email: stops password guessing
 SIGNUP = "5/hour"  # per address: stops a script making businesses
+SEND_CODE = "3/hour"  # emails with a code (D93), per person: stops filling someone's inbox
+SEND_CODE_PER_IP = "10/hour"  # and per address: stops spending our free 300 emails a day
+CHECK_CODE = "5/15 minutes"  # per person: a 6-digit code can't be guessed in 5 tries
 
 
 class RateLimiter:
@@ -35,6 +38,14 @@ class RateLimiter:
 
     async def signup(self, ip: str) -> None:
         await self._check(SIGNUP, "signup", ip)
+
+    async def send_code(self, ip: str, who: str) -> None:
+        """`who` is the email, or the user id when they're logged in."""
+        await self._check(SEND_CODE, "send-code", who.strip().lower())
+        await self._check(SEND_CODE_PER_IP, "send-code-ip", ip)
+
+    async def check_code(self, who: str) -> None:
+        await self._check(CHECK_CODE, "check-code", who.strip().lower())
 
     async def _check(self, limit: str, what: str, *key: str) -> None:
         """Counts one hit; raises `TooFast` when there were too many."""

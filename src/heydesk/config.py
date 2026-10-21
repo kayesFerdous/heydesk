@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     # (D49), which the owner connects on the frontend. fake: tests, no network
     PAYMENTS: Literal["sslcommerz", "fake"] = "sslcommerz"
 
+    # Email (D93): the codes that verify an owner's email and reset a password go through Brevo
+    # (brevo.com, free for 300 a day) from MAIL_FROM, an address verified there. Without a key,
+    # development prints each email in the terminal
+    BREVO_API_KEY: str = ""
+    MAIL_FROM: str = ""
+
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines
 
@@ -142,6 +148,8 @@ class Settings(BaseSettings):
             problems.append("EMBEDDER is fake")
         if self.PAYMENTS == "fake":
             problems.append("PAYMENTS is fake")
+        if not self.BREVO_API_KEY or not self.MAIL_FROM:
+            problems.append("BREVO_API_KEY or MAIL_FROM is empty")
         if not self.QDRANT_URL:
             problems.append("QDRANT_URL is empty")
         if problems:

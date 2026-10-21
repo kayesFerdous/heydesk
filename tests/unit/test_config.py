@@ -19,5 +19,7 @@ def test_production_starts_when_configured() -> None:
         DECIDER="jev",
         QDRANT_URL="https://example.qdrant.io",
         PAYMENTS="sslcommerz",
+        BREVO_API_KEY="xkeysib-test",
+        MAIL_FROM="hello@heydesk.test",
         _env_file=None,
     )  # type: ignore[call-arg]

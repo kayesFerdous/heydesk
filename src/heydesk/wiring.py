@@ -21,6 +21,7 @@ from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
+from heydesk.adapters.mailer import Brevo, ConsoleMailer
 from heydesk.adapters.messenger.graph import MessengerGraph
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
@@ -33,6 +34,7 @@ from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
+from heydesk.ports.mailer import Mailer
 from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
@@ -131,6 +133,12 @@ def build_payments(settings: Settings) -> PaymentGateway:
     return FakePayments()  # no network; no order is paid unless a test says so
 
 
+def build_mailer(settings: Settings) -> Mailer:
+    if settings.BREVO_API_KEY:
+        return Brevo(settings.BREVO_API_KEY, _required(settings, "MAIL_FROM", "BREVO_API_KEY"))
+    return ConsoleMailer()  # development and tests: the emails are printed, not sent
+
+
 def build_services(
     sessions: async_sessionmaker[AsyncSession],
     llm: LanguageModel,
@@ -198,7 +206,7 @@ def build_services(
         payments=PaymentService(
             sessions, payments or build_payments(settings), team, settings, now
         ),
-        users=UserService(sessions, settings.jwt_secret, now),
+        users=UserService(sessions, settings.jwt_secret, build_mailer(settings), now),
         visitors=visitors,
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
