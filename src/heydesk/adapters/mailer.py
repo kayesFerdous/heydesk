@@ -27,9 +27,11 @@ class Brevo:
         }
         try:
             response = await self.client.post("/smtp/email", json=body)
-            response.raise_for_status()
         except httpx.HTTPError as error:
             log.warning("email not sent", extra={"error": type(error).__name__})
+            return
+        if response.is_error:  # Brevo says why: a bad key, or an IP not in its authorised list
+            log.warning("email not sent", extra={"status": response.status_code})
 
 
 class ConsoleMailer:
