@@ -145,9 +145,11 @@ class FakeWoo:
 
 def test_woos_fields_become_ours() -> None:
     external = {"id": 30, "type": "external", "price": "10", "name": "Elsewhere"}
-    found, ids = products_from_woo([tupi(), panjabi(), external])
+    pictured = tupi() | {"images": [{"src": "https://shop.example.com/tupi.jpg"}]}
+    found, ids = products_from_woo([pictured, panjabi(), external])
     assert [p.code for p in found] == ["TP-1", "LP-1", "LP-1-2650"]
     tupi_, linen, xxl = found
+    assert (tupi_.photos, linen.photos) == (["https://shop.example.com/tupi.jpg"], [])  # links
     assert (tupi_.price, tupi_.was_price, tupi_.stock) == (30000, 35000, 12)
     assert (tupi_.description, tupi_.category) == ("White cotton tupi, & soft.", "Products")
     assert linen.category == "Panjabi & Kurta"

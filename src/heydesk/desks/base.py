@@ -26,6 +26,7 @@ from heydesk.runtime.tool import Tool
 
 if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.knowledge import KnowledgeService
+    from heydesk.services.photos import PhotoService
 
 PAGE = 100  # the most rows a list returns at once (newest first)
 
@@ -69,6 +70,7 @@ class Store:
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
         public_url: str = "",
+        photos: "PhotoService | None" = None,
     ) -> None:
         self.sessions = sessions
         self.workspace_id = workspace_id
@@ -76,6 +78,7 @@ class Store:
         self.conversation_id = conversation_id
         self.knowledge = knowledge
         self.public_url = public_url  # where a link in a reply points: the payment page
+        self.photos = photos  # for the photo links in a shop's list (D102)
 
     async def pays_first(self, config: AgentConfig) -> bool:
         """Whether the agent asks for payment before placing anything: the owner turned it on
@@ -287,6 +290,7 @@ class Desk:
         conversation_id: str | None = None,
         knowledge: "KnowledgeService | None" = None,
         public_url: str = "",
+        photos: "PhotoService | None" = None,
     ) -> Store:
         """Its data. A desk with tables of its own returns its own store."""
         return Store(
@@ -296,6 +300,7 @@ class Desk:
             conversation_id=conversation_id,
             knowledge=knowledge,
             public_url=public_url,
+            photos=photos,
         )
 
     def own_tools(self, config: Any) -> list[Tool]:

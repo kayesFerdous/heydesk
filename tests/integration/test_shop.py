@@ -43,8 +43,10 @@ from heydesk.desks.shop.values import (
     stock_cell,
 )
 from heydesk.ports.llm import LLMUnavailable, ToolCall
+from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
+from heydesk.services.photos import to_jpeg
 from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
@@ -841,3 +843,62 @@ async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: Wor
     world.llm.script = ["Hi!"]
     await talk.reply(agent, "telegram", "chat-8", "hello")  # another chat: nothing to offer
     assert "# Their last order" not in world.llm.requests[-1].system
+
+
+async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: World) -> None:
+    """A CSV's, a sheet's or a WooCommerce store's photo links become the shop's own photos
+    (D102): each downloaded the first time only, one that fails left out, and a product with
+    no links keeps the photos it has."""
+    await world.agent("shop")
+    fetched: list[str] = []
+
+    async def fetch(link: str) -> bytes:
+        fetched.append(link)
+        if link.endswith("gone.jpg"):
+            raise ImageUnreachable("404 for a photo link")
+        return photo("red")
+
+    world.services.photos.fetch = fetch
+    store = await world.services.agents.store(DEV_WORKSPACE_ID)
+    ours = "/media/dev/products/" + "a" * 32 + ".jpg"  # the owner's own upload
+    await store.replace_products([Product(code="kurti", name="Kurti", price=95000, photos=[ours])])
+    csv = (
+        "code,name,price,photos\n"
+        "silk,Silk Panjabi,3200,https://cdn.example.com/silk.jpg https://cdn.example.com/gone.jpg\n"
+        "kurti,Kurti,950,\n"
+    )
+
+    silk, kurti = await store.with_photos(products_from_csv(csv))
+    [url] = silk.photos
+    assert world.services.photos.is_products(DEV_WORKSPACE_ID, url)
+    assert kurti.photos == [ours]
+    matches = await world.services.photos.nearest(DEV_WORKSPACE_ID, to_jpeg(photo("red")))
+    assert matches and matches[0][0] == url  # a visitor's photo finds it
+
+    again, _ = await store.with_photos(products_from_csv(csv))  # the next sync
+    assert again.photos == [url]
+    assert fetched.count("https://cdn.example.com/silk.jpg") == 1
+    assert fetched.count("https://cdn.example.com/gone.jpg") == 2  # tried again
+
+
+async def test_find_product_shows_photos_of_what_it_found(world: World) -> None:
+    """A search shows the first products it found that have a photo, except on a call (D102)."""
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    url = "/media/dev/products/" + "b" * 32 + ".jpg"
+    products = await store.products()
+    await store.replace_products(
+        [
+            p.model_copy(update={"photos": [url]}) if p.code == "panjabi-silk" else p
+            for p in products
+        ]
+    )
+    ctx = make_ctx(store, agent=agent.config)
+
+    found = await find_product(ctx, FindProductInput(query="silk panjabi"))
+    assert found.photos and found.photos[0]["url"] == url
+    assert found.photos[0]["code"] == "panjabi-silk" and found.data["shown"] == ["Silk Panjabi"]
+    on_a_call = await find_product(
+        make_ctx(store, agent=agent.config, channel="voice"), FindProductInput(query="silk")
+    )
+    assert on_a_call.photos is None and "shown" not in on_a_call.data

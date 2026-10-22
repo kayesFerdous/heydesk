@@ -109,10 +109,9 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
     saved until the whole file is clean. `dry_run` only checks it."""
     await store.not_linked()
-    found = products_from_csv(body.csv, body.mapping)
-    photos = {p.code: p.photos for p in await store.products()}  # a CSV has no photos: keep them
-    found = [p.model_copy(update={"photos": photos.get(p.code, [])}) for p in found]
+    found = products_from_csv(body.csv, body.mapping)  # a dry run shows the photo links
     if not body.dry_run:
+        found = await store.with_photos(found)  # downloads the new links (D102)
         await store.replace_products(found)
     return ImportOut[Product](saved=not body.dry_run, count=len(found), preview=found[:5])
 

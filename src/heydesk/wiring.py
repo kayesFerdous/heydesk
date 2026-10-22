@@ -20,7 +20,7 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
 from heydesk.adapters.mailer import Brevo, ConsoleMailer
-from heydesk.adapters.media import DiskMedia, R2Media
+from heydesk.adapters.media import DiskMedia, R2Media, fetch_image
 from heydesk.adapters.messenger.graph import MessengerGraph
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
@@ -33,7 +33,7 @@ from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.mailer import Mailer
-from heydesk.ports.media import MediaStore
+from heydesk.ports.media import FetchImage, MediaStore
 from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
@@ -139,6 +139,24 @@ def build_media(settings: Settings) -> MediaStore:
     )
 
 
+def build_photos(
+    settings: Settings,
+    embedder: Embedder,
+    index: PhotoIndex,
+    fetch: FetchImage | None = None,
+) -> PhotoService:
+    """Photo links are fetched from public addresses only; in development localhost too, for
+    the test shop in dev/woo-shop (D76, D102)."""
+    dev = settings.APP_ENV == "development"
+    return PhotoService(
+        embedder,
+        index,
+        build_media(settings),
+        settings.PHOTO_MIN_SIMILARITY,
+        fetch or (lambda url: fetch_image(url, local=dev)),
+    )
+
+
 def build_payments(settings: Settings) -> PaymentGateway:
     if settings.PAYMENTS == "sslcommerz":
         return SslCommerz()  # each business's own store comes with every call (D49)
@@ -165,13 +183,12 @@ def build_services(
     payments: PaymentGateway | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
     woo: WooApi | None = None,
+    fetch_photo: FetchImage | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
-    photos = PhotoService(
-        embedder, photo_index, build_media(settings), settings.PHOTO_MIN_SIMILARITY
-    )
-    agents = AgentService(sessions, knowledge, now)
+    photos = build_photos(settings, embedder, photo_index, fetch_photo)
+    agents = AgentService(sessions, knowledge, photos, now)
     telegram = telegram or TelegramBot()
     messenger = messenger or MessengerGraph()
     team = TeamService(sessions, llm, telegram, messenger, now)

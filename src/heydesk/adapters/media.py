@@ -1,4 +1,5 @@
-"""Photo files on this server's disk, or in a Cloudflare R2 bucket (D101).
+"""Photo files on this server's disk, or in a Cloudflare R2 bucket (D101), and photos
+downloaded from the links in a shop's list (D102).
 
 R2 speaks Amazon S3's API. Each request is signed with AWS Signature Version 4 (`signed`),
 which is a few lines of hashlib, so there's no SDK to install.
@@ -7,14 +8,16 @@ which is a few lines of hashlib, so there's no SDK to install.
 import asyncio
 import hashlib
 import hmac
+import ipaddress
+import re
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlsplit
 from xml.etree import ElementTree
 
 import httpx
 
-from heydesk.ports.media import MediaUnavailable
+from heydesk.ports.media import ImageUnreachable, MediaUnavailable
 
 S3 = "{http://s3.amazonaws.com/doc/2006-03-01/}"  # the XML namespace of a bucket's listing
 
@@ -37,6 +40,9 @@ class DiskMedia:
             return await asyncio.to_thread((self.folder / key).read_bytes)
         except OSError as error:
             raise MediaUnavailable(f"no file {key}") from error
+
+    async def exists(self, key: str) -> bool:
+        return (self.folder / key).is_file()
 
     async def delete(self, key: str) -> None:
         (self.folder / key).unlink(missing_ok=True)
@@ -68,6 +74,15 @@ class R2Media:
 
     async def get(self, key: str) -> bytes:
         return (await self._call("GET", key)).content
+
+    async def exists(self, key: str) -> bool:
+        try:
+            await self._call("HEAD", key)
+        except MediaUnavailable as error:
+            if "said 404" in str(error):
+                return False
+            raise
+        return True
 
     async def delete(self, key: str) -> None:
         await self._call("DELETE", key)
@@ -172,3 +187,64 @@ def signed(
             f"SignedHeaders={';'.join(names)}, Signature={signature}"
         ),
     }
+
+
+# Photos from links (D102): a business's CSV, sheet or WooCommerce store names any address, so we
+# only fetch public ones (not this server or its network), at most 10 MB, following 3 redirects
+
+MAX_IMAGE = 10_000_000  # bytes, as an owner's upload
+REDIRECTS = 3
+DRIVE = re.compile(r"^https://drive\.google\.com/(?:file/d/([\w-]+)|open\?id=([\w-]+))")
+LOCAL = ("localhost", "127.0.0.1")  # the test shop in dev/woo-shop, in development only (D76)
+
+
+def direct(url: str) -> str:
+    """A Google Drive share link ("…/file/d/<id>/view") → its download link; others as they are."""
+    found = DRIVE.match(url.strip())
+    if found is None:
+        return url.strip()
+    return f"https://drive.google.com/uc?export=download&id={found[1] or found[2]}"
+
+
+async def fetch_image(url: str, local: bool = False) -> bytes:
+    """The photo at `url`. Raises ImageUnreachable. With `local`, localhost is allowed too."""
+    try:
+        return await download(direct(url), local)
+    except httpx.HTTPError as error:
+        raise ImageUnreachable(f"the photo link didn't answer: {error!r}") from error
+
+
+async def download(url: str, local: bool) -> bytes:
+    async with httpx.AsyncClient(timeout=15) as client:
+        for _ in range(REDIRECTS + 1):
+            await public(url, local)
+            async with client.stream("GET", url) as response:
+                if response.is_redirect:
+                    url = urljoin(url, response.headers.get("location", ""))
+                    continue
+                if response.status_code != 200:
+                    raise ImageUnreachable(f"{response.status_code} for a photo link")
+                data = b""
+                async for chunk in response.aiter_bytes():
+                    data += chunk
+                    if len(data) > MAX_IMAGE:
+                        raise ImageUnreachable("a photo over 10 MB")
+                return data
+    raise ImageUnreachable("too many redirects")
+
+
+async def public(url: str, local: bool) -> None:
+    """Raises ImageUnreachable unless `url` is http(s) to a host whose every address is public."""
+    # ponytail: the name is looked up again by httpx, so a host that changes its answer in
+    # between (DNS rebinding) gets through; pin the address if a business ever tries it
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ImageUnreachable("not an http(s) link")
+    if local and parts.hostname in LOCAL:
+        return
+    try:
+        found = await asyncio.get_running_loop().getaddrinfo(parts.hostname, parts.port or 443)
+    except OSError as error:
+        raise ImageUnreachable("no such host") from error
+    if not all(ipaddress.ip_address(info[4][0]).is_global for info in found):
+        raise ImageUnreachable("a private address")

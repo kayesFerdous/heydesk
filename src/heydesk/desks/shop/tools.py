@@ -51,7 +51,8 @@ class FindProductInput(BaseModel):
 
 async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
     """For a shop with too many products to list in the prompt (D80): the closest ones, as
-    the prompt's own lines."""
+    the prompt's own lines. The first 3 with a photo are shown as cards, as `show_photos`
+    shows them, except on a call (D102)."""
     found = find_products(await ctx.store.products(), args.query)
     if not found:
         return fail(
@@ -59,15 +60,32 @@ async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
             "or ask what it's like. Don't say the shop doesn't have it yet."
         )
     currency = ctx.agent.currency
-    return ToolResult(ok=True, data={"products": [p.line(currency) for p in found]})
+    data: dict[str, Any] = {"products": [p.line(currency) for p in found]}
+    shown = [] if ctx.channel == "voice" else [p for p in found if p.photos][:3]
+    if shown:
+        data["shown"] = [p.name for p in shown]  # their photos are on the screen already
+    return ToolResult(ok=True, data=data, photos=cards(shown, currency) or None)
+
+
+def cards(products: list[Product], currency: str) -> list[dict[str, str]]:
+    """Each product's first photo, name and price, for the visitor's screen (D57)."""
+    return [
+        {
+            "code": p.code,  # a card's Order button on Telegram and Messenger (D99)
+            "name": p.name,
+            "price": money(p.price, currency),
+            "url": p.photos[0],
+        }
+        for p in products
+    ]
 
 
 FIND_PRODUCT = Tool(
     name="find_product",
     description=(
         "Look up the shop's products by a name, a group, a colour or what it's for. Returns up "
-        "to 8, each with its code, price, sizes, colours and stock. Use it when the Products "
-        "section says to."
+        "to 8, each with its code, price, sizes, colours and stock, and shows the visitor "
+        "photos of the first few (`shown`). Use it when the Products section says to."
     ),
     input_model=FindProductInput,
     run=find_product,
@@ -763,16 +781,7 @@ async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
         data["next"] = "Describe the ones with no photo from their line."
     else:
         data["next"] = "They can see the photos now. Ask if it's what they're looking for."
-    photos = [
-        {
-            "code": p.code,  # a card's Order button on Telegram and Messenger (D99)
-            "name": p.name,
-            "price": money(p.price, ctx.agent.currency),
-            "url": p.photos[0],
-        }
-        for p in shown
-    ]
-    return ToolResult(ok=True, data=data, photos=photos or None)
+    return ToolResult(ok=True, data=data, photos=cards(shown, ctx.agent.currency) or None)
 
 
 SHOW_PHOTOS = Tool(

@@ -49,7 +49,8 @@ class Product(BaseModel):
     # Stock per size and colour (D56). When there are any, they hold the stock and `stock` is
     # None; a size and colour no variant matches isn't counted
     variants: list[Variant] = []
-    # Up to 3 photo URLs, from `POST /api/products/photos`; the first is the one the agent shows
+    # Up to 3 photo URLs, from `POST /api/products/photos`; the first is the one the agent shows.
+    # Read from a list (a CSV, a sheet, Woo) they're its links, until the store takes them (D102)
     photos: list[str] = Field(default=[], max_length=3)
 
     @model_validator(mode="after")
@@ -405,13 +406,14 @@ PRODUCT_COLUMNS = [
         about='how many are left, or per size and colour: "M: 5; L: 0"; empty when not counted',
     ),
     csv_import.Column(name="code", about="the shop's own short id or SKU for it"),
+    csv_import.Column(name="photos", about="links to its photos, up to 3: https://…jpg"),
 ]
 
 
 def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
     """Columns: name, price, and optionally was_price (before a sale), category, description,
     sizes ("M; L; XL"), colours, stock (a number, "M: 5; L White: 0" per size and colour, or
-    empty: not counted), code. `mapping` names them in the file (D53)."""
+    empty: not counted), code, photos (links, D102). `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> Product:
         sizes = csv_import.items(cells.get("sizes", ""))
@@ -430,10 +432,19 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
                 "colours": colours,
                 "stock": stock,
                 "variants": variants,
+                "photos": links(cells.get("photos", "")),
             }
         )
 
     return grouped(csv_import.parse(text, csv_import.needs(PRODUCT_COLUMNS), row, mapping))
+
+
+def links(text: str) -> list[str]:
+    """A photos cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|" (D102)."""
+    found = [
+        part for part in re.split(r"[\s,;|]+", text) if part.startswith(("http://", "https://"))
+    ]
+    return list(dict.fromkeys(found))[:3]
 
 
 def grouped(rows: list[Product]) -> list[Product]:
@@ -468,7 +479,14 @@ def one_product(group: list[Product]) -> Product:
             for colour in colours or [""]
             if not any(v.matches(size, colour) for v in variants)
         ]
-    update = {"sizes": sizes, "colours": colours, "stock": None, "variants": variants}
+    photos = list(dict.fromkeys(link for p in group for link in p.photos))[:3]  # every row's
+    update = {
+        "sizes": sizes,
+        "colours": colours,
+        "stock": None,
+        "variants": variants,
+        "photos": photos,
+    }
     return group[0].model_copy(update=update)
 
 
@@ -529,7 +547,7 @@ def merge(
 ) -> list[Product]:
     """The sheet's products (`found`), with our count where the sheet's is the same as last
     time (`seen`), and a new count less what's `held` (the lines of orders not shipped yet).
-    Photos are ours: a sheet has none."""
+    Photos are the ones `found` has (the store took them already, D102)."""
     kept = []
     for p in found:
         old = ours.get(p.code)
@@ -537,7 +555,7 @@ def merge(
             p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
         else:
             p = take_off(p, [line for line in held if line["code"] == p.code])
-        kept.append(p.model_copy(update={"photos": old.photos if old else []}))
+        kept.append(p)
     return kept
 
 
@@ -566,6 +584,7 @@ def products_from_woo(items: list[dict[str, Any]]) -> tuple[list[Product], dict[
             "category": woo_category(item),
             "sizes": woo_options(item["attributes"], SIZE),
             "colours": woo_options(item["attributes"], COLOUR),
+            "photos": [i["src"] for i in item.get("images") or [] if i.get("src")][:3],  # D102
         }
         if item["type"] == "simple":
             products.append(

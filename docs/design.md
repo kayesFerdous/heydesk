@@ -247,7 +247,7 @@ merged into the conversation's `state`, saved with the turn.
 | `reschedule_appointment` | clinic | **yes** | The same, plus a new time checked like a new request. A moved appointment is `new` again |
 | `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
-| `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80) |
+| `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends the cards of its first 3 products with a photo, as `show_photos` does, and names them in `shown` (D102) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45) |
 | `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`Checks(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
 | `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or on Telegram and Messenger nothing finds this buyer's last order (D92), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
@@ -332,7 +332,7 @@ agent shows:  show_photos(products) ─► a `photos` event: each product's name
 - **Isolation.** Files are under the business's id; every Qdrant point has `workspace_id` and
   every search filters by it. Saving products refuses a photo URL that isn't one of this
   business's product photos (a 422). A photo found that's on none of its products (one the owner
-  removed) is skipped. A CSV import keeps each product's photos by its code.
+  removed) is skipped. A product a list gives no photo links keeps its photos by its code.
 - **Only the shop takes photos** (`Desk.takes_photos`). `GET /api/chat/{key}` says `photos: true`
   for it, so the page shows the button; a photo sent to another desk is a 422.
 - **Limits.** 3 photos a product. A visitor's photo is at most 2 MB after the page shrinks it,
@@ -344,6 +344,30 @@ agent shows:  show_photos(products) ─► a `photos` event: each product's name
   Gemini allows 6 images per *embedding*, not per call, so a batch of one-image requests is fine.
   Free-tier inputs may be used by Google to improve its products.
 - `reindex-knowledge` also re-embeds every product photo from its file.
+
+**Photos from a list (D102).** A CSV's or a sheet's `photos` column (up to 3 links, apart by
+spaces, commas, `;` or `|`; the rows of one product add theirs up), and a WooCommerce product's
+`images`, are links. `ShopStore.with_photos` turns them into the shop's own photos before the
+list is saved, at an import, a sheet's sync and a Woo sync:
+
+```
+a link ─► its key: <workspace_id>/products/<first 32 hex of its SHA-256>.jpg
+       ─► in the media store already? that's the photo (the next sync costs a look-up)
+       ─► else fetch_image(link) ─► the same path as an upload (JPEG, the store, Gemini, Qdrant)
+```
+
+- **A product with links gets those photos; one with none keeps its own** (the owner's
+  uploads). A link that fails is left out and tried again at the next sync that reads it; the
+  rest go on. Four links at a time.
+- **Only public addresses are fetched** (`fetch_image`): http(s), every address of the host
+  public (no localhost, 10.x, 169.254.x…), at most 10 MB, 15 s, 3 redirects, each checked. In
+  development localhost too, for the test shop (D76). A Google Drive share link
+  (`/file/d/<id>/view`) becomes its download link.
+- **The first import waits.** An import or a sheet's linking with many new links takes as long
+  as they do (a second or so each, four at once). Later syncs only look them up.
+- **A search shows them.** `find_product` sends its first 3 products with a photo as cards, and
+  the prompt says to show up to 3 that fit with `show_photos` when a visitor asks about a
+  product or looks for a kind, unless `find_product` showed them.
 
 **Where the files are (D101).** A `MediaStore` keeps them by key, `<workspace_id>/<folder>/<id>.jpg`,
 and a photo's URL is the store's `url` + "/" + key:
@@ -1206,7 +1230,7 @@ version handles them.
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
-| WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, product photos from Woo, attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; the owner adds photos in HeyDesk; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
+| WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
 | Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. One call at a time for the whole server. The shop only (D88, D89) |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

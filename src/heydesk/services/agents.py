@@ -21,6 +21,7 @@ from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
 from heydesk.models import Agent, Workspace
 from heydesk.runtime.config import AgentConfig
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.photos import PhotoService
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +76,12 @@ class AgentService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         knowledge: KnowledgeService,
+        photos: PhotoService,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.knowledge = knowledge
+        self.photos = photos
         self.now = now
 
     async def create(
@@ -137,7 +140,7 @@ class AgentService:
             agent = await self._get(s, ws)
         if kind and agent.kind != kind:
             raise NotFound(f"This business's agent isn't a {kind}.")
-        return DESKS[agent.kind].store(self.sessions, ws, self.now)
+        return DESKS[agent.kind].store(self.sessions, ws, self.now, photos=self.photos)
 
     async def by_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)

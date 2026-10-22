@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from heydesk.adapters.embedder.fake import FakeEmbedder
-from heydesk.adapters.media import DiskMedia, canonical_query, signed
-from heydesk.ports.media import MediaUnavailable
+from heydesk.adapters.media import DiskMedia, canonical_query, direct, public, signed
+from heydesk.ports.media import ImageUnreachable, MediaUnavailable
 from heydesk.services.photos import PhotoService
 
 AWS_KEY = ("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
@@ -43,10 +43,21 @@ async def test_the_disk_keeps_reads_lists_and_deletes(tmp_path: Path) -> None:
 
 
 def test_a_product_photo_is_only_one_of_the_business_s_own(tmp_path: Path) -> None:
-    photos = PhotoService(FakeEmbedder(), None, DiskMedia(str(tmp_path)), 0.75)  # type: ignore[arg-type]
+    photos = PhotoService(FakeEmbedder(), None, DiskMedia(str(tmp_path)), 0.75, None)  # type: ignore[arg-type]
     name = "0123456789abcdef0123456789abcdef.jpg"
 
     assert photos.is_products("ws1", f"/media/ws1/products/{name}")
     assert not photos.is_products("ws2", f"/media/ws1/products/{name}")
     assert not photos.is_products("ws1", f"/media/ws1/products/../../ws2/products/{name}")
     assert not photos.is_products("ws1", f"https://elsewhere.com/ws1/products/{name}")
+
+
+async def test_a_photo_link_must_be_a_public_address() -> None:
+    """A business's list names any address: never this server or its network (D102)."""
+    for url in ("http://127.0.0.1/x.jpg", "http://10.0.0.5/x.jpg", "file:///etc/passwd"):
+        with pytest.raises(ImageUnreachable):
+            await public(url, local=False)
+    await public("http://localhost:8088/x.jpg", local=True)  # development's test shop
+    assert direct("https://drive.google.com/file/d/1AbC-d_9/view?usp=sharing") == (
+        "https://drive.google.com/uc?export=download&id=1AbC-d_9"
+    )

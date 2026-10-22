@@ -7,9 +7,14 @@ into the photo index; a visitor's is embedded only to search it.
     <workspace_id>/products/<id>.jpg   a product's, in the index
     <workspace_id>/chat/<id>.jpg       a visitor's, kept for the owner's view
     <workspace_id>/logo/<id>.jpg       the business's logo, for the website chat (D82)
+
+A product photo can also come from a link in the shop's list: a CSV's or a sheet's `photos`
+column, or a WooCommerce product's images (D102). Its name is made from the link, so the same
+link is downloaded and indexed once, and is the same photo at every sync after.
 """
 
 import asyncio
+import hashlib
 import io
 import logging
 import re
@@ -20,7 +25,7 @@ from PIL import Image, UnidentifiedImageError
 
 from heydesk.errors import KnowledgeUnavailable, UnreadablePhoto
 from heydesk.ports.embedder import Embedder
-from heydesk.ports.media import MediaStore, MediaUnavailable
+from heydesk.ports.media import FetchImage, ImageUnreachable, MediaStore, MediaUnavailable
 from heydesk.ports.photo_index import PhotoIndex
 
 log = logging.getLogger(__name__)
@@ -28,6 +33,7 @@ log = logging.getLogger(__name__)
 LARGEST_SIDE = 1024  # px: enough to tell one shirt from another, small to send and keep
 MAX_UPLOAD = 10_000_000  # bytes: a phone photo, before it's made smaller
 NEAREST = 10  # photos asked for; a product with several photos shows up once (`photo_line`)
+FETCHING = 4  # links downloaded and embedded at once: a list's first sync can have hundreds
 
 
 @dataclass(frozen=True)
@@ -38,17 +44,52 @@ class Photo:
 
 class PhotoService:
     def __init__(
-        self, embedder: Embedder, index: PhotoIndex, media: MediaStore, min_similarity: float
+        self,
+        embedder: Embedder,
+        index: PhotoIndex,
+        media: MediaStore,
+        min_similarity: float,
+        fetch: FetchImage,
     ) -> None:
         self.embedder = embedder
         self.index = index
         self.media = media
         self.min_similarity = min_similarity
+        self.fetch = fetch
         self._ready = False
 
     async def add_product_photo(self, ws: str, data: bytes) -> Photo:
         """Saves it and puts it in the index. If it can't be embedded, nothing is kept."""
-        photo = await self.save(ws, "products", data)
+        return await self._add_product(ws, f"{ws}/products/{uuid.uuid4().hex}.jpg", data)
+
+    async def take(self, ws: str, links: list[str]) -> dict[str, str]:
+        """Each link's product photo (D102): downloaded and indexed the first time, and only
+        looked up after. A link that fails is left out, and tried again at the next sync."""
+        lock = asyncio.Semaphore(FETCHING)
+
+        async def one(link: str) -> tuple[str, str | None]:
+            key = f"{ws}/products/{hashlib.sha256(link.encode()).hexdigest()[:32]}.jpg"
+            async with lock:
+                try:
+                    if not await self.media.exists(key):
+                        await self._add_product(ws, key, await self.fetch(link))
+                except (
+                    ImageUnreachable,
+                    UnreadablePhoto,
+                    MediaUnavailable,
+                    KnowledgeUnavailable,
+                ) as error:  # the link, the file, the store or Gemini: the rest go on
+                    log.warning(
+                        "photo link not taken", extra={"workspace_id": ws, "error": repr(error)}
+                    )
+                    return link, None
+            return link, f"{self.media.url}/{key}"
+
+        taken = await asyncio.gather(*(one(link) for link in dict.fromkeys(links)))
+        return {link: url for link, url in taken if url}
+
+    async def _add_product(self, ws: str, key: str, data: bytes) -> Photo:
+        photo = await self._put(key, data)
         try:
             await self._index_ready()
             await self.index.add(ws, photo.url, await self.embedder.embed_image(photo.jpeg))
@@ -62,14 +103,16 @@ class PhotoService:
 
     async def save(self, ws: str, folder: str, data: bytes, largest: int = LARGEST_SIDE) -> Photo:
         """A JPEG of at most `largest` px, written to the business's `folder`."""
+        return await self._put(f"{ws}/{folder}/{uuid.uuid4().hex}.jpg", data, largest)
+
+    async def _put(self, key: str, data: bytes, largest: int = LARGEST_SIDE) -> Photo:
         if len(data) > MAX_UPLOAD:
             raise UnreadablePhoto("A photo can be up to 10 MB.")
         jpeg = await asyncio.to_thread(to_jpeg, data, largest)
-        key = f"{ws}/{folder}/{uuid.uuid4().hex}.jpg"
         try:
             await self.media.put(key, jpeg)
         except MediaUnavailable as error:
-            log.warning("photo not stored", extra={"workspace_id": ws, "error": repr(error)})
+            log.warning("photo not stored", extra={"key": key, "error": repr(error)})
             raise KnowledgeUnavailable(
                 "The photo couldn't be saved just now. Please try again."
             ) from error

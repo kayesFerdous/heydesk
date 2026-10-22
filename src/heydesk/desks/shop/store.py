@@ -42,12 +42,32 @@ class ShopStore(Store):
     async def replace_products(self, products: list[Product]) -> None:
         await self.replace_rows(ProductRow, products)
 
+    async def with_photos(self, found: list[Product]) -> list[Product]:
+        """A list's products with their photos (D102): a product with photo links gets those
+        photos, each downloaded and indexed the first time; one with none keeps the photos it
+        has here (the owner's own uploads)."""
+        # ponytail: a first import with many new links waits for them all (4 at a time);
+        # move this to the background if owners wait too long
+        ours = {p.code: p.photos for p in await self.products()}
+        wanted = [link for p in found for link in p.photos]
+        taken = await self.photos.take(self.workspace_id, wanted) if self.photos and wanted else {}
+        return [
+            p.model_copy(
+                update={
+                    "photos": [taken[link] for link in p.photos if link in taken]
+                    if p.photos
+                    else ours.get(p.code, [])
+                }
+            )
+            for p in found
+        ]
+
     async def take_sheet(
         self, text: str, mapping: dict[str, str], seen: dict[str, Any]
     ) -> dict[str, Any]:
         """The sheet's products, keeping our count where the sheet's didn't change, and
-        taking a new count less the orders not shipped yet (D58). Photos are kept by code."""
-        found = products_from_csv(text, mapping)
+        taking a new count less the orders not shipped yet (D58), and its photos (D102)."""
+        found = await self.with_photos(products_from_csv(text, mapping))
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
             rows = await s.scalars(select(ProductRow).where(ProductRow.workspace_id == ws))
@@ -63,15 +83,10 @@ class ShopStore(Store):
 
     async def take_woo(self, found: list[Product]) -> None:
         """The WooCommerce store's products become the list (D75), with Woo's count less the
-        orders that hold stock here but aren't in Woo yet. Photos are kept by code."""
+        orders that hold stock here but aren't in Woo yet, and Woo's photos (D102)."""
+        found = await self.with_photos(found)
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
-            photos = {
-                code: photos
-                for code, photos in await s.execute(
-                    select(ProductRow.code, ProductRow.photos).where(ProductRow.workspace_id == ws)
-                )
-            }
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
                 select(ShopOrder.lines).where(
                     ShopOrder.workspace_id == ws,
@@ -80,12 +95,7 @@ class ShopStore(Store):
                 )
             )
             held = [line for lines in orders for line in lines]
-            kept = [
-                take_off(p, [line for line in held if line["code"] == p.code]).model_copy(
-                    update={"photos": photos.get(p.code, [])}
-                )
-                for p in found
-            ]
+            kept = [take_off(p, [line for line in held if line["code"] == p.code]) for p in found]
             await self._replace(s, ProductRow, kept)
 
     async def orders_for_woo(self, since: datetime) -> list[ShopOrder]:

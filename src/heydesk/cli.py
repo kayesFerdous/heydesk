@@ -19,14 +19,13 @@ from heydesk.errors import HeyDeskError
 from heydesk.models import Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.knowledge import KnowledgeService
-from heydesk.services.photos import PhotoService
 from heydesk.services.users import UserService, temporary_password
 from heydesk.wiring import (
     build_embedder,
     build_knowledge_store,
     build_mailer,
-    build_media,
     build_photo_index,
+    build_photos,
     build_qdrant,
 )
 
@@ -100,12 +99,7 @@ async def reindex_knowledge() -> None:
         sessions, embedder, build_knowledge_store(settings, qdrant), utcnow
     )
     count = await knowledge.reindex()
-    photos = PhotoService(
-        embedder,
-        build_photo_index(settings, qdrant),
-        build_media(settings),
-        settings.PHOTO_MIN_SIMILARITY,
-    )
+    photos = build_photos(settings, embedder, build_photo_index(settings, qdrant))
     photo_count = await photos.reindex()
     await engine.dispose()
     print(f"Re-indexed {count} document(s) and {photo_count} product photo(s).")
