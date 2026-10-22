@@ -8,6 +8,8 @@ class FakeTelegram:
         self.webhooks: dict[str, tuple[str, str]] = {}  # token -> (url, secret)
         self.sent: list[tuple[str, str]] = []  # (chat_id, text), in order
         self.photos: list[tuple[str, str]] = []  # (chat_id, caption) of each photo sent
+        self.choices: list[tuple[str, list[str]]] = []  # (chat_id, buttons) of a message or photo
+        self.answered: list[str] = []  # the callback queries answered
         self.files: dict[str, bytes] = {}  # what a visitor's photo's file_id downloads as
 
     async def get_me(self, token: str) -> str:
@@ -21,11 +23,22 @@ class FakeTelegram:
     async def delete_webhook(self, token: str) -> None:
         self.webhooks.pop(token, None)
 
-    async def send_message(self, token: str, chat_id: str, text: str) -> None:
+    async def send_message(
+        self, token: str, chat_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
         self.sent.append((chat_id, text))
+        if choices:
+            self.choices.append((chat_id, choices))
 
-    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
+    async def send_photo(
+        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
+    ) -> None:
         self.photos.append((chat_id, caption))
+        if choice:
+            self.choices.append((chat_id, [choice]))
+
+    async def answer_callback(self, token: str, callback_id: str) -> None:
+        self.answered.append(callback_id)
 
     async def download(self, token: str, file_id: str) -> bytes:
         if file_id not in self.files:

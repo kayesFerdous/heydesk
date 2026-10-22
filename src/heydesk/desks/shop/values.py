@@ -93,6 +93,20 @@ class Product(BaseModel):
         counters = [self.counter(s, c) for s, c in every]
         return all(n is not None and self.count(n) == 0 for n in counters)
 
+    def in_stock(self, what: str, size: str = "", colour: str = "") -> list[str]:
+        """The sizes (or colours) that aren't sold out, with the colour (or size) already
+        chosen: the buttons a buyer taps (D99)."""
+
+        def left(s: str, c: str) -> bool:
+            counter = self.counter(s, c)
+            return counter is None or self.count(counter) > 0
+
+        colours = [colour] if colour else self.colours or [""]
+        sizes = [size] if size else self.sizes or [""]
+        if what == "size":
+            return [s for s in self.sizes if any(left(s, c) for c in colours)]
+        return [c for c in self.colours if any(left(s, c) for s in sizes)]
+
     def line(self, currency: str) -> str:
         """One product as a prompt line: `- Cotton Panjabi [panjabi] ৳1,850, sizes M/L…`"""
         line = f"- {self.name} [{self.code}] {money(self.price, currency)}"

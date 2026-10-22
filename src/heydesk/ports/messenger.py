@@ -19,12 +19,16 @@ class MessengerApi(Protocol):
 
     async def unsubscribe(self, token: str, page_id: str) -> None: ...
 
-    async def send_message(self, token: str, psid: str, text: str) -> None:
-        """`psid` is the visitor's id on this Page."""
+    async def send_message(
+        self, token: str, psid: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        """`psid` is the visitor's id on this Page. `choices` are quick replies (D99): a tap
+        comes back as a message with the choice as its text."""
         ...
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
-        """Products as one carousel (D62): each card `{name, price, url}`, the photo's full URL."""
+        """Products as one carousel (D62): each card `{name, price, url}`, the photo's full URL,
+        and maybe `choice`: an Order button whose tap comes back as a postback with it (D99)."""
         ...
 
     async def download(self, url: str) -> bytes:

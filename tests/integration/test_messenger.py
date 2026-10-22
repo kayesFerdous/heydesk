@@ -7,10 +7,12 @@ from typing import Any
 
 from fastapi import FastAPI
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from heydesk.desks.shop.models import ShopOrder
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
-from tests.integration.test_shop import kurti_with_photo, photo
+from tests.integration.test_shop import DETAILS, KURTI, kurti_with_photo, photo
 from tests.integration.test_team import from_owner, link_owner, to
 from tests.integration.test_telegram import send as to_telegram
 
@@ -123,9 +125,11 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
     said = llm.requests[0].messages[-1]["content"]
     assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]"
     card = {
+        "code": "kurti",
         "name": "Cotton Kurti",
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
+        "choice": "Order [kurti]",  # its button's tap (D99)
     }
     assert fake.cards == [(PSID, [card])]
     assert sent(app) == [(PSID, "Is it this one?")]
@@ -164,3 +168,51 @@ async def test_the_owner_answers_a_messenger_visitor_from_telegram(
     assert "on Messenger" in alert
     await to_telegram(client, path, secret, from_owner("Hi, this is Rahim.", alert))
     assert sent(app)[-1] == (PSID, "Hi, this is Rahim.")
+
+
+def postback(payload: str) -> dict[str, Any]:
+    """A tap on a card's Order button (D99)."""
+    tapped = {"title": "Order this", "payload": payload}
+    event = {"sender": {"id": PSID}, "recipient": {"id": PAGE}, "postback": tapped}
+    return {"object": "page", "entry": [{"id": PAGE, "messaging": [event]}]}
+
+
+async def test_a_cards_button_is_a_message_and_is_signed(app: FastAPI, client: AsyncClient) -> None:
+    await services_shop(app)
+    await connect(client)
+    llm = app.state.services.conversations.runtime.llm
+
+    assert await post(client, postback("Order [kurti]"), secret="not-ours") == 404
+    await post(client, postback("Order [kurti]"))
+
+    assert llm.requests[0].messages[-1]["content"] == "Order [kurti]"
+    assert sent(app) == [(PSID, "(fake model) You said: Order [kurti]")]
+
+
+async def test_a_yes_tapped_with_no_read_back_saves_nothing(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """A tap is only words: Jev still checks the read-back (rule 2), and the reply asks for a
+    yes with Yes and Change buttons (D99)."""
+    await services_shop(app)
+    await connect(client)
+    services = app.state.services
+    llm = services.conversations.runtime.llm
+    llm.script = [
+        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
+        ToolCall("c2", "place_order", DETAILS),
+        "1 Cotton Kurti… Shall I place it?",
+    ]
+
+    await post(client, message("Yes", quick_reply={"payload": "Yes"}))  # a quick reply's tap
+
+    async with app.state.sessions() as s:
+        assert list(await s.scalars(select(ShopOrder))) == []
+    asked = services.conversations.runtime.decider.asked[-1]
+    assert asked["visitor_reply"] == "Yes"
+    assert asked["agent_last_message"].startswith("Assalamu alaikum")  # the greeting, no read-back
+    assert services.channels.messenger.choices == [(PSID, ["Yes", "Change"])]
+
+
+async def services_shop(app: FastAPI) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")

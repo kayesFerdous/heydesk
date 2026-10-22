@@ -51,6 +51,9 @@ class ToolResult:
     alert: str | None = None  # for the owner, on Telegram (D43): what was just saved
     reply: str | None = None  # said to the visitor as it is, and the turn ends: no more model calls
     photos: list[dict[str, str]] | None = None  # shown to the visitor: {name, price, url} (D57)
+    # Buttons with the reply on Telegram and Messenger: what the visitor can tap, picked by
+    # Python (D99). A tap is only its words, a message like any other
+    choices: list[str] | None = None
 
 
 def fail(hint: str) -> ToolResult:

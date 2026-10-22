@@ -97,13 +97,16 @@ class TeamService:
         if channel is not None and channel.owner_chat_id is not None:
             await self.send(channel, channel.owner_chat_id, text)
 
-    async def send(self, channel: Channel, chat_id: str, text: str) -> None:
-        """One message from the business's bot or Page. A failure is logged, never raised."""
+    async def send(
+        self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        """One message from the business's bot or Page, with buttons for `choices` (D99). A
+        failure is logged, never raised."""
         try:
             if channel.kind == MESSENGER:
-                await self.messenger.send_message(channel.token, chat_id, text)
+                await self.messenger.send_message(channel.token, chat_id, text, choices)
             else:
-                await self.telegram.send_message(channel.token, chat_id, text)
+                await self.telegram.send_message(channel.token, chat_id, text, choices)
         except (TelegramUnavailable, MessengerUnavailable) as error:
             log.warning("send failed: %s", error, extra={"channel_id": channel.id})
 

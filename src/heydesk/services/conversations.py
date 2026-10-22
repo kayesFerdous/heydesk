@@ -48,6 +48,7 @@ class Reply:
     text: str  # empty when the turn failed: the hand-off says what to do
     handoff: HandOff | None
     photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool (D62)
+    choices: list[str] = field(default_factory=list)  # buttons under the text (D99)
 
 
 class ConversationService:
@@ -182,6 +183,7 @@ class ConversationService:
         parts: list[str] = []
         photos: list[dict[str, str]] = []
         handoff = None
+        choices: list[str] = []
         async with aclosing(turn.events) as events:
             async for event in events:
                 if isinstance(event, Token):
@@ -190,7 +192,9 @@ class ConversationService:
                     handoff = event
                 elif isinstance(event, Photos):
                     photos.extend(event.items)
-        return Reply("".join(parts).strip(), handoff, photos)
+                elif isinstance(event, TurnEnded):
+                    choices = event.choices
+        return Reply("".join(parts).strip(), handoff, photos, choices)
 
     async def restart(self, agent: LiveAgent, channel: str, contact: str) -> None:
         """A new, empty conversation for the contact (Telegram's /start); their next message

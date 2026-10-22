@@ -100,20 +100,24 @@ def _priced(
 
     wanted: dict[tuple[str, str, str], int] = {}  # the same product, size and colour is added up
     problems = []
+    choices: list[str] = []  # buttons for the first question: what's in stock (D99)
     for line in given:
         product = products[line.code]
+        size = None
         try:
-            key = (
-                line.code,
-                product.choose("size", line.size),
-                product.choose("colour", line.colour),
-            )
+            size = product.choose("size", line.size)
+            key = (line.code, size, product.choose("colour", line.colour))
         except ValueError as error:
             problems.append(str(error))
+            choices = choices or (
+                product.in_stock("size", colour=line.colour)
+                if size is None
+                else product.in_stock("colour", size=size)
+            )
             continue
         wanted[key] = wanted.get(key, 0) + line.quantity
     if problems:
-        return fail(" ".join(problems))
+        return ToolResult(ok=False, data={"error": " ".join(problems)}, choices=choices)
     return [
         {
             "code": code,
@@ -760,7 +764,12 @@ async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
     else:
         data["next"] = "They can see the photos now. Ask if it's what they're looking for."
     photos = [
-        {"name": p.name, "price": money(p.price, ctx.agent.currency), "url": p.photos[0]}
+        {
+            "code": p.code,  # a card's Order button on Telegram and Messenger (D99)
+            "name": p.name,
+            "price": money(p.price, ctx.agent.currency),
+            "url": p.photos[0],
+        }
         for p in shown
     ]
     return ToolResult(ok=True, data=data, photos=photos or None)

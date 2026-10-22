@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -333,6 +333,24 @@ the inbox but not the settings, and is logged out once removed. [x] (21 Oct)
 
 **Done when:** `scripts/check.sh` is green [x]; in the browser, an area's districts save
 ("ঢাকা" as Dhaka) and "Mirpur" is refused [x] (21 Oct); the live chat check above passes.
+
+### Day M1: buttons on Messenger and Telegram (D99)
+
+- [x] `ToolResult.choices`: the last tool's go on `TurnEnded` and `Reply`; `update_cart` offers
+      the sizes or colours in stock when one is missing (`Product.in_stock`), `ask_for_yes`
+      offers Yes and Change
+- [x] Messenger quick replies and a Telegram inline keyboard under the reply; each
+      `show_photos` card gets an Order button ("Order [code]")
+- [x] A tap is the message's text: a Messenger postback's payload, a Telegram callback query's
+      data (answered at once); the Page subscribes `messaging_postbacks`, the bot allows
+      `callback_query`
+- [x] The Telegram and Messenger channel lines say a tap arrives as its words
+- [x] Tests: a tap is a turn, the buttons come from stock, a Yes with no read-back saves nothing
+- [ ] Live: on a real Page and bot (connected again, so they get the taps; the Meta app's
+      webhook has `messaging_postbacks`), a photo's Order button starts the order, the size
+      buttons skip the sold-out one, and the Yes button places it after the read-back
+
+**Done when:** `scripts/check.sh` is green [x] (22 Oct); the live check above passes.
 
 ## Still open
 

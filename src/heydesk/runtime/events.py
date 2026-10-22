@@ -41,6 +41,7 @@ class TurnEnded:
     interrupted: bool = False
     alerts: list[str] = field(default_factory=list)  # tools' alerts for the owner (D43)
     tools: list[str] = field(default_factory=list)  # the tools that ran, in order (D51)
+    choices: list[str] = field(default_factory=list)  # the last tool's buttons (D99)
 
 
 type Event = Token | ToolStarted | HandOff | Photos | TurnEnded

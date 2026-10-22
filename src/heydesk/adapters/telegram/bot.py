@@ -4,6 +4,7 @@ The token is part of every URL, so httpx's own request log is off (`logs.py`) an
 never repeats the URL.
 """
 
+import json
 from typing import Any
 
 import httpx
@@ -25,7 +26,8 @@ class TelegramBot:
         params = {
             "url": url,
             "secret_token": secret,
-            "allowed_updates": ["message"],  # not edits, reactions or group events
+            # a button's tap is a callback query (D99); not edits, reactions or group events
+            "allowed_updates": ["message", "callback_query"],
             "drop_pending_updates": True,  # what was sent before it was connected isn't answered
         }
         await self._call(token, "setWebhook", json=params)
@@ -33,13 +35,29 @@ class TelegramBot:
     async def delete_webhook(self, token: str) -> None:
         await self._call(token, "deleteWebhook")
 
-    async def send_message(self, token: str, chat_id: str, text: str) -> None:
-        await self._call(token, "sendMessage", json={"chat_id": chat_id, "text": text})
+    async def send_message(
+        self, token: str, chat_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        params: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if choices:  # three to a row
+            buttons = [{"text": c, "callback_data": c} for c in choices]
+            params["reply_markup"] = {
+                "inline_keyboard": [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
+            }
+        await self._call(token, "sendMessage", json=params)
 
-    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
+    async def send_photo(
+        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
+    ) -> None:
         files = {"photo": ("photo.jpg", jpeg, "image/jpeg")}
         data = {"chat_id": chat_id, "caption": caption}
+        if choice:  # a form field, so the keyboard goes as JSON text
+            button = {"text": "🛒 Order this", "callback_data": choice}
+            data["reply_markup"] = json.dumps({"inline_keyboard": [[button]]})
         await self._call(token, "sendPhoto", files=files, data=data)
+
+    async def answer_callback(self, token: str, callback_id: str) -> None:
+        await self._call(token, "answerCallbackQuery", json={"callback_query_id": callback_id})
 
     async def download(self, token: str, file_id: str) -> bytes:
         found = await self._call(token, "getFile", json={"file_id": file_id})

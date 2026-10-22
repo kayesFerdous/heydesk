@@ -161,6 +161,20 @@ async def test_python_checks_sizes_colours_and_stock_and_adds_up_the_cart(world:
     assert "Not in the shop: lungi" in unknown.data["error"]
 
 
+async def test_the_buttons_for_a_size_or_colour_are_what_is_in_stock(world: World) -> None:
+    """Python picks the buttons (D99): L in Navy is sold out, so neither offers it."""
+    agent = await world.agent("shop")
+    ctx = make_ctx(world.store(agent), agent=agent.config)
+    panjabi = {"code": "panjabi-cotton", "quantity": 1}
+
+    navy = await update_cart(ctx, cart(panjabi | {"colour": "Navy"}))
+    assert navy.choices == ["M", "XL", "XXL"]
+    large = await update_cart(ctx, cart(panjabi | {"size": "L"}))
+    assert large.choices == ["White", "Cream"]
+    assert (await update_cart(ctx, cart(KURTI | {"size": ""}))).choices == ["S", "M", "L", "XL"]
+    assert (await update_cart(ctx, cart(KURTI))).choices is None  # nothing to ask
+
+
 async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missing(
     world: World,
 ) -> None:
@@ -696,7 +710,8 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
         for f in res.text.split("\n\n")
         if f.startswith("event: photos")
     )
-    assert shown == {"items": [{"name": "Cotton Kurti", "price": "৳950", "url": url}]}
+    item = {"code": "kurti", "name": "Cotton Kurti", "price": "৳950", "url": url}
+    assert shown == {"items": [item]}
 
     conv_id = res.text.split('"conversation_id": "')[1].split('"')[0]
     [_, said, _, tool, _] = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages

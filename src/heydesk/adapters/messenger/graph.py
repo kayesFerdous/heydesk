@@ -19,19 +19,37 @@ class MessengerGraph:
 
     async def subscribe(self, token: str, page_id: str) -> None:
         await self._call(
-            "POST", f"{page_id}/subscribed_apps", token, subscribed_fields="messages"
-        )  # not echoes, reads or reactions
+            "POST",
+            f"{page_id}/subscribed_apps",
+            token,
+            subscribed_fields="messages,messaging_postbacks",
+        )  # a card's button is a postback (D99); not echoes, reads or reactions
 
     async def unsubscribe(self, token: str, page_id: str) -> None:
         await self._call("DELETE", f"{page_id}/subscribed_apps", token)
 
-    async def send_message(self, token: str, psid: str, text: str) -> None:
-        await self._send(token, psid, message={"text": text}, messaging_type="RESPONSE")
+    async def send_message(
+        self, token: str, psid: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        message: dict[str, Any] = {"text": text}
+        if choices:
+            message["quick_replies"] = [
+                {"content_type": "text", "title": c, "payload": c} for c in choices
+            ]
+        await self._send(token, psid, message=message, messaging_type="RESPONSE")
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
-        elements = [
-            {"title": c["name"], "subtitle": c["price"], "image_url": c["url"]} for c in cards
-        ]
+        elements = []
+        for c in cards:
+            element: dict[str, Any] = {
+                "title": c["name"],
+                "subtitle": c["price"],
+                "image_url": c["url"],
+            }
+            if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
+                button = {"type": "postback", "title": "Order this", "payload": c["choice"]}
+                element["buttons"] = [button]
+            elements.append(element)
         payload = {"template_type": "generic", "image_aspect_ratio": "square", "elements": elements}
         message = {"attachment": {"type": "template", "payload": payload}}
         await self._send(token, psid, message=message, messaging_type="RESPONSE")

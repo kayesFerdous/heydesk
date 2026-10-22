@@ -8,6 +8,7 @@ class FakeMessenger:
         self.subscribed: set[str] = set()  # page ids
         self.sent: list[tuple[str, str]] = []  # (psid, text), in order
         self.cards: list[tuple[str, list[dict[str, str]]]] = []  # (psid, cards), in order
+        self.choices: list[tuple[str, list[str]]] = []  # (psid, quick replies), in order
         self.files: dict[str, bytes] = {}  # what a visitor's photo URL downloads as
 
     async def subscribe(self, token: str, page_id: str) -> None:
@@ -18,8 +19,12 @@ class FakeMessenger:
     async def unsubscribe(self, token: str, page_id: str) -> None:
         self.subscribed.discard(page_id)
 
-    async def send_message(self, token: str, psid: str, text: str) -> None:
+    async def send_message(
+        self, token: str, psid: str, text: str, choices: list[str] | None = None
+    ) -> None:
         self.sent.append((psid, text))
+        if choices:
+            self.choices.append((psid, choices))
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
         self.cards.append((psid, cards))

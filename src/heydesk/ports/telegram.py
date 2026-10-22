@@ -22,10 +22,22 @@ class TelegramApi(Protocol):
 
     async def delete_webhook(self, token: str) -> None: ...
 
-    async def send_message(self, token: str, chat_id: str, text: str) -> None: ...
+    async def send_message(
+        self, token: str, chat_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        """`choices` are buttons under the text (D99): a tap comes back as a callback query
+        with the choice as its data."""
+        ...
 
-    async def send_photo(self, token: str, chat_id: str, jpeg: bytes, caption: str) -> None:
-        """A photo uploaded from us, so it needs no public URL (D63)."""
+    async def send_photo(
+        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
+    ) -> None:
+        """A photo uploaded from us, so it needs no public URL (D63); with `choice`, an Order
+        button under it whose tap sends it back (D99)."""
+        ...
+
+    async def answer_callback(self, token: str, callback_id: str) -> None:
+        """Tells Telegram a button's tap was received, so its spinner stops."""
         ...
 
     async def download(self, token: str, file_id: str) -> bytes:

@@ -113,7 +113,9 @@ Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
   a doctor, a place) that matches none listed is taken as the closest listed one and checked with
   the caller (the documents section said this only for its searches). Telegram
   and Messenger are sent as plain text, so they ask for no markdown: `**bold**` would show its
-  asterisks (D42, D60).
+  asterisks (D42, D60). They also say a tapped button arrives as its words ("Yes", "XL",
+  "Order [code]") and to reply in the language the visitor has been writing in (`TAPS`): the
+  buttons are English, and a "Yes" shouldn't turn a Banglish chat into English (D99).
 - **A call in Bangla** (`VOICE_LANGUAGE=bn` on the server, voice only, D86) gets one more line after Channel
   (`BANGLA_VOICE`): speak Bangla in Bangla letters, write English names and words in Bangla
   letters ("কটন টুপি"), and keep prices, times and codes as the tools give them. The Bangla

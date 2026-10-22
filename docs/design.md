@@ -253,7 +253,7 @@ merged into the conversation's `state`, saved with the turn.
 | `change_order` | shop | **yes** | Found like `track_order`, except the mobile alone: a change needs the code (or the order from this chat, or this buyer's last). Then any of new `items` (the whole list, checked and priced as `update_cart`'s, with the order's own items counted as on the shelf, D92), `address` (with its `district`, or it asks for it, D98), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). New items or a new district work out the delivery charge (free or not) and total again; not once its charge was paid online. The store swaps the stock in one transaction. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `track_order`; only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
-| `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Not on a call: there it says photos can't be shown here. Messenger gets a carousel (D62), Telegram a photo each (D63) (D57) |
+| `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Not on a call: there it says photos can't be shown here. Messenger gets a carousel (D62), Telegram a photo each (D63), each with an Order button (D99) (D57) |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 
@@ -908,6 +908,40 @@ agent shows: Reply.photos ─► for each: PhotoService.read(url) ─► Telegra
   at 10 MB. The port gains `download(token, file_id)` and `send_photo(token, chat_id, jpeg,
   caption)`; `ChannelService` takes `PhotoService` to read the files.
 
+### Buttons on Messenger and Telegram (D99)
+
+Buyers on a phone don't like typing, so the reply can carry buttons. **A tap is only words**: it
+comes back as the visitor's message, and the turn runs as if they had typed it.
+
+```
+a tool's result ─► ToolResult.choices (Python picks them) ─► the last tool's, on TurnEnded
+                ─► Reply.choices ─► buttons under the reply's text
+   Messenger: quick replies; a tap is a message whose text is the choice
+   Telegram: an inline keyboard, three to a row; a tap is a callback_query whose data is the
+             choice ─► answerCallbackQuery, then its data is the message's text
+
+show_photos ─► each card gets an Order button whose tap says "Order [kurti]"
+   Messenger: a postback button on the carousel's card ─► the postback's payload is the text
+   Telegram: an inline button under each photo ─► a callback_query, as above
+```
+
+- **Which buttons:** `update_cart` missing a size or colour offers the ones not sold out, with
+  the colour or size already chosen (`Product.in_stock`); `ask_for_yes` offers Yes and Change,
+  for every desk. The last tool that ran in the turn decides; a hand-off or a stop sends none.
+- **A Yes button is a typed yes** (rule 2): the next `place_order` still asks Jev whether the
+  agent's last message was the read-back, so a Yes tapped from an old message saves nothing.
+- **The limits:** a choice is at most 20 characters (Messenger's quick reply) and 64 bytes
+  (Telegram's button data), at most 13 of them; a longer one gets no button and is typed. An
+  Order button needs "Order [code]" within 64 bytes.
+- **Web chat and voice** ignore the choices: the web chat's cards are unchanged (its photos
+  now carry the `code`), and a call stays words.
+- **Postbacks are signed** like messages: they come to the same `/api/messenger`. Our app
+  subscribes a Page to `messages,messaging_postbacks`, and the Meta app's webhook needs the
+  `messaging_postbacks` field. Telegram's webhook allows `message` and `callback_query`. A Page
+  or bot connected before D99 is connected again once to get them.
+- The model is told, in the Telegram and Messenger channel lines, that a tap arrives as its
+  words, and to reply in the language they've been writing in (the buttons are English).
+
 ### The team on Telegram (D43)
 
 The owner gets alerts, and can answer any web or Telegram visitor, in their own chat with the
@@ -1139,13 +1173,13 @@ version handles them.
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
 | Billing, phone numbers, hosting | No plans or billing; voice in the browser only (a confirmation call rings a `/phone` page, D88, D89); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
-| Telegram: photos, voice notes, buttons, messages over 4,096 characters | Text only, and replies are a few sentences (D42) |
+| Telegram: voice notes, messages over 4,096 characters, buttons on the web chat, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Ending logins when a password changes | A login token lasts 7 days, and a new password (changed, or reset with the emailed code, D93) doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
 | Changing `SECRETS_KEY` | It's set once; the secrets saved with the old key can't be read with a new one (D74) |
 | Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
-| Messenger: Facebook Login to connect a Page, the Get Started button, quick replies, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text only. A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
+| Messenger: Facebook Login to connect a Page, the Get Started button, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text, photos (D62) and Python's buttons (D99). A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |

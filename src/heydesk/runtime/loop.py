@@ -75,6 +75,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     alerts: list[str] = []  # for the owner: an order placed
     used: list[str] = []  # the tools that ran, for the visitor limits (D51)
     said: str | None = None  # a tool's own reply, which ends the turn
+    choices: list[str] = []  # the last tool's buttons, for the reply that follows it (D99)
     failed = asked_for_person = interrupted = False
 
     try:
@@ -136,6 +137,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                     step["ok"] = result.ok
                 used.append(call.name)
                 said = said or result.reply
+                choices = result.choices or []
                 state |= result.state or {}
                 asked_for_person |= result.handoff  # the model still replies; the card follows
                 if result.alert:
@@ -179,6 +181,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
         interrupted=interrupted,
         alerts=alerts,
         tools=used,
+        choices=[] if handoff or interrupted else choices,
     )
 
 

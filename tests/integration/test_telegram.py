@@ -186,7 +186,33 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     said = llm.requests[0].messages[-1]["content"]
     assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
     assert fake.photos == [(str(CHAT), "Cotton Kurti · ৳950")]
+    assert fake.choices == [(str(CHAT), ["Order [kurti]"])]  # its button (D99)
     assert sent(app) == [(str(CHAT), "Is it this one?")]
+
+
+def tap(data: str) -> dict[str, Any]:
+    """A tap on a button under the bot's photo, as Telegram sends it (D99)."""
+    photo = {"message_id": 7, "chat": {"id": CHAT, "type": "private"}, "photo": [{"file_id": "x"}]}
+    return {"update_id": 2, "callback_query": {"id": "cb1", "message": photo, "data": data}}
+
+
+async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    path, secret = await connect(app, client)
+    fake = services.channels.telegram
+    llm = services.conversations.runtime.llm
+    line = {"code": "panjabi-cotton", "quantity": 1, "colour": "Navy"}
+    llm.script = [ToolCall("c1", "update_cart", {"lines": [line]}), "Which size?"]
+
+    await send(client, path, secret, tap("Order [panjabi-cotton]"))
+
+    assert fake.answered == ["cb1"]  # its spinner stops
+    assert llm.requests[0].messages[-1]["content"] == "Order [panjabi-cotton]"
+    assert sent(app) == [(str(CHAT), "Which size?")]  # the bot's photo wasn't taken as theirs
+    assert fake.choices == [(str(CHAT), ["M", "XL", "XXL"])]  # L in Navy is sold out
 
 
 async def test_a_photo_to_a_desk_that_takes_none(app: FastAPI, client: AsyncClient) -> None:

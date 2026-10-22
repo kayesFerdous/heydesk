@@ -55,4 +55,5 @@ def ask_for_yes(read_back: str, tool: str) -> ToolResult:
             "next": f"Read this back and ask for a clear yes. Only after the yes, call {tool} "
             "again with the same details.",
         },
+        choices=["Yes", "Change"],  # a tapped Yes is checked like a typed one (D99)
     )

@@ -43,6 +43,12 @@ def first_photo(message: dict[str, Any]) -> str | None:
     return None
 
 
+def buttons(choices: list[str]) -> list[str]:
+    """The choices a button can carry (D99): Messenger takes 13 quick replies of 20 characters,
+    and Telegram's button data is 64 bytes. A longer one is left out, so it's typed instead."""
+    return [c for c in choices if len(c) <= 20 and len(c.encode()) <= 64][:13]
+
+
 class ChannelService:
     def __init__(
         self,
@@ -159,8 +165,16 @@ class ChannelService:
         return channel
 
     async def answer_telegram(self, channel: Channel, update: dict[str, Any]) -> None:
-        """Answers one message from Telegram. Runs after the webhook has said OK."""
+        """Answers one message from Telegram. Runs after the webhook has said OK. A tapped
+        button is a callback query: its data becomes the message's text (D99)."""
         message = update.get("message") or {}
+        tapped = update.get("callback_query")
+        if tapped:
+            with contextlib.suppress(TelegramUnavailable):  # its spinner stops on its own
+                await self.telegram.answer_callback(channel.token, tapped["id"])
+            # only the chat: the message tapped is the bot's own, maybe a photo
+            chat = (tapped.get("message") or {}).get("chat")
+            message = {"chat": chat, "text": tapped.get("data") or ""}
         chat = message.get("chat") or {}
         if chat.get("type") != "private":
             return  # groups and edits aren't a visitor talking to the desk
@@ -169,6 +183,8 @@ class ChannelService:
     async def answer_messenger(self, channel: Channel, event: dict[str, Any]) -> None:
         """Answers one message to a Facebook Page. Runs after the webhook has said OK."""
         message = event.get("message")
+        if "postback" in event:  # a card's button (D99): its payload is what they chose
+            message = {"text": event["postback"].get("payload") or ""}
         if not message or message.get("is_echo"):  # the Page's own messages
             return
         await self._answer(channel, str(event["sender"]["id"]), message)
@@ -203,7 +219,7 @@ class ChannelService:
                 if reply.photos:
                     await self._send_photos(channel, chat_id, reply.photos)
                 if reply.text:
-                    await self._send(channel, chat_id, reply.text)
+                    await self._send(channel, chat_id, reply.text, buttons(reply.choices))
                 if reply.handoff:
                     phone = reply.handoff.phone or reply.handoff.email
                     await self._send(
@@ -215,8 +231,10 @@ class ChannelService:
             log.exception("answer failed", extra={"channel_id": channel.id})
             await self._send(channel, chat_id, FAILED)
 
-    async def _send(self, channel: Channel, chat_id: str, text: str) -> None:
-        await self.team.send(channel, chat_id, text)
+    async def _send(
+        self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
+        await self.team.send(channel, chat_id, text, choices)
 
     async def _photo(self, channel: Channel, message: dict[str, Any]) -> bytes | None:
         """The photo a visitor sent, downloaded now (Facebook's URLs expire), or None."""
@@ -233,16 +251,22 @@ class ChannelService:
     ) -> None:
         """The products `show_photos` chose. On Messenger one carousel, which Facebook fetches
         from us, so its URLs are made whole (D62); on Telegram each photo is uploaded, with its
-        name and price as the caption (D63). If it fails, the text still goes."""
+        name and price as the caption (D63). Each has an Order button, whose tap says
+        "Order [code]" (D99). If it fails, the text still goes."""
+        orders = [f"Order [{p['code']}]" for p in photos]
+        orders = [o if len(o.encode()) <= 64 else "" for o in orders]  # Telegram's data limit
         try:
             if channel.kind == MESSENGER:
-                cards = [{**p, "url": self.settings.public_url + p["url"]} for p in photos]
+                cards = [
+                    {**p, "url": self.settings.public_url + p["url"], "choice": order}
+                    for p, order in zip(photos, orders, strict=True)
+                ]
                 await self.messenger.send_cards(channel.token, chat_id, cards)
                 return
-            for p in photos:
+            for p, order in zip(photos, orders, strict=True):
                 jpeg = await self.photos.read(p["url"])
                 caption = f"{p['name']} · {p['price']}"
-                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption)
+                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order)
         except (MessengerUnavailable, TelegramUnavailable) as error:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
 
