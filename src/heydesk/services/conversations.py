@@ -85,10 +85,12 @@ class ConversationService:
         visitor: str,
         contact: str | None = None,
         photo: bytes | None = None,
+        name: str | None = None,
     ) -> RunningTurn:
         """Loads the conversation (or starts one), then runs the turn as the listener reads it.
         `visitor` is who is talking, for the limits (D51): `web:<token>`, `telegram:<chat id>`.
-        A messaging app passes its `contact` (the chat id) for a new conversation. A web visitor
+        A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
+        new conversation. A web visitor
         can send a `photo` with it, or instead of words, when the desk takes photos (D57)."""
         text = text.strip()
         if photo is not None and not agent.desk.takes_photos:
@@ -107,7 +109,7 @@ class ConversationService:
                 return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
         await self.visitors.admit(agent, visitor)  # counts the turn, or refuses it (D51)
         if conv is None:
-            conv = self._new(agent, channel, contact)
+            conv = self._new(agent, channel, contact, name)
             async with self.sessions() as s, s.begin():
                 s.add(conv)
 
@@ -151,7 +153,13 @@ class ConversationService:
         return RunningTurn(conv.id, self._run(turn, conv, agent, visitor), turn.interrupt)
 
     async def reply(
-        self, agent: LiveAgent, channel: str, contact: str, text: str, photo: bytes | None = None
+        self,
+        agent: LiveAgent,
+        channel: str,
+        contact: str,
+        text: str,
+        photo: bytes | None = None,
+        name: str | None = None,
     ) -> Reply:
         """For a messaging app (D42): continues the contact's conversation, or starts one, and
         returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62). A conversation that is full, or quiet for
@@ -179,6 +187,7 @@ class ConversationService:
             f"{channel}:{contact}",
             contact,
             photo,
+            name,
         )
         parts: list[str] = []
         photos: list[dict[str, str]] = []
@@ -196,11 +205,13 @@ class ConversationService:
                     choices = event.choices
         return Reply("".join(parts).strip(), handoff, photos, choices)
 
-    async def restart(self, agent: LiveAgent, channel: str, contact: str) -> None:
+    async def restart(
+        self, agent: LiveAgent, channel: str, contact: str, name: str | None = None
+    ) -> None:
         """A new, empty conversation for the contact (Telegram's /start); their next message
         goes into it, after the greeting."""
         async with self.sessions() as s, s.begin():
-            s.add(self._new(agent, channel, contact))
+            s.add(self._new(agent, channel, contact, name))
 
     async def team_replies(self, agent: LiveAgent, conversation_id: str) -> list[str]:
         """What the team has written in a web chat, oldest first; the page shows the new ones."""
@@ -316,12 +327,15 @@ class ConversationService:
             interrupted=ended.interrupted,
         )
 
-    def _new(self, agent: LiveAgent, channel: str, contact: str | None) -> Conversation:
+    def _new(
+        self, agent: LiveAgent, channel: str, contact: str | None, name: str | None = None
+    ) -> Conversation:
         return Conversation(
             workspace_id=agent.workspace_id,
             agent_id=agent.agent_id,
             channel=channel,
             contact=contact,
+            name=(name or "").strip()[:100] or None,
             state={},
             messages=[],
             created_at=self.now(),

@@ -17,6 +17,7 @@ class ConversationOut(BaseModel):
 
     id: str
     channel: str
+    name: str | None  # from the messaging app (Telegram, WhatsApp); None on the web
     status: str  # active / needs_human / human (the team is answering, D43)
     created_at: datetime
     updated_at: datetime

@@ -16,7 +16,8 @@ CHAT = 555
 
 
 def message(text: str | None = "hi", chat_type: str = "private") -> dict[str, Any]:
-    msg: dict[str, Any] = {"message_id": 1, "chat": {"id": CHAT, "type": chat_type}}
+    chat = {"id": CHAT, "type": chat_type, "first_name": "Rina", "last_name": "Akter"}
+    msg: dict[str, Any] = {"message_id": 1, "chat": chat}
     if text is not None:
         msg["text"] = text
     return {"update_id": 1, "message": msg}
@@ -97,6 +98,8 @@ async def test_the_agent_answers_and_the_next_message_continues(
     [conv] = await telegram_conversations(app)
     assert conv.contact == str(CHAT)
     assert [m["content"] for m in conv.messages if m["role"] == "user"] == ["hi", "again"]
+    [listed] = (await client.get("/api/conversations")).json()
+    assert listed["name"] == "Rina Akter"
 
 
 async def test_start_sends_the_greeting_and_starts_afresh(

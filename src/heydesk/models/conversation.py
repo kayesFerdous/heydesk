@@ -23,6 +23,8 @@ class Conversation(Base):
     )  # web / voice / telegram / messenger / whatsapp
     # who it is on a messaging app (their Telegram chat id), so their next message continues it
     contact: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    # their name as the messaging app gives it (Telegram, WhatsApp); None on the web
+    name: Mapped[str | None] = mapped_column(String(100), default=None)
     # active, needs_human (the agent handed off), or human (the team is answering: D43)
     status: Mapped[str] = mapped_column(String(20), default="active")
     state: Mapped[dict[str, Any]] = mapped_column(

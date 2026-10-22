@@ -227,7 +227,8 @@ class ChannelService:
         chat = message.get("chat") or {}
         if chat.get("type") != "private":
             return  # groups and edits aren't a visitor talking to the desk
-        await self._answer(channel, str(chat["id"]), message)
+        name = " ".join(filter(None, [chat.get("first_name"), chat.get("last_name")]))
+        await self._answer(channel, str(chat["id"]), message | {"name": name})
 
     async def answer_messenger(self, channel: Channel, event: dict[str, Any]) -> None:
         """Answers one message to a Facebook Page. Runs after the webhook has said OK."""
@@ -238,7 +239,9 @@ class ChannelService:
             return
         await self._answer(channel, str(event["sender"]["id"]), message)
 
-    async def answer_whatsapp(self, channel: Channel, message: dict[str, Any]) -> None:
+    async def answer_whatsapp(
+        self, channel: Channel, message: dict[str, Any], name: str | None = None
+    ) -> None:
         """Answers one WhatsApp message. Runs after the webhook has said OK. It's put in the
         shape `_answer` reads: a tapped button's id is the text (D99), a photo's caption its
         words; anything else (a sticker, a voice note) has no text."""
@@ -254,7 +257,7 @@ class ChannelService:
             said = {"image": message["image"], "caption": message["image"].get("caption") or ""}
         with contextlib.suppress(WhatsAppUnavailable):  # "typing…" until the reply
             await self.whatsapp.send_typing(channel.token, channel.address, message["id"])
-        await self._answer(channel, str(message["from"]), said)
+        await self._answer(channel, str(message["from"]), said | {"name": name})
 
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
@@ -273,13 +276,13 @@ class ChannelService:
             if text is None:  # a sticker, a voice note, a file
                 await self._send(channel, chat_id, NOT_TEXT)
             elif text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
-                await self.conversations.restart(agent, channel.kind, chat_id)
+                await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
                 await self._send(channel, chat_id, agent.greeting)
             else:
                 typing = asyncio.create_task(self._keep_typing(channel, chat_id))
                 try:
                     reply = await self.conversations.reply(
-                        agent, channel.kind, chat_id, text or "", photo
+                        agent, channel.kind, chat_id, text or "", photo, message.get("name")
                     )
                 finally:
                     typing.cancel()

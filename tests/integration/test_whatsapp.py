@@ -26,7 +26,8 @@ def message(text: str | None = "hi", **instead: Any) -> dict[str, Any]:
     if instead:
         msg = {"from": FROM, "id": "wamid.1", **instead}
     value = {"messaging_product": "whatsapp", "metadata": {"phone_number_id": PHONE}}
-    change = {"field": "messages", "value": {**value, "messages": [msg]}}
+    contacts = [{"wa_id": FROM, "profile": {"name": "Karim"}}]
+    change = {"field": "messages", "value": {**value, "contacts": contacts, "messages": [msg]}}
     return {"object": "whatsapp_business_account", "entry": [{"id": ACCOUNT, "changes": [change]}]}
 
 
@@ -82,6 +83,8 @@ async def test_the_agent_answers_and_status_posts_are_skipped(
         (FROM, "(fake model) You said: hi"),
         (FROM, "(fake model) You said: again"),
     ]
+    [listed] = (await client.get("/api/conversations")).json()
+    assert listed["name"] == "Karim"
 
 
 async def test_a_wrong_signature_is_a_404_and_nothing_is_answered(

@@ -80,6 +80,11 @@ async def whatsapp_webhook(
             channel = await services.channels.whatsapp_number(phone_id)
             if channel is None:  # a number that was disconnected
                 continue
+            names = {
+                c.get("wa_id"): (c.get("profile") or {}).get("name")
+                for c in value.get("contacts", [])
+            }
             for message in value.get("messages", []):
-                background.add_task(services.channels.answer_whatsapp, channel, message)
+                name = names.get(message.get("from"))
+                background.add_task(services.channels.answer_whatsapp, channel, message, name)
     return {"ok": True}
