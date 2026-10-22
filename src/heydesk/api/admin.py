@@ -25,6 +25,8 @@ class BusinessRowOut(BaseModel):
     conversations: int
     last_activity_at: datetime | None
     created_at: datetime
+    plan: str  # D106
+    paid_until: datetime
 
 
 class OwnerOut(BaseModel):
@@ -181,6 +183,19 @@ async def business_status(
     await services.admin.set_business_status(workspace_id, body.status, body.reason)
     reason = body.reason.strip() if body.status == "suspended" else ""
     await services.admin.audit(admin.user_id, workspace_id, f"business {body.status}", reason)
+
+
+class PlanIn(BaseModel):
+    plan: Literal["trial", "starter", "growth", "pro"]
+    paid_until: datetime  # the last paid day
+
+
+@router.put("/businesses/{workspace_id}/plan", status_code=204)
+async def business_plan(workspace_id: str, body: PlanIn, admin: Admin, services: Svc) -> None:
+    """A plan set by hand, for a payment made another way (bKash to our number) (D106)."""
+    await services.billing.set_plan(workspace_id, body.plan, body.paid_until)
+    target = f"{body.plan} until {body.paid_until:%Y-%m-%d}"
+    await services.admin.audit(admin.user_id, workspace_id, "business plan", target)
 
 
 @router.get("/users")

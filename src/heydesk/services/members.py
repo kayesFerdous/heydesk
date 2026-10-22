@@ -19,9 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, NotFound
 from heydesk.models import TeamEvent, User, Workspace
+from heydesk.services.billing import PLANS
 from heydesk.services.users import Principal, UserService
-
-MAX_MODERATORS = 10  # each invite is an email from our daily allowance
 
 
 class MemberService:
@@ -57,8 +56,13 @@ class MemberService:
                 .select_from(User)
                 .where(User.workspace_id == ws, User.role == "moderator")
             )
-            if (moderators or 0) >= MAX_MODERATORS:
-                raise Conflict(f"A business can have up to {MAX_MODERATORS} moderators.")
+            business = await s.get(Workspace, ws)
+            seats = PLANS[business.plan].moderators if business else 0  # the plan's (D106)
+            if (moderators or 0) >= seats:
+                raise Conflict(
+                    f"Your plan has {seats} moderator{'s' if seats > 1 else ''}. "
+                    "Choose a bigger plan on the billing page to add more."
+                )
             password = secrets.token_urlsafe(32)  # no one knows it: they set their own to join
             user = await self.users.new_user(
                 s, email, password, role="moderator", ws=ws, verified=False

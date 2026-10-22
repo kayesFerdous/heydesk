@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     # Paying online before an order is placed (D47), into each business's own SSLCommerz store
     # (D49), which the owner connects on the frontend. fake: tests, no network
     PAYMENTS: Literal["sslcommerz", "fake"] = "sslcommerz"
+    # Businesses paying HeyDesk for a plan (D106) go to our own SSLCommerz store. Empty: the
+    # billing page can't take payments, and an admin sets plans by hand
+    BILLING_STORE_ID: str = ""
+    BILLING_STORE_PASSWORD: str = ""
+    BILLING_SANDBOX: bool = True
 
     # Email (D93): the codes that verify an owner's email and reset a password go through Brevo
     # (brevo.com, free for 300 a day) from MAIL_FROM, an address verified there. Without a key,

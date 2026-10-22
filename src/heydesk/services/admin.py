@@ -41,6 +41,8 @@ class BusinessRow:
     conversations: int
     last_activity_at: datetime | None
     created_at: datetime
+    plan: str  # D106
+    paid_until: datetime
 
 
 @dataclass(frozen=True)
@@ -207,6 +209,8 @@ class AdminService:
                 n or 0,
                 last,
                 ws.created_at,
+                ws.plan,
+                ws.paid_until,
             )
             for ws, kind, email, n, last in rows
         ]

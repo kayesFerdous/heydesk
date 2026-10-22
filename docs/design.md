@@ -395,7 +395,7 @@ Every table has `workspace_id` (except `workspaces`).
 
 | Table | Columns |
 |---|---|
-| `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70) |
+| `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70), plan (`trial`/`starter`/`growth`/`pro`) and paid_until (D106) |
 | `users` | workspace_id (empty for an admin), role (`owner`/`moderator`/`admin`, D97), email, password_hash, email_verified_at (empty until the emailed code is typed, D93; for a moderator, until they join) |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
@@ -406,6 +406,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
+| `subscription_payments` | plan, months (1 or 12), amount, status (`unpaid`/`paid`), payment_ref, paid_at: a business paying HeyDesk for a plan, through our own SSLCommerz store (D106) |
 | `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
@@ -476,6 +477,10 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
 | POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
+| GET | `/api/billing` | The business's plan, `paid_until`, `active`, replies used in the last 30 days and the plan's limit, and the plans it can buy (D106). Owners only |
+| POST | `/api/billing/checkout` | `{plan, months: 1 or 12}` → `{url}`: our SSLCommerz page; a 400 when no store is set up (D106). Owners only |
+| POST | `/billing/{id}/back`, `/api/billing/sslcommerz/{id}` | The owner's return and the gateway's notice; only `val_id`, checked with our store, counts (D106) |
+| PUT | `/api/admin/businesses/{id}/plan` | `{plan, paid_until}`: set by hand, for a payment made another way; audited (D106) |
 | GET/PUT/DELETE | `/api/agent/sslcommerz` | The business's own SSLCommerz store: its id and test mode; connect it (checked with SSLCommerz first); disconnect it (D49). The password never comes back |
 | GET | `/health` | DB reachable |
 
@@ -561,7 +566,8 @@ in the browser (`visitor_id` in the chat body, `?visitor=` on a call's offer; a 
 and Telegram's is the chat id.
 
 ```
-start_turn ─► visitors.admit: blocked? the visitor's turns today ≥ VISITOR_DAILY_TURNS (30)?
+start_turn ─► visitors.admit: blocked? the plan ended, or its replies used up (D106)?
+                              the visitor's turns today ≥ VISITOR_DAILY_TURNS (30)?
                               the business's turns today ≥ WORKSPACE_DAILY_TURNS (500)?
                  yes ─► 429 visitor_limited: "…Please contact us at <hand-off phone>." No model call
                  no  ─► count the turn, run it
@@ -1110,6 +1116,38 @@ SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN
   random: the link is its own key, like the Telegram webhook's channel id.
 - The owner can still move `unpaid` → `new` (a shop order: `confirmed`) when it was paid some
   other way, or cancel it.
+
+### Plans and billing (D106)
+
+A business pays HeyDesk for a **plan**: AI replies in any 30 days, and moderators
+(`services/billing.py`, `PLANS`). Prices are in taka, before VAT:
+
+| Plan | A month | A year (10 months' price) | Replies in 30 days | Moderators |
+|---|---|---|---|---|
+| Free trial (14 days, for every new business) | ৳0 | | 200 | 1 |
+| Starter | ৳2,490 | ৳24,900 | 3,000 | 1 |
+| Growth | ৳5,990 | ৳59,900 | 12,000 | 3 |
+| Pro | ৳12,990 | ৳1,29,900 | 35,000 | 10 |
+
+```
+signup ─► the trial: plan trial, paid_until = now + TRIAL_DAYS (14)
+billing page ─► POST /api/billing/checkout {plan, months} ─► a subscription_payments row (unpaid)
+             ─► our SSLCommerz page (BILLING_STORE_*, not the business's own store)
+gateway posts back (/billing/<id>/back, and its notice) ─► settle: our store says paid, this
+             payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
+             paid_until = max(now, paid_until) + 30 days a month (365 a year); a trial's days aren't kept
+every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
+             or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
+```
+
+- A **reply** is a saved turn (`turns`, D71): what the model actually cost us. A turn the team
+  answers isn't one.
+- The plan's moderators cap invites (it replaces D97's `MAX_MODERATORS`).
+- An admin sets a plan by hand (`PUT /api/admin/businesses/{id}/plan`), for a bKash payment
+  made to us outside the site; it goes in the audit log.
+- The dev workspace is Pro for ten years, so the dev chat and the demo never stop.
+- Changing plans mid-way isn't prorated: the new plan starts at once and the days run on.
+  Nothing is emailed when a plan is about to end: the owner sees it on the billing page.
 
 ### How a shop order is confirmed (D92)
 

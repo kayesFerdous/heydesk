@@ -75,10 +75,10 @@ async def current_workspace(
 
 
 def owners_only(method: str, path: str) -> bool:
-    """The team, the Telegram bot (its link makes you the one who gets the alerts) and any
-    change to the agent's settings are the owner's. A moderator gets the rest: the inbox, the
+    """The team, the Telegram bot (its link makes you the one who gets the alerts), billing
+    (D106) and any change to the agent's settings are the owner's. A moderator gets the rest: the inbox, the
     records, the lists, and reading the settings, such as whether a sheet is linked (D97)."""
-    if path.startswith(("/api/team", "/api/agent/telegram")):
+    if path.startswith(("/api/team", "/api/agent/telegram", "/api/billing")):
         return True
     return path.startswith("/api/agent") and method != "GET"
 

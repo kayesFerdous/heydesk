@@ -46,6 +46,7 @@ from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
+from heydesk.services.billing import BillingService
 from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
@@ -189,6 +190,7 @@ def build_services(
     fetch_photo: FetchImage | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
+    gateway = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     photos = build_photos(settings, embedder, photo_index, fetch_photo)
     agents = AgentService(sessions, knowledge, photos, now)
@@ -225,6 +227,7 @@ def build_services(
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
+        billing=BillingService(sessions, gateway, settings, now),
         calls=calls,
         channels=ChannelService(
             sessions,
@@ -243,9 +246,7 @@ def build_services(
         knowledge=knowledge,
         members=MemberService(sessions, users, now),
         photos=photos,
-        payments=PaymentService(
-            sessions, payments or build_payments(settings), team, woo_service, settings, now
-        ),
+        payments=PaymentService(sessions, gateway, team, woo_service, settings, now),
         users=users,
         visitors=visitors,
         rate_limits=rate_limits,

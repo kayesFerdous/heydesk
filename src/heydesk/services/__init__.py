@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
+from heydesk.services.billing import BillingService
 from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
@@ -22,6 +23,7 @@ from heydesk.services.woo import WooService
 class Services:
     admin: AdminService
     agents: AgentService
+    billing: BillingService  # paying HeyDesk for a plan (D106)
     calls: CallService  # the shop's call to confirm an order, to a /phone page (D88)
     channels: ChannelService
     conversations: ConversationService

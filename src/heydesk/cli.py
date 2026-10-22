@@ -18,6 +18,7 @@ from heydesk.db import make_engine, utcnow
 from heydesk.errors import HeyDeskError
 from heydesk.models import Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.services.billing import dev_workspace
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.users import UserService, temporary_password
 from heydesk.wiring import (
@@ -54,7 +55,7 @@ async def create_user(email: str, password: str) -> None:
     engine, sessions = make_engine(settings.DATABASE_URL)
     async with sessions() as s, s.begin():
         if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
-            s.add(Workspace(id=DEV_WORKSPACE_ID, name="Dev", created_at=utcnow()))
+            s.add(dev_workspace(DEV_WORKSPACE_ID, utcnow()))
     token = await UserService(
         sessions, settings.jwt_secret, build_mailer(settings), utcnow
     ).create_user(DEV_WORKSPACE_ID, email, password)

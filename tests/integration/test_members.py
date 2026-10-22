@@ -4,7 +4,7 @@ not the settings; a removed one is out at once; the owner sees what the team cha
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from heydesk.services.members import MAX_MODERATORS
+from heydesk.services.billing import PLANS
 from tests.conftest import emailed_code, new_business
 
 MOD = "rafi@example.com"
@@ -120,7 +120,7 @@ async def test_an_email_joins_one_business_and_a_team_has_a_limit(
 
     services = app.state.services
     ws = services.users.principal(client.headers["Authorization"][7:]).workspace_id
-    for n in range(MAX_MODERATORS - 1):
+    for n in range(PLANS["pro"].moderators - 1):  # the dev workspace is on Pro (D106)
         await services.members.invite(ws, f"m{n}@example.com", owner_id)
     full = await client.post("/api/team/members", json={"email": "one-more@example.com"})
     assert full.status_code == 409

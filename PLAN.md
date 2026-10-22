@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -401,6 +401,26 @@ its token in `.env`).
 
 **Done when:** `scripts/check.sh` is green [x] (22 Oct); the live check above passes, then tick
 G12 in docs/competitor-gaps.md.
+
+### Day B1: plans and billing (D106, G5)
+
+- [x] `PLANS` (trial, Starter ৳2,490, Growth ৳5,990, Pro ৳12,990), `workspaces.plan` and
+      `paid_until`, `subscription_payments` (one migration; businesses already here get a 14-day
+      trial, the dev workspace Pro)
+- [x] `BillingService`: the billing page's numbers, checkout through our SSLCommerz store,
+      settle (once, this amount), an admin's plan by hand; `admit` refuses once the plan ended
+      or its replies ran out; the plan's moderators cap invites
+- [x] Routes `/api/billing`, `/api/billing/checkout`, the return and the notice (owners only);
+      `PUT /api/admin/businesses/{id}/plan`; the plan in the admin's business list
+- [x] design.md (Plans and billing), D106, `.env.example`
+- [x] Tests: the trial, its one moderator, the end with grace, the replies used up, a payment
+      settled once and only for the right amount
+- [ ] The billing page in `../heydesk-frontend`: the plan, replies used, the plans, Pay
+- [ ] Live: with a sandbox store in `BILLING_STORE_*`, pay for Growth with a test card; the
+      billing page shows Growth until a month from today
+
+**Done when:** `scripts/check.sh` is green [x] (22 Oct); the billing page and the live check
+above pass, then tick G5 in docs/competitor-gaps.md.
 
 ## Still open
 

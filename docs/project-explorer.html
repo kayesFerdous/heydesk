@@ -353,6 +353,16 @@ tr.hl td { background: var(--accent-soft); }
    "fn": "pay"
   },
   {
+   "id": "a-billing",
+   "label": "Billing API",
+   "type": "api",
+   "file": "src/heydesk/api/billing.py",
+   "purpose": "The owner's plan and usage; paying for a plan through our SSLCommerz store; the gateway's return and IPN (D106).",
+   "inputs": "{plan, months}, val_id posts",
+   "outputs": "billing, {url}, HTML page",
+   "fn": "get_billing"
+  },
+  {
    "id": "a-woo",
    "label": "WooCommerce API",
    "type": "api",
@@ -590,6 +600,16 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Each business's SSLCommerz store; start a payment; settle it only after asking the gateway.",
    "inputs": "record id, val_id",
    "outputs": "record placed",
+   "fn": "settle"
+  },
+  {
+   "id": "s-billing",
+   "label": "BillingService",
+   "type": "service",
+   "file": "src/heydesk/services/billing.py",
+   "purpose": "Plans (replies in 30 days, moderators); checkout and settle into our own store; `plan_problem` for every turn (D106).",
+   "inputs": "plan, months, val_id",
+   "outputs": "plan and paid_until",
    "fn": "settle"
   },
   {
@@ -1544,6 +1564,26 @@ tr.hl td { background: var(--accent-soft); }
    "source": "a-payments",
    "target": "s-payments",
    "label": "start / settle"
+  },
+  {
+   "source": "a-billing",
+   "target": "s-billing",
+   "label": "checkout / settle"
+  },
+  {
+   "source": "s-billing",
+   "target": "p-payments",
+   "label": "our store"
+  },
+  {
+   "source": "s-billing",
+   "target": "st-sql",
+   "label": "UPDATE … WHERE unpaid"
+  },
+  {
+   "source": "s-visitors",
+   "target": "s-billing",
+   "label": "plan_problem"
   },
   {
    "source": "a-woo",

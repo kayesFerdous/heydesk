@@ -1,7 +1,7 @@
 """Limits on a public chat (D51), so visitors here for timepass can't spend a business's turns.
 
-Before a turn, `admit` counts it, or refuses when the visitor is blocked, the visitor used
-today's turns, or the whole business did. A refusal costs no model call. After a turn,
+Before a turn, `admit` counts it, or refuses when the visitor is blocked, the business's plan
+has ended or used its replies (D106), the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
 `after_turn` gives a strike when the model called `off_topic`; enough strikes in a row block the
 visitor for a while. Any real step (another tool) clears the strikes.
 """
@@ -19,6 +19,7 @@ from heydesk.desks.shared import OFF_TOPIC
 from heydesk.errors import VisitorLimited
 from heydesk.models import Visitor
 from heydesk.services.agents import LiveAgent
+from heydesk.services.billing import plan_problem
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ class VisitorService:
         """Why the visitor can't have a turn now, or None."""
         if visitor.blocked_until and visitor.blocked_until > now:
             return "blocked"
+        plan = await plan_problem(s, ws, now)  # ended, or its replies used up (D106)
+        if plan:
+            return plan
         if visitor.turns >= self.settings.VISITOR_DAILY_TURNS:
             return "visitor_daily_turns"
         business_turns = await s.scalar(

@@ -9,6 +9,7 @@ from heydesk.models.conversation import Conversation
 from heydesk.models.document import Document
 from heydesk.models.payment_account import PaymentAccount
 from heydesk.models.sheet_link import SheetLink
+from heydesk.models.subscription_payment import SubscriptionPayment
 from heydesk.models.team_event import TeamEvent
 from heydesk.models.team_message import TeamMessage
 from heydesk.models.turn import Turn
@@ -26,6 +27,7 @@ __all__ = [
     "Document",
     "PaymentAccount",
     "SheetLink",
+    "SubscriptionPayment",
     "TeamEvent",
     "TeamMessage",
     "Turn",

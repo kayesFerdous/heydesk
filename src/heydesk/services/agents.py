@@ -20,6 +20,7 @@ from heydesk.desks.base import Desk, Store
 from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
 from heydesk.models import Agent, Workspace
 from heydesk.runtime.config import AgentConfig
+from heydesk.services.billing import dev_workspace
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 
@@ -180,7 +181,7 @@ class AgentService:
         key = f"dev-{kind}"
         async with self.sessions() as s, s.begin():
             if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
-                s.add(Workspace(id=DEV_WORKSPACE_ID, name="Dev", created_at=self.now()))
+                s.add(dev_workspace(DEV_WORKSPACE_ID, self.now()))
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == DEV_WORKSPACE_ID))
             if agent is not None:  # a changed DEV_AGENT_KIND keeps the one agent
                 agent.public_key = key

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.errors import Conflict, EmailNotVerified, Forbidden, NotFound, Unauthorized
 from heydesk.models import AuditEvent, User, Workspace
 from heydesk.ports.mailer import Mailer
+from heydesk.services.billing import new_workspace
 
 TOKEN_DAYS = 7
 WRONG_CODE = "That code is wrong or has expired. Ask for a new one."
@@ -97,7 +98,7 @@ class UserService:
         """A new business and its owner, in one transaction: a taken email leaves nothing behind.
         No token yet: it emails a code, and `verify_email` logs them in (D94)."""
         async with self.sessions() as s, s.begin():
-            workspace = Workspace(name=workspace_name, created_at=self.now())
+            workspace = new_workspace(workspace_name, self.now())  # the free trial (D106)
             s.add(workspace)
             await s.flush()
             user = await self.new_user(
