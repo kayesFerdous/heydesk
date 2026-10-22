@@ -57,7 +57,7 @@ async def test_a_shop_pays_first_per_area_and_says_whether_it_calls(app: FastAPI
     owner = await new_business(app)
     try:
         await owner.post("/api/agent", json={"kind": "shop"})
-        outside = {"name": "Outside Dhaka", "charge": 12000, "days": "", "places": []}
+        outside = {"name": "Outside Dhaka", "charge": 12000, "days": ""}
         saved = await owner.patch(
             "/api/agent",
             json={"delivery": [outside | {"pay_first": True}], "call_to_confirm": False},

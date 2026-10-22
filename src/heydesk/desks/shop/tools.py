@@ -219,10 +219,8 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     config = cast(ShopConfig, ctx.agent)
     check = Checks(together=ctx.channel != "voice")  # a chat asks for it all at once (D92)
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
-    zone = (  # Python finds the area from the district and the address's places (D98)
-        check.take(
-            "district", args.district, lambda d: match_zone(config.delivery, d, args.address)
-        )
+    zone = (  # Python finds the area from the district (D98)
+        check.take("district", args.district, lambda d: match_zone(config.delivery, d))
         if args.district.strip() or args.address.strip()
         else None  # asked for with the address
     )
@@ -575,9 +573,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     check = Checks()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
-    zone = check.take(
-        "district", args.district, lambda d: match_zone(config.delivery, d, args.address)
-    )
+    zone = check.take("district", args.district, lambda d: match_zone(config.delivery, d))
     phone = check.take("new_phone", args.new_phone, mobile)
     if check.problems:
         return fail(" ".join(check.problems.values()))

@@ -16,12 +16,11 @@ currency: BDT
 handoff:
   message: Let me get someone from our team. You can also call or WhatsApp us.
   phone: "+880 1800 000000"
-# Each area covers its districts, and its places: thanas that go there, not with their
-# district (Savar is in Dhaka, but a suburb). The one with neither is everywhere else (D98).
+# Each area covers its districts; the one with none is everywhere else (D98).
 delivery:
   - {name: Inside Dhaka, charge: 6000, days: "1–2 days", districts: [Dhaka]}
-  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days", districts: [Gazipur, Narayanganj],
-     places: [Savar, Ashulia, Keraniganj, Dhamrai, Dohar, Tongi]}
+  - {name: Dhaka suburbs, charge: 10000, days: "2–3 days",
+     districts: [Gazipur, Narayanganj]}
   - {name: Outside Dhaka, charge: 12000, days: "3–5 days", pay_first: true}
 free_delivery_over: 300000
 policies: |

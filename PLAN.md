@@ -319,14 +319,15 @@ the inbox but not the settings, and is logged out once removed. [x] (21 Oct)
 ### Day S2: delivery areas by district (D98)
 
 - [x] `desks/shop/districts.py`: the 64 districts, in English and Bangla, with the old spellings
-- [x] `Zone.districts`; `places` only for thanas that go elsewhere; an area with neither is
-      everywhere else (one at most); `match_zone`: a place, then the district, then everywhere
-      else
+- [x] `Zone.districts` (`places` removed, D100); an area with none is everywhere else (one at
+      most); `match_zone`: the district's area, else everywhere else
 - [x] `place_order` and `change_order` take `district` (the model reads it off the address)
       instead of `area`; the prompt lists districts, not every place
-- [x] Both consoles: a Districts field per area, places as "go here instead"; the Vue one sets
+- [x] Both consoles: a Districts field per area; the Vue one sets
       its one pay-first switch on every area (it sent the shop-wide one, refused since D92)
-- [ ] Live: in the dev chat, a Feni address gets Outside Dhaka's charge, "Bank Colony, Savar"
+- [x] The districts are picked from a searchable list of the 64 (English or Bangla), shown as
+      chips with a ×: nothing to misspell (the Vue console; React keeps a plain dropdown)
+- [ ] Live: in the dev chat, a Feni address gets Outside Dhaka's charge, "Tongi, Gazipur"
       Dhaka suburbs, and "Agrabad, Chittagong" Outside Dhaka, with no area asked for (costs
       model quota)
 

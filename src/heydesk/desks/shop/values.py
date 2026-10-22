@@ -133,15 +133,12 @@ class Product(BaseModel):
 
 class Zone(BaseModel):
     """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days". It covers
-    its `districts`, and its `places`: thanas or areas that go here rather than with their
-    district ("Savar" in Dhaka suburbs, though Savar is in Dhaka). One with neither covers
-    everywhere else (D98)."""
+    its `districts`; one with none covers everywhere else (D98, D100)."""
 
     name: str = Field(min_length=1, max_length=100)
     charge: int = Field(ge=0)  # minor units
     days: str = Field(default="", max_length=50)  # how long it usually takes
     districts: list[str] = []  # of Bangladesh's 64, spelled as in `DISTRICTS`
-    places: list[str] = []
     # The buyer pays this area's charge online first, and that confirms the order (D92): BD
     # shops ask it outside Dhaka, where a refused parcel costs the most
     pay_first: bool = False
@@ -153,34 +150,22 @@ class Zone(BaseModel):
 
     @property
     def everywhere_else(self) -> bool:
-        return not self.districts and not any(p.strip() for p in self.places)
+        return not self.districts
 
     def line(self, currency: str) -> str:
         line = f"- {self.name}: {money(self.charge, currency)}"
         line += f", usually {self.days}" if self.days else ""
-        return line + f" ({', '.join(self.districts + self.places) or 'everywhere else'})"
+        return line + f" ({', '.join(self.districts) or 'everywhere else'})"
 
 
-def _words(text: str) -> str:
-    return " " + " ".join(re.sub(r"[,.;:/()\-]", " ", text.lower()).split()) + " "
-
-
-def match_zone(zones: list[Zone], said_district: str, address: str = "") -> Zone:
-    """The delivery area of an address in `said_district` (D98): the one naming a place in the
-    address ("Savar" → Dhaka suburbs), else the one with its district, else the one for
-    everywhere else. Raises ValueError."""
+def match_zone(zones: list[Zone], said_district: str) -> Zone:
+    """The delivery area for an address in `said_district` (D98): the one with that district,
+    else the one for everywhere else. Raises ValueError."""
     name = district(said_district)
-    # ponytail: a place matches anywhere in the address ("Nawabganj" is in "Chapai Nawabganj");
-    # tie places to a district if owners hit that
-    words = _words(address)
-    for covers in (
-        lambda z: any(_words(p) in words for p in z.places if p.strip()),
-        lambda z: name in z.districts,
-        lambda z: z.everywhere_else,
-    ):
-        found = next((z for z in zones if covers(z)), None)
-        if found:
-            return found
+    found = next((z for z in zones if name in z.districts), None)
+    found = found or next((z for z in zones if z.everywhere_else), None)
+    if found:
+        return found
     raise ValueError(f"The shop doesn't deliver to {name}. Say so, kindly.")
 
 
@@ -245,7 +230,7 @@ class ShopConfig(AgentConfig):
         if sum(zone.everywhere_else for zone in self.delivery) > 1:
             raise ValueError(
                 "Only one delivery area can be for everywhere else: give the others their "
-                "districts or places."
+                "districts."
             )
         return self
 

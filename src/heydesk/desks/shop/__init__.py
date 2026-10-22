@@ -125,11 +125,8 @@ class ShopDesk(Desk):
 
         # One way to confirm each order (D92): the advance in its area, the shop's call, or none
         pays = await store.pays_first(config)
-        # Each area's districts and places, not every place in it (D98)
-        delivery = [
-            "# Delivery",
-            "The charge depends on the area; a place named in one goes there:",
-        ]
+        # Each area's districts, not every place in it (D98)
+        delivery = ["# Delivery", "The charge depends on the area:"]
         for zone in config.delivery:
             first = pays and zone.pay_first and zone.charge
             delivery.append(zone.line(config.currency) + ("; paid online first" if first else ""))

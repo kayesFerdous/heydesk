@@ -191,7 +191,7 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
     assert just_the_district.data["still_needed"] == ["address", "name", "phone"]
     for address, district, charge in [
         ("Road 3, Uttara", "Dhaka", "৳60"),
-        ("Bank Colony, Savar", "Dhaka", "৳100"),  # a place goes before its district
+        ("Bank Colony, Savar", "Dhaka", "৳60"),  # Savar is in Dhaka district
         ("Tongi, Gazipur", "gazipur district", "৳100"),
         ("Agrabad", "Chittagong", "৳120"),  # the old spelling, and everywhere else
     ]:
