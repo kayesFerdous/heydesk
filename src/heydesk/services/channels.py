@@ -21,6 +21,7 @@ from heydesk.config import Settings
 from heydesk.db import new_id
 from heydesk.errors import HeyDeskError, InvalidConfig, NotFound
 from heydesk.models import Channel
+from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.services.agents import AgentService
@@ -258,7 +259,7 @@ class ChannelService:
         try:
             if channel.kind == MESSENGER:
                 cards = [
-                    {**p, "url": self.settings.public_url + p["url"], "choice": order}
+                    {**p, "url": self.whole(p["url"]), "choice": order}
                     for p, order in zip(photos, orders, strict=True)
                 ]
                 await self.messenger.send_cards(channel.token, chat_id, cards)
@@ -267,8 +268,12 @@ class ChannelService:
                 jpeg = await self.photos.read(p["url"])
                 caption = f"{p['name']} · {p['price']}"
                 await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order)
-        except (MessengerUnavailable, TelegramUnavailable) as error:
+        except (MessengerUnavailable, TelegramUnavailable, MediaUnavailable) as error:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
+
+    def whole(self, url: str) -> str:
+        """A photo on this server's disk is "/media/…"; one in R2 is whole already (D101)."""
+        return url if url.startswith("https://") else self.settings.public_url + url
 
     async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
         """ "typing…" lasts five seconds on Telegram; a reply can take longer."""

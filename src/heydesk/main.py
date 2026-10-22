@@ -106,8 +106,11 @@ def create_app(
     app.add_middleware(RequestLogMiddleware)  # outermost: logs every request, even CORS rejections
     register_exception_handlers(app)
     include_routers(app, dev_page=dev)
-    # Product photos and the ones visitors send (D57); the folder is made on the first photo
-    app.mount("/media", StaticFiles(directory=settings.MEDIA_DIR, check_dir=False), name="media")
+    # Product photos and the ones visitors send (D57), when they're on this server's disk and
+    # not in R2 (D101); the folder is made on the first photo
+    if not settings.R2_BUCKET:
+        media = StaticFiles(directory=settings.MEDIA_DIR, check_dir=False)
+        app.mount("/media", media, name="media")
     if dev:  # after the routes, so GET / is the page with the agent's key baked in
         app.mount("/", StaticFiles(directory=WEB_STATIC, html=True), name="web")
     return app

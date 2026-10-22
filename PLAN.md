@@ -352,6 +352,20 @@ the inbox but not the settings, and is logged out once removed. [x] (21 Oct)
 
 **Done when:** `scripts/check.sh` is green [x] (22 Oct); the live check above passes.
 
+### Day P1: photos in Cloudflare R2 (D101)
+
+- [x] `MediaStore` port; `DiskMedia` (`MEDIA_DIR`, served at `/media`) and `R2Media` (signed S3
+      requests over httpx); `build_media` picks R2 when `R2_BUCKET` is set
+- [x] `PhotoService` saves, reads, deletes and re-indexes through it; `is_products` checks the
+      address (no `../`); Messenger cards take an R2 URL as it is
+- [x] design.md (Photos), D101, `.env.example`
+- [x] Tests: Amazon's signing examples, the disk store, a photo address from another business
+- [ ] Live: with a real bucket, an owner's photo upload shows on the Products page, a
+      visitor's photo finds it, and a Telegram card shows it
+
+**Done when:** `scripts/check.sh` is green; the live check above passes (needs an R2 bucket and
+its token in `.env`).
+
 ## Still open
 
 Live checks that need a real account, a device or a person:

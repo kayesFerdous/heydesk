@@ -45,9 +45,16 @@ class Settings(BaseSettings):
     # often, lower it if answerable questions get nothing. Exact-word matches ignore it.
     KNOWLEDGE_MIN_SIMILARITY: float = 0.6
 
-    # Photos (D57): a shop's product photos and the ones visitors send, kept as JPEG files here
-    # and embedded by the same Gemini model into their own Qdrant collection
+    # Photos (D57): a shop's product photos and the ones visitors send, kept as JPEG files and
+    # embedded by the same Gemini model into their own Qdrant collection. On this server's disk
+    # in MEDIA_DIR, or in a Cloudflare R2 bucket when R2_BUCKET is set (D101). The bucket is
+    # public at R2_PUBLIC_URL: its r2.dev address, or a domain connected to it
     MEDIA_DIR: str = "./media"
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+    R2_PUBLIC_URL: str = ""
     QDRANT_PHOTO_COLLECTION: str = "heydesk_photos"
     # A product photo below this isn't like the visitor's photo at all. From a run on 13 Oct (14
     # real products): the right product scored 0.84 to 0.95, a look-alike of a missing product up

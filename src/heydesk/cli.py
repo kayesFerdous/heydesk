@@ -25,6 +25,7 @@ from heydesk.wiring import (
     build_embedder,
     build_knowledge_store,
     build_mailer,
+    build_media,
     build_photo_index,
     build_qdrant,
 )
@@ -102,7 +103,7 @@ async def reindex_knowledge() -> None:
     photos = PhotoService(
         embedder,
         build_photo_index(settings, qdrant),
-        settings.MEDIA_DIR,
+        build_media(settings),
         settings.PHOTO_MIN_SIMILARITY,
     )
     photo_count = await photos.reindex()

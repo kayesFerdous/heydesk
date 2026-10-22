@@ -20,6 +20,7 @@ from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.llm.gigalogy import GigalogyLLM
 from heydesk.adapters.llm.groq import GroqLLM
 from heydesk.adapters.mailer import Brevo, ConsoleMailer
+from heydesk.adapters.media import DiskMedia, R2Media
 from heydesk.adapters.messenger.graph import MessengerGraph
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
@@ -32,6 +33,7 @@ from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.mailer import Mailer
+from heydesk.ports.media import MediaStore
 from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
@@ -124,6 +126,19 @@ def build_photo_index(settings: Settings, client: AsyncQdrantClient) -> PhotoInd
     return QdrantPhotoIndex(client, settings.QDRANT_PHOTO_COLLECTION, settings.EMBEDDING_DIMENSIONS)
 
 
+def build_media(settings: Settings) -> MediaStore:
+    """Cloudflare R2 when a bucket is set, else this server's disk (D101)."""
+    if not settings.R2_BUCKET:
+        return DiskMedia(settings.MEDIA_DIR)
+    return R2Media(
+        settings.R2_ACCOUNT_ID,
+        settings.R2_ACCESS_KEY_ID,
+        settings.R2_SECRET_ACCESS_KEY,
+        settings.R2_BUCKET,
+        settings.R2_PUBLIC_URL,
+    )
+
+
 def build_payments(settings: Settings) -> PaymentGateway:
     if settings.PAYMENTS == "sslcommerz":
         return SslCommerz()  # each business's own store comes with every call (D49)
@@ -153,7 +168,9 @@ def build_services(
 ) -> Services:
     runtime = Runtime(llm=llm, decider=decider)
     knowledge = KnowledgeService(sessions, embedder, store, now)
-    photos = PhotoService(embedder, photo_index, settings.MEDIA_DIR, settings.PHOTO_MIN_SIMILARITY)
+    photos = PhotoService(
+        embedder, photo_index, build_media(settings), settings.PHOTO_MIN_SIMILARITY
+    )
     agents = AgentService(sessions, knowledge, now)
     telegram = telegram or TelegramBot()
     messenger = messenger or MessengerGraph()

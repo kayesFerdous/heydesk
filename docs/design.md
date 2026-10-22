@@ -59,10 +59,11 @@ src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
 ├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore, PhotoIndex,
-│                        TelegramApi, MessengerApi, PaymentGateway, the sheet reader, WooApi
+│                        MediaStore, TelegramApi, MessengerApi, PaymentGateway, the sheet reader, WooApi
 ├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM, JevDecider,
 │                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
-│                        Graph API, SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75)
+│                        Graph API, SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75),
+│                        photo files on the disk or in Cloudflare R2 (D101)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
@@ -301,11 +302,11 @@ A shop's products have photos, a visitor can send a photo ("eta ache?"), and the
 a product's photos. Web chat, Messenger (D62) and Telegram (D63); voice stays words (§12).
 
 ```
-owner adds:  a file ─► Pillow: a JPEG, at most 1024 px ─► media/<workspace_id>/products/<id>.jpg
+owner adds:  a file ─► Pillow: a JPEG, at most 1024 px ─► the media store: <workspace_id>/products/<id>.jpg
              ─► Gemini embeds the image (one image per request) ─► Qdrant `heydesk_photos`
              ─► {url}; the Products page puts the URL in the product's `photos` and saves
 visitor sends: the page shrinks it to a JPEG ─► `photo` in the chat body (base64)
-             ─► saved the same way, in media/<workspace_id>/chat/ ─► Gemini embeds it
+             ─► saved the same way, as <workspace_id>/chat/<id>.jpg ─► Gemini embeds it
              ─► Qdrant: this business's 10 nearest photos ─► each URL ─► its product
              ─► one line at the top of the visitor's message
 agent shows:  show_photos(products) ─► a `photos` event: each product's name, price and photo
@@ -344,6 +345,26 @@ agent shows:  show_photos(products) ─► a `photos` event: each product's name
   Free-tier inputs may be used by Google to improve its products.
 - `reindex-knowledge` also re-embeds every product photo from its file.
 
+**Where the files are (D101).** A `MediaStore` keeps them by key, `<workspace_id>/<folder>/<id>.jpg`,
+and a photo's URL is the store's `url` + "/" + key:
+
+| `R2_BUCKET` | Store | `url` | Served by |
+|---|---|---|---|
+| empty (dev, tests) | `DiskMedia(MEDIA_DIR)` | `/media` | this app (`main.py` mounts `/media`) |
+| set | `R2Media`: Cloudflare R2, a public bucket | `R2_PUBLIC_URL` | Cloudflare |
+
+- `R2Media` signs each S3 request itself (AWS Signature Version 4: hashlib and hmac, checked
+  against Amazon's published examples), over httpx. No SDK.
+- `is_products` checks the address, not the file: the business's own products folder and a
+  32-hex name, so no `../` reaches another business. A network call per photo on every save
+  would buy nothing more.
+- Messenger fetches a card's photo from its URL: `/media/…` gets `PUBLIC_URL` in front, an R2
+  URL is whole already. Telegram is uploaded the bytes (`MediaStore.get`), as before.
+- Visitors' photos are in the same public bucket, under names no one can guess (128 random
+  bits), as they were under `/media`.
+- **Switching an existing server to R2 doesn't move its files**, and the saved URLs still say
+  `/media/…`. Start R2 on a fresh database, or copy the folder up and rewrite the URLs.
+
 ## 8. Data model
 
 Every table has `workspace_id` (except `workspaces`).
@@ -369,7 +390,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `bookings` | the shared columns, at (UTC), people, note. Code `T-101`; new → confirmed → seated → done; new or confirmed → cancelled; confirmed → no_show. New, confirmed and seated hold their seats (D64) |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
-| `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, `/media/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57), position |
+| `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92); confirmed → shipped → delivered or returned; unpaid, new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
@@ -414,7 +435,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422 |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
-| GET | `/media/…` | A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
+| GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET/PATCH | `/api/conversations…` | Conversations (`?status=needs_human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83) |
@@ -867,7 +888,8 @@ buyer sends: a message with an `image` attachment ─► its first image's URL (
              ─► the same turn as the web chat's photo (saved, embedded, the [Photo. …] line)
 agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
              ─► MessengerApi.send_cards: one carousel of up to 3 cards, before the reply's text
-                (each card: the photo at PUBLIC_URL + its /media/… URL, the name, the price)
+                (each card: the photo's URL, made whole with PUBLIC_URL when it's /media/…, D101;
+                the name, the price)
 ```
 
 - **Only the shop, only images.** A sticker arrives as an `image` with a `sticker_id`, so it's
@@ -899,7 +921,7 @@ agent shows: Reply.photos ─► for each: PhotoService.read(url) ─► Telegra
              captioned "Cotton Kurti · ৳950", before the reply's text
 ```
 
-- **Uploaded, not linked.** The bot uploads each photo from our media folder, so Telegram needs
+- **Uploaded, not linked.** The bot uploads each photo from our media store, so Telegram needs
   no public URL for them (Messenger does). Up to 3, so one `sendPhoto` each, not an album.
 - **The caption is the words.** Telegram sends a photo and its caption in one message, so
   "eta ache?" comes with the photo, unlike Messenger.
