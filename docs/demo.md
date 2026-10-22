@@ -6,7 +6,7 @@ the backup video.
 
 ## Before
 
-In `.env`: the real providers (`LLM_PROVIDER=gigalogy`, `DECIDER=jev`, `EMBEDDER=gemini`) and
+In `.env`: the real providers (`LLM_PROVIDER=gigalogy`, `EMBEDDER=gemini`) and
 the shop as the dev agent:
 
 ```bash
@@ -49,8 +49,8 @@ In the customer chat, one line at a time:
 6. *ji* → order **O-101**, and what happens next.
 
 Say: the model only talks. Python found the area, the charge, the total and the stock, and
-nothing was saved until the read-back got a clear yes. A second model, Jev, checks that yes, and
-if Jev is down nothing is saved.
+nothing was saved until the read-back got a clear yes. And Python saves only the exact details
+it read back.
 
 ## 3. The owner (1.5 min)
 
@@ -84,5 +84,4 @@ Show the README's diagram and say:
 ## If something goes wrong
 
 - **The model is slow or down:** set `LLM_PROVIDER=groq` and restart, or play the backup video.
-- **Nothing is saved after "ji":** `DECIDER` must be `jev`; with `fake` it always says no.
 - **A stuck conversation:** reload the chat page; it starts a new one.

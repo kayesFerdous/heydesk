@@ -33,7 +33,7 @@ flowchart LR
     S --> D[desks/<br/>prompt · tools · store]
     D --> R[runtime/<br/>turn loop · commit check]
     R --> P[ports/<br/>Protocols]
-    A[adapters/<br/>Maira · Groq · Jev · Gemini · Qdrant<br/>Telegram · Messenger · SSLCommerz] -. implement .-> P
+    A[adapters/<br/>Maira · Groq · Gemini · Qdrant<br/>Telegram · Messenger · SSLCommerz] -. implement .-> P
     S & D --> DB[(SQLite)]
     A --> Q[(Qdrant)]
 ```
@@ -58,7 +58,6 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 | Backend | Python 3.12, FastAPI (async), pydantic v2 |
 | Data | SQLAlchemy 2.0 (async) and Alembic on SQLite; Qdrant for documents and photos |
 | Talking | Gigalogy's Maira (default) or Groq (`openai/gpt-oss-120b`), behind one `LanguageModel` port |
-| Commit check | Jev (TypeSafe): the yes/no check before anything is saved |
 | Knowledge and photos | Gemini embeddings, hybrid (meaning + exact word) search in Qdrant |
 | Voice | Pipecat over WebRTC, Silero VAD; Deepgram, Chorus or our Whisper to hear; a Bangla voice (our TTS server) or Piper to speak |
 | Channels and payments | Telegram Bot API, Messenger (Graph API), SSLCommerz |
@@ -79,8 +78,8 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 - **Webhooks and payments:** Telegram posts must carry the bot's own random secret, and
   Messenger posts must carry Facebook's HMAC signature. A payment counts only after SSLCommerz's
   own API confirms it.
-- **The model:** nothing is saved without a read-back and a yes, checked by Jev, which fails
-  closed. Passages from documents are given to the model as facts, never as instructions.
+- **The model:** nothing is saved without a read-back and a yes: the model judges the yes, and
+  Python saves only the details the visitor heard read back. Passages from documents are given to the model as facts, never as instructions.
 - **Data:**
   - Logs hold ids only, never message text, names or phone numbers.
   - Uploads are capped at 10 MB.
@@ -113,8 +112,6 @@ In `.env`, pick the providers:
 - **Talking:** `LLM_PROVIDER=gigalogy` with the three `GIGALOGY_*` keys (see
   [docs/gigalogy.md](docs/gigalogy.md)), or `LLM_PROVIDER=groq` with `GROQ_API_KEY`. `fake` runs
   without keys but only says canned lines.
-- **The commit check:** `DECIDER=jev` with `TYPESAFE_API_KEY`. With `fake`, no order or message
-  is ever saved: it always says no.
 - **Documents and photos:** `GEMINI_API_KEY` for embeddings, and Qdrant for search. Set
   `QDRANT_URL` and `QDRANT_API_KEY` from a Qdrant Cloud cluster, or leave the URL empty to use a
   local folder. `EMBEDDER=fake` runs offline but only matches words.

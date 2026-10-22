@@ -1,6 +1,6 @@
 import tempfile
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,7 +14,6 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 import heydesk.desks  # noqa: F401  (registers every desk's tables)
-from heydesk.adapters.decider.fake import FakeDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
@@ -29,7 +28,7 @@ from heydesk.desks.restaurant.values import MenuItem
 from heydesk.main import create_app
 from heydesk.models import Conversation
 from heydesk.runtime.config import Handoff
-from heydesk.runtime.tool import ToolContext
+from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.wiring import build_services
@@ -71,11 +70,17 @@ def make_ctx(store: Any = None, state: dict[str, Any] | None = None, **kw: Any) 
         "store": store,
         "state": state or {},
         "now": FIXED_NOW,
-        "decider": FakeDecider(),
-        "agent_said": "",
-        "visitor_said": "",
+        "heard": "",
     }
     return ToolContext(**(fields | kw))
+
+
+async def said_yes[A](
+    run: Callable[[ToolContext[Any], A], Awaitable[ToolResult]], ctx: ToolContext[Any], args: A
+) -> ToolResult:
+    """A writing tool called twice: it reads back, the visitor says yes, it saves (rule 2)."""
+    asked = await run(ctx, args)
+    return await run(replace(ctx, heard=asked.data["read_back"]), args)
 
 
 def make_test_settings() -> Settings:
@@ -129,7 +134,6 @@ class World:
     services: Services
     sessions: async_sessionmaker[AsyncSession]
     llm: FakeLLM
-    decider: FakeDecider  # says no unless a test scripts it
     clock: Clock
     embedder: FakeEmbedder
 
@@ -169,13 +173,11 @@ class World:
 async def world() -> AsyncIterator[World]:
     engine, sessions = make_engine("sqlite+aiosqlite://")
     await create_tables(engine)
-    llm, decider, clock = FakeLLM(), FakeDecider(), Clock()
+    llm, clock = FakeLLM(), Clock()
     embedder, store, photos = make_knowledge()
-    services = build_services(
-        sessions, llm, decider, embedder, store, photos, make_test_settings(), clock
-    )
+    services = build_services(sessions, llm, embedder, store, photos, make_test_settings(), clock)
     await services.agents.ensure_dev_agent("restaurant", SEED)
-    yield World(services, sessions, llm, decider, clock, embedder)
+    yield World(services, sessions, llm, clock, embedder)
     await store.client.close()
     await engine.dispose()
 
@@ -186,7 +188,6 @@ async def app() -> AsyncIterator[FastAPI]:
     app = create_app(
         make_test_settings(),
         llm=FakeLLM(),
-        decider=FakeDecider(),
         embedder=embedder,
         knowledge_store=store,
         photo_index=photos,

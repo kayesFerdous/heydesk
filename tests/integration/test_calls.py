@@ -17,7 +17,7 @@ from heydesk.ports.llm import ToolCall
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from tests.conftest import SEEDS, World
-from tests.integration.test_shop import DETAILS, KURTI, NO, READ_BACK, YES
+from tests.integration.test_shop import DETAILS, KURTI, READ_BACK
 
 MOBILE = "01712345678"  # the one in DETAILS
 
@@ -34,7 +34,6 @@ async def order(services: Services, agent: LiveAgent, phone: str = MOBILE) -> Sh
     """A kurti ordered over two turns, with a yes; returns the order."""
     runtime = services.conversations.runtime
     details = {**DETAILS, "phone": phone}
-    runtime.decider.script = [NO, YES]
     runtime.llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", details),
@@ -103,12 +102,9 @@ async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_i
     assert (talking.status, talking.conversation_id) == ("talking", call.id)
 
     confirm = ToolCall("c", "confirm_order", {})
-    world.decider.script = [NO]  # "hmm, wait"
-    await world.say(agent, call.id, [confirm, "Shall I confirm it?"], "hmm, wait")
-    assert "Read this back" in await world.tool_said(call.id)
+    await world.say(agent, call.id, ["Shall I confirm it?"], "hmm, wait")  # not a yes
     assert await status_of(world, placed.id) == "new"
 
-    world.decider.script = [YES]
     await world.say(agent, call.id, [confirm, "Confirmed, thank you. Goodbye!"], "yes")
     assert await status_of(world, placed.id) == "confirmed"
     assert (await world.conversation(call.id)).state["calling"]["over"]  # it hangs up

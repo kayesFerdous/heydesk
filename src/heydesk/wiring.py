@@ -8,10 +8,7 @@ from datetime import datetime
 
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
-from heydesk.adapters.decider.fake import FakeDecider
-from heydesk.adapters.decider.jev import JevDecider
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.embedder.gemini import GeminiEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
@@ -29,7 +26,6 @@ from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.adapters.whatsapp.cloud import WhatsAppCloud
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
-from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
@@ -82,19 +78,6 @@ def _required(settings: Settings, name: str, because: str = "") -> str:
             f"{because or 'LLM_PROVIDER=' + settings.LLM_PROVIDER} needs {name} in .env"
         )
     return value
-
-
-def build_decider(settings: Settings) -> Decider:
-    if settings.DECIDER == "jev":
-        if not settings.TYPESAFE_API_KEY:
-            raise RuntimeError("DECIDER=jev needs TYPESAFE_API_KEY in .env")
-        client = AsyncTypeSafeClient(
-            api_key=settings.TYPESAFE_API_KEY,
-            timeout=settings.TYPESAFE_TIMEOUT,
-            retry=RetryPolicy(max_retries=0),  # inside a tool's timeout; a failure fails closed
-        )
-        return JevDecider(client, settings.TYPESAFE_MODEL)
-    return FakeDecider()  # says no to everything: no order is ever confirmed
 
 
 def build_embedder(settings: Settings) -> Embedder:
@@ -175,7 +158,6 @@ def build_mailer(settings: Settings) -> Mailer:
 def build_services(
     sessions: async_sessionmaker[AsyncSession],
     llm: LanguageModel,
-    decider: Decider,
     embedder: Embedder,
     store: KnowledgeStore,
     photo_index: PhotoIndex,
@@ -189,7 +171,7 @@ def build_services(
     woo: WooApi | None = None,
     fetch_photo: FetchImage | None = None,
 ) -> Services:
-    runtime = Runtime(llm=llm, decider=decider)
+    runtime = Runtime(llm=llm)
     gateway = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     photos = build_photos(settings, embedder, photo_index, fetch_photo)

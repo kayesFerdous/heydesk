@@ -25,11 +25,6 @@ class Settings(BaseSettings):
     GIGALOGY_PROFILE_ID: str = ""  # the Maira profile picks the model, not MODEL
     MODEL: str = "openai/gpt-oss-120b"  # Groq's model for every agent
 
-    DECIDER: Literal["jev", "fake"] = "fake"
-    TYPESAFE_API_KEY: str = ""
-    TYPESAFE_MODEL: str = "jev-latest"  # pin a version the day a judgment changes under you
-    TYPESAFE_TIMEOUT: float = 5.0
-
     # The knowledge base (D33, D34): documents are embedded by Gemini and searched in Qdrant
     EMBEDDER: Literal["gemini", "fake"] = "gemini"
     GEMINI_API_KEY: str = ""
@@ -153,8 +148,6 @@ class Settings(BaseSettings):
             problems.append("SECRETS_KEY is empty")
         if self.LLM_PROVIDER == "fake":
             problems.append("LLM_PROVIDER is fake")
-        if self.DECIDER == "fake":
-            problems.append("DECIDER is fake")
         if self.EMBEDDER == "fake":
             problems.append("EMBEDDER is fake")
         if self.PAYMENTS == "fake":

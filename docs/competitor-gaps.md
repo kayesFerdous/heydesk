@@ -30,7 +30,7 @@ start that paperwork early.
 | **ManyChat** (global) | $14 – 139 | Instagram, Messenger, WhatsApp, TikTok | Comment and story triggers, follow-up sequences |
 
 **What we already do better:**
-- Nothing is saved without a read-back and a yes, checked by Jev.
+- Nothing is saved without a read-back and a yes.
 - Python works out every price.
 - Bangla voice in the browser, and confirmation calls.
 - Four kinds of business, not just shops.

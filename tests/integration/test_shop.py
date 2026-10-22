@@ -47,7 +47,7 @@ from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.services.photos import to_jpeg
-from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business
+from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business, said_yes
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
 PANJABIS = {"code": "panjabi-cotton", "quantity": 2, "size": "L", "colour": "White"}
@@ -58,8 +58,6 @@ DETAILS = {
     "phone": "০১৭১২-৩৪৫৬৭৮",  # typed in Bangla digits
 }
 READ_BACK = "1 Cotton Kurti, ৳950 plus ৳60 delivery, ৳1,010 cash on delivery… Shall I place it?"
-YES = {"read_back": 0.95, "said_yes": 0.95}
-NO = {"read_back": 0.1, "said_yes": 0.1}
 
 
 def cart(*lines: dict[str, object]) -> UpdateCartInput:
@@ -82,7 +80,6 @@ async def stock(
 
 async def buy(world: World, agent: LiveAgent, *lines: dict[str, object]) -> str:
     """A whole order over two turns, with a yes. Returns the order's code."""
-    world.decider.script = [NO, YES]
     first = [
         ToolCall("c1", "update_cart", {"lines": list(lines)}),
         ToolCall("c2", "place_order", DETAILS),
@@ -230,7 +227,6 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
 
 async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: World) -> None:
     agent = await world.agent("shop")
-    world.decider.script = [NO, {"read_back": 0.95, "said_yes": 0.3}]  # then "hmm, maybe"
     first = [
         ToolCall(
             "c1",
@@ -239,10 +235,9 @@ async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: W
         )
     ]
     conv = await world.say(agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK])
-    await world.say(agent, conv, [ToolCall("c3", "place_order", DETAILS), READ_BACK], "hmm, maybe")
+    await world.say(agent, conv, [READ_BACK], "hmm, maybe")  # not a yes: the model asks again
     assert await orders(world) == []
 
-    world.decider.script = [YES]
     await world.say(agent, conv, [ToolCall("c4", "place_order", DETAILS), "Done."], "yes")
     [saved] = await orders(world)
     assert (saved.code, saved.conversation_id, saved.status) == ("O-101", conv, "new")
@@ -262,8 +257,7 @@ async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world:
     silk = {"code": "panjabi-silk", "quantity": 1, "size": "M", "colour": "Gold"}
     state = (await update_cart(make_ctx(store, agent=agent.config), cart(silk))).state
     ctx = make_ctx(store, state=state, agent=agent.config)
-    ctx.decider.script = [YES]
-    placed = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
+    placed = await said_yes(place_order, ctx, PlaceOrderInput.model_validate(DETAILS))
 
     assert placed.ok and placed.alert
     assert "🛍️ New order O-102" in placed.alert
@@ -289,7 +283,6 @@ async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world:
     conv = await world.say(agent, None, [stranger, "Not found."])
     assert "No order matches that code and mobile number" in await world.tool_said(conv)
 
-    world.decider.script = [NO, YES]
     cancel = ToolCall("x", "cancel_order", {"code": code, "phone": "01712345678"})
     conv = await world.say(agent, None, [cancel, "Cancel O-101: 2 Cotton Panjabi, ৳3,700?"])
     assert (
@@ -311,7 +304,6 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     assert len((await client.get("/api/products")).json()) == 6
 
     runtime = services.conversations.runtime
-    runtime.decider.script = [NO, YES]
     runtime.llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
@@ -440,7 +432,6 @@ async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:
     await world.say(agent, elsewhere, [stranger, "Not found."], "01811111111")
     assert "No order was placed with that mobile" in await world.tool_said(elsewhere)
 
-    world.decider.script = [YES]
     cancel = ToolCall("x", "cancel_order", {"phone": "01712345678"})  # changing needs the code
     await world.say(agent, elsewhere, [cancel, "Which code?"], "cancel it")
     assert "Ask for the order code" in await world.tool_said(elsewhere)
@@ -454,8 +445,7 @@ async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: 
     )
     state = (await update_cart(make_ctx(world.store(agent), agent=no_call), cart(KURTI))).state
     ctx = make_ctx(world.store(agent), state=state, agent=no_call)
-    ctx.decider.script = [YES]
-    placed = await place_order(ctx, PlaceOrderInput.model_validate(DETAILS))
+    placed = await said_yes(place_order, ctx, PlaceOrderInput.model_validate(DETAILS))
     assert "that it's confirmed and will be sent out" in placed.data["next"]
     assert "will call" not in placed.data["next"]
     [order] = await orders(world)
@@ -474,10 +464,9 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
 
-    def ctx() -> ToolContext[Any]:
-        return make_ctx(store, agent=agent.config, decider=world.decider)
+    def ctx(heard: str = "") -> ToolContext[Any]:
+        return make_ctx(store, agent=agent.config, heard=heard)
 
-    world.decider.script = [NO]
     no_district = await change_order(ctx(), ChangeOrderInput(address="Zindabazar, Sylhet"))
     assert "district too" in no_district.data["error"]
     sylhet = ChangeOrderInput(district="Sylhet", address="Zindabazar, Sylhet")
@@ -490,8 +479,7 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     [unchanged] = await orders(world)
     assert unchanged.zone == "Inside Dhaka"  # no yes, no change
 
-    world.decider.script = [YES]
-    done = await change_order(ctx(), sylhet)
+    done = await change_order(ctx(asked.data["read_back"]), sylhet)
     assert done.ok and done.alert and "✏️ Order O-101 changed" in done.alert
     [changed] = await orders(world)
     assert (changed.zone, changed.delivery_charge, changed.total) == (
@@ -504,14 +492,12 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     assert "Ask what they want to change" in nothing.data["error"]
 
     two = ChangeOrderInput.model_validate({"items": [KURTI | {"quantity": 2}]})  # D92
-    world.decider.script = [NO]
     asked = await change_order(ctx(), two)
     assert asked.data["read_back"] == (
         "Change order O-101: items: 1 × Cotton Kurti (M, Black) → 2 × Cotton Kurti (M, Black); "
         "total: ৳1,070 → ৳2,020"
     )
-    world.decider.script = [YES]
-    assert (await change_order(ctx(), two)).ok
+    assert (await change_order(ctx(asked.data["read_back"]), two)).ok
     [more] = await orders(world)
     assert (more.subtotal, more.total, more.lines[0]["quantity"]) == (190000, 202000, 2)
     sold_out = {"code": "jamdani-saree", "quantity": 1, "colour": "Red"}
@@ -549,10 +535,7 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
     for status in ("confirmed", "shipped", "delivered"):
         await store.move_order(order.id, status)
 
-    world.decider.script = [YES]
-    two_days_on = make_ctx(
-        store, agent=agent.config, decider=world.decider, now=FIXED_NOW + timedelta(days=2)
-    )
+    two_days_on = make_ctx(store, agent=agent.config, now=FIXED_NOW + timedelta(days=2))
     no_such_size = await request_exchange(
         two_days_on, ExchangeInput(product="panjabi-cotton", size="3XL")
     )
@@ -562,7 +545,7 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
     not_ordered = await request_exchange(two_days_on, ExchangeInput(product="kurti", size="M"))
     assert "The order has: 2 × Cotton Panjabi (L, White)" in not_ordered.data["error"]
 
-    asked = await request_exchange(two_days_on, swap)
+    asked = await said_yes(request_exchange, two_days_on, swap)
     assert asked.ok and asked.data["code"] == "M-101"
     assert asked.alert and (
         "Exchange for order O-101: 1 × Cotton Panjabi (L, White) for 1 × Cotton Panjabi "
@@ -823,7 +806,6 @@ async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: Wor
     and address in the prompt, to offer again (D81). Its first conversation didn't."""
     agent = await world.agent("shop")
     talk = world.services.conversations
-    world.decider.script = [NO, YES]
     world.llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),

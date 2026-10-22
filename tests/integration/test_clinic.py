@@ -19,7 +19,7 @@ from heydesk.desks.clinic.tools import (
 )
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import LiveAgent
-from tests.conftest import SEEDS, World, make_ctx
+from tests.conftest import SEEDS, World, make_ctx, said_yes
 
 DETAILS = {
     "doctor": "Dr. Hasan",  # Tue and Wed, 18:00-21:00; tomorrow is Wed 30 Sep
@@ -28,8 +28,6 @@ DETAILS = {
     "phone": "01712345678",
 }
 READ_BACK = "An appointment with Dr. Hasan, Wed 30 Sep at 7:00 pm, for Kayes. Shall I send it?"
-YES = {"read_back": 0.95, "said_yes": 0.95}
-NO = {"read_back": 0.1, "said_yes": 0.1}
 
 
 def request(**changes: str) -> ToolCall:
@@ -42,7 +40,6 @@ async def appointments(world: World) -> list[Appointment]:
 
 
 async def book(world: World, agent: LiveAgent) -> Appointment:
-    world.decider.script = [NO, YES]
     conv = await world.say(agent, None, [request(), READ_BACK])
     await world.say(agent, conv, [request(), "Sent."], "yes")
     [saved] = await appointments(world)
@@ -69,11 +66,10 @@ async def test_the_doctors_are_in_the_prompt_with_their_days_and_hours(world: Wo
 
 async def test_an_appointment_request_is_saved_only_after_a_yes(world: World) -> None:
     agent = await world.agent("clinic")
-    world.decider.script = [NO, {"read_back": 0.95, "said_yes": 0.3}, YES]
     conv = await world.say(agent, None, [request(), READ_BACK], "Dr. Hasan tomorrow 7 pm…")
     assert "Dr. Imran Hasan on Wed 30 Sep, 7:00 pm, for Kayes" in await world.tool_said(conv)
 
-    await world.say(agent, conv, [request(), READ_BACK], "hmm, maybe")
+    await world.say(agent, conv, [READ_BACK], "hmm, maybe")  # not a yes: the model asks again
     assert await appointments(world) == []
 
     await world.say(agent, conv, [request(), "Sent!"], "yes please")
@@ -96,7 +92,6 @@ async def test_a_doctor_is_booked_only_when_they_see_patients(world: World) -> N
     assert "isn't one of our doctors" in await problems(doctor="Dr. Who")
     missing = await problems(name="", phone="")
     assert '"still_needed": ["name", "phone"]' in missing
-    assert world.decider.asked == []  # nothing was ready to read back, so Jev wasn't asked
     assert await appointments(world) == []
 
 
@@ -119,7 +114,6 @@ async def test_an_appointment_is_cancelled_with_its_code_and_name_after_a_yes(
     def cancel(code: str, name: str) -> list[object]:
         return [ToolCall("c", "cancel_appointment", {"code": code, "name": name}), "…"]
 
-    world.decider.script = [NO, YES]
     wrong = await world.say(agent, None, cancel("a101", "Someone Else"))
     assert "No appointment matches that code and name" in await world.tool_said(wrong)
     assert "Hasan" not in await world.tool_said(wrong)  # nothing about it leaks
@@ -145,8 +139,8 @@ async def test_an_appointment_moves_only_to_a_time_the_doctor_works(world: World
 
     conv = await world.say(agent, None, move("monday at 7 pm"))  # Dr. Hasan: Tue and Wed
     assert "not on Mondays" in await world.tool_said(conv)
+    await world.say(agent, conv, move("tuesday at 8 pm"))  # read back first
 
-    world.decider.script = [YES]
     await world.say(agent, conv, move("tuesday at 8 pm"), "yes")
     [moved] = await appointments(world)
     assert moved.at.isoformat() == "2026-09-29T14:00:00+00:00"  # today, 8 pm in Dhaka
@@ -206,15 +200,18 @@ async def test_the_owner_hears_each_request_move_and_cancel(world: World) -> Non
 
     def ctx() -> Any:
         made = make_ctx(world.store(agent), agent=agent.config)
-        made.decider.script = [YES]
         return made
 
-    asked = await request_appointment(ctx(), RequestAppointmentInput.model_validate(DETAILS))
+    asked = await said_yes(
+        request_appointment, ctx(), RequestAppointmentInput.model_validate(DETAILS)
+    )
     assert asked.alert and asked.alert.startswith("🩺 New appointment request A-101")
     who = {"code": "A-101", "name": "Kayes"}
-    moved = await reschedule_appointment(
-        ctx(), RescheduleInput.model_validate(who | {"new_time": "tuesday at 8 pm"})
+    moved = await said_yes(
+        reschedule_appointment,
+        ctx(),
+        RescheduleInput.model_validate(who | {"new_time": "tuesday at 8 pm"}),
     )
     assert moved.alert and moved.alert.startswith("✏️ Appointment A-101 moved")
-    cancelled = await cancel_appointment(ctx(), CancelInput.model_validate(who))
+    cancelled = await said_yes(cancel_appointment, ctx(), CancelInput.model_validate(who))
     assert cancelled.alert == "❌ Appointment A-101 cancelled"

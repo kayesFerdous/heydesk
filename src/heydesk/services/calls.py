@@ -303,7 +303,10 @@ class CallService:
             workspace_id=agent.workspace_id,
             agent_id=agent.agent_id,
             channel="voice",
-            state={"calling": {"number": order.number, "code": order.code, "said": said}},
+            state={
+                "calling": {"number": order.number, "code": order.code, "said": said},
+                "read_back": said,  # the opening line reads the order back (rule 2)
+            },
             messages=[self.llm.assistant_message(said)],
             created_at=now,
             updated_at=now,

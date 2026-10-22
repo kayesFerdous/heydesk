@@ -153,7 +153,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     read_back = f"{cart_text(cart, currency)}; {how}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
-    confirmed = await confirm(ctx.decider, order, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, order, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "place_order")
     saved = await ctx.store.place_order(confirmed)
@@ -310,7 +310,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     if not changes:
         return fail("That's what the order already has. Ask what they want to change.")
     read_back = f"Change order {found.code}: " + "; ".join(changes)
-    confirmed = await confirm(ctx.decider, edit, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, edit, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "change_order")
     try:
@@ -352,9 +352,7 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     read_back = (
         f"Cancel order {found.code}: {found.about()}, total {money(found.total, found.currency)}"
     )
-    confirmed = await confirm(
-        ctx.decider, OrderCancel(found.number), read_back, ctx.agent_said, ctx.visitor_said
-    )
+    confirmed = confirm(ctx.heard, OrderCancel(found.number), read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "cancel_order")
     await ctx.store.cancel_order(confirmed)
@@ -416,7 +414,7 @@ async def book_table(ctx: Ctx, args: BookTableInput) -> ToolResult:
     read_back = f"Table for {people} on {parse.day_time(at)}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
-    confirmed = await confirm(ctx.decider, booking, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, booking, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "book_table")
     saved = await ctx.store.book_table(confirmed)
@@ -476,7 +474,7 @@ async def cancel_booking(ctx: Ctx, args: CancelBookingInput) -> ToolResult:
     when = parse.day_time(found.at.astimezone(ctx.local_now.tzinfo))
     read_back = f"Cancel booking {found.code}: table for {found.people} on {when}"
     cancel = BookingCancel(found.number)
-    confirmed = await confirm(ctx.decider, cancel, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, cancel, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "cancel_booking")
     await ctx.store.cancel_booking(confirmed)

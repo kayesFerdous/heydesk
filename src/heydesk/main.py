@@ -14,7 +14,6 @@ from heydesk.config import Settings
 from heydesk.db import make_engine, use_secrets_key, utcnow
 from heydesk.errors import register_exception_handlers
 from heydesk.logs import RequestLogMiddleware, configure_logging
-from heydesk.ports.decider import Decider
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
@@ -24,7 +23,6 @@ from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
 from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.wiring import (
-    build_decider,
     build_embedder,
     build_knowledge_store,
     build_llm,
@@ -38,7 +36,6 @@ def create_app(
     settings: Settings | None = None,
     *,
     llm: LanguageModel | None = None,
-    decider: Decider | None = None,
     embedder: Embedder | None = None,
     knowledge_store: KnowledgeStore | None = None,
     photo_index: PhotoIndex | None = None,
@@ -67,7 +64,6 @@ def create_app(
         app.state.services = build_services(
             sessions,
             llm or build_llm(settings),
-            decider or build_decider(settings),
             embedder or build_embedder(settings),
             store,
             photos,

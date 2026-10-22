@@ -23,7 +23,7 @@
 # Options for api, web, all and public:
 #   -t, --tunnel    a public link: ngrok on PUBLIC_URL if .env has one, else Cloudflare
 #   --cf            a throwaway Cloudflare link, even with PUBLIC_URL
-#   --fake          offline: fake model, decider and embedder (canned lines, nothing is saved)
+#   --fake          offline: fake model and embedder (canned lines, nothing is saved)
 #   --groq          talk with Groq instead of .env's LLM_PROVIDER
 #   --desk NAME     the agent at / is another desk: restaurant, clinic, receptionist, shop
 #   -o, --open      open the browser when it's up
@@ -194,7 +194,7 @@ start() { # api | web | all, then options
       -t | --tunnel) tunnel=auto ;;
       --cf | --cloudflare) tunnel=cloudflare ;;
       --ngrok) tunnel=ngrok ;;
-      --fake) export LLM_PROVIDER=fake DECIDER=fake EMBEDDER=fake ;;
+      --fake) export LLM_PROVIDER=fake EMBEDDER=fake ;;
       --groq) export LLM_PROVIDER=groq ;;
       --desk)
         [[ -f examples/agents/${2:-}.yaml ]] || die "--desk takes one of: $(desks)"
@@ -436,7 +436,6 @@ doctor() {
     gigalogy) key GIGALOGY_API_KEY "LLM_PROVIDER=gigalogy" && key GIGALOGY_PROJECT_KEY "LLM_PROVIDER=gigalogy" ;;
     groq) key GROQ_API_KEY "LLM_PROVIDER=groq" ;;
   esac
-  [[ $(setting DECIDER fake) == jev ]] && key TYPESAFE_API_KEY "DECIDER=jev"
   [[ $(setting EMBEDDER gemini) == gemini ]] && key GEMINI_API_KEY "EMBEDDER=gemini"
   [[ $(setting STT_PROVIDER deepgram) == deepgram ]] && key DEEPGRAM_API_KEY "voice calls"
   if [[ -n $(setting PUBLIC_URL) ]]; then ok "PUBLIC_URL: $(setting PUBLIC_URL)"; else warn "PUBLIC_URL is empty: public links use Cloudflare"; fi

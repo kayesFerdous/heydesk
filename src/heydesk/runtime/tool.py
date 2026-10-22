@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
-from heydesk.ports.decider import Decider
 from heydesk.ports.llm import ToolCall, ToolSpec
 from heydesk.runtime.config import AgentConfig
 
@@ -30,9 +29,7 @@ class ToolContext[S]:
     store: S
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     now: datetime  # when the turn started, in UTC
-    decider: Decider  # for the commit check
-    agent_said: str  # the agent's last message before this turn: the read-back, if there was one
-    visitor_said: str  # this turn's message: the yes, if there was one
+    heard: str  # the last read-back the visitor heard, before this turn: "" if none
     # "web", "voice", "telegram", "messenger", "whatsapp": all but voice show photos (D57, D62, D63)
     channel: str = "web"
 

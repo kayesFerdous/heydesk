@@ -192,8 +192,8 @@ async def test_a_cards_button_is_a_message_and_is_signed(app: FastAPI, client: A
 async def test_a_yes_tapped_with_no_read_back_saves_nothing(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """A tap is only words: Jev still checks the read-back (rule 2), and the reply asks for a
-    yes with Yes and Change buttons (D99)."""
+    """A tap is only words: with no read-back before it, nothing is saved (rule 2), and the
+    reply asks for a yes with Yes and Change buttons (D99)."""
     await services_shop(app)
     await connect(client)
     services = app.state.services
@@ -208,9 +208,6 @@ async def test_a_yes_tapped_with_no_read_back_saves_nothing(
 
     async with app.state.sessions() as s:
         assert list(await s.scalars(select(ShopOrder))) == []
-    asked = services.conversations.runtime.decider.asked[-1]
-    assert asked["visitor_reply"] == "Yes"
-    assert asked["agent_last_message"].startswith("Assalamu alaikum")  # the greeting, no read-back
     assert services.channels.messenger.choices == [(PSID, ["Yes", "Change"])]
 
 

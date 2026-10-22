@@ -8,7 +8,6 @@ from httpx import AsyncClient
 from heydesk.ports.llm import ToolCall
 from heydesk.services.team import GIVEN_BACK, LINKED, OLD_LINK, PICK_A_CHAT, TAKEN_OVER
 from tests.conftest import DEV_KEY
-from tests.integration.test_messages import YES
 from tests.integration.test_restaurant import place_an_order
 from tests.integration.test_telegram import CHAT, connect, message, send, sent
 
@@ -59,7 +58,6 @@ async def test_a_message_for_the_team_is_an_alert_too(app: FastAPI, client: Asyn
     runtime = app.state.services.conversations.runtime
     take = ToolCall("c", "take_message", {"message": "Do you cater weddings?"})
     runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
-    runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
     )

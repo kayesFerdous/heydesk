@@ -95,7 +95,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
     read_back = f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}" + (
         f"; a deposit of {amount} paid online now" if deposit else ""
     )
-    confirmed = await confirm(ctx.decider, appointment, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, appointment, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "request_appointment")
     saved = await ctx.store.save_appointment(confirmed)
@@ -164,7 +164,7 @@ async def _change(
     ctx: Ctx, change: AppointmentChange, read_back: str, tool: str, alert: str
 ) -> ToolResult:
     """The commit check (rule 2): the change is made only after a read-back and a yes."""
-    confirmed = await confirm(ctx.decider, change, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, change, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, tool)
     await ctx.store.change_appointment(confirmed)

@@ -23,8 +23,6 @@ from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.services.payments import Payable
 from tests.conftest import SEEDS, World, make_ctx
 
-YES = {"read_back": 0.95, "said_yes": 0.95}
-NO = {"read_back": 0.1, "said_yes": 0.1}
 SHOP_ORDER = {"lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}]}
 SHOP_DETAILS = {
     "district": "Dhaka",
@@ -59,7 +57,6 @@ def pay_first(services: Services, kind: str) -> dict[str, Any]:
 
 async def take(world: World, agent: LiveAgent, first: list[Any], tool: ToolCall) -> str:
     """Asks for the yes, then says it; returns the conversation id."""
-    world.decider.script = [NO, YES]
     conv = await world.say(agent, None, [*first, tool, "Shall I?"], "…")
     await world.say(agent, conv, [tool, "Pay here…"], "yes")
     return conv
@@ -88,7 +85,6 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
     assert "the delivery charge ৳60 paid online first, then ৳950 in cash on delivery" in (
         await world.tool_said(conv)
     )
-    world.decider.script = [YES]
     await world.say(agent, conv, [ToolCall("c3", "place_order", SHOP_DETAILS), "Pay…"], "yes")
     order = await found(world, conv)
     assert order.status == "unpaid"  # held, not placed: the yes alone isn't enough
@@ -182,7 +178,6 @@ async def test_the_clinic_request_waits_for_its_deposit_even_when_moved(world: W
     assert (appointment.status, appointment.due) == ("unpaid", 50000)
 
     move = {"code": "A-101", "name": "Kayes", "new_time": "tuesday at 8 pm"}
-    world.decider.script = [YES]
     await world.say(agent, None, [ToolCall("m", "reschedule_appointment", move), "Moved."], "yes")
     assert (await found(world, conv)).status == "unpaid"  # moving it doesn't pay for it
 
@@ -199,15 +194,20 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
     services = app.state.services
     agent, gateway = await paying_first(services, "shop")
     runtime = services.conversations.runtime
-    runtime.decider.script = [YES]
     runtime.llm.script = [
         ToolCall("c1", "update_cart", SHOP_ORDER),
         ToolCall("c2", "place_order", SHOP_DETAILS),
+        "Shall I place it?",
+        ToolCall("c3", "place_order", SHOP_DETAILS),
         "Pay here…",
     ]
+    first = await client.post(
+        f"/api/chat/{agent.public_key}", json={"visitor_id": "test-visitor", "message": "a kurti"}
+    )
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
     await client.post(
         f"/api/chat/{agent.public_key}",
-        json={"visitor_id": "test-visitor", "message": "a kurti, yes"},
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
     )
     [order] = (await client.get("/api/shop/orders")).json()
 

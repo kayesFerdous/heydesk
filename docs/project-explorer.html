@@ -707,8 +707,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "confirm()",
    "type": "core",
    "file": "src/heydesk/runtime/guards.py",
-   "purpose": "The commit check: asks the decider two yes/no questions; both ≥ 0.7 → Confirmed[T]; anything else → None.",
-   "inputs": "value, read-back, agent_said, visitor_said",
+   "purpose": "The commit check: Confirmed[T] only when this call's read-back equals the one the visitor heard on an earlier turn (state.read_back); else None (D107).",
+   "inputs": "heard, value, read_back",
    "outputs": "Confirmed[T] | None",
    "fn": "confirm"
   },
@@ -881,15 +881,6 @@ tr.hl td { background: var(--accent-soft); }
    "outputs": "ModelEvent"
   },
   {
-   "id": "p-decider",
-   "label": "Decider",
-   "type": "port",
-   "file": "src/heydesk/ports/decider.py",
-   "purpose": "Typed judgments: YesNo / Choice / Score → Answer with probability.",
-   "inputs": "state, questions",
-   "outputs": "answers"
-  },
-  {
    "id": "p-embedder",
    "label": "Embedder",
    "type": "port",
@@ -1014,25 +1005,6 @@ tr.hl td { background: var(--accent-soft); }
    "type": "adapter",
    "file": "src/heydesk/adapters/llm/fake.py",
    "purpose": "Plays a script (text, tool call or exception); echoes when it runs out. Tests and offline dev.",
-   "inputs": "",
-   "outputs": ""
-  },
-  {
-   "id": "ad-jev",
-   "label": "JevDecider",
-   "type": "adapter",
-   "file": "src/heydesk/adapters/decider/jev.py",
-   "purpose": "TypeSafe Jev: all questions in one system_one call; YesNo → Noul probability.",
-   "inputs": "",
-   "outputs": "",
-   "fn": "decide"
-  },
-  {
-   "id": "ad-fakedecider",
-   "label": "FakeDecider",
-   "type": "adapter",
-   "file": "src/heydesk/adapters/decider/fake.py",
-   "purpose": "Scripted answers; unscripted → no. The default DECIDER, so nothing is confirmed in dev without Jev.",
    "inputs": "",
    "outputs": ""
   },
@@ -1200,15 +1172,6 @@ tr.hl td { background: var(--accent-soft); }
    "type": "external",
    "file": "api.groq.com",
    "purpose": "openai/gpt-oss-120b, streamed.",
-   "inputs": "",
-   "outputs": ""
-  },
-  {
-   "id": "x-jev",
-   "label": "TypeSafe Jev",
-   "type": "external",
-   "file": "typesafe-sdk",
-   "purpose": "Fast typed judgments for the commit check (model jev-latest).",
    "inputs": "",
    "outputs": ""
   },
@@ -2086,11 +2049,6 @@ tr.hl td { background: var(--accent-soft); }
    "label": "makes"
   },
   {
-   "source": "ag-judge",
-   "target": "p-decider",
-   "label": "decide"
-  },
-  {
    "source": "r-prompt",
    "target": "r-config",
    "label": "fill"
@@ -2201,16 +2159,6 @@ tr.hl td { background: var(--accent-soft); }
    "label": "impl"
   },
   {
-   "source": "p-decider",
-   "target": "ad-jev",
-   "label": "impl"
-  },
-  {
-   "source": "p-decider",
-   "target": "ad-fakedecider",
-   "label": "impl"
-  },
-  {
    "source": "p-embedder",
    "target": "ad-gemini",
    "label": "impl"
@@ -2284,11 +2232,6 @@ tr.hl td { background: var(--accent-soft); }
    "source": "ad-groq",
    "target": "x-groq",
    "label": "chat.completions stream"
-  },
-  {
-   "source": "ad-jev",
-   "target": "x-jev",
-   "label": "system_one"
   },
   {
    "source": "ad-gemini",
@@ -2385,18 +2328,6 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "w-wiring",
    "target": "ad-fakellm",
-   "label": "builds",
-   "dashed": true
-  },
-  {
-   "source": "w-wiring",
-   "target": "ad-jev",
-   "label": "builds",
-   "dashed": true
-  },
-  {
-   "source": "w-wiring",
-   "target": "ad-fakedecider",
    "label": "builds",
    "dashed": true
   },
@@ -2891,12 +2822,12 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "id": "ag-judge",
-   "label": "Commit judge (Jev)",
+   "label": "Commit check (Python)",
    "file": "src/heydesk/runtime/guards.py",
    "fn": "confirm",
-   "purpose": "A second, small model that only answers two yes/no questions: was it read back, and did they clearly say yes? Fails closed.",
-   "inputs": "details_to_confirm, agent_last_message, visitor_reply",
-   "outputs": "P(yes) for each → Confirmed or None",
+   "purpose": "Not a model: the talking model judges the yes by calling the tool again; Python saves only the details read back on an earlier turn (D107). Fails closed.",
+   "inputs": "heard (state.read_back at the turn's start), the call's read_back",
+   "outputs": "Confirmed or None",
    "tools": []
   },
   {
@@ -4197,16 +4128,6 @@ tr.hl td { background: var(--accent-soft); }
    }
   },
   {
-   "id": "jev_down",
-   "label": "Jev unreachable",
-   "group": "Commit check",
-   "type": "toggle",
-   "default": false,
-   "prompts": [
-    "commit"
-   ]
-  },
-  {
    "id": "provider_m",
    "label": "LLM provider",
    "group": "Server",
@@ -5213,79 +5134,32 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "id": "commit",
-   "title": "Commit check (Jev judge)",
+   "title": "Commit check (read-back match)",
    "file": "src/heydesk/runtime/guards.py",
-   "purpose": "Two yes/no questions decide whether a writing tool may save.",
+   "purpose": "The talking model judges the yes; Python saves only the details the visitor heard read back.",
    "trigger": "A writing tool (place_order, book_table, take_message, …) has every detail and calls `confirm()`.",
    "fragments": [
     {
-     "id": "state",
-     "title": "The state Jev reads",
+     "id": "heard",
+     "title": "What the visitor heard",
      "owner": "python",
-     "file": "src/heydesk/runtime/guards.py",
-     "fn": "confirm",
-     "text": "{\n  \"details_to_confirm\": \"<the tool's read_back>\",\n  \"agent_last_message\": \"<the agent's last words before this turn>\",\n  \"visitor_reply\": \"<this turn's message>\"\n}",
-     "when": {
-      "jev_down": false
-     },
+     "file": "src/heydesk/runtime/loop.py",
+     "fn": "run_turn",
+     "text": "heard = state.get(\"read_back\", \"\")  # the last read-back, from an earlier turn",
      "vars": [
       [
-       "details_to_confirm",
-       "the read_back the writing tool built from its checked details"
-      ],
-      [
-       "agent_last_message",
-       "loop.last_agent_text(history + this turn's additions)"
-      ],
-      [
-       "visitor_reply",
-       "TurnInput.user_text"
+       "read_back",
+       "set by ask_for_yes on an earlier turn's call of a writing tool"
       ]
      ]
     },
     {
-     "id": "q1",
-     "title": "Question read_back (YesNo)",
-     "owner": "platform",
-     "file": "src/heydesk/runtime/guards.py",
-     "fn": "QUESTIONS",
-     "text": "Does agent_last_message repeat the details in details_to_confirm back to the visitor?",
-     "when": {
-      "jev_down": false
-     }
-    },
-    {
-     "id": "q2",
-     "title": "Question said_yes (YesNo)",
-     "owner": "platform",
-     "file": "src/heydesk/runtime/guards.py",
-     "fn": "QUESTIONS",
-     "text": "Is visitor_reply a clear yes to agent_last_message?",
-     "when": {
-      "jev_down": false
-     }
-    },
-    {
-     "id": "threshold",
-     "title": "Both P(yes) ≥ 0.7 → Confirmed[T]",
-     "owner": "python",
-     "file": "src/heydesk/runtime/guards.py",
-     "fn": "THRESHOLD",
-     "text": "if read_back.likely(0.7) and said_yes.likely(0.7):\n    return Confirmed(value)\nreturn None",
-     "when": {
-      "jev_down": false
-     }
-    },
-    {
-     "id": "down",
-     "title": "Jev down → None (fail closed)",
+     "id": "match",
+     "title": "Same details → Confirmed[T]",
      "owner": "python",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "confirm",
-     "text": "except DeciderUnavailable:\n    log.warning('commit check unavailable')\n    return None   # nothing is saved; the tool asks for a yes again",
-     "when": {
-      "jev_down": true
-     }
+     "text": "return Confirmed(value) if heard and heard == read_back else None"
     },
     {
      "id": "ask",
@@ -5293,7 +5167,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "python",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "ask_for_yes",
-     "text": "{\"read_back\": \"...\", \"next\": \"Read this back and ask for a clear yes. Only after the yes, call <tool> again with the same details.\"}\nchoices: [\"Yes\", \"Change\"]"
+     "text": "{\"read_back\": \"...\", \"next\": \"Read this back and ask for a clear yes. Only after their clear yes, call <tool> again with the same details. A change, a question or a maybe is not a yes.\"}\nstate: {\"read_back\": \"...\"}\nchoices: [\"Yes\", \"Change\"]"
     }
    ]
   },
@@ -5889,16 +5763,10 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "conf",
-     "label": "confirm(decider, value, read_back, agent_said, visitor_said)",
+     "label": "confirm(ctx.heard, value, read_back)",
      "shape": "decision",
-     "code": "answers = await decider.decide(state, QUESTIONS)\nif read_back.likely(0.7) and said_yes.likely(0.7):\n    return Confirmed(value)",
+     "code": "return Confirmed(value) if heard and heard == read_back else None",
      "fn": "confirm"
-    },
-    {
-     "id": "down",
-     "label": "Jev down → None",
-     "shape": "fail",
-     "code": "except DeciderUnavailable:\n    return None"
     },
     {
      "id": "yes",
@@ -5946,16 +5814,7 @@ tr.hl td { background: var(--accent-soft); }
     [
      "conf",
      "yes",
-     "not both ≥ 0.7"
-    ],
-    [
-     "conf",
-     "down",
-     "error"
-    ],
-    [
-     "down",
-     "yes"
+     "not the read-back they heard"
     ],
     [
      "conf",
@@ -6847,14 +6706,6 @@ tr.hl td { background: var(--accent-soft); }
      "fn": "build_llm"
     },
     {
-     "id": "dec",
-     "label": "DECIDER: jev | fake (fake = never confirms)",
-     "shape": "decision",
-     "code": "return FakeDecider()  # says no to everything",
-     "file": "src/heydesk/wiring.py",
-     "fn": "build_decider"
-    },
-    {
      "id": "emb",
      "label": "EMBEDDER: gemini | fake (fake → no similarity floor)",
      "shape": "decision",
@@ -6909,14 +6760,6 @@ tr.hl td { background: var(--accent-soft); }
      "dev"
     ],
     [
-     "llm",
-     "dec"
-    ],
-    [
-     "dec",
-     "emb"
-    ],
-    [
      "emb",
      "r2"
     ],
@@ -6927,6 +6770,10 @@ tr.hl td { background: var(--accent-soft); }
     [
      "pub",
      "voice"
+    ],
+    [
+     "llm",
+     "emb"
     ]
    ]
   },
@@ -7242,28 +7089,14 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "t-shop-place_order",
      "to": "r-guards",
-     "data": "confirm(order, read_back, agent_said, visitor_said)",
+     "data": "confirm(ctx.heard, order, read_back)",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "confirm"
     },
     {
      "from": "r-guards",
-     "to": "ag-judge",
-     "data": "read back? said yes? (no read-back yet)",
-     "file": "src/heydesk/runtime/guards.py",
-     "fn": "QUESTIONS"
-    },
-    {
-     "from": "ag-judge",
-     "to": "x-jev",
-     "data": "system_one(state, 2 YesNo)",
-     "file": "src/heydesk/adapters/decider/jev.py",
-     "fn": "decide"
-    },
-    {
-     "from": "r-guards",
      "to": "t-shop-place_order",
-     "data": "None → ask_for_yes(read_back) + Yes/Change",
+     "data": "None (no read-back heard yet) → ask_for_yes(read_back) + Yes/Change",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "ask_for_yes"
     },
@@ -8477,11 +8310,15 @@ tr.hl td { background: var(--accent-soft); }
   {
    "id": "commit",
    "title": "Commit check (fail closed)",
-   "summary": "A store write needs Confirmed[T]; anything but two clear yeses is 'ask again'.",
+   "summary": "A store write needs Confirmed[T]: only the details read back on an earlier turn, called again after the model heard a yes.",
    "files": [
     "src/heydesk/runtime/guards.py"
    ],
    "participants": [
+    [
+     "V",
+     "Visitor"
+    ],
     [
      "M",
      "Model"
@@ -8493,10 +8330,6 @@ tr.hl td { background: var(--accent-soft); }
     [
      "G",
      "confirm()"
-    ],
-    [
-     "J",
-     "Jev"
     ],
     [
      "St",
@@ -8516,36 +8349,43 @@ tr.hl td { background: var(--accent-soft); }
     {
      "f": "Tool",
      "t": "G",
-     "m": "value, read_back, agent_said, visitor_said"
+     "m": "heard = \"\", read_back"
     },
     {
      "f": "G",
-     "t": "J",
-     "m": "read_back? said_yes?"
+     "t": "Tool",
+     "m": "None",
+     "k": "ret"
     },
     {
-     "alt": "Jev answers",
-     "s": [
-      {
-       "f": "J",
-       "t": "G",
-       "m": "P(yes) each",
-       "k": "ret"
-      }
-     ],
-     "else": "timeout / error (no retries)",
-     "e": [
-      {
-       "f": "J",
-       "t": "G",
-       "m": "DeciderUnavailable",
-       "k": "fail"
-      }
-     ]
+     "f": "Tool",
+     "t": "M",
+     "m": "read_back + ask for a clear yes; state.read_back",
+     "k": "ret"
     },
     {
-     "alt": "both ≥ 0.7",
+     "f": "M",
+     "t": "V",
+     "m": "the read-back, \"Shall I place it?\""
+    },
+    {
+     "f": "V",
+     "t": "M",
+     "m": "next turn: \"ji\""
+    },
+    {
+     "alt": "the model hears a clear yes",
      "s": [
+      {
+       "f": "M",
+       "t": "Tool",
+       "m": "place_order(same details)"
+      },
+      {
+       "f": "Tool",
+       "t": "G",
+       "m": "heard = read_back"
+      },
       {
        "f": "G",
        "t": "Tool",
@@ -8563,18 +8403,12 @@ tr.hl td { background: var(--accent-soft); }
        "m": "row (+stock) one transaction"
       }
      ],
-     "else": "anything else",
+     "else": "a maybe, a question, a change",
      "e": [
       {
-       "f": "G",
-       "t": "Tool",
-       "m": "None",
-       "k": "ret"
-      },
-      {
-       "f": "Tool",
-       "t": "M",
-       "m": "read_back + ask for a clear yes",
+       "f": "M",
+       "t": "V",
+       "m": "asks again, or calls with new details → a new read-back",
        "k": "ret"
       }
      ]
@@ -9246,18 +9080,16 @@ tr.hl td { background: var(--accent-soft); }
    "title": "Never save without a real yes",
    "lines": [
     "A model can 'decide' the visitor agreed.",
-    "Store writes only accept Confirmed[T], made only by confirm() after Jev answers two yes/no questions.",
-    "If Jev is down it fails closed: nothing saved."
+    "Store writes only accept Confirmed[T], made only by confirm(); the model judges the yes by calling the tool again.",
+    "Python saves only the details the visitor heard read back on an earlier turn (D107)."
    ],
    "nodes": [
     "r-guards",
     "ag-judge",
     "d-confirmed",
-    "k-store",
-    "ad-jev",
-    "x-jev"
+    "k-store"
    ],
-   "diagram": "flowchart LR\n  t[\"Writing tool\"] --> g{\"confirm()\"}\n  g -->|\"both ≥ 0.7\"| c[\"Confirmed[T] → save\"]\n  g -->|\"else / Jev down\"| r[\"read back, ask again\"]",
+   "diagram": "flowchart LR\n  t[\"Writing tool\"] --> g{\"confirm()\"}\n  g -->|\"same as the read-back heard\"| c[\"Confirmed[T] → save\"]\n  g -->|\"else\"| r[\"read back, ask again\"]",
    "files": [
     "src/heydesk/runtime/guards.py",
     "src/heydesk/domain/values.py",
@@ -9579,14 +9411,12 @@ tr.hl td { background: var(--accent-soft); }
    "lines": [
     "Vendors change; tests must be free and offline.",
     "The runtime talks to Protocols (ports); wiring.py picks real or fake adapters; a grep script enforces the layers.",
-    "313 offline tests use FakeLLM and FakeDecider."
+    "313 offline tests use FakeLLM and the other fakes."
    ],
    "nodes": [
     "w-wiring",
     "p-llm",
-    "p-decider",
     "ad-fakellm",
-    "ad-fakedecider",
     "r-loop"
    ],
    "diagram": "flowchart LR\n  r[\"runtime\"] --> p[\"ports (Protocols)\"]\n  w[\"wiring.py\"] --> a[\"adapters: real or fake\"]\n  a -.-> p",
@@ -9617,7 +9447,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "q": "How do you stop the model from placing an order the visitor never agreed to?",
-   "a": "Store writes need Confirmed[T]; only confirm() makes one, after Jev's two yeses.",
+   "a": "Store writes need Confirmed[T]; confirm() makes one only for the details read back on an earlier turn, after the model heard a yes.",
    "go": {
     "view": "triggers",
     "arg": {
@@ -9627,8 +9457,8 @@ tr.hl td { background: var(--accent-soft); }
    }
   },
   {
-   "q": "What if Jev is down?",
-   "a": "confirm() returns None: nothing is saved, the agent asks for a yes again.",
+   "q": "What if the model calls the tool without a read-back?",
+   "a": "confirm() returns None: nothing is saved; the tool returns the read-back and the agent asks for a yes.",
    "go": {
     "view": "state",
     "arg": {
@@ -9764,7 +9594,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "q": "Which tools does the shop agent have, and why only some need a yes?",
-   "a": "9 shop + 4 shared; tools that write go through the Jev judge.",
+   "a": "9 shop + 4 shared; tools that write go through the read-back check.",
    "go": {
     "view": "agents",
     "arg": {
@@ -9812,11 +9642,9 @@ tr.hl td { background: var(--accent-soft); }
      "nodes": [
       "w-wiring",
       "ad-fakellm",
-      "ad-fakedecider",
       "ad-fakeembed",
       "ad-fakepay",
-      "p-llm",
-      "p-decider"
+      "p-llm"
      ],
      "title": "Fakes behind ports"
     }
@@ -9857,15 +9685,6 @@ tr.hl td { background: var(--accent-soft); }
     "docs/design.md"
    ],
    "detail": "Both save (the transcript is re-read before appending), but the second turn's model didn't see the first's messages. Left out on purpose: design.md §12 'One reply at a time per conversation'."
-  },
-  {
-   "sev": "low",
-   "title": "Default DECIDER=fake never confirms",
-   "files": [
-    "src/heydesk/config.py",
-    "src/heydesk/wiring.py"
-   ],
-   "detail": "Without DECIDER=jev nothing can be saved in development: by design (offline, no key), but surprising in a demo."
   },
   {
    "sev": "low",
@@ -10174,7 +9993,7 @@ register({
 
 <!-- SECTION:view-agent-tools START -->
 <script>
-// 3. Agent ↔ tool network: which agent (desk) gets which tool, and which tools need the Jev yes.
+// 3. Agent ↔ tool network: which agent (desk) gets which tool, and which tools need the read-back yes.
 register({
   id: "agents", label: "Agent ↔ tools",
   init() {

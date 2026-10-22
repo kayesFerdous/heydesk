@@ -33,14 +33,13 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
 | Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
 | Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
-| Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
 
 ## 3. The rules
 
 1. **Python does facts.** Prices, totals, dates, times, availability: decided in
    tools, never by the model.
 2. **Read back, then a yes, then save.** Writing tools run the commit check
-   (§7). It fails closed: if Jev is down, nothing is saved.
+   (§7). It fails closed: with no read-back of exactly these details, nothing is saved.
 3. **Platform rules come first** in the prompt and aren't editable.
 4. **The system prompt is built for every turn** from the agent's current
    config, with the channel, date and time at the end. No prompt caching (D15).
@@ -58,9 +57,9 @@ saved. Nothing is saved without reading it back and hearing a yes.
 src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
-├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore, PhotoIndex,
+├── ports/               Protocols: LanguageModel, Embedder, KnowledgeStore, PhotoIndex,
 │                        MediaStore, TelegramApi, MessengerApi, WhatsAppApi, PaymentGateway, the sheet reader, WooApi
-├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM, JevDecider,
+├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM,
 │                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
 │                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75),
 │                        photo files on the disk or in Cloudflare R2 (D101)
@@ -204,9 +203,7 @@ class ToolContext[S]:
     store: S                       # the desk's store: ClinicStore, RestaurantStore
     state: dict                    # the conversation state so far (the cart)
     now: datetime                  # when the turn started, UTC
-    decider: Decider               # for the commit check
-    agent_said: str                # the agent's last message: the read-back, if there was one
-    visitor_said: str              # this turn's message: the yes, if there was one
+    heard: str                     # the last read-back the visitor heard, before this turn
 
 @dataclass(frozen=True)
 class Tool:
@@ -258,11 +255,13 @@ merged into the conversation's `state`, saved with the turn.
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 
-**The commit check** (`runtime/guards.py`): one Jev call with two yes/no questions: *did the
-agent's last message read these details back?* and *is the visitor's reply a clear yes?* Both
-likely → a `Confirmed[T]`; anything else, including Jev being down → not confirmed, and the tool
-returns its read-back. "Likely" is P(yes) ≥ 0.7, so "hmm, maybe" fails. Each check logs its two
-probabilities (never the text). A store's writing methods accept only `Confirmed[...]`, so mypy
+**The commit check** (`runtime/guards.py`, D107): a writing tool's first call returns its
+read-back (`ask_for_yes`), which goes into the conversation state as `read_back`. The talking
+model judges the visitor's reply: only after a clear yes does it call the tool again. At the
+start of each turn the loop puts the state's `read_back` in `ToolContext.heard`; `confirm`
+makes a `Confirmed[T]` only when this call's read-back equals it. So the visitor heard exactly
+what is saved, on an earlier turn: a call in the same turn as its read-back, or with any detail
+changed, only reads back again. A store's writing methods accept only `Confirmed[...]`, so mypy
 catches a write that skipped the check, and `scripts/check_imports.sh` checks that only
 `runtime/guards.py` makes one.
 
@@ -1017,8 +1016,8 @@ show_photos ─► each card gets an Order button whose tap says "Order [kurti]"
 - **Which buttons:** `update_cart` missing a size or colour offers the ones not sold out, with
   the colour or size already chosen (`Product.in_stock`); `ask_for_yes` offers Yes and Change,
   for every desk. The last tool that ran in the turn decides; a hand-off or a stop sends none.
-- **A Yes button is a typed yes** (rule 2): the next `place_order` still asks Jev whether the
-  agent's last message was the read-back, so a Yes tapped from an old message saves nothing.
+- **A Yes button is a typed yes** (rule 2): the model judges it like any reply, and the next
+  `place_order` still saves only the details last read back.
 - **The limits:** a choice is at most 20 characters (Messenger's quick reply) and 64 bytes
   (Telegram's button data), at most 13 of them; a longer one gets no button and is typed. An
   Order button needs "Order [code]" within 64 bytes.
@@ -1233,7 +1232,7 @@ queue worker, every CALL_QUEUE_SECONDS:
   missed ─► tries left? queued again `retry_minutes` later : done, no answer, the owner told
 Answer ─► POST /api/voice/offer?call=<id> ─► talking: a new `voice` conversation with the first
           line and `state.calling`; run_call says that line first, then goes on as any call
-"yes" ─► confirm_order: Jev checks the line and the yes ─► `new` → `confirmed`, an alert
+"yes" ─► confirm_order: the line is the read-back (`state.read_back`) ─► `new` → `confirmed`, an alert
 the call ends ─► done; its outcome from the order: confirmed, cancelled, or no decision
 ```
 
@@ -1261,13 +1260,13 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
 
 ## 11. Testing
 
-- Unit tests for `runtime/` and `domain/` with `FakeLLM`, `FakeDecider` and the fixed clock
+- Unit tests for `runtime/` and `domain/` with `FakeLLM` and the fixed clock
   (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
 - A test file per desk (`tests/integration/test_restaurant.py`, `test_clinic.py`,
   `test_messages.py`): its tools against its real store on in-memory SQLite, its prompt, its
   routes, and whole conversations scripted with `FakeLLM` (an order or appointment saved only
   after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
-- Live runs against Groq and Jev only with `-m live`, and only when asked: they cost quota.
+- Live runs against Groq only with `-m live`, and only when asked: they cost quota.
 
 ## 12. Left out on purpose
 
@@ -1286,8 +1285,9 @@ version handles them.
 | A web or voice buyer's last order | Only Telegram and Messenger know who the buyer is (the chat's `contact`), so only they get `# Their last order` (D81); a web conversation doesn't keep the browser's visitor token |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
+| The model calling a writing tool again after a "maybe" | The model judges the yes (D107). Python only makes sure the details are the ones last read back, so a wrong call saves what the visitor heard, never something else |
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
-| Clearing old `turns`, a price for Gigalogy, the cost of Jev, Gemini embeddings and speech-to-text | Every turn is kept; a turn's cost is Groq's alone (Gigalogy reports tokens, no price), so a Gigalogy turn's cost is 0, meaning unknown (D71) |
+| Clearing old `turns`, a price for Gigalogy, Gemini embeddings and speech-to-text | Every turn is kept; a turn's cost is Groq's alone (Gigalogy reports tokens, no price), so a Gigalogy turn's cost is 0, meaning unknown (D71) |
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
 | Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |

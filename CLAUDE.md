@@ -4,8 +4,8 @@ HeyDesk is an **MVP**: a business creates an AI front-desk agent of one kind (a
 restaurant, a clinic, a receptionist), edits it, and visitors talk to it by
 web chat or voice. Each kind is a **desk**: one folder in `src/heydesk/desks/` with its own
 prompt, tools, tables and routes (D41). A new kind is a new folder, not a new setting.
-Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking, Jev (TypeSafe) for
-the commit check. Maira has no native tool calls, so its adapter asks for them
+Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking
+and for judging the visitor's yes (D107). Maira has no native tool calls, so its adapter asks for them
 as JSON in the reply (D16).
 
 **Keep it simple.** The owner is learning, and the code should read easily.
@@ -42,7 +42,7 @@ design.md **and** adds a line to decisions.md, in the same change.
 - **Commits and PRs have no AI attribution**: no `Co-Authored-By: Claude`
   trailer, no Claude or Anthropic email, no "Generated with Claude Code" line.
 - `uv` runs everything. Never `pip`, never a bare `python`.
-- `../Frontdesk` is a working reference (for example its Jev adapter).
+- `../Frontdesk` is a working reference.
 
 ## Commands
 
@@ -50,7 +50,7 @@ design.md **and** adds a line to decisions.md, in the same change.
 uv run alembic upgrade head                # once, and after every new migration
 uv run uvicorn heydesk.main:app --reload   # / is the dev chat page
 uv run pytest                              # offline and free
-uv run pytest -m live                      # real Groq + Jev: costs quota, ask first
+uv run pytest -m live                      # real Groq: costs quota, ask first
 uv run alembic revision --autogenerate -m "…"
 scripts/check.sh                           # pytest, ruff, format, mypy, import rules
 ```
@@ -59,7 +59,8 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 
 1. **Python does facts**: prices, totals, dates, times. The model only talks.
 2. **Read back, then a yes, then save.** A store's writing methods take only
-   `Confirmed[T]`, made only by `confirm()` (Jev). It fails closed.
+   `Confirmed[T]`, made only by `confirm()`: the model judges the yes, Python checks
+   the details are the ones read back on an earlier turn. It fails closed.
 3. **Platform rules come first** in the prompt and aren't editable.
 4. **The system prompt is built every turn** from the agent's config, with the
    channel, date and time at the end. No versions, no caching (D15).
@@ -82,7 +83,7 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 
 ## Testing
 
-- Unit tests for `runtime/` and `domain/` with `FakeLLM`, `FakeDecider`
+- Unit tests for `runtime/` and `domain/` with `FakeLLM`
   and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
 - A desk's tools are tested against its real store on in-memory SQLite: the `world` and
   `client` fixtures in `tests/conftest.py`, one test file per desk.
@@ -94,7 +95,6 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 - gpt-oss reasoning counts as output tokens. An empty model reply is an error.
 - Don't run tools when the model stopped for length: the arguments may be cut off.
 - gpt-oss doesn't follow `$ref` in a tool schema; `Tool.spec` writes nested models out.
-- Jev: no arithmetic or date comparisons; small state; positive questions.
 - `ruff format` would rewrite code blocks in the docs; `*.md` is excluded. Don't run it on docs.
 
 ## Project explorer sync

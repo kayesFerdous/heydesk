@@ -288,7 +288,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         f"total {data['total']}, {how}; to {address}; "
         f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
     )
-    confirmed = await confirm(ctx.decider, order, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, order, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "place_order")
     try:
@@ -470,9 +470,7 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
         f"Cancel order {found.code}: {lines_text(found.lines)}, "
         f"total {money(found.total, found.currency)}"
     )
-    confirmed = await confirm(
-        ctx.decider, OrderCancel(found.number), read_back, ctx.agent_said, ctx.visitor_said
-    )
+    confirmed = confirm(ctx.heard, OrderCancel(found.number), read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "cancel_order")
     await ctx.store.cancel_order(confirmed)
@@ -519,9 +517,7 @@ async def confirm_order(ctx: Ctx, args: ConfirmOrderInput) -> ToolResult:
     if found is None or found.status != "new":
         status = STATUS_WORDS[found.status] if found else "gone"
         return fail(f"Order {calling['code']} is {status}: nothing to confirm. Tell them.")
-    confirmed = await confirm(
-        ctx.decider, OrderConfirm(found.number), calling["said"], ctx.agent_said, ctx.visitor_said
-    )
+    confirmed = confirm(ctx.heard, OrderConfirm(found.number), calling["said"])
     if confirmed is None:
         return ask_for_yes(calling["said"], "confirm_order")
     await ctx.store.confirm_order(confirmed)
@@ -644,7 +640,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     if not changes:
         return fail("That's what the order already has. Ask what they want to change.")
     read_back = f"Change order {found.code}: " + "; ".join(changes)
-    confirmed = await confirm(ctx.decider, edit, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, edit, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "change_order")
     try:
@@ -729,7 +725,7 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
         f"{lines_text([swap])}" + (f"; why: {reason}" if reason else "")
     )
     message = NewMessage(read_back, found.name, found.phone)
-    confirmed = await confirm(ctx.decider, message, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, message, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "request_exchange")
     code = await ctx.store.save_message(confirmed)

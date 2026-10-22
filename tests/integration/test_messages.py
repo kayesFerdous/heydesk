@@ -13,7 +13,6 @@ from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY, World
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
-YES = {"read_back": 0.95, "said_yes": 0.95}
 
 
 async def messages(world: World) -> list[TeamMessage]:
@@ -32,7 +31,6 @@ async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: 
 async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:
     agent = await world.agent()
     take = ToolCall("c", "take_message", MESSAGE)
-    world.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
 
     conv = await world.say(agent, None, [take, "Shall I pass that on?"])
     assert (
@@ -49,7 +47,6 @@ async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:
 async def test_a_name_and_phone_are_optional(world: World) -> None:
     agent = await world.agent()
     take = ToolCall("c", "take_message", {"message": "Loved the biryani!"})
-    world.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
 
     conv = await world.say(agent, None, [take, "Shall I pass that on?"])
     said = await world.tool_said(conv)
@@ -85,7 +82,6 @@ async def test_the_owner_sees_messages_and_marks_them_handled(
     runtime = app.state.services.conversations.runtime
     take = ToolCall("c", "take_message", MESSAGE)
     runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
-    runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
     )

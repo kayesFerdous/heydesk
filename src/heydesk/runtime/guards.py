@@ -1,49 +1,19 @@
 """The commit check (design §7): read back, then a yes, then save (rule 2).
 
-One Jev call with two yes/no questions. Both likely → a `Confirmed[T]`.
-Anything else, Jev being down included, → None: nothing is saved.
+A writing tool's first call returns the read-back, and `ask_for_yes` keeps it in the state.
+The model judges the visitor's reply: only after a clear yes does it call the tool again.
+Python checks that this call's details are the last ones read back on an earlier turn, so
+the visitor heard exactly what is saved (D107).
 """
 
-import logging
-
 from heydesk.domain.values import Confirmed
-from heydesk.ports.decider import Decider, DeciderUnavailable, Question, YesNo
 from heydesk.runtime.tool import ToolResult
 
-log = logging.getLogger(__name__)
 
-THRESHOLD = 0.7  # a "hmm, maybe" must not pass; tune it from the logged answers
-
-QUESTIONS: dict[str, Question] = {
-    "read_back": YesNo(
-        "Does agent_last_message repeat the details in details_to_confirm back to the visitor?"
-    ),
-    "said_yes": YesNo("Is visitor_reply a clear yes to agent_last_message?"),
-}
-
-
-async def confirm[T](
-    decider: Decider, value: T, details: str, agent_said: str, visitor_said: str
-) -> Confirmed[T] | None:
-    """`details` is what must have been read back, as the visitor would hear it."""
-    state = {
-        "details_to_confirm": details,
-        "agent_last_message": agent_said,
-        "visitor_reply": visitor_said,
-    }
-    try:
-        answers = await decider.decide(state, QUESTIONS)
-    except DeciderUnavailable as error:
-        log.warning("commit check unavailable", extra={"error": str(error)})
-        return None
-    read_back, said_yes = answers["read_back"], answers["said_yes"]
-    log.info(
-        "commit check",
-        extra={"read_back": read_back.p_yes, "said_yes": said_yes.p_yes, "decider": decider.name},
-    )
-    if read_back.likely(THRESHOLD) and said_yes.likely(THRESHOLD):
-        return Confirmed(value)
-    return None
+def confirm[T](heard: str, value: T, read_back: str) -> Confirmed[T] | None:
+    """`heard` is the read-back the visitor replied to (`ToolContext.heard`); `read_back` is
+    this call's, as the visitor would hear it. Different, or none → nothing is saved."""
+    return Confirmed(value) if heard and heard == read_back else None
 
 
 def ask_for_yes(read_back: str, tool: str) -> ToolResult:
@@ -52,8 +22,9 @@ def ask_for_yes(read_back: str, tool: str) -> ToolResult:
         ok=False,
         data={
             "read_back": read_back,
-            "next": f"Read this back and ask for a clear yes. Only after the yes, call {tool} "
-            "again with the same details.",
+            "next": f"Read this back and ask for a clear yes. Only after their clear yes, call "
+            f"{tool} again with the same details. A change, a question or a maybe is not a yes.",
         },
-        choices=["Yes", "Change"],  # a tapped Yes is checked like a typed one (D99)
+        state={"read_back": read_back},  # kept until another read-back replaces it
+        choices=["Yes", "Change"],  # a tapped Yes is the visitor's words, like a typed one (D99)
     )

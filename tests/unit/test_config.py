@@ -16,7 +16,6 @@ def test_production_starts_when_configured() -> None:
         JWT_SECRET="x",
         SECRETS_KEY="y",
         LLM_PROVIDER="groq",
-        DECIDER="jev",
         QDRANT_URL="https://example.qdrant.io",
         PAYMENTS="sslcommerz",
         BREVO_API_KEY="xkeysib-test",

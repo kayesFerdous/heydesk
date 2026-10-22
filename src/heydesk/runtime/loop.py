@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from heydesk.ports.decider import Decider
 from heydesk.ports.llm import (
     ChatRequest,
     Finished,
@@ -40,7 +39,6 @@ class Runtime:
     """The ports a turn runs against. Built once, in wiring."""
 
     llm: LanguageModel
-    decider: Decider
 
 
 @dataclass
@@ -67,8 +65,8 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     trace = Trace(channel=turn.channel)
     trace.data["llm"] = rt.llm.name
     added = opening_messages(turn, rt.llm)
-    agent_said = last_agent_text([*turn.history, *added])  # what the visitor is replying to
     state = dict(turn.state)
+    heard = state.get("read_back", "")  # the last read-back, from an earlier turn (rule 2)
     tools = {tool.name: tool for tool in turn.tools}
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
@@ -118,9 +116,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 turn.store,
                 state,
                 turn.now,
-                rt.decider,
-                agent_said=agent_said,
-                visitor_said=turn.user_text,
+                heard=heard,
                 channel=turn.channel,
             )
             outcomes = []
@@ -200,14 +196,6 @@ def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
 def for_model(messages: list[Message]) -> list[Message]:
     """The transcript as the model gets it: without the keys only people read (`HIDDEN`)."""
     return [{k: v for k, v in m.items() if k not in HIDDEN} for m in messages]
-
-
-def last_agent_text(messages: list[Message]) -> str:
-    """The text of the last assistant message that has some."""
-    for m in reversed(messages):
-        if m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"]:
-            return str(m["content"])
-    return ""
 
 
 def safe_close(

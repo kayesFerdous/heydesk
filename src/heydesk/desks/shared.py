@@ -93,7 +93,7 @@ async def take_message(ctx: ToolContext[Store], args: TakeMessageInput) -> ToolR
         for label, value in (("from", name), ("phone", phone), ("best time", best_time))
         if value
     )
-    confirmed = await confirm(ctx.decider, message, read_back, ctx.agent_said, ctx.visitor_said)
+    confirmed = confirm(ctx.heard, message, read_back)
     if confirmed is None:
         result = ask_for_yes(read_back, "take_message")
         if not phone:

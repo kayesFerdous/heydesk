@@ -29,8 +29,6 @@ from tests.conftest import AGENT, CART, DEV_KEY, World, make_ctx
 LINES = [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]
 DETAILS = {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}
 READ_BACK = "2 Chicken Biryani and 1 Borhani, ৳1,030, at 7:30 pm for Kayes. Shall I place it?"
-YES = {"read_back": 0.95, "said_yes": 0.95}
-NO = {"read_back": 0.1, "said_yes": 0.1}
 TABLE = {"people": 4, "time": "tomorrow at 8 pm", "name": "Kayes", "phone": "01712345678"}
 WED_8PM = datetime(2026, 9, 30, 14, 0, tzinfo=UTC)  # 8 pm in Dhaka, the day after FIXED_NOW
 
@@ -45,7 +43,6 @@ async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
         ToolCall("c3", "place_order", DETAILS),
         "Done! Your order number is 101.",
     ]
-    runtime.decider.script = [{"read_back": 0.1, "said_yes": 0.1}, YES]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "two biryanis…"}
     )
@@ -132,11 +129,6 @@ async def test_place_order_asks_for_what_is_missing_or_wrong_first(world: World)
 async def test_a_whole_order_is_saved_only_at_the_yes(world: World) -> None:
     """Three turns: the order and details, a "maybe", then a yes."""
     agent = await world.agent()
-    world.decider.script = [
-        {"read_back": 0.1, "said_yes": 0.1},  # first call: nothing read back yet
-        {"read_back": 0.95, "said_yes": 0.3},  # "hmm, maybe"
-        YES,
-    ]
     order = [
         ToolCall("c1", "update_order", {"lines": LINES}),
         ToolCall("c2", "place_order", DETAILS),
@@ -144,7 +136,7 @@ async def test_a_whole_order_is_saved_only_at_the_yes(world: World) -> None:
     conv = await world.say(agent, None, [*order, READ_BACK], "two biryanis, 7:30, Kayes, 0171…")
     assert "Read this back and ask for a clear yes" in await world.tool_said(conv)
 
-    await world.say(agent, conv, [ToolCall("c3", "place_order", DETAILS), READ_BACK], "hmm, maybe")
+    await world.say(agent, conv, [READ_BACK], "hmm, maybe")  # not a yes: the model asks again
     assert await orders(world) == []
 
     await world.say(agent, conv, [ToolCall("c4", "place_order", DETAILS), "Done! 101."], "yes")
@@ -158,14 +150,6 @@ async def test_a_whole_order_is_saved_only_at_the_yes(world: World) -> None:
     )
     assert saved.pickup_at.isoformat() == "2026-09-29T13:30:00+00:00"  # 7:30 pm in Dhaka
     assert (await world.conversation(conv)).state["cart"] == {}
-    # Jev saw the read-back and the yes
-    assert (
-        world.decider.asked[-1]["agent_last_message"],
-        world.decider.asked[-1]["visitor_reply"],
-    ) == (
-        READ_BACK,
-        "yes",
-    )
 
 
 async def test_the_owner_edits_the_menu_and_moves_orders_along(
@@ -203,13 +187,13 @@ async def test_the_menu_comes_from_a_csv(client: AsyncClient) -> None:
 async def ordered(world: World) -> tuple[str, list[Order]]:
     """An order placed in a new conversation, after a yes: (the conversation, its orders)."""
     agent = await world.agent()
-    world.decider.script = [YES]
     order = [
         ToolCall("c1", "update_order", {"lines": LINES}),
         ToolCall("c2", "place_order", DETAILS),
-        "Done!",
+        READ_BACK,
     ]
-    conv = await world.say(agent, None, order, "two biryanis, 7:30, Kayes, 0171…, yes")
+    conv = await world.say(agent, None, order, "two biryanis, 7:30, Kayes, 0171…")
+    await world.say(agent, conv, [ToolCall("c3", "place_order", DETAILS), "Done!"], "yes")
     return conv, await orders(world)
 
 
@@ -227,14 +211,12 @@ async def test_the_order_from_this_chat_is_tracked_changed_and_cancelled_with_no
     tracked = await world.tool_said(conv)
     assert "O-101" in tracked and "the kitchen has it" in tracked and "7:30 pm" in tracked
 
-    world.decider.script = [NO, YES]
     await world.say(agent, conv, call("change_order", {"time": "8 pm"}), "make it 8 pm")
     assert "Change order O-101: time: 7:30 pm → 8:00 pm" in await world.tool_said(conv)
     await world.say(agent, conv, call("change_order", {"time": "8 pm"}), "yes")
     [changed] = await orders(world)
     assert changed.pickup_at.isoformat() == "2026-09-29T14:00:00+00:00"  # 8 pm in Dhaka
 
-    world.decider.script = [NO, YES]
     await world.say(agent, conv, call("cancel_order"), "cancel it please")
     assert (await orders(world))[0].status == "new"  # read back first
     await world.say(agent, conv, call("cancel_order"), "yes")
@@ -279,13 +261,12 @@ def book(details: dict[str, object]) -> list[object]:
 
 async def test_a_booking_is_saved_only_after_a_yes(world: World) -> None:
     agent = await world.agent()
-    world.decider.script = [NO, {"read_back": 0.95, "said_yes": 0.3}, YES]
     conv = await world.say(agent, None, book(TABLE), "table for 4 tomorrow at 8 pm")
     assert "Table for 4 on Wed 30 Sep, 8:00 pm; name Kayes; phone 01712345678" in (
         await world.tool_said(conv)
     )
 
-    await world.say(agent, conv, book(TABLE), "hmm, maybe")
+    await world.say(agent, conv, ["Shall I book it?"], "hmm, maybe")  # not a yes
     assert await bookings(world) == []
 
     await world.say(agent, conv, book(TABLE), "yes")
@@ -338,7 +319,6 @@ async def test_a_booking_is_cancelled_with_its_code_and_name(world: World) -> No
     def cancel(code: str, name: str) -> list[object]:
         return [ToolCall("c", "cancel_booking", {"code": code, "name": name}), "…"]
 
-    world.decider.script = [NO, YES]
     wrong_name = await world.say(agent, None, cancel("T-101", "Someone Else"))
     wrong_code = await world.say(agent, None, cancel("T-109", "Kayes"))
     assert await world.tool_said(wrong_name) == await world.tool_said(wrong_code)
@@ -372,11 +352,15 @@ async def test_another_workspace_cannot_see_the_bookings(world: World) -> None:
 
 async def test_the_owner_sees_and_moves_bookings(app: FastAPI, client: AsyncClient) -> None:
     runtime = app.state.services.conversations.runtime
-    runtime.llm.script, runtime.decider.script = book(TABLE), [YES]
+    runtime.llm.script = [*book(TABLE), *book(TABLE)]
     chat = await client.post(
-        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a table, yes"}
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a table"}
     )
     conv_id = chat.text.split('"conversation_id": "')[1].split('"')[0]
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
+    )
 
     [booking] = (await client.get("/api/bookings", params={"q": "T-101"})).json()
     assert (booking["code"], booking["people"], booking["status"]) == ("T-101", 4, "new")

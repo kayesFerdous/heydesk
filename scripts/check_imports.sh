@@ -8,7 +8,7 @@ forbid() {  # message, paths, pattern
 }
 imp='^[[:space:]]*(from|import)[[:space:]]+'
 src=src/heydesk
-io='fastapi|starlette|sqlalchemy|groq|httpx|typesafe_sdk|livekit|pipecat'
+io='fastapi|starlette|sqlalchemy|groq|httpx|livekit|pipecat'
 
 forbid "domain/ is pure" $src/domain "${imp}(${io}|pydantic|heydesk\.(runtime|ports|desks|models|services|api|adapters|wiring|db))"
 forbid "runtime/ is framework-free" $src/runtime "${imp}(${io}|heydesk\.(desks|models|services|api|adapters|wiring|db))"
