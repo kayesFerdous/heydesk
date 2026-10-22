@@ -144,6 +144,8 @@ async def test_a_bad_colour_or_a_fifth_starter_is_refused(client: AsyncClient) -
 
     theirs = await client.patch("/api/agent", json={"widget": {"logo": "https://x.com/a.png"}})
     assert theirs.status_code == 422  # only a logo saved by POST /api/agent/logo
+    r2 = "https://pub-1.r2.dev/ws1/logo/" + "a" * 32 + ".jpg"  # one saved in R2 (D101)
+    assert (await client.patch("/api/agent", json={"widget": {"logo": r2}})).status_code == 200
 
 
 async def test_the_owners_widget_and_logo_show_in_the_chat_info(client: AsyncClient) -> None:

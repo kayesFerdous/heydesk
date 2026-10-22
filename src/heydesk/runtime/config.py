@@ -10,7 +10,8 @@ from heydesk.runtime.schedule import WeeklyHours
 # a customer's notes may contain braces.
 PLACEHOLDERS = ("business_name",)
 
-LOGO = r"^(/media/[\w-]+/logo/[0-9a-f]{32}\.jpg)?$"  # one of ours, saved by PhotoService
+# One of ours, saved by PhotoService: on this server's disk, or in R2 at its public address (D101)
+LOGO = r"^((/media|https://[\w.-]+)/[\w-]+/logo/[0-9a-f]{32}\.jpg)?$"
 
 
 class Handoff(BaseModel):
