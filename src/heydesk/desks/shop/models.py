@@ -71,6 +71,20 @@ class ShopOrder(Taken, Payable, Base):
     def about(self) -> str:
         return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
 
+    def news(self) -> str:
+        """What the buyer is told in their chat when the owner moves it here; "" for nothing
+        (as the restaurant's, D66)."""
+        if self.status == "confirmed":
+            return f"✅ Your order {self.code} is confirmed and will be sent out."
+        if self.status == "shipped":
+            return (
+                f"📦 Your order {self.code} is with the courier. The delivery man calls before "
+                "he comes."
+            )
+        if self.status == "cancelled":
+            return f"Sorry, the shop had to cancel your order {self.code}."
+        return ""
+
     def after(self) -> str:
         cod = money(self.total - self.paid, self.currency)
         return (

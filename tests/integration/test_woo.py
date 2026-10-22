@@ -14,10 +14,13 @@ from httpx import AsyncClient
 
 from heydesk.desks.shop.values import products_from_woo
 from heydesk.errors import InvalidConfig
+from heydesk.ports.llm import ToolCall
+from heydesk.ports.payments import Paid
 from heydesk.ports.woo import WooStore, WooUnreachable
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.woo import TOPICS, WOO_STATUS
 from tests.conftest import SEEDS, World
+from tests.integration.test_payments import SHOP_DETAILS, found, paying_first, take
 from tests.integration.test_shop import buy, orders, stock
 
 URL = "https://shop.example.com"
@@ -240,6 +243,25 @@ async def test_an_order_is_in_woo_as_soon_as_it_is_saved(world: World) -> None:
     assert body["meta_data"][0]["value"] == "O-101"
     [order] = await orders(world)
     assert order.woo_id is not None
+
+
+async def test_an_order_paid_online_is_in_woo_as_soon_as_it_is_paid(world: World) -> None:
+    agent, gateway = await paying_first(world.services, "shop")
+    woo = FakeWoo()
+    world.services.woo.api = woo
+    await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
+    line = {"code": "LP-1", "size": "L", "colour": "Black", "quantity": 1}
+    first = [ToolCall("c1", "update_cart", {"lines": [line]})]
+    conv = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
+    order = await found(world, conv)
+    await pushed(world)
+    assert order.status == "unpaid" and woo.orders == {}  # no alert yet, so no push
+
+    gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B1")
+    await world.services.payments.settle(order.id, "v1")
+    await pushed(world)  # no sync: the payment wrote it
+    [body] = woo.orders.values()
+    assert body["status"] == WOO_STATUS["confirmed"]
 
 
 async def pushed(world: World) -> None:

@@ -54,7 +54,7 @@ async def conversations(
     services: Svc,
     ws: Workspace,
     page: Paged,
-    status: Literal["active", "needs_human"] | None = None,
+    status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
 ) -> list[ConversationOut]:
     """Newest activity first, a page at a time (`limit`, `before` an `updated_at`),

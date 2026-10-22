@@ -1,15 +1,25 @@
 """The clinic desk: doctors with their own days and hours, an appointment request saved only
 after a yes, and cancelling or moving it with its code and name."""
 
+from typing import Any
+
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from heydesk.desks.clinic import CLINIC
 from heydesk.desks.clinic.models import Appointment
+from heydesk.desks.clinic.tools import (
+    CancelInput,
+    RequestAppointmentInput,
+    RescheduleInput,
+    cancel_appointment,
+    request_appointment,
+    reschedule_appointment,
+)
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import LiveAgent
-from tests.conftest import SEEDS, World
+from tests.conftest import SEEDS, World, make_ctx
 
 DETAILS = {
     "doctor": "Dr. Hasan",  # Tue and Wed, 18:00-21:00; tomorrow is Wed 30 Sep
@@ -189,3 +199,22 @@ async def test_doctors_come_from_a_csv_and_a_bad_row_saves_nothing(
     bad = await client.post("/api/doctors/import", json={"csv": csv + "Dr. X,ENT,lots,Mon,9-5,\n"})
     assert bad.status_code == 422 and "row 3" in bad.json()["error"]["fields"]
     assert len((await client.get("/api/doctors")).json()) == 1
+
+
+async def test_the_owner_hears_each_request_move_and_cancel(world: World) -> None:
+    agent = await world.agent("clinic")
+
+    def ctx() -> Any:
+        made = make_ctx(world.store(agent), agent=agent.config)
+        made.decider.script = [YES]
+        return made
+
+    asked = await request_appointment(ctx(), RequestAppointmentInput.model_validate(DETAILS))
+    assert asked.alert and asked.alert.startswith("🩺 New appointment request A-101")
+    who = {"code": "A-101", "name": "Kayes"}
+    moved = await reschedule_appointment(
+        ctx(), RescheduleInput.model_validate(who | {"new_time": "tuesday at 8 pm"})
+    )
+    assert moved.alert and moved.alert.startswith("✏️ Appointment A-101 moved")
+    cancelled = await cancel_appointment(ctx(), CancelInput.model_validate(who))
+    assert cancelled.alert == "❌ Appointment A-101 cancelled"

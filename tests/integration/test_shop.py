@@ -340,6 +340,11 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     await client.patch(url, json={"status": "confirmed"})
     shipped = await client.patch(url, json={"status": "shipped"})
     assert shipped.json()["status"] == "shipped"
+    team = await client.get(f"/api/chat/{agent.public_key}/{conv_id}/team")
+    assert team.json()["replies"] == [  # the buyer hears it in their chat (D66)
+        "✅ Your order O-101 is confirmed and will be sent out.",
+        "📦 Your order O-101 is with the courier. The delivery man calls before he comes.",
+    ]
 
     store = await services.agents.store(DEV_WORKSPACE_ID, "shop")
     found = FindOrderInput(code="O-101", phone="01712345678")

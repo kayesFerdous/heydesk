@@ -5,8 +5,8 @@ SSLCommerz store, which its owner connects here (D49).
 A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
 starts a payment with the gateway. When the gateway posts back (the visitor's browser, and
 the gateway itself, both to URLs naming the row), `settle` asks the business's gateway
-account whether it really went through, for this row and this amount, and only then makes it
-`new`. Nothing the agent says can do that.
+account whether it really went through, for this row and this amount, and only then moves it
+on: to `new`, or a shop order to `confirmed` (`PAID_STATUS`). Nothing the agent says can do that.
 
 These look rows up by their id alone, across businesses, like Telegram's webhook looks up
 its channel: the id is long and random, and it's the gateway that names it.
@@ -29,6 +29,7 @@ from heydesk.models.taken import UNPAID
 from heydesk.ports.payments import Account, Checkout, PaymentGateway, PaymentUnavailable
 from heydesk.runtime.speech import money
 from heydesk.services.team import TeamService
+from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
 
@@ -43,12 +44,14 @@ class PaymentService:
         sessions: async_sessionmaker[AsyncSession],
         gateway: PaymentGateway,
         team: TeamService,
+        woo: WooService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.gateway = gateway
         self.team = team
+        self.woo = woo  # a paid shop order goes into a linked WooCommerce store at once (D77)
         self.settings = settings
         self.now = now
 
@@ -170,6 +173,8 @@ class PaymentService:
             f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
             f"{record.about()}; name {record.name}; phone {record.phone}",
         )
+        if isinstance(record, ShopOrder):  # it holds stock: into a linked Woo store now (D77)
+            self.woo.push_soon(record.workspace_id)
 
     async def _alert(self, record: Payable, text: str) -> None:
         if record.conversation_id is None:

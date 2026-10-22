@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from heydesk.desks import DESKS, tools_for
 from heydesk.desks.receptionist import RECEPTIONIST
-from heydesk.models import TeamMessage
+from heydesk.models import Conversation, TeamMessage
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY, World
@@ -138,3 +138,18 @@ async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncCli
     assert again.json()["error"]["code"] == "invalid_transition"
     other = await client.patch(f"/api/conversations/{conv_id}", json={"status": "needs_human"})
     assert other.status_code == 422
+
+
+async def test_the_inbox_lists_the_chats_the_team_is_answering(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hi"}
+    )
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
+    async with app.state.sessions() as s, s.begin():
+        (await s.get(Conversation, conv_id)).status = "human"  # the owner took it over (D43)
+
+    [taken] = (await client.get("/api/conversations", params={"status": "human"})).json()
+    assert taken["id"] == conv_id

@@ -28,6 +28,11 @@
   .agent { align-self: flex-start; background: var(--panel); border: 1px solid var(--line) }
   .card { align-self: stretch; background: var(--panel); border: 1px solid var(--accent);
           border-radius: 12px; padding: 10px 13px }
+  .photos { align-self: flex-start; display: flex; gap: 8px; flex-wrap: wrap }
+  .photo { width: 150px; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; overflow: hidden; font-size: 13px }
+  .photo img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block }
+  .photo div { padding: 6px 9px }
   .err { align-self: flex-start; color: var(--bad); font-size: 13px }
   .err button { margin-left: 8px }
   #waiting { color: var(--dim); font-size: 13px; min-height: 20px }

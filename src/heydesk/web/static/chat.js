@@ -44,6 +44,21 @@ const handle = (event, data, reply) => {
       for (const how of [data.phone, data.email].filter(Boolean)) card.append("\n" + how);
       break;
     }
+    case "photos": {  // products a tool showed (D57): a card each, photo, name and price
+      const row = add("photos", "");
+      for (const item of data.items) {
+        const card = document.createElement("div");
+        card.className = "photo";
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.name;
+        const line = document.createElement("div");
+        line.textContent = `${item.name} · ${item.price}`;
+        card.append(img, line);
+        row.append(card);
+      }
+      break;
+    }
     case "done":
       reply.done = true;
       break;

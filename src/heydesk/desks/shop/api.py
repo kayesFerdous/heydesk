@@ -132,9 +132,14 @@ async def order(order_id: str, store: Shop) -> ShopOrderOut:
 
 
 @router.patch("/api/shop/orders/{order_id}")
-async def change_order(order_id: str, body: OrderChange, store: Shop) -> ShopOrderOut:
+async def change_order(
+    order_id: str, body: OrderChange, store: Shop, services: Svc
+) -> ShopOrderOut:
     """Move it along (`{"status": "confirmed"}` after calling the buyer, `shipped` once the
-    owner has booked the courier). Cancelling puts its items back in stock."""
+    owner has booked the courier). Cancelling puts its items back in stock. The buyer hears
+    it in their chat when it's confirmed, shipped or cancelled, as the team's message (D66)."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status)
+    if moved.status != found.status and moved.conversation_id and (line := moved.news()):
+        await services.team.tell_visitor(moved.conversation_id, line)
     return ShopOrderOut.model_validate(moved)

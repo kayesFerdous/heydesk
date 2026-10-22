@@ -62,6 +62,12 @@ class CallService:
 
     # The phone page
 
+    @property
+    def rings(self) -> bool:
+        """Whether a call can ring: the /phone page and the voice routes aren't served in
+        production (design §12), so there a call would only ever be missed."""
+        return self.settings.APP_ENV != "production"
+
     def number(self, said: str) -> str:
         """The page's mobile, written as an order's is: "+880 1712-345678" → "01712345678"."""
         try:
@@ -87,7 +93,7 @@ class CallService:
     async def after_turn(self, agent: LiveAgent, conversation_id: str) -> None:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
         An order is queued by itself once; the owner can call it again."""
-        if agent.desk.kind != "shop":
+        if agent.desk.kind != "shop" or not self.rings:
             return
         calls = cast(ShopConfig, agent.config).calls
         if not calls.enabled:
@@ -101,6 +107,8 @@ class CallService:
         agent = await self.agents.by_workspace(ws)
         if agent.desk.kind != "shop":
             raise NotFound("Only a shop calls its buyers.")
+        if not self.rings:
+            raise Conflict("Calls ring the /phone page, which this server doesn't serve.")
         if not cast(ShopConfig, agent.config).calls.enabled:
             raise Conflict("Calls are off. Turn them on in Settings, Calls.")
         order = await self._store(agent).get(ShopOrder, order_id)  # 404 if it isn't theirs

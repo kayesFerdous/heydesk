@@ -244,7 +244,7 @@ def build_services(
         members=MemberService(sessions, users, now),
         photos=photos,
         payments=PaymentService(
-            sessions, payments or build_payments(settings), team, settings, now
+            sessions, payments or build_payments(settings), team, woo_service, settings, now
         ),
         users=users,
         visitors=visitors,

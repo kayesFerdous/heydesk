@@ -109,6 +109,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
             "next": f"Tell them the clinic will call to confirm, and give them the code {code}: "
             "they need it to change or cancel.",
         },
+        alert=f"🩺 New appointment request {code}\n{read_back}",
     )
 
 
@@ -159,13 +160,15 @@ def _local(ctx: Ctx, at: datetime) -> datetime:
     return at.astimezone(ZoneInfo(ctx.agent.timezone))
 
 
-async def _change(ctx: Ctx, change: AppointmentChange, read_back: str, tool: str) -> ToolResult:
+async def _change(
+    ctx: Ctx, change: AppointmentChange, read_back: str, tool: str, alert: str
+) -> ToolResult:
     """The commit check (rule 2): the change is made only after a read-back and a yes."""
     confirmed = await confirm(ctx.decider, change, read_back, ctx.agent_said, ctx.visitor_said)
     if confirmed is None:
         return ask_for_yes(read_back, tool)
     await ctx.store.change_appointment(confirmed)
-    return ToolResult(ok=True, data={"done": read_back})
+    return ToolResult(ok=True, data={"done": read_back}, alert=alert)
 
 
 async def cancel_appointment(ctx: Ctx, args: CancelInput) -> ToolResult:
@@ -174,7 +177,11 @@ async def cancel_appointment(ctx: Ctx, args: CancelInput) -> ToolResult:
         return found
     when = parse.day_time(_local(ctx, found.at))
     read_back = f"Cancel appointment {found.code} with {found.doctor_name} on {when}"
-    return await _change(ctx, AppointmentChange(found.number), read_back, "cancel_appointment")
+    alert = f"❌ Appointment {found.code} cancelled"
+    if found.paid:  # the owner refunds it in SSLCommerz's panel (design §12)
+        alert += f". Its deposit was paid {money(found.paid, found.currency)} online: refund it."
+    change = AppointmentChange(found.number)
+    return await _change(ctx, change, read_back, "cancel_appointment", alert)
 
 
 async def reschedule_appointment(ctx: Ctx, args: RescheduleInput) -> ToolResult:
@@ -190,7 +197,8 @@ async def reschedule_appointment(ctx: Ctx, args: RescheduleInput) -> ToolResult:
         return fail(problem)
     read_back = f"Move appointment {found.code} with {found.doctor_name} to {parse.day_time(when)}"
     change = AppointmentChange(found.number, when)
-    return await _change(ctx, change, read_back, "reschedule_appointment")
+    alert = f"✏️ Appointment {found.code} moved\n{read_back}"
+    return await _change(ctx, change, read_back, "reschedule_appointment", alert)
 
 
 CANCEL_APPOINTMENT = Tool(

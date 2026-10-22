@@ -70,6 +70,17 @@ async def test_nothing_is_queued_while_calls_are_off(world: World) -> None:
         await world.services.calls.call_order(DEV_WORKSPACE_ID, found[0].id)
 
 
+async def test_production_queues_no_calls_since_it_serves_no_phone_page(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(world.services.calls.settings, "APP_ENV", "production")
+    agent = await shop_with_calls(world.services)
+    placed = await order(world.services, agent)
+    assert await world.services.calls.find(DEV_WORKSPACE_ID) == []
+    with pytest.raises(Conflict, match="/phone"):
+        await world.services.calls.call_order(DEV_WORKSPACE_ID, placed.id)
+
+
 async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_it(
     world: World,
 ) -> None:
