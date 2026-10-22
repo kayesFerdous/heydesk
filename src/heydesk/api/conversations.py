@@ -54,10 +54,12 @@ async def conversations(
     ws: Workspace,
     page: Paged,
     status: Literal["active", "needs_human"] | None = None,
+    channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
 ) -> list[ConversationOut]:
-    """Newest activity first, a page at a time (`limit`, `before` an `updated_at`)."""
+    """Newest activity first, a page at a time (`limit`, `before` an `updated_at`),
+    optionally from one channel."""
     found = await services.conversations.list(
-        ws, status=status, limit=page.limit, before=page.before
+        ws, status=status, channel=channel, limit=page.limit, before=page.before
     )
     return [ConversationOut.model_validate(c) for c in found]
 

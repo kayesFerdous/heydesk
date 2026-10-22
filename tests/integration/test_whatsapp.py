@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from heydesk.ports.llm import ToolCall
-from tests.conftest import SEEDS, new_business
+from tests.conftest import DEV_KEY, SEEDS, new_business
 from tests.integration.test_shop import kurti_with_photo, photo
 from tests.integration.test_team import from_owner, link_owner, to
 from tests.integration.test_telegram import send as to_telegram
@@ -158,3 +158,21 @@ async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
     assert "on WhatsApp" in alert
     await to_telegram(client, path, secret, from_owner("Hi, this is Rahim.", alert))
     assert fake(app).sent[-1] == (FROM, "Hi, this is Rahim.")
+
+
+async def test_the_list_filters_by_channel(client: AsyncClient) -> None:
+    await connect(client)
+    assert await post(client, message("hi")) == 200
+    visitor = {"visitor_id": "test-visitor", "message": "hello"}
+    assert (await client.post(f"/api/chat/{DEV_KEY}", json=visitor)).status_code == 200
+
+    async def channels(**params: str) -> list[str]:
+        res = await client.get("/api/conversations", params=params)
+        return [c["channel"] for c in res.json()]
+
+    assert sorted(await channels()) == ["web", "whatsapp"]
+    assert await channels(channel="whatsapp") == ["whatsapp"]
+    assert await channels(channel="web") == ["web"]
+    assert await channels(channel="messenger") == []
+    res = await client.get("/api/conversations", params={"channel": "fax"})
+    assert res.status_code == 422

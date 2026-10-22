@@ -213,6 +213,7 @@ class ConversationService:
         ws: str,
         status: str | None = None,
         *,
+        channel: str | None = None,
         limit: int = 100,
         before: datetime | None = None,
     ) -> list[Conversation]:
@@ -226,6 +227,8 @@ class ConversationService:
         )
         if status:
             query = query.where(Conversation.status == status)
+        if channel:
+            query = query.where(Conversation.channel == channel)
         if before:
             query = query.where(Conversation.updated_at < before)
         async with self.sessions() as s:
