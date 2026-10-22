@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -383,6 +383,24 @@ its token in `.env`).
       "panjabi ache?" in the dev chat shows them
 
 **Done when:** `scripts/check.sh` is green; the live check above passes.
+
+### Day H1: WhatsApp as a channel (D103, G12)
+
+- [x] `WhatsAppApi` port, `WhatsAppCloud` (Cloud API over httpx, the token in a header) and
+      `FakeWhatsApp`; `PUT/GET/DELETE /api/agent/whatsapp {token, account_id, phone_id}`
+- [x] `/api/whatsapp`: the verify check and signed posts, routed by `phone_number_id`;
+      statuses skipped; the turn is `_answer`'s, marked read with "typing…"
+- [x] Reply buttons (a list past 3), a tap's id as the text; a buyer's photo by its media id;
+      `show_photos` as one message a product with an Order button; the owner's reply from Telegram
+- [x] The WhatsApp channel line (docs/prompt-rules.md); design.md (WhatsApp), D103, `.env.example`
+- [x] Tests: connect and refuse, a number belongs to one business, the signature, a voice note,
+      a photo and its Order tap, disconnecting, the owner answering
+- [ ] Live: in the Meta app, add WhatsApp and the webhook (`PUBLIC_URL/api/whatsapp`, field
+      `messages`); connect a number; a message is answered, a photo gets its card, its Order
+      button starts the order, the Yes button places it after the read-back
+
+**Done when:** `scripts/check.sh` is green [x] (22 Oct); the live check above passes, then tick
+G12 in docs/competitor-gaps.md.
 
 ## Still open
 

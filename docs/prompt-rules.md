@@ -108,12 +108,12 @@ Today: open 11:00–22:00
 Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
 ```
 
-- **Channel:** the reply style for web, voice, Telegram or Messenger (`CHANNEL_STYLE`). Voice
+- **Channel:** the reply style for web, voice, Telegram, Messenger or WhatsApp (`CHANNEL_STYLE`). Voice
   also says the words come from speech-to-text and can be misheard: a name (a product, a dish,
   a doctor, a place) that matches none listed is taken as the closest listed one and checked with
-  the caller (the documents section said this only for its searches). Telegram
-  and Messenger are sent as plain text, so they ask for no markdown: `**bold**` would show its
-  asterisks (D42, D60). They also say a tapped button arrives as its words ("Yes", "XL",
+  the caller (the documents section said this only for its searches). Telegram,
+  Messenger and WhatsApp are sent as plain text, so they ask for no markdown: `**bold**` would
+  show its asterisks (D42, D60, D103). They also say a tapped button arrives as its words ("Yes", "XL",
   "Order [code]") and to reply in the language the visitor has been writing in (`TAPS`): the
   buttons are English, and a "Yes" shouldn't turn a Banglish chat into English (D99).
 - **A call in Bangla** (`VOICE_LANGUAGE=bn` on the server, voice only, D86) gets one more line after Channel

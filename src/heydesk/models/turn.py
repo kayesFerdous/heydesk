@@ -17,7 +17,7 @@ class Turn(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"))
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
-    channel: Mapped[str] = mapped_column(String(20))  # web, voice, telegram, messenger
+    channel: Mapped[str] = mapped_column(String(20))  # web, voice, telegram, messenger, whatsapp
     llm: Mapped[str] = mapped_column(String(40))  # the provider: gigalogy, groq, fake
     at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
     total_ms: Mapped[int]

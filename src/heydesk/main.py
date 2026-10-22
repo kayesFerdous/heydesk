@@ -22,6 +22,7 @@ from heydesk.ports.messenger import MessengerApi
 from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
+from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.wiring import (
     build_decider,
     build_embedder,
@@ -43,6 +44,7 @@ def create_app(
     photo_index: PhotoIndex | None = None,
     telegram: TelegramApi | None = None,
     messenger: MessengerApi | None = None,
+    whatsapp: WhatsAppApi | None = None,
     payments: PaymentGateway | None = None,
     now: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
@@ -73,6 +75,7 @@ def create_app(
             now,
             telegram=telegram,
             messenger=messenger,
+            whatsapp=whatsapp,
             payments=payments,
         )
         if dev:

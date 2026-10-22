@@ -51,8 +51,8 @@ class Owner:
 
 @dataclass(frozen=True)
 class ConnectedChannel:
-    kind: str  # "telegram" or "messenger"
-    address: str  # the bot's username; the Page's id
+    kind: str  # "telegram", "messenger" or "whatsapp"
+    address: str  # the bot's username; the Page's id; the number's id
     created_at: datetime
 
 

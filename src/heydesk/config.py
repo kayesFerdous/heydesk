@@ -105,8 +105,9 @@ class Settings(BaseSettings):
     # development). Needed to connect a business's Telegram bot (D42)
     PUBLIC_URL: str = ""
 
-    # Facebook Messenger (D60): our Meta app. Its webhook is set once in the app's dashboard to
-    # PUBLIC_URL/api/messenger with this verify token; Facebook signs each post with the secret
+    # Facebook Messenger (D60) and WhatsApp (D103): our Meta app. Its webhooks are set once in the
+    # app's dashboard to PUBLIC_URL/api/messenger and /api/whatsapp with this verify token; Meta
+    # signs each post with the secret
     META_APP_SECRET: str = ""
     MESSENGER_VERIFY_TOKEN: str = ""
 

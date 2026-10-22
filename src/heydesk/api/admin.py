@@ -33,8 +33,8 @@ class OwnerOut(BaseModel):
 
 
 class ChannelOut(BaseModel):
-    kind: Literal["telegram", "messenger"]
-    address: str  # the bot's username; the Page's id
+    kind: Literal["telegram", "messenger", "whatsapp"]
+    address: str  # the bot's username; the Page's id; the number's id
     created_at: datetime
 
 

@@ -21,6 +21,7 @@ from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.adapters.messenger.fake import FakeMessenger
 from heydesk.adapters.telegram.fake import FakeTelegram
+from heydesk.adapters.whatsapp.fake import FakeWhatsApp
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.desks.restaurant import RestaurantConfig
@@ -191,6 +192,7 @@ async def app() -> AsyncIterator[FastAPI]:
         photo_index=photos,
         telegram=FakeTelegram(),
         messenger=FakeMessenger(),
+        whatsapp=FakeWhatsApp(),
         now=Clock(),
     )
     async with LifespanManager(app):

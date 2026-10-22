@@ -13,7 +13,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 A business picks its **kind** (a restaurant, a clinic, a receptionist for an office, an online shop), fills in
 its details (address, hours, its menu, doctors or products, FAQ) and adds its own notes, and it has an AI
 front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
-browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60). It answers questions, takes orders and messages, and hands over to a
+browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60), or on its **WhatsApp** number (D103). It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders, appointments and messages through the API, which
 the separate frontend (`../heydesk-frontend`) uses.
 
@@ -30,7 +30,7 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
-| Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`). A messaging app's link to the business is a row in `channels` (D42, D60) |
+| Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
 | Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
 | Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
 | Decider | Jev (TypeSafe): fast yes/no judgments. Used for the commit check |
@@ -59,10 +59,10 @@ src/heydesk/
 ├── main.py  config.py  db.py  errors.py  logs.py  wiring.py  cli.py
 ├── domain/values.py     Confirmed[T] (only the commit check makes one), record codes ("A-104")
 ├── ports/               Protocols: LanguageModel, Decider, Embedder, KnowledgeStore, PhotoIndex,
-│                        MediaStore, TelegramApi, MessengerApi, PaymentGateway, the sheet reader, WooApi
+│                        MediaStore, TelegramApi, MessengerApi, WhatsAppApi, PaymentGateway, the sheet reader, WooApi
 ├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM, JevDecider,
 │                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
-│                        Graph API, SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75),
+│                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75),
 │                        photo files on the disk or in Cloudflare R2 (D101)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
 ├── desks/               one folder per kind of business (D41)
@@ -75,8 +75,8 @@ src/heydesk/
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
-│                        knowledge, photos (D57), imports (D53), sheets (D58), woo (D75), channels (Telegram and
-│                        Messenger, D42, D60), team (the owner's alerts, D43), payments (D47)
+│                        knowledge, photos (D57), imports (D53), sheets (D58), woo (D75), channels (Telegram,
+│                        Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43), payments (D47)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2); bangla_tts.py, the Bangla voice's client (D84)
 └── web/static/          the dev chat page
@@ -403,7 +403,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
-| `channels` | agent_id, kind (`telegram`/`messenger`), token (a bot's, or a Page access token; encrypted, D74), secret (Telegram's; empty on Messenger), address (the bot's username, or the Page's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60) |
+| `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
 | `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
@@ -471,6 +471,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/messenger` | The business's Facebook Page: its id and `m.me` link; connect it with its id and a Page access token; disconnect it (D60, D61) |
 | GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
 | POST | `/api/messenger` | Messenger's webhook, one for every Page: checked by `X-Hub-Signature-256` with `META_APP_SECRET`, each message routed by its Page id, answered after the response |
+| GET/PUT/DELETE | `/api/agent/whatsapp` | The business's WhatsApp number: its id; connect it with its business account's id, the number's id and a system user's token; disconnect it (D103) |
+| GET/POST | `/api/whatsapp` | WhatsApp's webhook, one for every number: checked as Messenger's (the same verify token and app secret), each message routed by its `phone_number_id`, answered after the response (D103) |
 | GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
 | POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
@@ -483,7 +485,7 @@ audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, defau
 conversations; `at` for the audit log). Fewer than `limit` rows means it was the
 last page.
 
-Everything under `/api` except chat, desks, auth and the Telegram, Messenger and Woo webhooks needs
+Everything under `/api` except chat, desks, auth and the Telegram, Messenger, WhatsApp and Woo webhooks needs
 `Authorization: Bearer <token>`.
 
 **Three roles** (D23, D97). An **owner** belongs to one business: the token says which
@@ -872,8 +874,8 @@ Telegram ─► POST /api/telegram/{id}  (secret header checked, else 404) ─�
 - **Which conversation:** `conversations.contact` is the chat id. A message continues the
   chat's latest conversation, unless it's full (`MAX_TURNS`) or quiet for
   `CONVERSATION_IDLE_HOURS` (12): then a new one starts, so yesterday's half-order doesn't return.
-- **Another messaging app** (WhatsApp) is the same shape: its port and adapter, a webhook
-  route, and `ConversationService.reply` for the turn.
+- **Another messaging app** is the same shape: its port and adapter, a webhook route, and
+  `ConversationService.reply` for the turn. WhatsApp was (D103).
 - Only private chats are answered. The token is never returned by a route, and httpx's
   request log is off because Telegram's URLs carry it.
 
@@ -900,6 +902,40 @@ Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at 
   alert there, and the Page sends their words. Facebook only lets a Page answer within 24 hours
   of the visitor's last message; a later reply fails and is logged.
 - The token goes in the Graph API's query string, so it's never logged (httpx's log is off).
+
+### WhatsApp (D103)
+
+WhatsApp's Cloud API is Messenger's shape: our one Meta app, **one webhook for every number**
+(`PUBLIC_URL/api/whatsapp`, field `messages`, the same `MESSENGER_VERIFY_TOKEN` and
+`META_APP_SECRET`), each post signed and routed by its `metadata.phone_number_id`.
+
+A business connects **its number** with three things from its Meta Business settings:
+`PUT /api/agent/whatsapp {token, account_id, phone_id}`, a system user's token, the WhatsApp
+Business Account's id and the number's id. `ChannelService` refuses a number another business
+has; `WhatsAppApi.subscribe` reads the number with the token (the check) and subscribes our app
+to the account's messages. The number's id is the `address`.
+
+```
+Meta ─► POST /api/whatsapp (signature checked, else 404) ─► 200 at once
+       then, for each message (statuses are skipped): its number's id ─► the channel
+       ─► answer_whatsapp: marks it read with "typing…", puts it in _answer's shape
+          (text's body; a tapped button's id; an image's media id and caption)
+       ─► the same turn as Messenger's; the sender's number (`from`) is the contact
+```
+
+- **Buttons (D99):** up to 3 choices are reply buttons, more a list ("Choose", up to 10); a
+  tap's `id` is the choice, so it arrives as its words. A reply over 1,024 characters (the
+  limit with buttons) goes as plain text and the choices are typed.
+- **Photos (D57):** a buyer's `image` is downloaded by its media id (two calls, both with the
+  token) and its caption is the words, as on Telegram. `show_photos` sends one message a
+  product: the photo as the header, "Cotton Kurti · ৳950", and an Order this button whose id is
+  "Order [kurti]". Meta fetches the photo, so it needs a public URL, as Messenger does.
+- **Alerts stay on Telegram** (D43); the owner's reply goes out from the number. As on
+  Messenger, only within 24 hours of the visitor's last message: a later one fails and is
+  logged (outside it WhatsApp needs a paid, approved template).
+- **Disconnecting** deletes the row only: our app stays subscribed to the account, which may
+  have other numbers, and this number's messages find no channel.
+- The token goes in the `Authorization` header, never a URL.
 
 ### Photos on Messenger (D62)
 
@@ -1224,7 +1260,8 @@ version handles them.
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Ending logins when a password changes | A login token lasts 7 days, and a new password (changed, or reset with the emailed code, D93) doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
 | Changing `SECRETS_KEY` | It's set once; the secrets saved with the old key can't be read with a new one (D74) |
-| Shop: Instagram, WhatsApp | Web chat, voice, Telegram and Messenger for now (D45, D60) |
+| Shop: Instagram | Web chat, voice, Telegram, Messenger and WhatsApp for now (D45, D60, D103) |
+| WhatsApp: Embedded Signup to connect a number, its `wa.me` link, templates (a message after the 24-hour window), voice notes | The owner pastes a system user's token and the two ids from Meta's settings; they know their own number. Text, photos and Python's buttons (D103) |
 | Messenger: Facebook Login to connect a Page, the Get Started button, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text, photos (D62) and Python's buttons (D99). A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |

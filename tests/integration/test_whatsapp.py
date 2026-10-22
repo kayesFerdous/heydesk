@@ -1,0 +1,160 @@
+"""WhatsApp (D103): an owner connects their number, and visitors talk to the agent there."""
+
+import hashlib
+import hmac
+import json
+from typing import Any
+
+from fastapi import FastAPI
+from httpx import AsyncClient
+
+from heydesk.ports.llm import ToolCall
+from tests.conftest import SEEDS, new_business
+from tests.integration.test_shop import kurti_with_photo, photo
+from tests.integration.test_team import from_owner, link_owner, to
+from tests.integration.test_telegram import send as to_telegram
+
+TOKEN = "EAAB-a-system-user-token"
+ACCOUNT, PHONE = "2001", "3001"
+FROM = "8801711000000"  # the visitor's WhatsApp number
+NOT_TEXT = "I can only read text messages for now. Please type your question."
+
+
+def message(text: str | None = "hi", **instead: Any) -> dict[str, Any]:
+    """A webhook post with one message: text, or `instead` its type's fields."""
+    msg: dict[str, Any] = {"from": FROM, "id": "wamid.1", "type": "text", "text": {"body": text}}
+    if instead:
+        msg = {"from": FROM, "id": "wamid.1", **instead}
+    value = {"messaging_product": "whatsapp", "metadata": {"phone_number_id": PHONE}}
+    change = {"field": "messages", "value": {**value, "messages": [msg]}}
+    return {"object": "whatsapp_business_account", "entry": [{"id": ACCOUNT, "changes": [change]}]}
+
+
+async def post(client: AsyncClient, update: dict[str, Any], secret: str = "app-secret") -> int:
+    body = json.dumps(update).encode()
+    signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    res = await client.post(
+        "/api/whatsapp", content=body, headers={"X-Hub-Signature-256": signature}
+    )
+    return res.status_code
+
+
+def fake(app: FastAPI) -> Any:
+    return app.state.services.channels.whatsapp
+
+
+async def connect(client: AsyncClient) -> None:
+    body = {"token": TOKEN, "account_id": ACCOUNT, "phone_id": PHONE}
+    assert (await client.put("/api/agent/whatsapp", json=body)).status_code == 200
+
+
+async def test_meta_checks_the_webhook_with_our_verify_token(client: AsyncClient) -> None:
+    query = {"hub.mode": "subscribe", "hub.challenge": "42"}
+    res = await client.get("/api/whatsapp", params={**query, "hub.verify_token": "verify-me"})
+    assert res.status_code == 200 and res.text == "42"
+    res = await client.get("/api/whatsapp", params={**query, "hub.verify_token": "nope"})
+    assert res.status_code == 404
+
+
+async def test_an_owner_connects_their_number(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    assert PHONE in fake(app).subscribed
+
+    res = await client.get("/api/agent/whatsapp")
+    assert res.json() == {"phone_id": PHONE}
+    assert TOKEN not in res.text  # the token never leaves the server
+
+    body = {"token": "bad" + "x" * 20, "account_id": ACCOUNT, "phone_id": PHONE}
+    assert (await client.put("/api/agent/whatsapp", json=body)).status_code == 422
+
+
+async def test_the_agent_answers_and_status_posts_are_skipped(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await connect(client)
+    assert await post(client, message("hi")) == 200
+    status = message()
+    del status["entry"][0]["changes"][0]["value"]["messages"]  # a delivery receipt
+    assert await post(client, status) == 200
+    assert await post(client, message("again")) == 200
+
+    assert fake(app).sent == [
+        (FROM, "(fake model) You said: hi"),
+        (FROM, "(fake model) You said: again"),
+    ]
+
+
+async def test_a_wrong_signature_is_a_404_and_nothing_is_answered(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await connect(client)
+    assert await post(client, message("hi"), secret="not-ours") == 404
+    assert fake(app).sent == []
+
+
+async def test_a_voice_note_gets_text_only(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    await post(client, message(type="audio", audio={"id": "m9"}))
+    assert fake(app).sent == [(FROM, NOT_TEXT)]
+
+
+async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    url = await kurti_with_photo(client)
+    await connect(client)
+    fake(app).files["m1"] = photo("red")
+    llm = services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
+
+    await post(client, message(type="image", image={"id": "m1", "caption": "eta ache?"}))
+
+    said = llm.requests[0].messages[-1]["content"]
+    assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
+    card = {
+        "code": "kurti",
+        "name": "Cotton Kurti",
+        "price": "৳950",
+        "url": services.channels.settings.public_url + url,
+        "choice": "Order [kurti]",
+    }
+    assert fake(app).cards == [(FROM, [card])]
+
+    tapped = {
+        "type": "button_reply",
+        "button_reply": {"id": "Order [kurti]", "title": "Order this"},
+    }
+    await post(client, message(type="interactive", interactive=tapped))
+    assert llm.requests[-1].messages[-1]["content"] == "Order [kurti]"
+
+
+async def test_a_number_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    other = await new_business(app)
+    assert (await other.post("/api/agent", json={"kind": "restaurant"})).status_code == 201
+    body = {"token": TOKEN, "account_id": ACCOUNT, "phone_id": PHONE}
+    assert (await other.put("/api/agent/whatsapp", json=body)).status_code == 422
+
+
+async def test_disconnecting_stops_the_number(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    assert (await client.delete("/api/agent/whatsapp")).status_code == 204
+    assert await post(client, message("hi")) == 200  # Meta is told OK, and nothing answers
+    assert fake(app).sent == []
+
+
+async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    path, secret = await link_owner(app, client)
+    await connect(client)
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone from the team will help."]
+    await post(client, message("can I talk to a person?"))
+
+    alert = to(app, 777)[-1]
+    assert "on WhatsApp" in alert
+    await to_telegram(client, path, secret, from_owner("Hi, this is Rahim.", alert))
+    assert fake(app).sent[-1] == (FROM, "Hi, this is Rahim.")

@@ -54,6 +54,8 @@ CHANNEL_STYLE = {
     "sentences, in plain text: no markdown, bold or tables. " + TAPS,
     "messenger": "a Facebook Messenger chat, read on a phone. Keep replies to two or three "
     "short sentences, in plain text: no markdown, bold or tables. " + TAPS,
+    "whatsapp": "a WhatsApp chat, read on a phone. Keep replies to two or three short "
+    "sentences, in plain text: no markdown, bold or tables. " + TAPS,
 }
 
 # A call in Bangla (D84, D86): our Bangla voice reads Bangla letters only and drops the rest

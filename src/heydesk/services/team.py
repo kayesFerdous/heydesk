@@ -3,7 +3,8 @@
 The owner links their own chat with the business's bot once, through `owner_link`. Every
 alert ends with a `Ref:` line naming the conversation; the owner answers a visitor by
 replying to it, and the agent stays quiet in that chat until they reply `/done`. Their words
-reach a Telegram or Messenger visitor from the business's bot or Page (D60).
+reach a Telegram, Messenger or WhatsApp visitor from the business's bot, Page or number (D60,
+D103).
 """
 
 import hashlib
@@ -20,10 +21,11 @@ from heydesk.models import Channel, Conversation
 from heydesk.ports.llm import LanguageModel, Message
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
+from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 
 log = logging.getLogger(__name__)
 
-TELEGRAM, MESSENGER = "telegram", "messenger"  # the messaging apps, as `channels.kind`
+TELEGRAM, MESSENGER, WHATSAPP = "telegram", "messenger", "whatsapp"  # as `channels.kind`
 HUMAN = "human"  # the conversation's status while the team answers
 TEAM = "team"  # the "by" mark on a message the team wrote
 REF = re.compile(r"Ref: ([0-9a-f]{32})")
@@ -32,6 +34,8 @@ HOW_TO_ANSWER = {
     "telegram": "Reply to this message to answer them.",
     "web": "Reply to this message to answer them in the web chat.",
     "messenger": "Reply to this message to answer them on Messenger, within 24 hours of their "
+    "last message.",
+    "whatsapp": "Reply to this message to answer them on WhatsApp, within 24 hours of their "
     "last message.",
     "voice": "It was a phone call: call them back if they left a number.",
 }
@@ -74,12 +78,14 @@ class TeamService:
         llm: LanguageModel,  # only for the shape of a stored message
         telegram: TelegramApi,
         messenger: MessengerApi,
+        whatsapp: WhatsAppApi,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.llm = llm
         self.telegram = telegram
         self.messenger = messenger
+        self.whatsapp = whatsapp
         self.now = now
 
     async def alert(self, conv: Conversation, text: str) -> None:
@@ -100,14 +106,18 @@ class TeamService:
     async def send(
         self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
-        """One message from the business's bot or Page, with buttons for `choices` (D99). A
+        """One message from the business's bot, Page or number, with buttons for `choices` (D99). A
         failure is logged, never raised."""
         try:
             if channel.kind == MESSENGER:
                 await self.messenger.send_message(channel.token, chat_id, text, choices)
+            elif channel.kind == WHATSAPP:
+                await self.whatsapp.send_message(
+                    channel.token, channel.address, chat_id, text, choices
+                )
             else:
                 await self.telegram.send_message(channel.token, chat_id, text, choices)
-        except (TelegramUnavailable, MessengerUnavailable) as error:
+        except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable) as error:
             log.warning("send failed: %s", error, extra={"channel_id": channel.id})
 
     async def forward(self, conv: Conversation, text: str) -> None:
@@ -117,7 +127,7 @@ class TeamService:
     async def tell_visitor(self, conversation_id: str, text: str) -> None:
         """The business tells the visitor something the agent couldn't know (a payment came
         in). Added to the transcript like a team reply, so the web page shows it and the model
-        sees it; sent on Telegram or Messenger. The conversation stays with the agent."""
+        sees it; sent on Telegram, Messenger or WhatsApp. The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
             conv = await s.get_one(Conversation, conversation_id)
             said = {**self.llm.assistant_message(text), "by": TEAM}
@@ -174,14 +184,14 @@ class TeamService:
     async def _to_visitor(self, conv: Conversation, text: str) -> None:
         """Sends the team's words to a messaging app's visitor; a web visitor's page fetches
         them (/team), and a call can't get them."""
-        if conv.channel not in (TELEGRAM, MESSENGER):
+        if conv.channel not in (TELEGRAM, MESSENGER, WHATSAPP):
             return
         channel = await self._channel(conv.workspace_id, conv.channel)
         if channel is not None:
             await self.send(channel, str(conv.contact), text)
 
     async def _channel(self, ws: str, kind: str = TELEGRAM) -> Channel | None:
-        """Alerts always go to Telegram; a visitor's channel can be either app."""
+        """Alerts always go to Telegram; a visitor's channel can be any app."""
         async with self.sessions() as s:
             return await s.scalar(
                 select(Channel).where(Channel.workspace_id == ws, Channel.kind == kind)

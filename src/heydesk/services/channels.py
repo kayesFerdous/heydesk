@@ -1,5 +1,5 @@
-"""Messaging apps: a business connects its own Telegram bot (D42) or Facebook Page (D60), and
-the agent answers there.
+"""Messaging apps: a business connects its own Telegram bot (D42), Facebook Page (D60) or
+WhatsApp number (D103), and the agent answers there.
 
 The app posts each message to our webhook; the reply is the whole turn, sent as one message.
 """
@@ -24,10 +24,11 @@ from heydesk.models import Channel
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
+from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
-from heydesk.services.team import MESSENGER, TELEGRAM, TeamService
+from heydesk.services.team import MESSENGER, TELEGRAM, WHATSAPP, TeamService
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class ChannelService:
         team: TeamService,
         telegram: TelegramApi,
         messenger: MessengerApi,
+        whatsapp: WhatsAppApi,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -70,6 +72,7 @@ class ChannelService:
         self.team = team
         self.telegram = telegram
         self.messenger = messenger
+        self.whatsapp = whatsapp
         self.settings = settings
         self.now = now
 
@@ -139,13 +142,58 @@ class ChannelService:
             await self.messenger.unsubscribe(channel.token, channel.address)
         await self._delete(channel)
 
+    async def connect_whatsapp(
+        self, ws: str, token: str, account_id: str, phone_id: str
+    ) -> Channel:
+        """Subscribes our app to the business account's messages, which also checks the token,
+        the account and the number. Connecting again replaces the old number (D103)."""
+        if not self.settings.META_APP_SECRET:
+            raise HeyDeskError("The server has no META_APP_SECRET, so WhatsApp can't reach it.")
+        agent = await self.agents.get(ws)  # 404 if the business has no agent yet
+        taken = await self.whatsapp_number(phone_id)
+        if taken is not None and taken.workspace_id != ws:
+            raise InvalidConfig({"phone_id": "This number is connected to another business."})
+        try:
+            # first: if it fails, nothing saved
+            await self.whatsapp.subscribe(token, account_id, phone_id)
+        except WhatsAppUnavailable:
+            raise InvalidConfig(
+                {
+                    "token": "Meta doesn't accept this token for this account and number. "
+                    "Check both ids, or make a new access token."
+                }
+            ) from None
+        async with self.sessions() as s:
+            channel = await self._find(s, ws, WHATSAPP)
+        channel_id = channel.id if channel else new_id()
+        channel = await self._save(ws, agent.id, WHATSAPP, channel_id, token, "", phone_id)
+        log.info("whatsapp connected", extra={"channel_id": channel_id})
+        return channel
+
+    async def whatsapp_of(self, ws: str) -> Channel:
+        return await self._of(ws, WHATSAPP, "This business hasn't connected a WhatsApp number.")
+
+    async def disconnect_whatsapp(self, ws: str) -> None:
+        """Our app stays subscribed to the account (it may have other numbers); this number's
+        messages find no channel and aren't answered."""
+        await self._delete(await self.whatsapp_of(ws))
+
+    async def whatsapp_number(self, phone_id: str) -> Channel | None:
+        """The business connected to a number: one webhook serves every number, so it's by id."""
+        async with self.sessions() as s:
+            return await s.scalar(
+                select(Channel).where(Channel.kind == WHATSAPP, Channel.address == phone_id)
+            )
+
     def messenger_verify(self, token: str) -> bool:
-        """The verify token we set in the Meta app's dashboard. None set: no webhook."""
+        """The verify token we set in the Meta app's dashboard, for Messenger's and WhatsApp's
+        webhooks. None set: no webhook."""
         expected = self.settings.MESSENGER_VERIFY_TOKEN
         return bool(expected) and secrets.compare_digest(expected, token)
 
     def messenger_signed(self, body: bytes, signature: str) -> bool:
-        """Facebook signs each webhook post with our app secret. No secret: nothing is trusted."""
+        """Meta signs each webhook post with our app secret, Messenger's and WhatsApp's. No
+        secret: nothing is trusted."""
         secret = self.settings.META_APP_SECRET.encode()
         expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
         return bool(secret) and hmac.compare_digest(expected, signature)
@@ -189,6 +237,24 @@ class ChannelService:
         if not message or message.get("is_echo"):  # the Page's own messages
             return
         await self._answer(channel, str(event["sender"]["id"]), message)
+
+    async def answer_whatsapp(self, channel: Channel, message: dict[str, Any]) -> None:
+        """Answers one WhatsApp message. Runs after the webhook has said OK. It's put in the
+        shape `_answer` reads: a tapped button's id is the text (D99), a photo's caption its
+        words; anything else (a sticker, a voice note) has no text."""
+        kind = message.get("type")
+        said: dict[str, Any] = {}
+        if kind == "text":
+            said = {"text": (message.get("text") or {}).get("body") or ""}
+        elif kind == "interactive":
+            tapped = message["interactive"]
+            choice = tapped.get("button_reply") or tapped.get("list_reply") or {}
+            said = {"text": choice.get("id") or ""}
+        elif kind == "image":
+            said = {"image": message["image"], "caption": message["image"].get("caption") or ""}
+        with contextlib.suppress(WhatsAppUnavailable):  # "typing…" until the reply
+            await self.whatsapp.send_typing(channel.token, channel.address, message["id"])
+        await self._answer(channel, str(message["from"]), said)
 
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
@@ -244,31 +310,42 @@ class ChannelService:
             return (
                 await self.telegram.download(channel.token, sizes[-1]["file_id"]) if sizes else None
             )
+        if channel.kind == WHATSAPP:  # D103: a media id, fetched with the token
+            image = message.get("image")
+            return await self.whatsapp.download(channel.token, image["id"]) if image else None
         url = first_photo(message)  # D62
         return await self.messenger.download(url) if url else None
 
     async def _send_photos(
         self, channel: Channel, chat_id: str, photos: list[dict[str, str]]
     ) -> None:
-        """The products `show_photos` chose. On Messenger one carousel, which Facebook fetches
-        from us, so its URLs are made whole (D62); on Telegram each photo is uploaded, with its
+        """The products `show_photos` chose. On Messenger one carousel and on WhatsApp a message
+        each, which Meta fetches from us, so their URLs are made whole (D62, D103); on Telegram each photo is uploaded, with its
         name and price as the caption (D63). Each has an Order button, whose tap says
         "Order [code]" (D99). If it fails, the text still goes."""
         orders = [f"Order [{p['code']}]" for p in photos]
         orders = [o if len(o.encode()) <= 64 else "" for o in orders]  # Telegram's data limit
         try:
-            if channel.kind == MESSENGER:
+            if channel.kind in (MESSENGER, WHATSAPP):
                 cards = [
                     {**p, "url": self.whole(p["url"]), "choice": order}
                     for p, order in zip(photos, orders, strict=True)
                 ]
-                await self.messenger.send_cards(channel.token, chat_id, cards)
+                if channel.kind == MESSENGER:
+                    await self.messenger.send_cards(channel.token, chat_id, cards)
+                else:
+                    await self.whatsapp.send_cards(channel.token, channel.address, chat_id, cards)
                 return
             for p, order in zip(photos, orders, strict=True):
                 jpeg = await self.photos.read(p["url"])
                 caption = f"{p['name']} · {p['price']}"
                 await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order)
-        except (MessengerUnavailable, TelegramUnavailable, MediaUnavailable) as error:
+        except (
+            MessengerUnavailable,
+            TelegramUnavailable,
+            WhatsAppUnavailable,
+            MediaUnavailable,
+        ) as error:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
 
     def whole(self, url: str) -> str:
@@ -276,8 +353,9 @@ class ChannelService:
         return url if url.startswith("https://") else self.settings.public_url + url
 
     async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
-        """ "typing…" lasts five seconds on Telegram; a reply can take longer."""
-        while True:
+        """ "typing…" lasts five seconds on Telegram; a reply can take longer. WhatsApp's was
+        sent once with the message's id (`answer_whatsapp`)."""
+        while channel.kind != WHATSAPP:
             try:
                 if channel.kind == MESSENGER:
                     await self.messenger.send_typing(channel.token, chat_id)

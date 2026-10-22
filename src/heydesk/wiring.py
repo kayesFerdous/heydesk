@@ -26,6 +26,7 @@ from heydesk.adapters.payments.fake import FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
+from heydesk.adapters.whatsapp.cloud import WhatsAppCloud
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
 from heydesk.ports.decider import Decider
@@ -39,6 +40,7 @@ from heydesk.ports.payments import PaymentGateway
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.sheets import FetchCsv
 from heydesk.ports.telegram import TelegramApi
+from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.ports.woo import WooApi
 from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
@@ -180,6 +182,7 @@ def build_services(
     now: Callable[[], datetime],
     telegram: TelegramApi | None = None,
     messenger: MessengerApi | None = None,
+    whatsapp: WhatsAppApi | None = None,
     payments: PaymentGateway | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
     woo: WooApi | None = None,
@@ -191,7 +194,8 @@ def build_services(
     agents = AgentService(sessions, knowledge, photos, now)
     telegram = telegram or TelegramBot()
     messenger = messenger or MessengerGraph()
-    team = TeamService(sessions, llm, telegram, messenger, now)
+    whatsapp = whatsapp or WhatsAppCloud()
+    team = TeamService(sessions, llm, telegram, messenger, whatsapp, now)
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
     imports = ImportService(llm, settings.MODEL)
@@ -223,7 +227,16 @@ def build_services(
         agents=agents,
         calls=calls,
         channels=ChannelService(
-            sessions, agents, conversations, photos, team, telegram, messenger, settings, now
+            sessions,
+            agents,
+            conversations,
+            photos,
+            team,
+            telegram,
+            messenger,
+            whatsapp,
+            settings,
+            now,
         ),
         conversations=conversations,
         imports=imports,
