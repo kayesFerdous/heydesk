@@ -96,3 +96,10 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 - gpt-oss doesn't follow `$ref` in a tool schema; `Tool.spec` writes nested models out.
 - Jev: no arithmetic or date comparisons; small state; positive questions.
 - `ruff format` would rewrite code blocks in the docs; `*.md` is excluded. Don't run it on docs.
+
+## Project explorer sync
+When you change code, update docs/project-explorer.html in the same task.
+1. Read docs/project-explorer.index.md and find the section IDs mapped to the files you changed.
+2. Find line ranges with grep -n "SECTION:<id>" docs/project-explorer.html. Read and edit only those ranges. Never read the full HTML.
+3. Prefer editing the data-* JSON blocks. Touch view code only when a new kind of visual is needed.
+4. New module/agent/tool/prompt → add it to the matching JSON block. New section → add markers and an index row.
