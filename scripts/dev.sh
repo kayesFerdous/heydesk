@@ -92,7 +92,22 @@ kill_all() { # ask them to stop, give them 5 seconds to finish, then make them
   kill -KILL $alive 2>/dev/null
 }
 
-listeners() { lsof -nP -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null | sort -u; }
+listeners() { # the pids listening on a port: ss on Linux (lsof often isn't installed), lsof on macOS
+  if command -v ss >/dev/null; then
+    ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u
+  else
+    lsof -nP -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null | sort -u
+  fi
+}
+browse() { # open a link in the browser: xdg-open on Linux, open on macOS
+  if command -v xdg-open >/dev/null; then xdg-open "$1" >/dev/null 2>&1 & else open "$1"; fi
+}
+copy() { # put stdin on the clipboard; fails when there's no clipboard tool
+  if command -v pbcopy >/dev/null; then pbcopy
+  elif [[ -n ${WAYLAND_DISPLAY:-} ]] && command -v wl-copy >/dev/null; then wl-copy
+  elif command -v xclip >/dev/null; then xclip -selection clipboard
+  else return 1; fi
+}
 describe() { ps -o command= -p "$1" 2>/dev/null | sed -E 's#(^| )/[^ ]*/#\1#g' | cut -c1-60; }
 
 free_port() { # stop whatever listens on the port
@@ -261,14 +276,14 @@ start() { # api | web | all, then options
   [[ -n $web ]] && printf '   Frontend   %shttp://localhost:%s%s\n' "$M" $WEB_PORT "$N"
   if [[ -n $LINK ]]; then
     local copied=""
-    command -v pbcopy >/dev/null && printf '%s' "$LINK" | pbcopy && copied="  ${D}(copied)${N}"
+    printf '%s' "$LINK" | copy && copied="  ${D}(copied)${N}"
     printf '   Public     %s%s%s%s\n' "$Y$B" "$LINK" "$N" "$copied"
   fi
   printf ' %sCtrl+C stops everything · logs: %s logs%s\n' "$D" "$SELF" "$N"
   echo "$line"
 
   if [[ -n $open ]]; then
-    if [[ -n $LINK ]]; then open "$LINK"; elif [[ -n $web ]]; then open "http://localhost:$WEB_PORT"; else open "http://localhost:$API_PORT"; fi
+    if [[ -n $LINK ]]; then browse "$LINK"; elif [[ -n $web ]]; then browse "http://localhost:$WEB_PORT"; else browse "http://localhost:$API_PORT"; fi
   fi
   wait
 }
