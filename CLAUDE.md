@@ -35,6 +35,8 @@ design.md **and** adds a line to decisions.md, in the same change.
 
 - One PLAN.md day at a time, in order. Tick a box only when its *Done when*
   check passes, and update the **Now** line.
+- A day that builds a gap from [docs/competitor-gaps.md](docs/competitor-gaps.md)
+  (G1, G2, …) also ticks that gap there, with the date and D-number.
 - Code blocks in design.md are sketches: follow their shape and names, not every line.
 - Commit only when asked. Before any commit: `scripts/check.sh`.
 - **Commits and PRs have no AI attribution**: no `Co-Authored-By: Claude`
