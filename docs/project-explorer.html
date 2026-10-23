@@ -363,6 +363,16 @@ tr.hl td { background: var(--accent-soft); }
    "fn": "get_billing"
   },
   {
+   "id": "a-courier",
+   "label": "Courier API",
+   "type": "api",
+   "file": "src/heydesk/api/courier.py",
+   "purpose": "Link a shop's Steadfast or Pathao (checked first), see its problem, sync now, unlink (D90, D113).",
+   "inputs": "CourierIn",
+   "outputs": "CourierOut",
+   "fn": "link_courier"
+  },
+  {
    "id": "a-woo",
    "label": "WooCommerce API",
    "type": "api",
@@ -647,7 +657,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "CourierService",
    "type": "service",
    "file": "src/heydesk/services/courier.py",
-   "purpose": "Books every confirmed shop order with the courier (it's shipped then) and follows each parcel until delivered or returned; the buyer hears each move (D112). Off in production.",
+   "purpose": "Books every confirmed shop order with its linked Steadfast or Pathao, or the fake courier when none is linked outside production (it's shipped then), and follows each parcel until delivered or returned; the buyer hears each move (D112, D113).",
    "inputs": "confirmed / shipped orders",
    "outputs": "parcel_id, courier_status, status",
    "fn": "sync"
@@ -1154,7 +1164,25 @@ tr.hl td { background: var(--accent-soft); }
    "label": "FakeCourier",
    "type": "adapter",
    "file": "src/heydesk/adapters/courier/fake.py",
-   "purpose": "Delivers every parcel on its own: one step every 2 min, delivered after 8; the booked time is in the parcel id. Pathao and Steadfast come with production (D112).",
+   "purpose": "Delivers every parcel on its own: one step every 2 min, delivered after 8; the booked time is in the parcel id. Used by a shop with no courier linked, outside production (D112, D113).",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
+   "id": "ad-steadfast",
+   "label": "Steadfast",
+   "type": "adapter",
+   "file": "src/heydesk/adapters/courier/steadfast.py",
+   "purpose": "portal.packzy.com with Api-Key and Secret-Key headers; no sandbox: a booking is a real parcel (D90, D113).",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
+   "id": "ad-pathao",
+   "label": "Pathao",
+   "type": "adapter",
+   "file": "src/heydesk/adapters/courier/pathao.py",
+   "purpose": "Merchant API with a password-grant token; no city or zone (auto address). Its sandbox was down on 23 Oct (Cloudflare 522) (D90, D113).",
    "inputs": "",
    "outputs": ""
   },
@@ -2048,6 +2076,21 @@ tr.hl td { background: var(--accent-soft); }
    "source": "ad-courier",
    "target": "p-courier",
    "label": "implements"
+  },
+  {
+   "source": "ad-steadfast",
+   "target": "p-courier",
+   "label": "implements"
+  },
+  {
+   "source": "ad-pathao",
+   "target": "p-courier",
+   "label": "implements"
+  },
+  {
+   "source": "a-courier",
+   "target": "s-courier",
+   "label": "link / get / sync / unlink"
   },
   {
    "source": "s-courier",
@@ -6240,13 +6283,13 @@ tr.hl td { background: var(--accent-soft); }
    "title": "Background loops",
    "kind": "schedulers",
    "file": "src/heydesk/main.py",
-   "summary": "Three asyncio tasks started in the lifespan, and the courier's outside production; one failing item never stops the loop.",
+   "summary": "Four asyncio tasks started in the lifespan; one failing item never stops the loop.",
    "nodes": [
     {
      "id": "life",
      "label": "lifespan start",
      "shape": "event",
-     "code": "loops = [\n  asyncio.create_task(services.sheets.run(SHEET_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.woo.run(WOO_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.calls.run(CALL_QUEUE_SECONDS)),\n]\nif services.courier:\n  loops.append(asyncio.create_task(services.courier.run(COURIER_SYNC_MINUTES * 60)))",
+     "code": "loops = [\n  asyncio.create_task(services.sheets.run(SHEET_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.woo.run(WOO_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.calls.run(CALL_QUEUE_SECONDS)),\n  asyncio.create_task(services.courier.run(COURIER_SYNC_MINUTES * 60)),\n]",
      "fn": "create_app.lifespan"
     },
     {
@@ -6351,8 +6394,7 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "life",
-     "courier",
-     "not production"
+     "courier"
     ],
     [
      "woo",
@@ -8311,6 +8353,14 @@ tr.hl td { background: var(--accent-soft); }
    "sync": "Pushed after a chat order or a payment; push then pull; webhooks debounce 2 s; safety every 30 min.",
    "failure": "Stops at the first order it can't write; retried next sync.",
    "timeline": "woo"
+  },
+  {
+   "what": "Linked courier & parcels",
+   "file": "src/heydesk/models/courier_link.py",
+   "where": "`courier_links` (secrets encrypted, problem) + `shop_orders.parcel_id/courier_status`",
+   "written": "CourierService",
+   "sync": "Every 1 min: book confirmed orders, then ask about shipped parcels.",
+   "failure": "Stops that shop's round; problem saved on the link, owner told once; retried next round."
   },
   {
    "what": "Call queue & ringing pages",

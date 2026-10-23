@@ -10,6 +10,8 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.adapters.courier.fake import FakeCourier
+from heydesk.adapters.courier.pathao import Pathao
+from heydesk.adapters.courier.steadfast import Steadfast
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.embedder.gemini import GeminiEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
@@ -28,6 +30,7 @@ from heydesk.adapters.telegram.bot import TelegramBot
 from heydesk.adapters.whatsapp.cloud import WhatsAppCloud
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
+from heydesk.ports.courier import CourierApi
 from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
@@ -175,6 +178,7 @@ def build_services(
     fetch_sheet: FetchCsv = fetch_csv,
     woo: WooApi | None = None,
     fetch_photo: FetchImage | None = None,
+    couriers: dict[str, CourierApi] | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm)
     gateways = payments or build_payments(settings)
@@ -229,11 +233,14 @@ def build_services(
             now,
         ),
         conversations=conversations,
-        # ponytail: the fake courier only; production books by hand until Pathao or Steadfast
-        # has an adapter, with each shop's own merchant login
-        courier=None
-        if settings.APP_ENV == "production"
-        else CourierService(sessions, agents, team, FakeCourier(now)),
+        courier=CourierService(
+            sessions,
+            agents,
+            team,
+            couriers or {"steadfast": Steadfast(), "pathao": Pathao(), "fake": FakeCourier(now)},
+            # a shop with no courier linked: the fake one, except in production (by hand)
+            fallback=None if settings.APP_ENV == "production" else "fake",
+        ),
         imports=imports,
         knowledge=knowledge,
         members=MemberService(sessions, users, now),

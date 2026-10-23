@@ -404,6 +404,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
+| `courier_links` | agent_id (unique), kind (`steadfast` or `pathao`), key, secret and password (encrypted, D74), username, store_id (Pathao's pick-up store), sandbox, problem (empty: fine). One per agent, shops only (D90, D113) |
 | `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
 | `subscription_payments` | plan, months (1 or 12), amount, status (`unpaid`/`paid`), payment_ref, paid_at: a business paying HeyDesk for a plan, through our own SSLCommerz store or bKash account (D106, D109) |
 | `payment_accounts` | provider (`sslcommerz`/`bkash`), store_id, app_key, app_secret and password (both encrypted, D74), username, sandbox: the business's own SSLCommerz store or bKash account, one of each per business (D49, D109). No route returns a secret |
@@ -465,6 +466,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
+| GET/PUT/DELETE, POST | `/api/agent/courier`, `/api/agent/courier/sync` | The shop's linked Steadfast or Pathao: its kind, store and problem; link it after checking the keys; unlink it; book and follow now (D90, D113) |
 | GET/PUT/DELETE, POST | `/api/agent/woo`, `/api/agent/woo/sync` | The shop's linked WooCommerce store: its state; link it with a Read/Write key; unlink it; sync now (D75) |
 | POST | `/api/woo/hook/{workspace_id}` | A linked store's webhook: checked by `X-WC-Webhook-Signature` with the link's secret, a sync started 2 seconds later (D78) |
 | POST | `/api/telegram/{channel_id}` | Telegram's webhook: checked by its secret header, answered after the response |
@@ -1239,13 +1241,15 @@ Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
 A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
 needs `call_to_confirm` (a 422 otherwise).
 
-### The courier (D112)
+### The courier (D112, D113)
 
-Outside production, a confirmed order goes to the courier on its own. `CourierApi`
-(`ports/courier.py`) has `book(Parcel) → parcel id` and `status(parcel id) → Tracked(said,
-ending)`; the only adapter is `FakeCourier`, which moves a parcel one step every 2 minutes
-and delivers it after 8. `CourierService.run`, every `COURIER_SYNC_MINUTES`, for each shop
-with a parcel to book or follow:
+A confirmed order goes to the courier on its own. `CourierApi` (`ports/courier.py`) has
+`check(account)`, `book(account, Parcel) → parcel id` and `status(account, parcel id) →
+Tracked(said, ending)`. Its adapters: `Steadfast` and `Pathao` (`adapters/courier/`), with the
+shop's own merchant login linked at `/api/agent/courier` (checked when saved; `courier_links`,
+secrets encrypted), and `FakeCourier`, which moves a parcel one step every 2 minutes and
+delivers it after 8. A shop with no link uses the fake one, except in production (by hand).
+`CourierService.run`, every `COURIER_SYNC_MINUTES`, for each shop with a parcel to book or follow:
 
 1. Each `confirmed` order with no `parcel_id` is booked (the cash still owed in whole taka,
    the order code as the invoice): it's `shipped`, the buyer hears so, the owner is told to pack it.
@@ -1253,9 +1257,9 @@ with a parcel to book or follow:
    (`track_order` gives them), and `delivered` or `returned` moves the order; the buyer hears
    a delivery, the owner a return.
 
-A `CourierError` stops that shop's round; it's tried again next time. In production
-`Services.courier` is None and the owner moves orders by hand (D95), until Pathao or
-Steadfast has an adapter with each shop's merchant login.
+A `CourierError` stops that shop's round: it's noted on the link (`problem`), the owner hears
+it once, and it's tried again next time. In production a shop with no courier linked moves its
+orders by hand (D95).
 
 ## 10. Voice (M2)
 

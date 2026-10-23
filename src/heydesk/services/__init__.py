@@ -28,7 +28,7 @@ class Services:
     calls: CallService  # the shop's call to confirm an order, to a /phone page (D88)
     channels: ChannelService
     conversations: ConversationService
-    courier: CourierService | None  # books and follows a shop's parcels (D112); None: by hand
+    courier: CourierService  # books and follows a shop's parcels (D90, D112)
     imports: ImportService
     knowledge: KnowledgeService
     members: MemberService  # the business's moderators and what its team did (D97)
