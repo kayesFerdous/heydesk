@@ -271,3 +271,28 @@ async def test_a_request_shows_a_summary_then_a_receipt(world: World) -> None:
             "rows": rows,
         },
     }
+
+
+async def test_a_patient_back_from_the_same_browser_is_offered_their_details(
+    world: World,
+) -> None:
+    """The browser's token is the web chat's and a call's contact (D114): a later conversation
+    from it, typed or spoken, has the past appointment in the prompt; another browser's doesn't."""
+    agent = await world.agent("clinic")
+    talk = world.services.conversations
+
+    async def say(conv: str | None, script: list[Any], channel: str, token: str) -> str:
+        world.llm.script = script
+        turn = await talk.start_turn(agent, conv, "…", channel, f"web:{token}", token)
+        [_ async for _ in turn.events]
+        return turn.conversation_id
+
+    conv = await say(None, [request(), READ_BACK], "web", "browser-1")
+    assert "# Their past appointments" not in world.llm.requests[-1].system
+    await say(conv, [request(), "Sent."], "web", "browser-1")
+
+    await say(None, ["Hello again!"], "voice", "browser-1")
+    system = world.llm.requests[-1].system
+    assert "- A-101: Dr. Imran Hasan, for Kayes, phone 01712345678" in system
+    await say(None, ["Hello!"], "web", "browser-2")
+    assert "# Their past appointments" not in world.llm.requests[-1].system

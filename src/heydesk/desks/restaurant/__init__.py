@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk, missing_basics
+from heydesk.desks.restaurant.models import Booking, Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.tools import BOOKING_TOOLS, TOOLS
 from heydesk.desks.restaurant.values import (
@@ -16,7 +17,7 @@ from heydesk.desks.restaurant.values import (
     menu_from_csv,
     menu_text,
 )
-from heydesk.desks.shared import pay_first_rule
+from heydesk.desks.shared import pay_first_rule, returning
 from heydesk.runtime.parse import DAYS_AHEAD
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool
@@ -70,6 +71,21 @@ To cancel a booking, ask for its code (like T-101), then the name it's under, an
 cancel_booking."""
 
 
+async def returning_facts(store: RestaurantStore) -> list[str]:
+    """Their last order and booking from an earlier conversation, if any."""
+    facts = []
+    for order in await store.before(Order):
+        dishes = ", ".join(f"{line['quantity']} × {line['name']}" for line in order.lines)
+        where = f"; address {order.address}" if order.address else " (pickup)"
+        facts.append(f"Order {order.code}: {dishes}; name {order.name}; phone {order.phone}{where}")
+    for booking in await store.before(Booking):
+        facts.append(
+            f"Booking {booking.code}: {booking.people} people; name {booking.name}; "
+            f"phone {booking.phone}"
+        )
+    return facts
+
+
 class RestaurantDesk(Desk):
     kind = "restaurant"
     label = "Restaurant host"
@@ -117,7 +133,11 @@ class RestaurantDesk(Desk):
                 )
             )
         menu = "# Menu\n" + menu_text(await store.menu(), config.currency)
-        return "\n\n".join([*sections, "\n".join(about), menu])
+        sections += ["\n".join(about), menu]
+        before = await returning_facts(store)
+        if before:  # a guest back again (D114)
+            sections.append(returning("Their last visit", before))
+        return "\n\n".join(sections)
 
     def note(self, config: RestaurantConfig, state: dict[str, Any]) -> str:
         """The order so far, so the model always has the right total in front of it."""

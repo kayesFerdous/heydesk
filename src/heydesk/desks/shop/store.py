@@ -27,7 +27,6 @@ from heydesk.desks.shop.values import (
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
-from heydesk.models import Conversation
 from heydesk.models.taken import next_number
 
 
@@ -196,35 +195,6 @@ class ShopStore(Store):
                 .group_by(ShopOrder.status)
             )
             return {status: count for status, count in rows}
-
-    async def last_order_before(self) -> ShopOrder | None:
-        """This buyer's latest order from an earlier conversation, on Telegram or Messenger,
-        where the chat says who they are (D81). None on the web and voice: those have no
-        contact."""
-        if self.conversation_id is None:
-            return None
-        ws = self.workspace_id
-        async with self.sessions() as s:
-            here = await s.scalar(
-                select(Conversation).where(
-                    Conversation.workspace_id == ws, Conversation.id == self.conversation_id
-                )
-            )
-            if here is None or here.contact is None:
-                return None
-            return await s.scalar(
-                select(ShopOrder)
-                .join(Conversation, ShopOrder.conversation_id == Conversation.id)
-                .where(
-                    ShopOrder.workspace_id == ws,
-                    Conversation.workspace_id == ws,
-                    Conversation.channel == here.channel,
-                    Conversation.contact == here.contact,
-                    Conversation.id != here.id,
-                )
-                .order_by(ShopOrder.created_at.desc())
-                .limit(1)
-            )
 
     async def orders_here(self) -> list[ShopOrder]:
         """The orders placed in this conversation, newest first (D55)."""

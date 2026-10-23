@@ -6,10 +6,11 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk, missing_basics
+from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.tools import TOOLS
 from heydesk.desks.clinic.values import DOCTOR_COLUMNS, ClinicConfig, Doctor, doctors_from_csv
-from heydesk.desks.shared import pay_first_rule
+from heydesk.desks.shared import pay_first_rule, returning
 from heydesk.runtime.speech import money
 
 ROLE = """\
@@ -69,7 +70,12 @@ class ClinicDesk(Desk):
         doctors = await store.doctors()
         listed = ["# Doctors"]
         listed += [d.line(config.currency) for d in doctors] or ["No doctors listed yet."]
-        return "\n\n".join([ROLE, "\n".join(about), "\n".join(listed)])
+        sections = [ROLE, "\n".join(about), "\n".join(listed)]
+        past = await store.before(Appointment, limit=3)
+        if past:  # a patient back again (D114): someone may book for their family
+            facts = [f"{a.code}: {a.doctor_name}, for {a.name}, phone {a.phone}" for a in past]
+            sections.append(returning("Their past appointments", facts))
+        return "\n\n".join(sections)
 
     async def missing(self, config: ClinicConfig, store: ClinicStore) -> list[str]:
         missing = missing_basics(config)

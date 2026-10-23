@@ -423,9 +423,9 @@ async def _find(ctx: Ctx, code: str, phone: str, by_phone: bool = False) -> Shop
             if latest is None:
                 return fail("No order was placed with that mobile number. Ask them to check it.")
             return latest
-        before = await ctx.store.last_order_before()  # the same buyer, back on Telegram
+        before = await ctx.store.before(ShopOrder)  # the same buyer, back again (D81)
         if before:
-            return before
+            return before[0]
         if by_phone:
             return fail("Ask for the mobile number the order was placed with.")
         return fail(

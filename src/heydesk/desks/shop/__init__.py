@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from heydesk.desks.base import Desk
+from heydesk.desks.shared import returning
+from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.tools import TOOLS
 from heydesk.desks.shop.values import (
@@ -15,6 +17,7 @@ from heydesk.desks.shop.values import (
     ShopConfig,
     cart_text,
     groups_text,
+    lines_text,
     photo_line,
     products_from_csv,
 )
@@ -171,14 +174,18 @@ class ShopDesk(Desk):
             products.append("No products listed yet.")
 
         sections = [ROLE, "\n".join(about), "\n".join(delivery), "\n".join(products)]
-        last = await store.last_order_before()
-        if last:  # a buyer back on Telegram or Messenger (D81)
+        for last in await store.before(ShopOrder):  # a buyer back again (D81, D114)
             sections.append(
-                "# Their last order\n"
-                f"This buyer ordered here before, with: name {last.name}; mobile {last.phone}; "
-                f"area {last.zone}; address {last.address}.\n"
-                "When you need the delivery details, offer once to use these again, and use "
-                "them only if they say yes. Don't bring them up before then."
+                returning(
+                    "Their last order",
+                    [
+                        f"{last.code}: {lines_text(last.lines)}",
+                        (
+                            f"name {last.name}; mobile {last.phone}; area {last.zone}; "
+                            f"address {last.address}"
+                        ),
+                    ],
+                )
             )
         if config.size_guide.strip():
             sections.append(f"# Size guide\n{config.size_guide.strip()}")

@@ -4056,21 +4056,13 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "id": "returning_buyer",
-   "label": "Buyer ordered before (same chat app)",
+   "label": "Visitor here before (same chat or browser)",
    "group": "Turn",
    "type": "toggle",
    "default": false,
    "prompts": [
     "system"
-   ],
-   "show": {
-    "desk": "shop",
-    "channel": [
-     "telegram",
-     "messenger",
-     "whatsapp"
-    ]
-   }
+   ]
   },
   {
    "id": "has_address",
@@ -4522,6 +4514,24 @@ tr.hl td { background: var(--accent-soft); }
      ]
     },
     {
+     "id": "r-returning",
+     "title": "# Their last visit",
+     "owner": "python",
+     "file": "src/heydesk/desks/restaurant/__init__.py",
+     "fn": "returning_facts",
+     "text": "# Their last visit\nThis visitor was here before, from this same chat or browser:\n- Order O-101: 2 × Chicken Biryani; name …; phone …; address …\n- Booking T-101: 4 people; name …; phone …\nWhen you need their details, ask once whether to use these again, and use them only if they say yes; if something changed, ask only for that. If they want the same as last time, offer what they had. Don't bring any of this up before then.",
+     "when": {
+      "desk": "restaurant",
+      "returning_buyer": true
+     },
+     "vars": [
+      [
+       "facts",
+       "Store.before(Order), Store.before(Booking) (D114)"
+      ]
+     ]
+    },
+    {
      "id": "c-role",
      "title": "# Your role + # What you can do (clinic)",
      "owner": "desk",
@@ -4633,6 +4643,24 @@ tr.hl td { background: var(--accent-soft); }
      ]
     },
     {
+     "id": "c-returning",
+     "title": "# Their past appointments",
+     "owner": "python",
+     "file": "src/heydesk/desks/clinic/__init__.py",
+     "fn": "ClinicDesk.prompt",
+     "text": "# Their past appointments\nThis visitor was here before, from this same chat or browser:\n- A-101: Dr. Imran Hasan, for …, phone …\nWhen you need their details, ask once whether to use these again, and use them only if they say yes; if something changed, ask only for that. If they want the same as last time, offer what they had. Don't bring any of this up before then.",
+     "when": {
+      "desk": "clinic",
+      "returning_buyer": true
+     },
+     "vars": [
+      [
+       "facts",
+       "Store.before(Appointment, limit=3) (D114)"
+      ]
+     ]
+    },
+    {
      "id": "rc-role",
      "title": "# Your role (receptionist)",
      "owner": "desk",
@@ -4707,6 +4735,24 @@ tr.hl td { background: var(--accent-soft); }
       "desk": "receptionist",
       "has_services": true
      }
+    },
+    {
+     "id": "rc-returning",
+     "title": "# Their last message",
+     "owner": "python",
+     "file": "src/heydesk/desks/receptionist/__init__.py",
+     "fn": "ReceptionistDesk.prompt",
+     "text": "# Their last message\nThis visitor was here before, from this same chat or browser:\n- Their last message M-101: name …; phone …\nWhen you need their details, ask once whether to use these again, and use them only if they say yes; if something changed, ask only for that. If they want the same as last time, offer what they had. Don't bring any of this up before then.",
+     "when": {
+      "desk": "receptionist",
+      "returning_buyer": true
+     },
+     "vars": [
+      [
+       "facts",
+       "Store.before(TeamMessage), only when it has a name or phone (D114)"
+      ]
+     ]
     },
     {
      "id": "s-role",
@@ -4938,20 +4984,15 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "python",
      "file": "src/heydesk/desks/shop/__init__.py",
      "fn": "ShopDesk.prompt",
-     "text": "# Their last order\nThis buyer ordered here before, with: name …; mobile …; area …; address ….\nWhen you need the delivery details, offer once to use these again, and use them only if they say yes. Don't bring them up before then.",
+     "text": "# Their last order\nThis visitor was here before, from this same chat or browser:\n- O-101: 1 × Black Kurti (M)\n- name …; mobile …; area …; address …\nWhen you need their details, ask once whether to use these again, and use them only if they say yes; if something changed, ask only for that. If they want the same as last time, offer what they had. Don't bring any of this up before then.",
      "when": {
       "desk": "shop",
-      "channel": [
-       "telegram",
-       "messenger",
-       "whatsapp"
-      ],
       "returning_buyer": true
      },
      "vars": [
       [
-       "name, mobile, area, address",
-       "ShopStore.last_order_before(): same channel + contact, another conversation (D81)"
+       "facts",
+       "Store.before(ShopOrder): same contact, web and voice as one browser, another conversation (D81, D114)"
       ]
      ]
     },

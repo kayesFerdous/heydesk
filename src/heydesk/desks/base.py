@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import PaymentAccount, SheetLink, TeamMessage, WooLink
+from heydesk.models import Conversation, PaymentAccount, SheetLink, TeamMessage, WooLink
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -29,6 +29,7 @@ if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.photos import PhotoService
 
 PAGE = 100  # the most rows a list returns at once (newest first)
+BROWSER = ("web", "voice")  # one browser's token is the contact on both (D114)
 
 
 class SheetLinked(Conflict):
@@ -232,6 +233,37 @@ class Store:
                     table.conversation_id == self.conversation_id,
                 )
                 .order_by(table.created_at.desc())
+            )
+            return list(found)
+
+    async def before[T: Taken](self, table: type[T], limit: int = 1) -> list[T]:
+        """What this visitor had in their earlier conversations, newest first (D81, D114): the
+        same chat on a messaging app, or the same browser on the web chat and its calls. Empty
+        when the conversation has no `contact`."""
+        if self.conversation_id is None:
+            return []
+        ws = self.workspace_id
+        async with self.sessions() as s:
+            here = await s.scalar(
+                select(Conversation).where(
+                    Conversation.workspace_id == ws, Conversation.id == self.conversation_id
+                )
+            )
+            if here is None or here.contact is None:
+                return []
+            channels = BROWSER if here.channel in BROWSER else (here.channel,)
+            found = await s.scalars(
+                select(table)
+                .join(Conversation, table.conversation_id == Conversation.id)
+                .where(
+                    table.workspace_id == ws,
+                    Conversation.workspace_id == ws,
+                    Conversation.channel.in_(channels),
+                    Conversation.contact == here.contact,
+                    Conversation.id != here.id,
+                )
+                .order_by(table.created_at.desc())
+                .limit(limit)
             )
             return list(found)
 

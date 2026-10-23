@@ -62,6 +62,7 @@ async def chat(public_key: str, body: ChatIn, services: Svc, ip: ClientIp) -> St
         body.message,
         "web",
         f"web:{body.visitor_id}",
+        body.visitor_id,  # the browser is the contact: a returning visitor is known (D114)
         photo=decoded(body.photo) if body.photo else None,
     )
     return StreamingResponse(

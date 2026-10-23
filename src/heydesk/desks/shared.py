@@ -21,6 +21,26 @@ def pay_first_rule(pay_for: str, tool: str) -> str:
     )
 
 
+RETURNING_RULE = (
+    "When you need their details, ask once whether to use these again, and use them only if "
+    "they say yes; if something changed, ask only for that. If they want the same as last "
+    "time, offer what they had. Don't bring any of this up before then."
+)
+
+
+def returning(heading: str, facts: list[str]) -> str:
+    """The prompt's section for a visitor back from the same chat or browser (D81, D114): what
+    they had before, to offer again instead of asking for it all."""
+    return "\n".join(
+        [
+            f"# {heading}",
+            "This visitor was here before, from this same chat or browser:",
+            *(f"- {fact}" for fact in facts),
+            RETURNING_RULE,
+        ]
+    )
+
+
 def awaiting_payment(
     code: str,
     link: str,

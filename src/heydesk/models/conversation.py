@@ -21,7 +21,8 @@ class Conversation(Base):
     channel: Mapped[str] = mapped_column(
         String(20)
     )  # web / voice / telegram / messenger / whatsapp
-    # who it is on a messaging app (their Telegram chat id), so their next message continues it
+    # who it is: the chat id on a messaging app, so their next message continues it; the
+    # browser's token on the web and a call, so a returning visitor is known (D114)
     contact: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     # their name as the messaging app gives it (Telegram, WhatsApp); None on the web
     name: Mapped[str | None] = mapped_column(String(100), default=None)

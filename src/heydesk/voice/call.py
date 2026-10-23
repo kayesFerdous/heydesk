@@ -134,7 +134,12 @@ class Agent(FrameProcessor):
     async def reply(self, text: str) -> None:
         try:
             turn = await self.conversations.start_turn(
-                self.agent, self.conversation_id, text, "voice", self.visitor
+                self.agent,
+                self.conversation_id,
+                text,
+                "voice",
+                self.visitor,
+                self.visitor.removeprefix("web:"),  # the caller's browser, as in web chat (D114)
             )
         except HeyDeskError as error:  # over a limit (D51), or a full conversation: say why
             await self.push_frame(LLMFullResponseStartFrame())

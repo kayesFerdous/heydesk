@@ -6,6 +6,8 @@ from typing import ClassVar
 from pydantic import Field
 
 from heydesk.desks.base import Desk, Store, missing_basics
+from heydesk.desks.shared import returning
+from heydesk.models import TeamMessage
 from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.tool import Tool
 
@@ -44,7 +46,12 @@ class ReceptionistDesk(Desk):
             about += ["About us:", config.about.strip()]
         if config.services.strip():
             about += ["Services:", config.services.strip()]
-        return "\n\n".join([ROLE, "\n".join(about)])
+        sections = [ROLE, "\n".join(about)]
+        for last in await store.before(TeamMessage):  # back again (D114), if they left a name
+            if last.name or last.phone:
+                facts = [f"Their last message {last.code}: name {last.name}; phone {last.phone}"]
+                sections.append(returning("Their last message", facts))
+        return "\n\n".join(sections)
 
     async def missing(self, config: ReceptionistConfig, store: Store) -> list[str]:
         missing = missing_basics(config)

@@ -91,7 +91,7 @@ class ConversationService:
         """Loads the conversation (or starts one), then runs the turn as the listener reads it.
         `visitor` is who is talking, for the limits (D51): `web:<token>`, `telegram:<chat id>`.
         A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
-        new conversation. A web visitor
+        new conversation; the web chat and a call pass the browser's token (D114). A web visitor
         can send a `photo` with it, or instead of words, when the desk takes photos (D57)."""
         text = text.strip()
         if photo is not None and not agent.desk.takes_photos:
