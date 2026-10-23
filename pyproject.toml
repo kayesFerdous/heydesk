@@ -16,7 +16,7 @@ dependencies = [
     "httpx>=0.28.1",
     "limits>=5.8.0",
     "num2words>=0.5.14",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "pipecat-ai[deepgram,piper,silero,webrtc]>=1.12.0",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.15.0",
@@ -32,6 +32,11 @@ dependencies = [
 
 [project.scripts]
 heydesk = "heydesk.cli:main"
+
+[tool.uv]
+# Pillow 13 has security fixes for the photos visitors send (services/photos.py), but
+# pipecat still asks for Pillow<13. Pipecat only uses it for image frames our voice never sends.
+override-dependencies = ["pillow>=13.0.0"]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
