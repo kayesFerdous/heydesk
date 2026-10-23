@@ -5326,7 +5326,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "python",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "ask_for_yes",
-     "text": "{\"read_back\": \"...\", \"next\": \"Read this back and ask for a clear yes. Only after the yes, call place_order again with the same details.\"}  + buttons Yes / Change",
+     "text": "{\"read_back\": \"...\", \"next\": \"Read this back and ask for a clear yes. Only after their clear yes, call place_order again with the same details. A change, a question or a maybe is not a yes.\"}  + state.read_back + buttons Yes / Change",
      "when": {
       "outcome": "all details, no yes yet"
      }
@@ -6316,7 +6316,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "talk",
-     "label": "talking: voice turn with state.calling",
+     "label": "talking: voice turn with state.calling and state.read_back (the opening line)",
      "shape": "step",
      "fn": "answer"
     },
