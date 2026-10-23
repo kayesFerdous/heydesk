@@ -889,3 +889,62 @@ async def test_find_product_shows_photos_of_what_it_found(world: World) -> None:
         make_ctx(store, agent=agent.config, channel="voice"), FindProductInput(query="silk")
     )
     assert on_a_call.photos is None and "shown" not in on_a_call.data
+
+
+def bdt(minor: int, text: str) -> dict[str, object]:
+    return {"minor": minor, "currency": "BDT", "text": text}
+
+
+async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) -> None:
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    kurti = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
+    ctx = make_ctx(store, state=kurti, agent=agent.config)
+    args = PlaceOrderInput.model_validate(DETAILS)
+    rows = [
+        {"label": "Payment", "value": "paid in cash on delivery"},
+        {"label": "Address", "value": DETAILS["address"]},
+        {"label": "Name", "value": "Kayes"},
+        {"label": "Mobile", "value": "01712345678"},
+    ]
+
+    asked = await place_order(ctx, args)
+    assert asked.card == {  # D110: every number is Python's, as in the read-back
+        "kind": "summary",
+        "data": {
+            "title": "Your order",
+            "lines": [
+                {"label": "Cotton Kurti (M, Black)", "qty": 1, "amount": bdt(95000, "৳950")},
+                {"label": "Delivery (Inside Dhaka)", "amount": bdt(6000, "৳60")},
+            ],
+            "rows": rows,
+            "total": bdt(101000, "৳1,010"),
+        },
+    }
+
+    saved = await said_yes(place_order, ctx, args)
+    assert saved.card == {
+        "kind": "receipt",
+        "data": {
+            "title": "Order placed",
+            "number": "O-101",
+            "status": STATUS_WORDS["new"].capitalize(),
+            "rows": [{"label": "Items", "value": "1 × Cotton Kurti (M, Black)"}, *rows],
+            "total": bdt(101000, "৳1,010"),
+        },
+    }
+
+    where = FindOrderInput(code="O-101", phone="01712345678")
+    steps = (await track_order(ctx, where)).card
+    assert steps and [(s["label"], s["done"], s["current"]) for s in steps["data"]["steps"]] == [
+        ("Received", True, True),
+        ("Confirmed", False, False),
+        ("With the courier", False, False),
+        ("Delivered", False, False),
+    ]
+    [order] = await orders(world)
+    await store.move_order(order.id, "cancelled")
+    cancelled = (await track_order(ctx, where)).card
+    assert cancelled and cancelled["data"]["steps"] == [  # shown plainly
+        {"label": "Cancelled", "done": True, "current": True}
+    ]

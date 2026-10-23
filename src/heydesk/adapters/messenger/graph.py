@@ -41,16 +41,27 @@ class MessengerGraph:
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
         elements = []
         for c in cards:
-            element: dict[str, Any] = {
-                "title": c["name"],
-                "subtitle": c["price"],
-                "image_url": c["url"],
-            }
+            element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
+            if c.get("url"):  # a doctor has no photo
+                element["image_url"] = c["url"]
             if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
-                button = {"type": "postback", "title": "Order this", "payload": c["choice"]}
-                element["buttons"] = [button]
+                title = c.get("button") or "Order this"
+                element["buttons"] = [{"type": "postback", "title": title, "payload": c["choice"]}]
             elements.append(element)
-        payload = {"template_type": "generic", "image_aspect_ratio": "square", "elements": elements}
+        payload = {
+            "template_type": "generic",
+            "image_aspect_ratio": "square",
+            "elements": elements[:10],
+        }
+        message = {"attachment": {"type": "template", "payload": payload}}
+        await self._send(token, psid, message=message, messaging_type="RESPONSE")
+
+    async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
+        payload = {
+            "template_type": "button",
+            "text": text[:640],  # a button template's limit
+            "buttons": [{"type": "web_url", "url": url, "title": title}],
+        }
         message = {"attachment": {"type": "template", "payload": payload}}
         await self._send(token, psid, message=message, messaging_type="RESPONSE")
 

@@ -24,6 +24,7 @@ async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -
         "name": "Spice Garden assistant",
         "greeting": "Hi, welcome to Spice Garden! Hungry? I can help with the menu or take your order.",
         "photos": False,  # only a shop takes photos (D57)
+        "voice": False,  # only a receptionist or a clinic takes calls (D108)
     }
 
 
@@ -88,3 +89,25 @@ async def test_rejects_an_empty_or_long_message_before_streaming(client: AsyncCl
         )
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "bad_request"
+
+
+async def test_a_read_back_sends_its_card_and_the_yes_buttons(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [
+        ToolCall("c1", "update_order", {"lines": [{"code": "chk-biryani", "quantity": 2}]}),
+        ToolCall("c2", "place_order", {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}),
+        "2 Chicken Biryani, ৳900, at 7:30 pm. Shall I place it?",
+    ]
+    res = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "two biryanis"}
+    )
+
+    frames = parse(res.text)
+    events = [event for event, _ in frames]
+    assert events[-2:] == ["choices", "done"]  # the buttons come with the end of the reply
+    card = dict(frames)["card"]
+    assert card["kind"] == "summary"
+    assert card["data"]["total"] == {"minor": 90000, "currency": "BDT", "text": "৳900"}
+    assert dict(frames)["choices"] == {"items": ["Yes", "Change"]}  # D99, D110

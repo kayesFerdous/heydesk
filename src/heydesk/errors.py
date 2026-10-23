@@ -36,6 +36,12 @@ class Unavailable(NotFound):
     code = "unavailable"
 
 
+class NoVoice(Forbidden):
+    """A call to an agent whose desk takes none: only the receptionist and the clinic do (D108)."""
+
+    code = "no_voice"
+
+
 class EmailNotVerified(Forbidden):
     """The right password, but the emailed code isn't typed yet (D94): the client asks for it."""
 

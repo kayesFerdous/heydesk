@@ -15,6 +15,8 @@ from heydesk.desks.restaurant.values import (
     CANCELLABLE,
     CANCELLABLE_BOOKING,
     CHANGEABLE,
+    DELIVERY_STEPS,
+    PICKUP_STEPS,
     STATUS_WORDS,
     BookingCancel,
     NewBooking,
@@ -29,7 +31,7 @@ from heydesk.desks.restaurant.values import (
 )
 from heydesk.desks.shared import awaiting_payment
 from heydesk.domain.values import parse_code
-from heydesk.runtime import parse
+from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import clock_time, money
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
@@ -153,21 +155,47 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     read_back = f"{cart_text(cart, currency)}; {how}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
+    rows = [  # the card's details (D110), the same as the read-back's
+        cards.row(
+            "Delivery" if args.delivery else "Pickup", f"today, {clock_time(at)}", order.pickup_at
+        ),
+        *([cards.row("Address", address)] if args.delivery else []),
+        *(
+            [cards.row("Payment", f"{money(charge, currency)} online now, the rest on delivery")]
+            if order.pay_first
+            else []
+        ),
+        cards.row("Name", name),
+        cards.row("Phone", phone),
+        *([cards.row("Note", note)] if note else []),
+    ]
+    card_total = cards.amount(order.total, currency)
     confirmed = confirm(ctx.heard, order, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "place_order")
+        lines = [
+            cards.line(x["name"], x["quantity"], cards.amount(x["price"] * x["quantity"], currency))
+            for x in cart["lines"]
+        ]
+        if args.delivery:
+            lines.append(cards.line("Delivery", cost=cards.amount(charge, currency)))
+        card = cards.summary("Your order", rows, lines, card_total)
+        return ask_for_yes(read_back, "place_order", card)
     saved = await ctx.store.place_order(confirmed)
+    items = cards.row("Items", ", ".join(f"{x['quantity']} × {x['name']}" for x in cart["lines"]))
+    status = STATUS_WORDS[saved.status].capitalize()
     if order.pay_first:  # the owner hears about it once it's paid (D48)
         link = ctx.store.pay_link(saved.id)
         fee = money(charge, currency)
-        return awaiting_payment(saved.code, link, fee, saved.PAY_FOR, {"cart": {}})
+        card = cards.receipt("Order saved", saved.code, status, [items, *rows], card_total, link)
+        return awaiting_payment(saved.code, link, fee, saved.PAY_FOR, {"cart": {}}, card)
     data = {
         "order": saved.code,
         "total": total,
         "time": f"today, {clock_time(at)}",
     }
     alert = f"🛒 New order {saved.code}\n{read_back}"
-    return ToolResult(ok=True, data=data, state={"cart": {}}, alert=alert)
+    card = cards.receipt("Order placed", saved.code, status, [items, *rows], card_total)
+    return ToolResult(ok=True, data=data, state={"cart": {}}, alert=alert, card=card)
 
 
 PLACE_ORDER = Tool(
@@ -241,7 +269,11 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
         data["paid_online"] = money(found.paid, found.currency)
     if found.status == "unpaid":
         data["pay_link"] = ctx.store.pay_link(found.id)
-    return ToolResult(ok=True, data=data)
+    steps = DELIVERY_STEPS if found.address else PICKUP_STEPS
+    note = f"{data['status'].capitalize()}. Time: {data['time']}."
+    return ToolResult(
+        ok=True, data=data, card=cards.tracking(found.code, steps, found.status, note)
+    )
 
 
 TRACK_ORDER = Tool(
@@ -299,7 +331,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         note=" ".join(args.note.split())[:500] or found.note,
     )
     changes = [
-        f"{label}: {old} → {new}"
+        (label, old, new)
         for label, old, new in (
             ("time", _when(ctx, found), clock_time(at) if at else _when(ctx, found)),
             ("address", found.address, edit.address),
@@ -309,10 +341,17 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     ]
     if not changes:
         return fail("That's what the order already has. Ask what they want to change.")
-    read_back = f"Change order {found.code}: " + "; ".join(changes)
+    title = f"Change order {found.code}"
+    read_back = f"{title}: " + "; ".join(f"{label}: {old} → {new}" for label, old, new in changes)
     confirmed = confirm(ctx.heard, edit, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "change_order")
+        rows = [  # a new time carries its `at` (D110)
+            cards.row(
+                label.capitalize(), f"{old} → {new}", edit.pickup_at if label == "time" else None
+            )
+            for label, old, new in changes
+        ]
+        return ask_for_yes(read_back, "change_order", cards.summary(title, rows))
     try:
         await ctx.store.change_order(confirmed)
     except TooLate:
@@ -357,7 +396,7 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
         return ask_for_yes(read_back, "cancel_order")
     await ctx.store.cancel_order(confirmed)
     alert = f"❌ Order {found.code} cancelled"
-    if found.paid:  # the owner refunds it in SSLCommerz's panel (design §12)
+    if found.paid:  # the owner refunds it in the gateway's panel (design §12)
         alert += f". It was paid {money(found.paid, found.currency)} online: refund it."
     return ToolResult(ok=True, data={"done": read_back}, alert=alert)
 
@@ -414,15 +453,28 @@ async def book_table(ctx: Ctx, args: BookTableInput) -> ToolResult:
     read_back = f"Table for {people} on {parse.day_time(at)}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
+    rows = [  # the card's details (D110)
+        cards.row("People", str(people)),
+        cards.row("Time", parse.day_time(at), at),
+        cards.row("Name", name),
+        cards.row("Phone", phone),
+        *([cards.row("Note", note)] if note else []),
+    ]
     confirmed = confirm(ctx.heard, booking, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "book_table")
+        return ask_for_yes(read_back, "book_table", cards.summary("Table booking", rows))
     saved = await ctx.store.book_table(confirmed)
     data = {
         "booking": saved.code,
         "next": "Tell them the booking code, and that the restaurant will confirm it here.",
     }
-    return ToolResult(ok=True, data=data, alert=f"🍽️ New booking {saved.code}\n{read_back}")
+    status = "Waiting for the restaurant to confirm it"
+    return ToolResult(
+        ok=True,
+        data=data,
+        alert=f"🍽️ New booking {saved.code}\n{read_back}",
+        card=cards.receipt("Table booked", saved.code, status, rows),
+    )
 
 
 BOOK_TABLE = Tool(

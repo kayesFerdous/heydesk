@@ -16,10 +16,10 @@ from heydesk.desks.clinic.values import (
 )
 from heydesk.desks.shared import awaiting_payment
 from heydesk.domain.values import parse_code
-from heydesk.runtime import parse
+from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.schedule import DAYS
-from heydesk.runtime.speech import money
+from heydesk.runtime.speech import clock_time, money
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ClinicStore]
@@ -45,10 +45,25 @@ async def find_doctor(ctx: Ctx, args: FindDoctorInput) -> ToolResult:
             return fail(str(error))
         doctors = [d for d in doctors if DAYS[day.weekday()] in d.days]
         data["day"] = f"{day:%A} {day.day} {day:%b}"  # Python says which date it is
-    data["doctors"] = [d.line(ctx.agent.currency) for d in doctors]
+    currency = ctx.agent.currency
+    data["doctors"] = [d.line(currency) for d in doctors]
     if not doctors:
         data["hint"] = "No doctor fits all of that. Offer another day or speciality."
-    return ToolResult(ok=True, data=data)
+        return ToolResult(ok=True, data=data)
+    card = cards.doctors(  # each with a Book button: a tap is only its words (D99, D110)
+        [
+            {
+                "name": d.name,
+                "speciality": d.speciality,
+                "days": d.day_names(),
+                "hours": f"{clock_time(d.start)}–{clock_time(d.end)}",
+                "fee": cards.amount(d.fee, currency),
+                "book": f"Book with {d.name}",
+            }
+            for d in doctors
+        ]
+    )
+    return ToolResult(ok=True, data=data, card=card)
 
 
 FIND_DOCTOR = Tool(
@@ -95,14 +110,28 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
     read_back = f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}" + (
         f"; a deposit of {amount} paid online now" if deposit else ""
     )
+    rows = [  # the card's details (D110), the same as the read-back's
+        cards.row("Doctor", f"{doctor.name}, {doctor.speciality}"),
+        cards.row("Time", parse.day_time(when), when),
+        cards.row("Patient", name),
+        cards.row("Phone", phone),
+    ]
+    total = cards.amount(deposit, config.currency) if deposit else None
     confirmed = confirm(ctx.heard, appointment, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "request_appointment")
+        lines = [cards.line("Deposit, paid online now", cost=total)] if total else None
+        card = cards.summary("Appointment request", rows, lines, total)
+        return ask_for_yes(read_back, "request_appointment", card)
     saved = await ctx.store.save_appointment(confirmed)
     code = saved.code
     if appointment.pay_first:  # the clinic hears about it once it's paid (D48)
-        return awaiting_payment(code, ctx.store.pay_link(saved.id), amount, saved.PAY_FOR)
+        link = ctx.store.pay_link(saved.id)
+        status = "Waiting for the deposit to be paid online"
+        card = cards.receipt("Appointment saved", code, status, rows, total, link)
+        return awaiting_payment(code, link, amount, saved.PAY_FOR, card=card)
+    status = "Requested: the clinic will call to confirm it"
     return ToolResult(
+        card=cards.receipt("Appointment requested", code, status, rows),
         ok=True,
         data={
             "code": code,
@@ -161,12 +190,17 @@ def _local(ctx: Ctx, at: datetime) -> datetime:
 
 
 async def _change(
-    ctx: Ctx, change: AppointmentChange, read_back: str, tool: str, alert: str
+    ctx: Ctx,
+    change: AppointmentChange,
+    read_back: str,
+    tool: str,
+    alert: str,
+    card: cards.Card | None = None,
 ) -> ToolResult:
     """The commit check (rule 2): the change is made only after a read-back and a yes."""
     confirmed = confirm(ctx.heard, change, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, tool)
+        return ask_for_yes(read_back, tool, card)
     await ctx.store.change_appointment(confirmed)
     return ToolResult(ok=True, data={"done": read_back}, alert=alert)
 
@@ -178,7 +212,7 @@ async def cancel_appointment(ctx: Ctx, args: CancelInput) -> ToolResult:
     when = parse.day_time(_local(ctx, found.at))
     read_back = f"Cancel appointment {found.code} with {found.doctor_name} on {when}"
     alert = f"❌ Appointment {found.code} cancelled"
-    if found.paid:  # the owner refunds it in SSLCommerz's panel (design §12)
+    if found.paid:  # the owner refunds it in the gateway's panel (design §12)
         alert += f". Its deposit was paid {money(found.paid, found.currency)} online: refund it."
     change = AppointmentChange(found.number)
     return await _change(ctx, change, read_back, "cancel_appointment", alert)
@@ -195,10 +229,17 @@ async def reschedule_appointment(ctx: Ctx, args: RescheduleInput) -> ToolResult:
         return fail(str(error))
     if problem := doctor.works_at(when):
         return fail(problem)
-    read_back = f"Move appointment {found.code} with {found.doctor_name} to {parse.day_time(when)}"
+    title = f"Move appointment {found.code}"
+    read_back = f"{title} with {found.doctor_name} to {parse.day_time(when)}"
     change = AppointmentChange(found.number, when)
     alert = f"✏️ Appointment {found.code} moved\n{read_back}"
-    return await _change(ctx, change, read_back, "reschedule_appointment", alert)
+    rows = [  # the card's details (D110)
+        cards.row("Doctor", found.doctor_name),
+        cards.row("From", parse.day_time(_local(ctx, found.at)), found.at),
+        cards.row("To", parse.day_time(when), when),
+    ]
+    card = cards.summary(title, rows)
+    return await _change(ctx, change, read_back, "reschedule_appointment", alert, card)
 
 
 CANCEL_APPOINTMENT = Tool(

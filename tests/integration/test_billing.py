@@ -5,10 +5,10 @@ from datetime import timedelta
 import pytest
 from fastapi import FastAPI
 
-from heydesk.adapters.payments.fake import FakePayments
+from heydesk.adapters.payments.fake import FakeBkash, FakePayments
 from heydesk.errors import VisitorLimited
 from heydesk.models import Turn, Workspace
-from heydesk.ports.payments import Paid
+from heydesk.ports.payments import Gateways, Paid
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.billing import GRACE_DAYS, PLANS, TRIAL_DAYS, BillingService
 from tests.conftest import FIXED_NOW, World, make_test_settings, new_business
@@ -78,7 +78,7 @@ async def test_the_agent_stops_when_the_plan_ends_or_its_replies_run_out(world: 
 async def test_a_paid_plan_starts_once_and_only_for_the_right_amount(world: World) -> None:
     gateway = FakePayments()
     settings = make_test_settings().model_copy(update={"BILLING_STORE_ID": "heydesk"})
-    billing = BillingService(world.sessions, gateway, settings, world.clock)
+    billing = BillingService(world.sessions, {"sslcommerz": gateway}, settings, world.clock)
     await billing.set_plan(DEV_WORKSPACE_ID, "trial", FIXED_NOW + timedelta(days=5))
 
     url = await billing.checkout(DEV_WORKSPACE_ID, "growth", 12)
@@ -97,3 +97,33 @@ async def test_a_paid_plan_starts_once_and_only_for_the_right_amount(world: Worl
         ws = await s.get(Workspace, DEV_WORKSPACE_ID)
     assert ws is not None and ws.plan == "growth"
     assert ws.paid_until == FIXED_NOW + timedelta(days=365)  # a trial's days aren't added
+
+
+async def test_a_plan_paid_by_bkash_starts_the_same_way(app: FastAPI, world: World) -> None:
+    keys = {"BILLING_STORE_ID": "heydesk", "BILLING_BKASH_APP_KEY": "heydesk-key"}
+    settings = make_test_settings().model_copy(update=keys)
+    bkash = FakeBkash()
+    gateways: Gateways = {"sslcommerz": FakePayments(), "bkash": bkash}
+    billing = BillingService(world.sessions, gateways, settings, world.clock)
+    assert (await billing.billing(DEV_WORKSPACE_ID)).gateways == ["sslcommerz", "bkash"]
+    await billing.set_plan(DEV_WORKSPACE_ID, "starter", FIXED_NOW + timedelta(days=5))
+
+    url = await billing.checkout(DEV_WORKSPACE_ID, "growth", 1, "bkash")
+    [(account, checkout)] = bkash.started
+    assert account.app_key == "heydesk-key" and url == f"https://bkash.test/{checkout.order_id}"
+    assert checkout.back_url.endswith(f"/billing/{checkout.order_id}/bkash")
+
+    bkash.paid["P1"] = Paid(checkout.order_id, checkout.amount, "BDT", "TRX1")
+    assert (await billing.settle(checkout.order_id, "P1", "bkash")).status == "paid"  # type: ignore[union-attr]
+    await billing.settle(checkout.order_id, "P1", "bkash")  # the owner reloads: no second month
+    async with world.sessions() as s:
+        ws = await s.get(Workspace, DEV_WORKSPACE_ID)
+    assert ws is not None and ws.plan == "growth"
+    assert ws.paid_until == FIXED_NOW + timedelta(days=5 + 30)  # added to what was left
+
+
+async def test_a_cancelled_bkash_return_changes_nothing(app: FastAPI) -> None:
+    owner = await new_business(app)
+    assert (await owner.get("/api/billing")).json()["gateways"] == []  # nothing set up in tests
+    back = await owner.get("/billing/nothing/bkash", params={"paymentID": "P1", "status": "cancel"})
+    assert "didn't go through" in back.text

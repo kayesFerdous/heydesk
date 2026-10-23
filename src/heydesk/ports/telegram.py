@@ -29,6 +29,13 @@ class TelegramApi(Protocol):
         with the choice as its data."""
         ...
 
+    async def send_card(
+        self, token: str, chat_id: str, html: str, buttons: list[dict[str, str]]
+    ) -> None:
+        """A card as HTML text (D111), with a button a row under it: `{title, choice}` sends
+        the choice back like a choice's tap (D99); `{title, url}` opens the link (a Pay button)."""
+        ...
+
     async def send_photo(
         self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
     ) -> None:

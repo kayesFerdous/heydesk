@@ -2,11 +2,11 @@
 plan is a number of AI replies in any 30 days plus a number of moderators.
 
 A new business gets the free trial: `TRIAL_DAYS` and `PLANS["trial"]`'s replies. The owner
-pays for a plan on the billing page, through **our** SSLCommerz store (`BILLING_STORE_*`), not
-the business's own one (D49). The same check as an order's payment (D47) applies: only the
-gateway's word counts, for this payment and this amount. A paid month adds 30 days, a paid
-year 365, from today or from when the plan would have ended, whichever is later. An admin can
-also set a plan by hand, for a bKash payment made outside the site.
+pays for a plan on the billing page, through **our** SSLCommerz store (`BILLING_STORE_*`) or
+our bKash account (`BILLING_BKASH_*`, D109), not the business's own ones (D49). The same check
+as an order's payment (D47) applies: only the gateway's word counts, for this payment and this
+amount. A paid month adds 30 days, a paid year 365, from today or from when the plan would have
+ended, whichever is later. An admin can also set a plan by hand, for a payment made another way.
 
 A plan that has ended keeps answering for `GRACE_DAYS` (not a trial); then the agent stops,
 and visitors are told how to reach the business (`VisitorService`, D51).
@@ -23,7 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import SubscriptionPayment, Turn, Workspace
-from heydesk.ports.payments import Account, Checkout, PaymentGateway, PaymentUnavailable
+from heydesk.ports.payments import (
+    PROVIDERS,
+    Account,
+    Checkout,
+    Gateways,
+    PaymentUnavailable,
+    Provider,
+)
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +38,7 @@ TRIAL_DAYS = 14
 GRACE_DAYS = 3
 WINDOW_DAYS = 30  # replies are counted over the last 30 days
 DAYS_PAID = {1: 30, 12: 365}  # months bought → days added
-NOTIFY_PATH = "/api/billing/sslcommerz/{payment_id}"
+NOTIFY_PATH = "/api/billing/sslcommerz/{payment_id}"  # SSLCommerz's own post; bKash has none
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,7 @@ class Billing:
     replies_used: int  # in the last 30 days
     replies: int  # the plan's limit
     moderators: int
+    gateways: list[Provider]  # the Pay buttons: ours that are set up
 
 
 def ends(ws: Workspace) -> datetime:
@@ -116,12 +124,12 @@ class BillingService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        gateway: PaymentGateway,
+        gateways: Gateways,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
-        self.gateway = gateway
+        self.gateways = gateways
         self.settings = settings
         self.now = now
 
@@ -133,11 +141,27 @@ class BillingService:
                 raise NotFound("There's no such business.")
             used = await replies_used(s, workspace_id, now)
         plan = PLANS[ws.plan]
-        return Billing(ws.plan, ws.paid_until, now < ends(ws), used, plan.replies, plan.moderators)
+        return Billing(
+            ws.plan,
+            ws.paid_until,
+            now < ends(ws),
+            used,
+            plan.replies,
+            plan.moderators,
+            self.set_up(),
+        )
 
-    async def checkout(self, workspace_id: str, plan: str, months: int) -> str:
+    def set_up(self) -> list[Provider]:
+        """Our gateways that have their keys in the settings."""
+        s = self.settings
+        keys = {"sslcommerz": s.BILLING_STORE_ID, "bkash": s.BILLING_BKASH_APP_KEY}
+        return [p for p in PROVIDERS if keys[p]]
+
+    async def checkout(
+        self, workspace_id: str, plan: str, months: int, gateway: Provider = "sslcommerz"
+    ) -> str:
         """The gateway's page to pay for `months` of `plan`."""
-        if not self.settings.BILLING_STORE_ID:
+        if gateway not in self.set_up():
             raise HeyDeskError("Paying online isn't set up yet. Please contact HeyDesk to pay.")
         payment = SubscriptionPayment(
             workspace_id=workspace_id,
@@ -149,9 +173,10 @@ class BillingService:
         async with self.sessions() as s, s.begin():
             s.add(payment)
         base = self.settings.public_url
+        back = "back" if gateway == "sslcommerz" else "bkash"
         try:
-            return await self.gateway.start(
-                self._account(),
+            return await self.gateways[gateway].start(
+                self._account(gateway),
                 Checkout(
                     order_id=payment.id,
                     amount=payment.amount,
@@ -160,21 +185,24 @@ class BillingService:
                     name="HeyDesk customer",
                     phone="01700000000",  # SSLCommerz needs one; the owner types theirs there
                     address="",
-                    back_url=f"{base}/billing/{payment.id}/back",
+                    back_url=f"{base}/billing/{payment.id}/{back}",
                     notify_url=base + NOTIFY_PATH.replace("{payment_id}", payment.id),
                 ),
             )
         except PaymentUnavailable as error:
             raise HeyDeskError(f"The payment page isn't answering: {error}") from None
 
-    async def settle(self, payment_id: str, val_id: str) -> SubscriptionPayment | None:
-        """Checks a payment the gateway posted back and, if it paid this payment in full,
-        moves the business onto the plan. Only the first post changes anything."""
+    async def settle(
+        self, payment_id: str, val_id: str, gateway: Provider = "sslcommerz"
+    ) -> SubscriptionPayment | None:
+        """Checks a payment a gateway sent word of (SSLCommerz's `val_id`, bKash's paymentID)
+        and, if it paid this payment in full, moves the business onto the plan. Only the first
+        word changes anything."""
         async with self.sessions() as s:
             payment = await s.get(SubscriptionPayment, payment_id)
         if payment is None:
             return None
-        paid = await self.gateway.check(self._account(), val_id)
+        paid = await self.gateways[gateway].check(self._account(gateway), val_id)
         if paid is None or paid.order_id != payment.id:
             return payment
         if (paid.amount, paid.currency) != (payment.amount, "BDT"):
@@ -205,6 +233,15 @@ class BillingService:
                 raise NotFound("There's no such business.")
             ws.plan, ws.paid_until = plan, paid_until
 
-    def _account(self) -> Account:
+    def _account(self, gateway: Provider) -> Account:
         s = self.settings
-        return Account(s.BILLING_STORE_ID, s.BILLING_STORE_PASSWORD, s.BILLING_SANDBOX)
+        if gateway == "sslcommerz":
+            return Account(s.BILLING_STORE_ID, s.BILLING_STORE_PASSWORD, s.BILLING_SANDBOX)
+        return Account(
+            store_id="",
+            password=s.BILLING_BKASH_PASSWORD,
+            sandbox=s.BILLING_BKASH_SANDBOX,
+            app_key=s.BILLING_BKASH_APP_KEY,
+            app_secret=s.BILLING_BKASH_APP_SECRET,
+            username=s.BILLING_BKASH_USERNAME,
+        )

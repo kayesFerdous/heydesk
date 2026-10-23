@@ -1,4 +1,5 @@
-"""The `PaymentGateway` port: taking a payment online (D47). SSLCommerz is the one we use.
+"""The `PaymentGateway` port: taking a payment online (D47). Two gateways sit behind it:
+SSLCommerz (cards, mobile wallets, banks) and bKash on its own (D109).
 
 Every call takes the business's own `Account` (D49): each business is paid into its own
 store, so there's no one account for the platform. The gateway's word is the only proof a
@@ -6,7 +7,10 @@ payment happened: what a visitor's browser posts back is checked with it first.
 """
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
+
+type Provider = Literal["sslcommerz", "bkash"]
+PROVIDERS: tuple[Provider, ...] = ("sslcommerz", "bkash")  # the order the pay page shows them
 
 
 class PaymentUnavailable(Exception):
@@ -15,11 +19,15 @@ class PaymentUnavailable(Exception):
 
 @dataclass(frozen=True)
 class Account:
-    """A business's store with the gateway."""
+    """A business's account with one gateway. SSLCommerz needs a store id and its password;
+    bKash an app key and secret, a username and a password (D109)."""
 
-    store_id: str
-    password: str
-    sandbox: bool  # the gateway's test mode: test cards, no real money
+    store_id: str  # SSLCommerz's; empty for bKash
+    password: str  # SSLCommerz's store password, or bKash's password
+    sandbox: bool  # the gateway's test mode: test cards or wallets, no real money
+    app_key: str = ""  # bKash's
+    app_secret: str = ""  # bKash's
+    username: str = ""  # bKash's
 
 
 @dataclass(frozen=True)
@@ -59,3 +67,6 @@ class PaymentGateway(Protocol):
     async def check(self, account: Account, payment_id: str) -> Paid | None:
         """Asks the gateway about a payment it posted back. None unless it went through."""
         ...
+
+
+type Gateways = dict[Provider, PaymentGateway]  # one of each, picked by the account's provider

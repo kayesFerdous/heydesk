@@ -9,6 +9,7 @@ class FakeTelegram:
         self.sent: list[tuple[str, str]] = []  # (chat_id, text), in order
         self.photos: list[tuple[str, str]] = []  # (chat_id, caption) of each photo sent
         self.choices: list[tuple[str, list[str]]] = []  # (chat_id, buttons) of a message or photo
+        self.cards: list[tuple[str, str, list[dict[str, str]]]] = []  # (chat_id, html, buttons)
         self.answered: list[str] = []  # the callback queries answered
         self.files: dict[str, bytes] = {}  # what a visitor's photo's file_id downloads as
 
@@ -29,6 +30,11 @@ class FakeTelegram:
         self.sent.append((chat_id, text))
         if choices:
             self.choices.append((chat_id, choices))
+
+    async def send_card(
+        self, token: str, chat_id: str, html: str, buttons: list[dict[str, str]]
+    ) -> None:
+        self.cards.append((chat_id, html, buttons))
 
     async def send_photo(
         self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""

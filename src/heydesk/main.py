@@ -18,7 +18,7 @@ from heydesk.ports.embedder import Embedder
 from heydesk.ports.knowledge_store import KnowledgeStore
 from heydesk.ports.llm import LanguageModel
 from heydesk.ports.messenger import MessengerApi
-from heydesk.ports.payments import PaymentGateway
+from heydesk.ports.payments import Gateways
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
 from heydesk.ports.whatsapp import WhatsAppApi
@@ -42,7 +42,7 @@ def create_app(
     telegram: TelegramApi | None = None,
     messenger: MessengerApi | None = None,
     whatsapp: WhatsAppApi | None = None,
-    payments: PaymentGateway | None = None,
+    payments: Gateways | None = None,
     now: Callable[[], datetime] = utcnow,
 ) -> FastAPI:
     settings = settings or Settings()

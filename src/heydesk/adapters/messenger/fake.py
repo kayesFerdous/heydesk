@@ -9,6 +9,7 @@ class FakeMessenger:
         self.sent: list[tuple[str, str]] = []  # (psid, text), in order
         self.cards: list[tuple[str, list[dict[str, str]]]] = []  # (psid, cards), in order
         self.choices: list[tuple[str, list[str]]] = []  # (psid, quick replies), in order
+        self.links: list[tuple[str, str, str, str]] = []  # (psid, text, button, url), in order
         self.files: dict[str, bytes] = {}  # what a visitor's photo URL downloads as
 
     async def subscribe(self, token: str, page_id: str) -> None:
@@ -28,6 +29,9 @@ class FakeMessenger:
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
         self.cards.append((psid, cards))
+
+    async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
+        self.links.append((psid, text, title, url))
 
     async def download(self, url: str) -> bytes:
         if url not in self.files:

@@ -19,6 +19,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 
 from heydesk.api.sse import frame
+from heydesk.errors import NoVoice
 from heydesk.voice.call import run_call
 
 router = APIRouter(include_in_schema=False)
@@ -65,6 +66,8 @@ async def offer(
         agent = answered.agent
     else:
         agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
+        if not agent.desk.takes_voice:
+            raise NoVoice("This agent takes no calls: chat with it instead.")
         await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429: limited
     handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])
 

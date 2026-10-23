@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import hashlib
 import hmac
+import html
 import logging
 import secrets
 from collections.abc import Callable
@@ -25,6 +26,7 @@ from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
+from heydesk.runtime.events import Card
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
@@ -49,6 +51,62 @@ def buttons(choices: list[str]) -> list[str]:
     """The choices a button can carry (D99): Messenger takes 13 quick replies of 20 characters,
     and Telegram's button data is 64 bytes. A longer one is left out, so it's typed instead."""
     return [c for c in choices if len(c) <= 20 and len(c.encode()) <= 64][:13]
+
+
+def card_text(card: Card, channel: str) -> str:
+    """A card as a message's words (D111), a line each, its title in bold: Telegram's HTML
+    (so every value is escaped), WhatsApp's *stars*; Messenger has no bold."""
+
+    def esc(s: str) -> str:  # a name or an address could hold a "<"
+        return html.escape(s, quote=False) if channel == TELEGRAM else s
+
+    def bold(s: str) -> str:
+        if channel == TELEGRAM:
+            return f"<b>{s}</b>"
+        return f"*{s}*" if channel == WHATSAPP else s
+
+    data = card.data
+    said: list[str] = []
+    if card.kind == "tracking":
+        steps = data["steps"]
+        marks = [step_mark(s, i == len(steps) - 1 and len(steps) > 1) for i, s in enumerate(steps)]
+        said.append(bold(esc(f"Order {data['number']}")))
+        said.append(" → ".join(f"{m} {esc(s['label'])}" for m, s in zip(marks, steps, strict=True)))
+        if data["note"]:
+            said.append(esc(data["note"]))
+        return "\n".join(said)
+    if card.kind == "doctors":
+        for d in data["doctors"]:
+            said.append(f"{bold(esc(d['name']))} — {esc(d['speciality'])}")
+            said.append(esc(f"{d['days']} · {d['hours']} · {d['fee']['text']}") + "\n")
+        return "\n".join(said).strip()
+    if card.kind == "receipt":
+        said.append(bold(esc(f"{data['title']} · {data['number']}")))
+        said.append(esc(f"Status: {data['status']}"))
+    else:  # a summary
+        said.append(bold(esc(data["title"])))
+        for line in data["lines"]:
+            label = f"{line['qty']} × {line['label']}" if "qty" in line else line["label"]
+            cost = f" — {line['amount']['text']}" if "amount" in line else ""
+            said.append(esc(label + cost))
+    said += [esc(f"{r['label']}: {r['value']}") for r in data["rows"]]
+    if "total" in data:
+        said.append(bold(esc(f"Total: {data['total']['text']}")))
+    return "\n".join(said)
+
+
+def step_mark(step: dict[str, Any], last: bool) -> str:
+    """✅ done, 🔵 where it is now, ⚪ still to come; the last step reached is done."""
+    if step["current"] and not last:
+        return "🔵"
+    return "✅" if step["done"] else "⚪"
+
+
+def about(doctor: dict[str, Any]) -> str:
+    """A doctor's line under their name: "Medicine · Sun, Tue · 5:00 pm–9:00 pm · ৳800"."""
+    return (
+        f"{doctor['speciality']} · {doctor['days']} · {doctor['hours']} · {doctor['fee']['text']}"
+    )
 
 
 class ChannelService:
@@ -288,8 +346,13 @@ class ChannelService:
                     typing.cancel()
                 if reply.photos:
                     await self._send_photos(channel, chat_id, reply.photos)
+                # a summary's Yes and Change go under it, the last message (D111)
+                summary = reply.card is not None and reply.card.kind == "summary"
+                choices = buttons(reply.choices)
                 if reply.text:
-                    await self._send(channel, chat_id, reply.text, buttons(reply.choices))
+                    await self._send(channel, chat_id, reply.text, [] if summary else choices)
+                if reply.card:
+                    await self._send_card(channel, chat_id, reply.card, choices if summary else [])
                 if reply.handoff:
                     phone = reply.handoff.phone or reply.handoff.email
                     await self._send(
@@ -350,6 +413,48 @@ class ChannelService:
             MediaUnavailable,
         ) as error:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
+
+    async def _send_card(
+        self, channel: Channel, chat_id: str, card: Card, choices: list[str]
+    ) -> None:
+        """A tool's card (D110), after the words, each app its own way (D111): on Telegram
+        HTML with buttons; on Messenger and WhatsApp the words with `choices`, a receipt with
+        a Pay button, doctors as a carousel or a list. A doctor's Book sends its `book` words.
+        If it fails, the words have gone already."""
+        text = card_text(card, channel.kind)
+        pay_url = card.data.get("pay_url", "")
+        doctors = card.data.get("doctors", [])[:10]
+        try:
+            if channel.kind == TELEGRAM:
+                taps = choices + [d["book"] for d in doctors if len(d["book"].encode()) <= 64]
+                keys = [{"title": t, "choice": t} for t in taps]
+                if pay_url:
+                    keys.append({"title": "💳 Pay now", "url": pay_url})
+                await self.telegram.send_card(channel.token, chat_id, text, keys)
+            elif doctors and channel.kind == MESSENGER:
+                cards = [
+                    {"name": d["name"], "price": about(d), "choice": d["book"], "button": "Book"}
+                    for d in doctors
+                ]
+                await self.messenger.send_cards(channel.token, chat_id, cards)
+            elif doctors:  # WhatsApp: a tapped row's id is its words
+                rows = [
+                    {"id": d["book"], "title": d["name"][:24], "description": about(d)[:72]}
+                    for d in doctors
+                ]
+                await self.whatsapp.send_list(
+                    channel.token, channel.address, chat_id, "Choose a doctor to book.", rows
+                )
+            elif pay_url and channel.kind == MESSENGER:
+                await self.messenger.send_link(channel.token, chat_id, text, "Pay now", pay_url)
+            elif pay_url:
+                await self.whatsapp.send_link(
+                    channel.token, channel.address, chat_id, text, "Pay now", pay_url
+                )
+            else:
+                await self._send(channel, chat_id, text, choices)
+        except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable) as error:
+            log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
     def whole(self, url: str) -> str:
         """A photo on this server's disk is "/media/…"; one in R2 is whole already (D101)."""

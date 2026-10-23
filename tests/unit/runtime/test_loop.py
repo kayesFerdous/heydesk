@@ -1,10 +1,11 @@
 import json
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.desks.restaurant import RESTAURANT
 from heydesk.desks.restaurant.tools import UPDATE_ORDER
-from heydesk.desks.shared import HANDOFF
+from heydesk.desks.shared import HANDOFF, HandoffInput
 from heydesk.ports.llm import (
     ChatRequest,
     Finished,
@@ -14,8 +15,10 @@ from heydesk.ports.llm import (
     ToolCall,
     Usage,
 )
-from heydesk.runtime.events import Event, HandOff, Token, ToolStarted, TurnEnded
+from heydesk.runtime import cards
+from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
+from heydesk.runtime.tool import Tool, ToolContext, ToolResult
 from tests.conftest import AGENT, FIXED_NOW, MenuStore
 
 
@@ -219,3 +222,18 @@ async def test_an_unknown_tool_gets_a_hint_and_the_model_carries_on() -> None:
     assert isinstance(end, TurnEnded) and not end.handed_off
     assert {"tool": "fly_to_moon", "ok": False}.items() <= end.trace["steps"][1].items()
     assert "no tool called 'fly_to_moon'" in end.added[2]["content"]
+
+
+async def shows_a_receipt(ctx: ToolContext[Any], args: HandoffInput) -> ToolResult:
+    return ToolResult(ok=True, data={}, card=cards.receipt("Order placed", "O-101", "New", []))
+
+
+async def test_a_tools_card_is_shown_on_a_screen_but_never_on_a_call() -> None:
+    tool = Tool("receipt", "Shows a receipt.", HandoffInput, shows_a_receipt)
+    for channel, shown in (("web", 1), ("telegram", 1), ("voice", 0)):
+        llm = FakeLLM([ToolCall("c1", "receipt", {}), "Done."])
+        events = await collect(make_turn(tools=[tool], channel=channel), llm)
+        found = [e for e in events if isinstance(e, Card)]
+        assert len(found) == shown, channel
+        if found:
+            assert found[0].kind == "receipt" and found[0].data["number"] == "O-101"

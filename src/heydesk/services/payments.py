@@ -1,12 +1,13 @@
 """Paying online before something is placed (D47, D48): a shop's or restaurant's delivery
 charge, a clinic's deposit. Each is a `Payable` table, and each business is paid into its own
-SSLCommerz store, which its owner connects here (D49).
+SSLCommerz store, its own bKash account, or both, which its owner connects here (D49, D109).
 
 A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
-starts a payment with the gateway. When the gateway posts back (the visitor's browser, and
-the gateway itself, both to URLs naming the row), `settle` asks the business's gateway
-account whether it really went through, for this row and this amount, and only then moves it
-on: to `new`, or a shop order to `confirmed` (`PAID_STATUS`). Nothing the agent says can do that.
+starts a payment with the gateway the visitor picks. When the gateway sends word back (the
+visitor's browser, and SSLCommerz itself, both to URLs naming the row), `settle` asks the
+business's account with that gateway whether it really went through, for this row and this
+amount, and only then moves it on: to `new`, or a shop order to `confirmed` (`PAID_STATUS`).
+Nothing the agent says can do that.
 
 These look rows up by their id alone, across businesses, like Telegram's webhook looks up
 its channel: the id is long and random, and it's the gateway that names it.
@@ -26,14 +27,22 @@ from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import Conversation, PaymentAccount
 from heydesk.models.taken import UNPAID
-from heydesk.ports.payments import Account, Checkout, PaymentGateway, PaymentUnavailable
+from heydesk.ports.payments import (
+    PROVIDERS,
+    Account,
+    Checkout,
+    Gateways,
+    PaymentUnavailable,
+    Provider,
+)
 from heydesk.runtime.speech import money
 from heydesk.services.team import TeamService
 from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
 
-NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # the gateway's own post, server to server
+NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # SSLCommerz's own post, server to server
+NAMES = {"sslcommerz": "SSLCommerz", "bkash": "bKash"}
 type Payable = ShopOrder | Order | Appointment
 PAYABLE: tuple[type[Payable], ...] = (ShopOrder, Order, Appointment)
 
@@ -42,54 +51,89 @@ class PaymentService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        gateway: PaymentGateway,
+        gateways: Gateways,
         team: TeamService,
         woo: WooService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
-        self.gateway = gateway
+        self.gateways = gateways
         self.team = team
         self.woo = woo  # a paid shop order goes into a linked WooCommerce store at once (D77)
         self.settings = settings
         self.now = now
 
-    # The business's own store (D49)
+    # The business's own accounts (D49, D109)
 
-    async def account(self, ws: str) -> PaymentAccount | None:
+    async def account(self, ws: str, provider: Provider) -> PaymentAccount | None:
         async with self.sessions() as s:
-            return await s.scalar(select(PaymentAccount).where(PaymentAccount.workspace_id == ws))
+            return await s.scalar(
+                select(PaymentAccount).where(
+                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                )
+            )
 
-    async def connect(self, ws: str, store_id: str, password: str, sandbox: bool) -> PaymentAccount:
-        """Checks the store with SSLCommerz, then keeps it, in place of any before."""
-        account = Account(store_id, password, sandbox)
+    async def providers(self, ws: str) -> list[Provider]:
+        """The gateways this business is connected to, in the order the pay page shows them."""
+        async with self.sessions() as s:
+            found = set(
+                await s.scalars(
+                    select(PaymentAccount.provider).where(PaymentAccount.workspace_id == ws)
+                )
+            )
+        return [p for p in PROVIDERS if p in found]
+
+    async def connect(self, ws: str, provider: Provider, account: Account) -> PaymentAccount:
+        """Checks the account with its gateway, then keeps it, in place of any before."""
         try:
-            await self.gateway.verify(account)
+            await self.gateways[provider].verify(account)
         except PaymentUnavailable as error:
-            raise HeyDeskError(f"SSLCommerz didn't accept these: {error}") from None
+            raise HeyDeskError(f"{NAMES[provider]} didn't accept these: {error}") from None
         async with self.sessions() as s, s.begin():
-            saved = await s.scalar(select(PaymentAccount).where(PaymentAccount.workspace_id == ws))
+            saved = await s.scalar(
+                select(PaymentAccount).where(
+                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                )
+            )
             if saved is None:
-                saved = PaymentAccount(workspace_id=ws, created_at=self.now())
+                saved = PaymentAccount(workspace_id=ws, provider=provider, created_at=self.now())
                 s.add(saved)
-            saved.store_id, saved.password, saved.sandbox = store_id, password, sandbox
-        log.info("payment account connected", extra={"workspace_id": ws, "sandbox": sandbox})
+            saved.store_id, saved.password = account.store_id, account.password
+            saved.app_key, saved.username = account.app_key, account.username
+            saved.app_secret = account.app_secret or None
+            saved.sandbox = account.sandbox
+        log.info(
+            "payment account connected",
+            extra={"workspace_id": ws, "provider": provider, "sandbox": account.sandbox},
+        )
         return saved
 
-    async def disconnect(self, ws: str) -> None:
-        """Payments stop: the agent no longer asks for any, and unpaid ones can't be paid."""
+    async def disconnect(self, ws: str, provider: Provider) -> None:
+        """Payments through it stop. With none left, the agent no longer asks for any, and
+        unpaid ones can't be paid."""
         async with self.sessions() as s, s.begin():
-            saved = await s.scalar(select(PaymentAccount).where(PaymentAccount.workspace_id == ws))
+            saved = await s.scalar(
+                select(PaymentAccount).where(
+                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                )
+            )
             if saved is None:
-                raise NotFound("No SSLCommerz account is connected.")
+                raise NotFound(f"No {NAMES[provider]} account is connected.")
             await s.delete(saved)
 
-    async def _gateway_account(self, ws: str) -> Account:
-        saved = await self.account(ws)
+    async def _gateway_account(self, ws: str, provider: Provider) -> Account:
+        saved = await self.account(ws, provider)
         if saved is None:
-            raise PaymentUnavailable("this business takes no payments online")
-        return Account(saved.store_id, saved.password, saved.sandbox)
+            raise PaymentUnavailable(f"this business takes no payments by {NAMES[provider]}")
+        return Account(
+            saved.store_id,
+            saved.password,
+            saved.sandbox,
+            app_key=saved.app_key,
+            app_secret=saved.app_secret or "",
+            username=saved.username,
+        )
 
     # Paying
 
@@ -102,11 +146,13 @@ class PaymentService:
                     return found
         return None
 
-    async def start(self, record: Payable) -> str:
-        """The gateway's page for paying an unpaid order or appointment."""
+    async def start(self, record: Payable, provider: Provider) -> str:
+        """The gateway's page for paying an unpaid order or appointment. SSLCommerz posts the
+        visitor back to `/pay/<id>/back`; bKash sends them to `/pay/<id>/bkash`."""
         base = self.settings.public_url
-        return await self.gateway.start(
-            await self._gateway_account(record.workspace_id),
+        back = "back" if provider == "sslcommerz" else "bkash"
+        return await self.gateways[provider].start(
+            await self._gateway_account(record.workspace_id, provider),
             Checkout(
                 order_id=record.id,
                 amount=record.due,
@@ -115,20 +161,22 @@ class PaymentService:
                 name=record.name,
                 phone=record.phone,
                 address=getattr(record, "address", ""),
-                back_url=f"{base}/pay/{record.id}/back",
+                back_url=f"{base}/pay/{record.id}/{back}",
                 notify_url=base + NOTIFY_PATH.replace("{record_id}", record.id),
             ),
         )
 
-    async def settle(self, record_id: str, payment_id: str) -> Payable | None:
-        """Checks a payment the gateway posted back for a row and, if it paid that unpaid row
-        in full, places it. The visitor's return and the gateway's notice both come here; only
+    async def settle(
+        self, record_id: str, payment_id: str, provider: Provider = "sslcommerz"
+    ) -> Payable | None:
+        """Checks a payment a gateway sent word of for a row and, if it paid that unpaid row
+        in full, places it. The visitor's return and SSLCommerz's notice both come here; only
         the first one changes anything. Returns the row."""
         record = await self.find(record_id)
         if record is None:
             return None
-        paid = await self.gateway.check(
-            await self._gateway_account(record.workspace_id), payment_id
+        paid = await self.gateways[provider].check(
+            await self._gateway_account(record.workspace_id, provider), payment_id
         )
         if paid is None or paid.order_id != record.id:
             return record

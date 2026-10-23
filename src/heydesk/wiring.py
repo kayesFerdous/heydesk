@@ -19,7 +19,8 @@ from heydesk.adapters.llm.groq import GroqLLM
 from heydesk.adapters.mailer import Brevo, ConsoleMailer
 from heydesk.adapters.media import DiskMedia, R2Media, fetch_image
 from heydesk.adapters.messenger.graph import MessengerGraph
-from heydesk.adapters.payments.fake import FakePayments
+from heydesk.adapters.payments.bkash import BkashCheckout
+from heydesk.adapters.payments.fake import FakeBkash, FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
@@ -32,7 +33,7 @@ from heydesk.ports.llm import LanguageModel
 from heydesk.ports.mailer import Mailer
 from heydesk.ports.media import FetchImage, MediaStore
 from heydesk.ports.messenger import MessengerApi
-from heydesk.ports.payments import PaymentGateway
+from heydesk.ports.payments import Gateways
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.sheets import FetchCsv
 from heydesk.ports.telegram import TelegramApi
@@ -143,10 +144,12 @@ def build_photos(
     )
 
 
-def build_payments(settings: Settings) -> PaymentGateway:
+def build_payments(settings: Settings) -> Gateways:
+    """Both gateways (D109); each business's own account comes with every call (D49)."""
     if settings.PAYMENTS == "sslcommerz":
-        return SslCommerz()  # each business's own store comes with every call (D49)
-    return FakePayments()  # no network; no order is paid unless a test says so
+        return {"sslcommerz": SslCommerz(), "bkash": BkashCheckout()}
+    # no network; no order is paid unless a test says so
+    return {"sslcommerz": FakePayments(), "bkash": FakeBkash()}
 
 
 def build_mailer(settings: Settings) -> Mailer:
@@ -166,13 +169,13 @@ def build_services(
     telegram: TelegramApi | None = None,
     messenger: MessengerApi | None = None,
     whatsapp: WhatsAppApi | None = None,
-    payments: PaymentGateway | None = None,
+    payments: Gateways | None = None,
     fetch_sheet: FetchCsv = fetch_csv,
     woo: WooApi | None = None,
     fetch_photo: FetchImage | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm)
-    gateway = payments or build_payments(settings)
+    gateways = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     photos = build_photos(settings, embedder, photo_index, fetch_photo)
     agents = AgentService(sessions, knowledge, photos, now)
@@ -209,7 +212,7 @@ def build_services(
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
-        billing=BillingService(sessions, gateway, settings, now),
+        billing=BillingService(sessions, gateways, settings, now),
         calls=calls,
         channels=ChannelService(
             sessions,
@@ -228,7 +231,7 @@ def build_services(
         knowledge=knowledge,
         members=MemberService(sessions, users, now),
         photos=photos,
-        payments=PaymentService(sessions, gateway, team, woo_service, settings, now),
+        payments=PaymentService(sessions, gateways, team, woo_service, settings, now),
         users=users,
         visitors=visitors,
         rate_limits=rate_limits,

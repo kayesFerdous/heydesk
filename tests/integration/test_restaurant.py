@@ -14,17 +14,19 @@ from heydesk.desks.restaurant import RESTAURANT
 from heydesk.desks.restaurant.models import Booking, Order
 from heydesk.desks.restaurant.tools import (
     BookTableInput,
+    FindOrderInput,
     PlaceOrderInput,
     UpdateOrderInput,
     book_table,
     place_order,
+    track_order,
 )
 from heydesk.desks.restaurant.tools import update_order as update
 from heydesk.desks.restaurant.values import has_room
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime.schedule import WeeklyHours
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from tests.conftest import AGENT, CART, DEV_KEY, World, make_ctx
+from tests.conftest import AGENT, CART, DEV_KEY, World, make_ctx, said_yes
 
 LINES = [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]
 DETAILS = {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}
@@ -397,3 +399,78 @@ def test_a_delivery_goes_out_and_is_delivered_but_never_collected() -> None:
     order.move("out_for_delivery", WED_8PM)
     assert order.news() == "🛵 Your order O-101 is on its way."
     order.move("delivered", WED_8PM)
+
+
+def bdt(minor: int, text: str) -> dict[str, object]:
+    return {"minor": minor, "currency": "BDT", "text": text}
+
+
+async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) -> None:
+    store = world.store(await world.agent())
+    ctx = make_ctx(store, state={"cart": CART})
+    args = PlaceOrderInput.model_validate(DETAILS)
+    rows = [
+        {"label": "Pickup", "value": "today, 7:30 pm", "at": "2026-09-29T13:30:00+00:00"},
+        {"label": "Name", "value": "Kayes"},
+        {"label": "Phone", "value": "01712345678"},
+    ]
+
+    asked = await place_order(ctx, args)
+    assert asked.card == {  # D110: every number is Python's, as in the read-back
+        "kind": "summary",
+        "data": {
+            "title": "Your order",
+            "lines": [
+                {"label": "Chicken Biryani", "qty": 2, "amount": bdt(90000, "৳900")},
+                {"label": "Borhani", "qty": 1, "amount": bdt(13000, "৳130")},
+            ],
+            "rows": rows,
+            "total": bdt(103000, "৳1,030"),
+        },
+    }
+
+    saved = await said_yes(place_order, ctx, args)
+    assert saved.card == {
+        "kind": "receipt",
+        "data": {
+            "title": "Order placed",
+            "number": "O-101",
+            "status": "Received: the kitchen has it",
+            "rows": [{"label": "Items", "value": "2 × Chicken Biryani, 1 × Borhani"}, *rows],
+            "total": bdt(103000, "৳1,030"),
+        },
+    }
+
+    found = await track_order(ctx, FindOrderInput(code="O-101", phone="01712345678"))
+    assert found.card == {
+        "kind": "tracking",
+        "data": {
+            "number": "O-101",
+            "steps": [
+                {"label": "Received", "done": True, "current": True},
+                {"label": "Ready", "done": False, "current": False},
+                {"label": "Picked up", "done": False, "current": False},
+            ],
+            "note": "Received: the kitchen has it. Time: 7:30 pm.",
+        },
+    }
+
+
+async def test_a_booking_shows_a_summary_then_a_receipt(world: World) -> None:
+    agent = await world.agent()
+    ctx = make_ctx(world.store(agent), agent=agent.config)
+    args = BookTableInput.model_validate(TABLE)
+    rows = [
+        {"label": "People", "value": "4"},
+        {"label": "Time", "value": "Wed 30 Sep, 8:00 pm", "at": "2026-09-30T14:00:00+00:00"},
+        {"label": "Name", "value": "Kayes"},
+        {"label": "Phone", "value": "01712345678"},
+    ]
+    asked = await book_table(ctx, args)
+    assert asked.card == {
+        "kind": "summary",
+        "data": {"title": "Table booking", "lines": [], "rows": rows},
+    }
+    saved = await said_yes(book_table, ctx, args)
+    assert saved.card and saved.card["data"]["number"] == "T-101"
+    assert saved.card["data"]["status"] == "Waiting for the restaurant to confirm it"

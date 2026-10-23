@@ -82,8 +82,8 @@ class Store:
 
     async def pays_first(self, config: AgentConfig) -> bool:
         """Whether the agent asks for payment before placing anything: the owner turned it on
-        (`pay_first`) and connected the business's SSLCommerz store (D49). Without the store,
-        the agent takes orders as if it were off."""
+        (`pay_first`) and connected the business's SSLCommerz store or bKash account (D49,
+        D109). Without either, the agent takes orders as if it were off."""
         if not getattr(config, "pay_first", False):
             return False
         async with self.sessions() as s:
@@ -279,6 +279,7 @@ class Desk:
     config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
     tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
     takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop, D57)
+    takes_voice: ClassVar[bool] = False  # a visitor can call it (the receptionist and clinic, D108)
     columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet (D53, D58)
 
     def store(

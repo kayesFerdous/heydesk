@@ -11,9 +11,11 @@ from heydesk.desks.clinic import CLINIC
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.tools import (
     CancelInput,
+    FindDoctorInput,
     RequestAppointmentInput,
     RescheduleInput,
     cancel_appointment,
+    find_doctor,
     request_appointment,
     reschedule_appointment,
 )
@@ -215,3 +217,57 @@ async def test_the_owner_hears_each_request_move_and_cancel(world: World) -> Non
     assert moved.alert and moved.alert.startswith("✏️ Appointment A-101 moved")
     cancelled = await said_yes(cancel_appointment, ctx(), CancelInput.model_validate(who))
     assert cancelled.alert == "❌ Appointment A-101 cancelled"
+
+
+async def test_find_doctor_shows_the_doctors_with_a_book_button(world: World) -> None:
+    agent = await world.agent("clinic")
+    ctx = make_ctx(world.store(agent), agent=agent.config)
+    found = await find_doctor(ctx, FindDoctorInput(speciality="cardio", day="tomorrow"))
+
+    assert found.card == {  # D110: Python's facts, the same as the model's lines
+        "kind": "doctors",
+        "data": {
+            "doctors": [
+                {
+                    "name": "Dr. Imran Hasan",
+                    "speciality": "Cardiology",
+                    "days": "Tue, Wed",
+                    "hours": "6:00 pm–9:00 pm",
+                    "fee": {"minor": 90000, "currency": "BDT", "text": "৳900"},
+                    "book": "Book with Dr. Imran Hasan",  # a tap sends these words (D99)
+                }
+            ]
+        },
+    }
+    nobody = await find_doctor(ctx, FindDoctorInput(speciality="dentistry"))
+    assert nobody.card is None
+
+
+async def test_a_request_shows_a_summary_then_a_receipt(world: World) -> None:
+    agent = await world.agent("clinic")
+    ctx = make_ctx(world.store(agent), agent=agent.config)
+    args = RequestAppointmentInput.model_validate(DETAILS)
+    rows = [
+        {"label": "Doctor", "value": "Dr. Imran Hasan, Cardiology"},
+        {"label": "Time", "value": "Wed 30 Sep, 7:00 pm", "at": "2026-09-30T13:00:00+00:00"},
+        {"label": "Patient", "value": "Kayes"},
+        {"label": "Phone", "value": "01712345678"},
+    ]
+
+    asked = await request_appointment(ctx, args)
+    assert asked.card == {
+        "kind": "summary",
+        "data": {"title": "Appointment request", "lines": [], "rows": rows},
+    }
+    assert asked.choices == ["Yes", "Change"]  # the buttons stay as they were (D99)
+
+    saved = await said_yes(request_appointment, ctx, args)
+    assert saved.card == {
+        "kind": "receipt",
+        "data": {
+            "title": "Appointment requested",
+            "number": "A-101",
+            "status": "Requested: the clinic will call to confirm it",
+            "rows": rows,
+        },
+    }

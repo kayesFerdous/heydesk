@@ -9,6 +9,8 @@ class FakeWhatsApp:
         self.sent: list[tuple[str, str]] = []  # (number, text), in order
         self.cards: list[tuple[str, list[dict[str, str]]]] = []  # (number, cards), in order
         self.choices: list[tuple[str, list[str]]] = []  # (number, buttons), in order
+        self.links: list[tuple[str, str, str, str]] = []  # (number, text, button, url), in order
+        self.lists: list[tuple[str, str, list[dict[str, str]]]] = []  # (number, text, rows)
         self.files: dict[str, bytes] = {}  # what a visitor's media id downloads as
 
     async def subscribe(self, token: str, account_id: str, phone_id: str) -> None:
@@ -27,6 +29,16 @@ class FakeWhatsApp:
         self, token: str, phone_id: str, to: str, cards: list[dict[str, str]]
     ) -> None:
         self.cards.append((to, cards))
+
+    async def send_link(
+        self, token: str, phone_id: str, to: str, text: str, title: str, url: str
+    ) -> None:
+        self.links.append((to, text, title, url))
+
+    async def send_list(
+        self, token: str, phone_id: str, to: str, text: str, rows: list[dict[str, str]]
+    ) -> None:
+        self.lists.append((to, text, rows))
 
     async def download(self, token: str, media_id: str) -> bytes:
         if media_id not in self.files:

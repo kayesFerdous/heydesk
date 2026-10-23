@@ -27,15 +27,30 @@ class WhatsAppCloud:
         if not choices or len(text) > BODY_LIMIT:  # too long for buttons: they're typed
             await self._send(token, phone_id, to, type="text", text={"body": text})
             return
-        if len(choices) <= 3:  # reply buttons
-            buttons = [{"type": "reply", "reply": {"id": c, "title": c}} for c in choices]
-            action: dict[str, Any] = {"buttons": buttons}
-            kind = "button"
-        else:  # a list holds 10; its rows' titles are the choices
-            rows = [{"id": c, "title": c} for c in choices[:10]]
-            action = {"button": "Choose", "sections": [{"rows": rows}]}
-            kind = "list"
-        interactive = {"type": kind, "body": {"text": text}, "action": action}
+        if len(choices) > 3:  # a list; its rows' titles are the choices
+            await self.send_list(
+                token, phone_id, to, text, [{"id": c, "title": c} for c in choices]
+            )
+            return
+        buttons = [{"type": "reply", "reply": {"id": c, "title": c}} for c in choices]
+        interactive = {"type": "button", "body": {"text": text}, "action": {"buttons": buttons}}
+        await self._send(token, phone_id, to, type="interactive", interactive=interactive)
+
+    async def send_link(
+        self, token: str, phone_id: str, to: str, text: str, title: str, url: str
+    ) -> None:
+        interactive = {
+            "type": "cta_url",
+            "body": {"text": text[:BODY_LIMIT]},
+            "action": {"name": "cta_url", "parameters": {"display_text": title, "url": url}},
+        }
+        await self._send(token, phone_id, to, type="interactive", interactive=interactive)
+
+    async def send_list(
+        self, token: str, phone_id: str, to: str, text: str, rows: list[dict[str, str]]
+    ) -> None:
+        action = {"button": "Choose", "sections": [{"rows": rows[:10]}]}  # a list holds 10
+        interactive = {"type": "list", "body": {"text": text}, "action": action}
         await self._send(token, phone_id, to, type="interactive", interactive=interactive)
 
     async def send_cards(

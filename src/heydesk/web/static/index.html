@@ -33,6 +33,16 @@
            border-radius: 12px; overflow: hidden; font-size: 13px }
   .photo img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block }
   .photo div { padding: 6px 9px }
+  /* A tool's card (D110) and the buttons under a reply (D99) */
+  .info { align-self: flex-start; min-width: 260px; background: var(--panel); white-space: normal;
+          border: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px }
+  .info .pair { display: flex; justify-content: space-between; gap: 16px }
+  .info .pair span:first-child, .info .dim { color: var(--dim) }
+  .info .total { font-weight: 650; border-top: 1px solid var(--line); padding-top: 4px }
+  .info .now { font-weight: 650; color: var(--accent) }
+  .info .item { padding-top: 6px; border-top: 1px solid var(--line) }
+  .choices { align-self: flex-start; display: flex; gap: 6px; flex-wrap: wrap; padding: 0 }
+  .choices button, .info button { padding: 5px 12px }
   .err { align-self: flex-start; color: var(--bad); font-size: 13px }
   .err button { margin-left: 8px }
   #waiting { color: var(--dim); font-size: 13px; min-height: 20px }
@@ -53,7 +63,7 @@
   <header>
     <h1><span id="agent-name">HeyDesk</span> <span style="color: var(--dim); font-weight: 400">dev agent</span></h1>
     <span>
-      <button id="call" type="button">Call</button>
+      <button id="call" type="button" hidden>Call</button>
       <button class="link" id="restart" type="button">Start over</button>
     </span>
   </header>

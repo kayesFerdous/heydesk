@@ -32,6 +32,19 @@ class WhatsAppApi(Protocol):
         `choice`: an Order button whose tap comes back with it (D99)."""
         ...
 
+    async def send_link(
+        self, token: str, phone_id: str, to: str, text: str, title: str, url: str
+    ) -> None:
+        """Text with one button that opens `url` (D111): a receipt's Pay button."""
+        ...
+
+    async def send_list(
+        self, token: str, phone_id: str, to: str, text: str, rows: list[dict[str, str]]
+    ) -> None:
+        """A list under the text: up to 10 rows `{id, title, description?}` (a title is 24
+        characters, a description 72). A tapped row comes back with its id (D99, D111)."""
+        ...
+
     async def download(self, token: str, media_id: str) -> bytes:
         """A photo the visitor sent, by the media id in its message."""
         ...

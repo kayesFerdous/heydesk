@@ -210,7 +210,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Dev chat page",
    "type": "client",
    "file": "src/heydesk/web/static/chat.js",
-   "purpose": "The development chat page: POSTs a message and reads the SSE reply; polls the team's replies every 4 s.",
+   "purpose": "The development chat page: POSTs a message and reads the SSE reply; draws each card (summary, receipt, tracking, doctors) and the choices as buttons that send their words (D110); polls the team's replies every 4 s.",
    "inputs": "the visitor's typing",
    "outputs": "POST /api/chat/{key}; GET …/team"
   },
@@ -229,7 +229,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Call button",
    "type": "client",
    "file": "src/heydesk/web/static/voice.js",
-   "purpose": "Browser microphone to the server over WebRTC; plays the agent's voice back.",
+   "purpose": "Browser microphone to the server over WebRTC; plays the agent's voice back. Shown only when the agent says `voice`: a receptionist or a clinic (D108).",
    "inputs": "microphone",
    "outputs": "POST /api/voice/offer?key&visitor"
   },
@@ -238,7 +238,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "/phone page",
    "type": "client",
    "file": "src/heydesk/web/static/phone.js",
-   "purpose": "A web page on a real phone that stands in for the buyer's phone during the shop's confirmation call (no phone carrier).",
+   "purpose": "A web page on a real phone that stands in for the buyer's phone during the shop's confirmation call (no phone carrier). Unused for now: the shop takes no voice (D108).",
    "inputs": "rings over SSE",
    "outputs": "answer → /api/voice/offer?call=; decline"
   },
@@ -287,7 +287,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Web chat API",
    "type": "api",
    "file": "src/heydesk/api/chat.py",
-   "purpose": "Public chat: agent info, send a message (streamed reply), the team's replies.",
+   "purpose": "Public chat: agent info (`photos`, `voice`), send a message (streamed reply), the team's replies.",
    "inputs": "ChatIn {message, conversation_id, visitor_id, photo}",
    "outputs": "SSE stream",
    "fn": "chat"
@@ -297,7 +297,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "SSE frames",
    "type": "api",
    "file": "src/heydesk/api/sse.py",
-   "purpose": "Turn events → text/event-stream frames: open, token, status, handoff, photos, done, error.",
+   "purpose": "Turn events → text/event-stream frames: open, token, status, handoff, photos, card {kind, data}, choices {items} (just before done), done, error (D110).",
    "inputs": "RunningTurn",
    "outputs": "frames",
    "fn": "to_sse"
@@ -307,7 +307,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Voice & phone API",
    "type": "api",
    "file": "src/heydesk/api/voice.py",
-   "purpose": "WebRTC offer/ICE for a call; the /phone page's ring stream and decline. Registered in development only.",
+   "purpose": "WebRTC offer/ICE for a call; the /phone page's ring stream and decline. Registered in development only. Refuses a desk that takes no voice: 403 `no_voice` (D108).",
    "inputs": "SDP offer, visitor, key, call",
    "outputs": "SDP answer; ring frames",
    "fn": "offer"
@@ -347,8 +347,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Payments API",
    "type": "api",
    "file": "src/heydesk/api/payments.py",
-   "purpose": "Owner connects SSLCommerz; visitor's /pay/{id} page; the gateway's return and IPN.",
-   "inputs": "val_id posts",
+   "purpose": "Owner connects SSLCommerz and/or bKash (D109); visitor's /pay/{id} page (a button per gateway when both); SSLCommerz's return and IPN, bKash's return.",
+   "inputs": "val_id posts, bKash paymentID + status",
    "outputs": "redirect / HTML page",
    "fn": "pay"
   },
@@ -357,8 +357,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Billing API",
    "type": "api",
    "file": "src/heydesk/api/billing.py",
-   "purpose": "The owner's plan and usage; paying for a plan through our SSLCommerz store; the gateway's return and IPN (D106).",
-   "inputs": "{plan, months}, val_id posts",
+   "purpose": "The owner's plan and usage, and which of our gateways are set up; paying for a plan through our SSLCommerz store or bKash account; the gateways' returns and SSLCommerz's IPN (D106, D109).",
+   "inputs": "{plan, months, gateway}, val_id posts, bKash paymentID",
    "outputs": "billing, {url}, HTML page",
    "fn": "get_billing"
   },
@@ -517,7 +517,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ChannelService",
    "type": "service",
    "file": "src/heydesk/services/channels.py",
-   "purpose": "Connect Telegram/Messenger/WhatsApp; answer their messages as one whole reply with buttons and photos.",
+   "purpose": "Connect Telegram/Messenger/WhatsApp; answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111).",
    "inputs": "webhook payloads",
    "outputs": "messages sent",
    "fn": "_answer"
@@ -597,8 +597,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "PaymentService",
    "type": "service",
    "file": "src/heydesk/services/payments.py",
-   "purpose": "Each business's SSLCommerz store; start a payment; settle it only after asking the gateway.",
-   "inputs": "record id, val_id",
+   "purpose": "Each business's SSLCommerz store and bKash account (one of each, D109); start a payment with the one the visitor picks; settle it only after asking that gateway.",
+   "inputs": "record id, val_id or paymentID, provider",
    "outputs": "record placed",
    "fn": "settle"
   },
@@ -607,8 +607,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "BillingService",
    "type": "service",
    "file": "src/heydesk/services/billing.py",
-   "purpose": "Plans (replies in 30 days, moderators); checkout and settle into our own store; `plan_problem` for every turn (D106).",
-   "inputs": "plan, months, val_id",
+   "purpose": "Plans (replies in 30 days, moderators); checkout and settle into our own SSLCommerz store or bKash account; `plan_problem` for every turn (D106, D109).",
+   "inputs": "plan, months, gateway, val_id or paymentID",
    "outputs": "plan and paid_until",
    "fn": "settle"
   },
@@ -617,7 +617,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "CallService",
    "type": "service",
    "file": "src/heydesk/services/calls.py",
-   "purpose": "Queue of calls that confirm new shop orders; rings the buyer's /phone page; retries; outcome from the order. Not in production, which serves no /phone page (D105).",
+   "purpose": "Queue of calls that confirm new shop orders; rings the buyer's /phone page; retries; outcome from the order. Not in production, which serves no /phone page (D105), and off while the shop takes no voice (D108).",
    "inputs": "new orders, rings",
    "outputs": "Call rows, voice conversation",
    "fn": "tick"
@@ -731,6 +731,16 @@ tr.hl td { background: var(--accent-soft); }
    "inputs": "text",
    "outputs": "spoken text",
    "fn": "speakable"
+  },
+  {
+   "id": "r-cards",
+   "label": "cards",
+   "type": "core",
+   "file": "src/heydesk/runtime/cards.py",
+   "purpose": "Builds a tool's card {kind, data} (D110): summary (the read-back laid out), receipt (what was saved, a pay link when unpaid), tracking (an order's steps), doctors (each with its Book words). Amounts {minor, currency, text}; times `at` in UTC. The loop yields it as a Card event, except on a call.",
+   "inputs": "Python's values from a writing or finding tool",
+   "outputs": "ToolResult.card",
+   "fn": "summary"
   },
   {
    "id": "r-schedule",
@@ -921,7 +931,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "TelegramApi",
    "type": "port",
    "file": "src/heydesk/ports/telegram.py",
-   "purpose": "The few Bot API calls, token per business.",
+   "purpose": "The few Bot API calls, token per business; send_card: a card as HTML with a button a row (D111).",
    "inputs": "",
    "outputs": ""
   },
@@ -930,7 +940,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "MessengerApi",
    "type": "port",
    "file": "src/heydesk/ports/messenger.py",
-   "purpose": "The few Graph API calls for a Page.",
+   "purpose": "The few Graph API calls for a Page; send_link: a Pay button template; send_cards also takes doctors without a photo (D111).",
    "inputs": "",
    "outputs": ""
   },
@@ -939,7 +949,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "WhatsAppApi",
    "type": "port",
    "file": "src/heydesk/ports/whatsapp.py",
-   "purpose": "The few Cloud API calls for a number.",
+   "purpose": "The few Cloud API calls for a number; send_link (cta_url Pay) and send_list (doctors) (D111).",
    "inputs": "",
    "outputs": ""
   },
@@ -948,8 +958,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "PaymentGateway",
    "type": "port",
    "file": "src/heydesk/ports/payments.py",
-   "purpose": "verify, start (→ payment page), check (→ Paid | None).",
-   "inputs": "Account, Checkout",
+   "purpose": "verify, start (→ payment page), check (→ Paid | None). `Gateways` maps sslcommerz / bkash to one each (D109).",
+   "inputs": "Account (SSLCommerz or bKash keys), Checkout",
    "outputs": "url / Paid"
   },
   {
@@ -1062,7 +1072,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "TelegramBot",
    "type": "adapter",
    "file": "src/heydesk/adapters/telegram/bot.py",
-   "purpose": "Bot API over httpx; inline buttons 3 per row; photo upload with an Order button.",
+   "purpose": "Bot API over httpx; inline buttons 3 per row; photo upload with an Order button; cards as parse_mode HTML with callback or URL buttons (D111).",
    "inputs": "",
    "outputs": ""
   },
@@ -1071,7 +1081,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "MessengerGraph",
    "type": "adapter",
    "file": "src/heydesk/adapters/messenger/graph.py",
-   "purpose": "Graph API v23.0; quick replies; product carousel with postback buttons.",
+   "purpose": "Graph API v23.0; quick replies; product or doctor carousel with postback buttons; button template with a web_url Pay button (D111).",
    "inputs": "",
    "outputs": ""
   },
@@ -1080,7 +1090,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "WhatsAppCloud",
    "type": "adapter",
    "file": "src/heydesk/adapters/whatsapp/cloud.py",
-   "purpose": "Cloud API; ≤3 reply buttons else a list; image cards; typing indicator.",
+   "purpose": "Cloud API; ≤3 reply buttons else a list; image cards; cta_url Pay button and a doctors list (D111); typing indicator.",
    "inputs": "",
    "outputs": ""
   },
@@ -1094,8 +1104,17 @@ tr.hl td { background: var(--accent-soft); }
    "outputs": ""
   },
   {
+   "id": "ad-bkash",
+   "label": "BkashCheckout",
+   "type": "adapter",
+   "file": "src/heydesk/adapters/payments/bkash.py",
+   "purpose": "Tokenized Checkout (D109): a fresh token per call; start = create → bkashURL; check = execute (or payment status) → Paid only when Completed.",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
    "id": "ad-fakepay",
-   "label": "FakePayments",
+   "label": "FakePayments, FakeBkash",
    "type": "adapter",
    "file": "src/heydesk/adapters/payments/fake.py",
    "purpose": "Tests: a test says which payments went through.",
@@ -1244,6 +1263,15 @@ tr.hl td { background: var(--accent-soft); }
    "type": "external",
    "file": "sandbox/securepay.sslcommerz.com",
    "purpose": "Each business's own payment store.",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
+   "id": "x-bkash",
+   "label": "bKash",
+   "type": "external",
+   "file": "tokenized.sandbox.bka.sh / tokenized.pay.bka.sh",
+   "purpose": "A business's own bKash merchant account, or ours for plans (D109).",
    "inputs": "",
    "outputs": ""
   },
@@ -1422,6 +1450,11 @@ tr.hl td { background: var(--accent-soft); }
    "source": "x-sslcommerz",
    "target": "a-payments",
    "label": "return + IPN"
+  },
+  {
+   "source": "x-bkash",
+   "target": "a-payments",
+   "label": "return (paymentID, status)"
   },
   {
    "source": "x-woo",
@@ -2104,6 +2137,21 @@ tr.hl td { background: var(--accent-soft); }
    "label": "speakable"
   },
   {
+   "source": "r-cards",
+   "target": "r-speech",
+   "label": "money"
+  },
+  {
+   "source": "r-guards",
+   "target": "r-cards",
+   "label": "ask_for_yes(card)"
+  },
+  {
+   "source": "r-loop",
+   "target": "r-cards",
+   "label": "yields Card (not on voice)"
+  },
+  {
    "source": "v-call",
    "target": "x-deepgram",
    "label": "STT"
@@ -2205,6 +2253,11 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "p-payments",
+   "target": "ad-bkash",
+   "label": "impl"
+  },
+  {
+   "source": "p-payments",
    "target": "ad-fakepay",
    "label": "impl"
   },
@@ -2282,6 +2335,11 @@ tr.hl td { background: var(--accent-soft); }
    "source": "ad-sslcommerz",
    "target": "x-sslcommerz",
    "label": "session / validation"
+  },
+  {
+   "source": "ad-bkash",
+   "target": "x-bkash",
+   "label": "token / create / execute"
   },
   {
    "source": "ad-woo",
@@ -2382,6 +2440,12 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "w-wiring",
    "target": "ad-sslcommerz",
+   "label": "builds",
+   "dashed": true
+  },
+  {
+   "source": "w-wiring",
+   "target": "ad-bkash",
    "label": "builds",
    "dashed": true
   },
@@ -2524,7 +2588,7 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "pay_first",
-     "delivery charge paid online first (needs SSLCommerz)"
+     "delivery charge paid online first (needs SSLCommerz or bKash)"
     ],
     [
      "takes_bookings, seats, table_minutes, max_party",
@@ -2669,7 +2733,8 @@ tr.hl td { background: var(--accent-soft); }
      "why": "Answers from the business's own documents (D35).",
      "condition": "the business has added documents (tools_for: has_documents)"
     }
-   ]
+   ],
+   "takes_voice": true
   },
   {
    "id": "ag-receptionist",
@@ -2712,7 +2777,8 @@ tr.hl td { background: var(--accent-soft); }
      "why": "Answers from the business's own documents (D35).",
      "condition": "the business has added documents (tools_for: has_documents)"
     }
-   ]
+   ],
+   "takes_voice": true
   },
   {
    "id": "ag-shop",
@@ -3055,8 +3121,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "outputs": [
     "missing → ask one at a time",
-    "read_back + Yes/Change",
-    "{order O-101, total, time}",
+    "read_back + Yes/Change + summary card (D110)",
+    "{order O-101, total, time} + receipt card (D110)",
     "pay first → {code, pay_link}"
    ],
    "effects": [
@@ -3089,7 +3155,8 @@ tr.hl td { background: var(--accent-soft); }
     ]
    ],
    "outputs": [
-    "{order, status words, dishes, total, time, paid_online?, pay_link?}"
+    "{order, status words, dishes, total, time, paid_online?, pay_link?}",
+     "tracking card: pickup or delivery steps (D110)"
    ],
    "effects": [
     "none"
@@ -3134,7 +3201,7 @@ tr.hl td { background: var(--accent-soft); }
     ]
    ],
    "outputs": [
-    "read_back 'old → new'",
+    "read_back 'old → new' + summary card (D110)",
     "{done, next}",
     "TooLate → can't change"
    ],
@@ -3218,8 +3285,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "outputs": [
     "full → 'Free times nearby: …'",
-    "read_back",
-    "{booking T-101, next}"
+    "read_back + summary card (D110)",
+    "{booking T-101, next} + receipt card (D110)"
    ],
    "effects": [
     "Booking row",
@@ -3289,7 +3356,8 @@ tr.hl td { background: var(--accent-soft); }
     ]
    ],
    "outputs": [
-    "{day: 'Saturday 3 Oct', doctors: [lines], hint?}"
+    "{day: 'Saturday 3 Oct', doctors: [lines], hint?}",
+     "doctors card: name, speciality, days, hours, fee, Book words (D110)"
    ],
    "effects": [
     "none"
@@ -3331,8 +3399,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "outputs": [
     "doctor/time problems",
-    "read_back",
-    "{code A-104, next}",
+    "read_back + summary card (D110)",
+    "{code A-104, next} + receipt card (D110)",
     "deposit first → pay_link"
    ],
    "effects": [
@@ -3407,7 +3475,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "outputs": [
     "read_back",
-    "{done}"
+    "{done}",
+     "summary card: doctor, from, to (D110)"
    ],
    "effects": [
     "Appointment.at changed; confirmed → new again",
@@ -3508,8 +3577,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "outputs": [
     "{delivery, total} + still_needed (all at once in chat)",
-    "read_back",
-    "{code, total, next}",
+    "read_back + summary card (D110)",
+    "{code, total, next} + receipt card (D110)",
     "pay first → pay_link",
     "OutOfStock → sold out since"
    ],
@@ -3544,7 +3613,8 @@ tr.hl td { background: var(--accent-soft); }
     ]
    ],
    "outputs": [
-    "{order, status, items, total, cash_on_delivery, delivery_area, usually_takes?, pay_link?}"
+    "{order, status, items, total, cash_on_delivery, delivery_area, usually_takes?, pay_link?}",
+     "tracking card: Received → Confirmed → With the courier → Delivered (D110)"
    ],
    "effects": [
     "none"
@@ -3597,7 +3667,7 @@ tr.hl td { background: var(--accent-soft); }
     ]
    ],
    "outputs": [
-    "read_back old → new with totals",
+    "read_back old → new with totals + summary card (D110)",
     "{done}",
     "TooLate / OutOfStock"
    ],
@@ -3981,7 +4051,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "id": "pays_first",
-   "label": "Pays first (switch on + SSLCommerz connected)",
+   "label": "Pays first (switch on + SSLCommerz or bKash connected)",
    "group": "Owner's config",
    "type": "toggle",
    "default": false,
@@ -4341,7 +4411,7 @@ tr.hl td { background: var(--accent-soft); }
       "delivers": true,
       "pays_first": true
      },
-     "note": "Only when Store.pays_first(): config.pay_first and a connected SSLCommerz account (D47–D49)."
+     "note": "Only when Store.pays_first(): config.pay_first and a connected SSLCommerz or bKash account (D47–D49, D109)."
     },
     {
      "id": "r-menu",
@@ -5876,9 +5946,9 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "call",
-     "label": "Shop + calls on + order new + no call → queue a call",
+     "label": "Shop takes voice + calls on + order new + no call → queue a call",
      "shape": "decision",
-     "code": "if agent.desk.kind != 'shop' or not self.rings: return  # rings: not production (D105)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
+     "code": "if agent.desk.kind != 'shop' or not agent.desk.takes_voice or not self.rings: return  # no voice for the shop (D108); rings: not production (D105)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
      "file": "src/heydesk/services/calls.py",
      "fn": "after_turn"
     },
@@ -6043,7 +6113,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "send",
-     "label": "Photos (cards), text + buttons, hand-off line",
+     "label": "Photos (cards), text + buttons, the tool's card (D111), hand-off line",
      "shape": "end",
      "fn": "_send_photos"
     },
@@ -6402,7 +6472,7 @@ tr.hl td { background: var(--accent-soft); }
    "title": "Paying online first",
    "kind": "callbacks + branches",
    "file": "src/heydesk/services/payments.py",
-   "summary": "Only the gateway's own word places an unpaid row (D47–D49).",
+   "summary": "Only the gateway's own word places an unpaid row (D47–D49); SSLCommerz or bKash, whichever the visitor picks (D109).",
    "nodes": [
     {
      "id": "link",
@@ -6424,22 +6494,34 @@ tr.hl td { background: var(--accent-soft); }
      "fn": "record_page"
     },
     {
-     "id": "redir",
-     "label": "303 → SSLCommerz payment page",
+     "id": "both",
+     "label": "Both gateways connected and no ?via?",
+     "shape": "decision",
+     "code": "providers = await services.payments.providers(record.workspace_id)\nif via is None and len(providers) > 1:\n    return choose_page(record, providers)"
+    },
+    {
+     "id": "choose",
+     "label": "A button per gateway → /pay/{id}?via=…",
      "shape": "step",
-     "code": "return RedirectResponse(await services.payments.start(record), status_code=303)"
+     "fn": "choose_page"
+    },
+    {
+     "id": "redir",
+     "label": "303 → that gateway's payment page",
+     "shape": "step",
+     "code": "url = await services.payments.start(record, provider)\nreturn RedirectResponse(url, status_code=303)"
     },
     {
      "id": "cb",
-     "label": "Gateway posts val_id (browser return + IPN)",
+     "label": "SSLCommerz posts val_id (return + IPN); bKash returns paymentID with status=success",
      "shape": "event",
-     "fn": "back / notice"
+     "fn": "back / notice / bkash_back"
     },
     {
      "id": "chk",
-     "label": "gateway.check(val_id) VALID and tran_id matches?",
+     "label": "gateway.check: VALID / Completed, and our id matches?",
      "shape": "decision",
-     "code": "paid = await self.gateway.check(account, payment_id)\nif paid is None or paid.order_id != record.id:\n    return record",
+     "code": "paid = await self.gateways[provider].check(account, payment_id)\nif paid is None or paid.order_id != record.id:\n    return record",
      "fn": "settle"
     },
     {
@@ -6484,8 +6566,22 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "unp",
-     "redir",
+     "both",
      "yes"
+    ],
+    [
+     "both",
+     "choose",
+     "yes"
+    ],
+    [
+     "choose",
+     "link"
+    ],
+    [
+     "both",
+     "redir",
+     "no"
     ],
     [
      "redir",
@@ -7222,6 +7318,14 @@ tr.hl td { background: var(--accent-soft); }
      "fn": "buttons"
     },
     {
+     "from": "s-channels",
+     "to": "p-telegram",
+     "data": "Reply.card → card_text → send_card(html, buttons): a summary with Yes/Change, a receipt with a Pay URL, tracking steps, a Book per doctor",
+     "file": "src/heydesk/services/channels.py",
+     "fn": "_send_card",
+     "note": "After the words, so the buttons are last. Messenger: quick replies, a Pay button template, a doctors carousel. WhatsApp: reply buttons, cta_url, a list (D111)."
+    },
+    {
      "from": "p-telegram",
      "to": "ad-telegram",
      "data": "sendMessage with inline_keyboard",
@@ -7521,12 +7625,12 @@ tr.hl td { background: var(--accent-soft); }
   {
    "id": "payment",
    "title": "Paying the delivery charge first",
-   "summary": "Saved unpaid → pay link → gateway → server checks with the gateway → placed.",
+   "summary": "Saved unpaid → pay link → gateway (SSLCommerz shown; bKash the same shape, D109) → server checks with the gateway → placed.",
    "steps": [
     {
      "from": "t-shop-place_order",
      "to": "k-store",
-     "data": "status 'unpaid' (zone.pay_first + SSLCommerz connected)",
+     "data": "status 'unpaid' (zone.pay_first + SSLCommerz or bKash connected)",
      "file": "src/heydesk/desks/shop/tools.py",
      "fn": "place_order"
     },
@@ -7542,12 +7646,13 @@ tr.hl td { background: var(--accent-soft); }
      "to": "a-payments",
      "data": "visitor opens /pay/<id>",
      "file": "src/heydesk/api/payments.py",
-     "fn": "pay"
+     "fn": "pay",
+     "note": "Both gateways connected: a button for each first, then /pay/<id>?via=sslcommerz or bkash (D109)."
     },
     {
      "from": "a-payments",
      "to": "s-payments",
-     "data": "start(record): Checkout(amount = due)",
+     "data": "start(record, provider): Checkout(amount = due)",
      "file": "src/heydesk/services/payments.py",
      "fn": "start"
     },
@@ -7556,7 +7661,8 @@ tr.hl td { background: var(--accent-soft); }
      "to": "x-sslcommerz",
      "data": "business's own store → GatewayPageURL",
      "file": "src/heydesk/adapters/payments/sslcommerz.py",
-     "fn": "start"
+     "fn": "start",
+     "note": "bKash: BkashCheckout.start grants a token, creates the payment → bkashURL."
     },
     {
      "from": "a-payments",
@@ -7570,12 +7676,13 @@ tr.hl td { background: var(--accent-soft); }
      "to": "a-payments",
      "data": "POST val_id to /pay/<id>/back and the IPN URL",
      "file": "src/heydesk/api/payments.py",
-     "fn": "back / notice"
+     "fn": "back / notice",
+     "note": "bKash: the browser comes to GET /pay/<id>/bkash?paymentID=…&status=…; only success goes on (bkash_back)."
     },
     {
      "from": "a-payments",
      "to": "s-payments",
-     "data": "settle(record_id, val_id)",
+     "data": "settle(record_id, val_id or paymentID, provider)",
      "file": "src/heydesk/services/payments.py",
      "fn": "settle"
     },
@@ -7584,7 +7691,8 @@ tr.hl td { background: var(--accent-soft); }
      "to": "x-sslcommerz",
      "data": "validation API: VALID? tran_id? amount?",
      "file": "src/heydesk/adapters/payments/sslcommerz.py",
-     "fn": "check"
+     "fn": "check",
+     "note": "bKash: execute (or payment status) → Completed? merchantInvoiceNumber? amount?"
     },
     {
      "from": "s-payments",
@@ -8418,7 +8526,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "id": "payment",
    "title": "Payment: two posts, one placement",
-   "summary": "The browser's return and the gateway's IPN race; the conditional UPDATE lets only one win.",
+   "summary": "The browser's return and the gateway's IPN race; the conditional UPDATE lets only one win. bKash (D109) has no IPN: its return is the one word, and a reload is a second post that changes nothing.",
    "files": [
     "src/heydesk/services/payments.py"
    ],
@@ -8437,7 +8545,7 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "G",
-     "SSLCommerz"
+     "SSLCommerz or bKash"
     ],
     [
      "DB",

@@ -17,6 +17,7 @@ class AgentOut(BaseModel):
     name: str
     greeting: str  # the page shows it on load; the first turn stores it (D8)
     photos: bool  # the visitor can send a photo: the page shows its button (D57)
+    voice: bool  # the visitor can call it: the page shows its Call button (D108)
     widget: Widget  # how the chat looks on the business's website (D82)
 
 
@@ -43,7 +44,11 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
         }
     )
     return AgentOut(
-        name=config.name, greeting=found.greeting, photos=found.desk.takes_photos, widget=widget
+        name=config.name,
+        greeting=found.greeting,
+        photos=found.desk.takes_photos,
+        voice=found.desk.takes_voice,
+        widget=widget,
     )
 
 

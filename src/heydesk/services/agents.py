@@ -131,7 +131,7 @@ class AgentService:
         store = desk.store(self.sessions, ws, self.now)
         missing = await desk.missing(config, store)
         if getattr(config, "pay_first", False) and not await store.pays_first(config):
-            missing.append("Connect your SSLCommerz account to take payments first.")
+            missing.append("Connect SSLCommerz or bKash to take payments first.")
         return AgentInfo(agent.id, agent.public_key, agent.kind, config, missing)
 
     async def store(self, ws: str, kind: str | None = None) -> Store:

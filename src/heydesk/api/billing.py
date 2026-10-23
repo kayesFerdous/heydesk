@@ -1,7 +1,9 @@
-"""Paying HeyDesk for a plan (D106). The owner's billing page reads `/api/billing` and pays
-with `/api/billing/checkout`, which returns our SSLCommerz page. The gateway sends the owner
-back to `/billing/<id>/back` and tells the server itself at NOTIFY_PATH; only the `val_id` it
-posts counts, checked with our store. Owners only: a moderator gets a 403 (`owners_only`).
+"""Paying HeyDesk for a plan (D106, D109). The owner's billing page reads `/api/billing` and
+pays with `/api/billing/checkout`, which returns our SSLCommerz or bKash page. SSLCommerz sends
+the owner back to `/billing/<id>/back` and tells the server itself at NOTIFY_PATH; only the
+`val_id` it posts counts, checked with our store. bKash sends them back to `/billing/<id>/bkash`;
+only its `paymentID`, executed with our bKash account, counts. Owners only: a moderator gets a
+403 (`owners_only`).
 """
 
 import html
@@ -9,12 +11,13 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, Workspace
-from heydesk.ports.payments import PaymentUnavailable
+from heydesk.models import SubscriptionPayment
+from heydesk.ports.payments import PaymentUnavailable, Provider
 from heydesk.services.billing import NOTIFY_PATH, PLANS
 
 router = APIRouter(tags=["billing"])
@@ -39,11 +42,13 @@ class BillingOut(BaseModel):
     replies: int
     moderators: int
     plans: list[PlanOut]
+    gateways: list[Provider]  # a Pay button for each; empty: paying online isn't set up
 
 
 class CheckoutIn(BaseModel):
     plan: PlanKey
     months: Literal[1, 12] = 1
+    gateway: Provider = "sslcommerz"
 
 
 class CheckoutOut(BaseModel):
@@ -74,13 +79,15 @@ async def get_billing(ws: Workspace, services: Svc) -> BillingOut:
         replies=b.replies,
         moderators=b.moderators,
         plans=plans,
+        gateways=b.gateways,
     )
 
 
 @router.post("/api/billing/checkout")
 async def checkout(body: CheckoutIn, ws: Workspace, services: Svc) -> CheckoutOut:
     """Starts paying for a plan; a 400 says why it can't (no store set up, the gateway down)."""
-    return CheckoutOut(url=await services.billing.checkout(ws, body.plan, body.months))
+    url = await services.billing.checkout(ws, body.plan, body.months, body.gateway)
+    return CheckoutOut(url=url)
 
 
 def page(text: str, status_code: int = 200) -> HTMLResponse:
@@ -97,11 +104,31 @@ def page(text: str, status_code: int = 200) -> HTMLResponse:
 
 @router.post("/billing/{payment_id}/back", include_in_schema=False)
 async def back(payment_id: str, services: Svc, val_id: Annotated[str, Form()] = "") -> HTMLResponse:
-    """The gateway sends the owner back here, paid, failed or cancelled."""
+    """SSLCommerz sends the owner back here, paid, failed or cancelled."""
     payment = None
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
             payment = await services.billing.settle(payment_id, val_id)
+    return await result_page(payment, services)
+
+
+@router.get("/billing/{payment_id}/bkash", include_in_schema=False)
+async def bkash_back(
+    payment_id: str,
+    services: Svc,
+    bkash_id: Annotated[str, Query(alias="paymentID")] = "",
+    outcome: Annotated[str, Query(alias="status")] = "",
+) -> HTMLResponse:
+    """bKash sends the owner back here, paid, failed or cancelled (D109). Only a "success" is
+    worth asking bKash about, and only bKash's answer counts."""
+    payment = None
+    if bkash_id and outcome == "success":
+        with suppress(PaymentUnavailable):
+            payment = await services.billing.settle(payment_id, bkash_id, "bkash")
+    return await result_page(payment, services)
+
+
+async def result_page(payment: SubscriptionPayment | None, services: Svc) -> HTMLResponse:
     if payment is None or payment.status != "paid":
         return page("The payment didn't go through. Try again from the billing page.")
     b = await services.billing.billing(payment.workspace_id)

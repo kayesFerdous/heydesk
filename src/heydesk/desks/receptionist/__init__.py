@@ -32,6 +32,7 @@ class ReceptionistDesk(Desk):
     description = "Answers questions about the business and takes messages for the team."
     config_model = ReceptionistConfig
     tools: ClassVar[list[Tool]] = []  # only the shared ones
+    takes_voice = True  # a visitor can call it (D108)
 
     async def prompt(self, config: ReceptionistConfig, store: Store) -> str:
         about = ["# The business"]

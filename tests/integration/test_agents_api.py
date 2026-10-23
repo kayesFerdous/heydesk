@@ -64,7 +64,7 @@ async def test_a_shop_pays_first_per_area_and_says_whether_it_calls(app: FastAPI
         )
         config = saved.json()["config"]
         assert (config["delivery"][0]["pay_first"], config["call_to_confirm"]) == (True, False)
-        assert "Connect your SSLCommerz account" in saved.json()["missing"][-1]
+        assert "Connect SSLCommerz or bKash" in saved.json()["missing"][-1]
 
         old_switch = await owner.patch("/api/agent", json={"pay_first": True})
         assert old_switch.status_code == 422  # per area now

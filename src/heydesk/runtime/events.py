@@ -33,6 +33,15 @@ class Photos:
 
 
 @dataclass(frozen=True)
+class Card:
+    """A card a tool showed the visitor (D110): a summary, a receipt, tracking or doctors.
+    `data` is built by Python; its shape for each kind is in `runtime/cards.py`."""
+
+    kind: str
+    data: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class TurnEnded:
     added: list[Message]  # transcript additions, provider-native, in order
     state: dict[str, Any]  # the conversation state after the turn
@@ -44,4 +53,4 @@ class TurnEnded:
     choices: list[str] = field(default_factory=list)  # the last tool's buttons (D99)
 
 
-type Event = Token | ToolStarted | HandOff | Photos | TurnEnded
+type Event = Token | ToolStarted | HandOff | Photos | Card | TurnEnded

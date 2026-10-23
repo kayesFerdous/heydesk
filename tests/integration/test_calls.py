@@ -1,4 +1,6 @@
-"""Calls to confirm shop orders (D88, D89): off until the shop turns them on; then each new
+"""Calls to confirm shop orders (D88, D89): off for now, since the shop takes no voice (D108).
+The code stays, so these tests turn the shop's voice back on (`shop_voice`) to keep it working:
+off until the shop turns them on; then each new
 order is queued and called in turn, inside the calling hours, on the buyer's `/phone` page; a
 missed call is tried again and then the owner is told; only a yes on the call confirms the
 order. And the owner's routes for the queue."""
@@ -11,6 +13,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from heydesk.desks.shop import ShopDesk
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import Conflict, HeyDeskError, NotFound
 from heydesk.ports.llm import ToolCall
@@ -20,6 +23,12 @@ from tests.conftest import SEEDS, World
 from tests.integration.test_shop import DETAILS, KURTI, READ_BACK
 
 MOBILE = "01712345678"  # the one in DETAILS
+
+
+@pytest.fixture
+def shop_voice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shop takes voice again, as it did before D108, for the tests of the calls' code."""
+    monkeypatch.setattr(ShopDesk, "takes_voice", True)
 
 
 async def shop_with_calls(services: Services, **settings: Any) -> LiveAgent:
@@ -60,7 +69,15 @@ async def status_of(world: World, order_id: str) -> str:
     return found.status
 
 
-async def test_nothing_is_queued_while_calls_are_off(world: World) -> None:
+async def test_a_shop_order_queues_no_call_since_the_shop_takes_no_voice(world: World) -> None:
+    agent = await shop_with_calls(world.services)  # even with calls on (D108)
+    placed = await order(world.services, agent)
+    assert await world.services.calls.find(DEV_WORKSPACE_ID) == []
+    with pytest.raises(Conflict, match="a shop takes no calls"):
+        await world.services.calls.call_order(DEV_WORKSPACE_ID, placed.id)
+
+
+async def test_nothing_is_queued_while_calls_are_off(world: World, shop_voice: None) -> None:
     agent = await world.agent("shop")
     await order(world.services, agent)
     assert await world.services.calls.find(DEV_WORKSPACE_ID) == []
@@ -70,7 +87,7 @@ async def test_nothing_is_queued_while_calls_are_off(world: World) -> None:
 
 
 async def test_production_queues_no_calls_since_it_serves_no_phone_page(
-    world: World, monkeypatch: pytest.MonkeyPatch
+    world: World, monkeypatch: pytest.MonkeyPatch, shop_voice: None
 ) -> None:
     monkeypatch.setattr(world.services.calls.settings, "APP_ENV", "production")
     agent = await shop_with_calls(world.services)
@@ -81,7 +98,7 @@ async def test_production_queues_no_calls_since_it_serves_no_phone_page(
 
 
 async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_it(
-    world: World,
+    world: World, shop_voice: None
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services)
@@ -117,7 +134,7 @@ async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_i
 
 
 async def test_the_queue_waits_for_the_hours_and_a_free_line_and_call_now_goes_first(
-    world: World,
+    world: World, shop_voice: None
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services, start="15:00")  # it's 14:00 in Dhaka
@@ -140,7 +157,9 @@ async def test_the_queue_waits_for_the_hours_and_a_free_line_and_call_now_goes_f
     assert [c.status for c in await calls.find(DEV_WORKSPACE_ID)] == ["ringing", "queued"]
 
 
-async def test_a_missed_call_is_tried_again_then_the_owner_is_told(world: World) -> None:
+async def test_a_missed_call_is_tried_again_then_the_owner_is_told(
+    world: World, shop_voice: None
+) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services, tries=2, retry_minutes=30)
     placed = await order(world.services, agent)
@@ -165,7 +184,7 @@ async def test_a_missed_call_is_tried_again_then_the_owner_is_told(world: World)
 
 
 async def test_a_declined_call_waits_and_an_order_settled_first_isnt_called(
-    world: World,
+    world: World, shop_voice: None
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services)
@@ -196,7 +215,9 @@ async def test_confirm_order_only_works_on_the_shops_call(world: World) -> None:
         world.services.calls.number("12345")
 
 
-async def test_the_owner_sees_and_steers_the_queue(app: FastAPI, client: AsyncClient) -> None:
+async def test_the_owner_sees_and_steers_the_queue(
+    app: FastAPI, client: AsyncClient, shop_voice: None
+) -> None:
     services: Services = app.state.services
     agent = await shop_with_calls(services, wait_minutes=60)
     placed = await order(services, agent)

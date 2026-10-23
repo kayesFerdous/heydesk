@@ -165,8 +165,8 @@ class ClinicConfig(AgentConfig):
     emergency_phone: str = ""  # where to send someone who needs help now
     policies: str = ""  # insurance, what to bring, how fees are paid
     deposit: int = Field(default=0, ge=0)  # minor units, taken online with each request
-    # The patient pays the deposit online first (SSLCommerz). The request reaches the clinic
-    # only when the payment comes in (D48)
+    # The patient pays the deposit online first (SSLCommerz or bKash). The request reaches the
+    # clinic only when the payment comes in (D48)
     pay_first: bool = False
 
     @model_validator(mode="after")

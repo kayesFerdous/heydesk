@@ -20,7 +20,7 @@ from heydesk.errors import (
     UnreadablePhoto,
 )
 from heydesk.models import Conversation, Turn
-from heydesk.runtime.events import Event, HandOff, Photos, Token, TurnEnded
+from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
@@ -49,6 +49,7 @@ class Reply:
     handoff: HandOff | None
     photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool (D62)
     choices: list[str] = field(default_factory=list)  # buttons under the text (D99)
+    card: Card | None = None  # the last card a tool showed (D110), sent its own way (D111)
 
 
 class ConversationService:
@@ -192,6 +193,7 @@ class ConversationService:
         parts: list[str] = []
         photos: list[dict[str, str]] = []
         handoff = None
+        card = None
         choices: list[str] = []
         async with aclosing(turn.events) as events:
             async for event in events:
@@ -201,9 +203,11 @@ class ConversationService:
                     handoff = event
                 elif isinstance(event, Photos):
                     photos.extend(event.items)
+                elif isinstance(event, Card):
+                    card = event
                 elif isinstance(event, TurnEnded):
                     choices = event.choices
-        return Reply("".join(parts).strip(), handoff, photos, choices)
+        return Reply("".join(parts).strip(), handoff, photos, choices, card)
 
     async def restart(
         self, agent: LiveAgent, channel: str, contact: str, name: str | None = None

@@ -33,7 +33,7 @@ flowchart LR
     S --> D[desks/<br/>prompt · tools · store]
     D --> R[runtime/<br/>turn loop · commit check]
     R --> P[ports/<br/>Protocols]
-    A[adapters/<br/>Maira · Groq · Gemini · Qdrant<br/>Telegram · Messenger · SSLCommerz] -. implement .-> P
+    A[adapters/<br/>Maira · Groq · Gemini · Qdrant<br/>Telegram · Messenger · SSLCommerz · bKash] -. implement .-> P
     S & D --> DB[(SQLite)]
     A --> Q[(Qdrant)]
 ```
@@ -60,7 +60,7 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 | Talking | Gigalogy's Maira (default) or Groq (`openai/gpt-oss-120b`), behind one `LanguageModel` port |
 | Knowledge and photos | Gemini embeddings, hybrid (meaning + exact word) search in Qdrant |
 | Voice | Pipecat over WebRTC, Silero VAD; Deepgram, Chorus or our Whisper to hear; a Bangla voice (our TTS server) or Piper to speak |
-| Channels and payments | Telegram Bot API, Messenger (Graph API), SSLCommerz |
+| Channels and payments | Telegram Bot API, Messenger (Graph API), SSLCommerz, bKash |
 | Tooling | uv, pytest, ruff, mypy (strict on the core), Docker, GitHub Actions (checks, a dependency audit, the image) |
 
 ## Security
@@ -76,7 +76,7 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
   address. Chat allows 6 messages a minute per visitor and 60 per IP. Each visitor and each business has a daily cap, and a visitor
   who keeps going off-topic is blocked.
 - **Webhooks and payments:** Telegram posts must carry the bot's own random secret, and
-  Messenger posts must carry Facebook's HMAC signature. A payment counts only after SSLCommerz's
+  Messenger posts must carry Facebook's HMAC signature. A payment counts only after the gateway's
   own API confirms it.
 - **The model:** nothing is saved without a read-back and a yes: the model judges the yes, and
   Python saves only the details the visitor heard read back. Passages from documents are given to the model as facts, never as instructions.

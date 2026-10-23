@@ -92,8 +92,9 @@ class CallService:
 
     async def after_turn(self, agent: LiveAgent, conversation_id: str) -> None:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
-        An order is queued by itself once; the owner can call it again."""
-        if agent.desk.kind != "shop" or not self.rings:
+        An order is queued by itself once; the owner can call it again.
+        Unused for now: the shop takes no voice (D108)."""
+        if agent.desk.kind != "shop" or not agent.desk.takes_voice or not self.rings:
             return
         calls = cast(ShopConfig, agent.config).calls
         if not calls.enabled:
@@ -107,6 +108,8 @@ class CallService:
         agent = await self.agents.by_workspace(ws)
         if agent.desk.kind != "shop":
             raise NotFound("Only a shop calls its buyers.")
+        if not agent.desk.takes_voice:  # the shop has no voice for now (D108)
+            raise Conflict("Calls to confirm are off: a shop takes no calls for now.")
         if not self.rings:
             raise Conflict("Calls ring the /phone page, which this server doesn't serve.")
         if not cast(ShopConfig, agent.config).calls.enabled:

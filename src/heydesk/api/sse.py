@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from heydesk.runtime.events import HandOff, Photos, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import Card, HandOff, Photos, Token, ToolStarted, TurnEnded
 from heydesk.services.conversations import RunningTurn
 
 log = logging.getLogger(__name__)
@@ -28,7 +28,11 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
                     yield frame("handoff", {"message": message, "phone": phone, "email": email})
                 case Photos(items):
                     yield frame("photos", {"items": items})  # product photos to show (D57)
-                case TurnEnded(interrupted=interrupted):
+                case Card(kind, data):
+                    yield frame("card", {"kind": kind, "data": data})  # D110
+                case TurnEnded(interrupted=interrupted, choices=choices):
+                    if choices:  # buttons under the reply; a tap sends its words (D99, D110)
+                        yield frame("choices", {"items": choices})
                     yield frame("done", {"interrupted": interrupted})
     except Exception:
         # The response has started, so a 500 would arrive as a silent cut-off.

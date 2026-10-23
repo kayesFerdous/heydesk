@@ -28,7 +28,13 @@ class MessengerApi(Protocol):
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
         """Products as one carousel (D62): each card `{name, price, url}`, the photo's full URL,
-        and maybe `choice`: an Order button whose tap comes back as a postback with it (D99)."""
+        and maybe `choice`: an Order button whose tap comes back as a postback with it (D99).
+        Doctors use it too (D111): no `url`, `price` is the line under the name, and `button`
+        names the button ("Book"; a product's is "Order this")."""
+        ...
+
+    async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
+        """Text with one button that opens `url` (D111): a receipt's Pay button."""
         ...
 
     async def download(self, url: str) -> bytes:

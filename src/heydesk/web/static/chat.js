@@ -17,6 +17,55 @@ const add = (cls, text) => {
   return node;
 };
 
+const el = (tag, text, cls = "") => {
+  const node = document.createElement(tag);
+  node.textContent = text;
+  node.className = cls;
+  return node;
+};
+
+const button = (text, onclick) => {
+  const node = el("button", text);
+  node.type = "button";
+  node.onclick = onclick;
+  return node;
+};
+
+// A label on the left, a value on the right: "2 × Chicken Biryani   ৳900"
+const pair = (label, value, cls = "") => {
+  const node = el("div", "", "pair " + cls);
+  node.append(el("span", label), el("span", value));
+  return node;
+};
+
+// A tool's card (D110). Every value is Python's: the page only lays it out
+const drawCard = (kind, d) => {
+  const box = add("info", "");
+  const heading = [d.title, d.number].filter(Boolean).join(" · ");
+  if (heading) box.append(el("b", heading));
+  for (const line of d.lines ?? []) {
+    box.append(pair(`${line.qty ? line.qty + " × " : ""}${line.label}`, line.amount?.text ?? ""));
+  }
+  for (const row of d.rows ?? []) box.append(pair(row.label, row.value));
+  if (d.total) box.append(pair("Total", d.total.text, "total"));
+  for (const step of d.steps ?? []) {
+    box.append(el("div", `${step.done ? "●" : "○"} ${step.label}`, step.current ? "now" : ""));
+  }
+  for (const doc of d.doctors ?? []) {
+    const item = el("div", `${doc.name}, ${doc.speciality}`, "item");
+    item.append(el("div", `${doc.days} · ${doc.hours} · fee ${doc.fee.text}`, "dim"));
+    item.append(button("Book", () => say(doc.book)));  // a tap is only its words (D99)
+    box.append(item);
+  }
+  for (const text of [d.status, d.note].filter(Boolean)) box.append(el("div", text, "dim"));
+  if (d.pay_url) {
+    const pay = el("a", "Pay now");
+    pay.href = d.pay_url;
+    pay.target = "_blank";
+    box.append(pay);
+  }
+};
+
 const busy = (on) => {
   $("input").disabled = $("send").disabled = on;
   $("waiting").textContent = "";
@@ -57,6 +106,15 @@ const handle = (event, data, reply) => {
         card.append(img, line);
         row.append(card);
       }
+      break;
+    }
+    case "card":  // what a tool showed (D110): a summary, a receipt, tracking or doctors
+      drawCard(data.kind, data.data);
+      reply.node = null;  // the words after it go under it
+      break;
+    case "choices": {  // buttons under the reply: a tap sends its words (D99)
+      const row = add("choices", "");
+      for (const text of data.items) row.append(button(text, () => { row.remove(); say(text); }));
       break;
     }
     case "done":
@@ -107,13 +165,18 @@ async function send(message) {
   }
 }
 
+function say(message) {
+  if ($("send").disabled) return;  // a reply is still coming
+  add("you", message);
+  send(message);
+}
+
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   const message = $("input").value.trim();
   if (!message) return;
   $("input").value = "";
-  add("you", message);
-  send(message);
+  say(message);
 });
 
 // What the business said meanwhile (a payment came in, the order is ready): the server adds it
@@ -142,6 +205,7 @@ $("restart").addEventListener("click", () => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const agent = await res.json();
     $("agent-name").textContent = agent.name;
+    $("call").hidden = !agent.voice;  // only a receptionist or a clinic takes calls (D108)
     greeting = agent.greeting;
     add("agent", greeting);
   } catch (failure) {

@@ -12,7 +12,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 
 A business picks its **kind** (a restaurant, a clinic, a receptionist for an office, an online shop), fills in
 its details (address, hours, its menu, doctors or products, FAQ) and adds its own notes, and it has an AI
-front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or **voice** in the
+front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or (a receptionist or a clinic, D108) **voice** in the
 browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60), or on its **WhatsApp** number (D103). It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders, appointments and messages through the API, which
 the separate frontend (`../heydesk-frontend`) uses.
@@ -61,9 +61,9 @@ src/heydesk/
 │                        MediaStore, TelegramApi, MessengerApi, WhatsAppApi, PaymentGateway, the sheet reader, WooApi
 ├── adapters/            one per port, each with a fake: GigalogyLLM (default) and GroqLLM,
 │                        Gemini, Qdrant (documents and photos), the Telegram Bot API, Messenger's
-│                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, Google Sheets' CSV (D58), WooCommerce's REST API (D75),
+│                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, bKash (D109), Google Sheets' CSV (D58), WooCommerce's REST API (D75),
 │                        photo files on the disk or in Cloudflare R2 (D101)
-├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech
+├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech, cards
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
 │   ├── shared.py        take_message, handoff_to_human, off_topic, search_knowledge
@@ -405,8 +405,8 @@ Every table has `workspace_id` (except `workspaces`).
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `woo_links` | agent_id (unique), url (the store's `https://` address), key, secret (encrypted, D74), ids JSON (each product code's Woo product and variation ids), checked (SHA-256 of the last products read), synced_at, problem (empty: fine). One per agent, shops only; not with a sheet (D75) |
-| `subscription_payments` | plan, months (1 or 12), amount, status (`unpaid`/`paid`), payment_ref, paid_at: a business paying HeyDesk for a plan, through our own SSLCommerz store (D106) |
-| `payment_accounts` | store_id, password (encrypted, D74), sandbox: the business's own SSLCommerz store, one per business (D49). No route returns the password |
+| `subscription_payments` | plan, months (1 or 12), amount, status (`unpaid`/`paid`), payment_ref, paid_at: a business paying HeyDesk for a plan, through our own SSLCommerz store or bKash account (D106, D109) |
+| `payment_accounts` | provider (`sslcommerz`/`bkash`), store_id, app_key, app_secret and password (both encrypted, D74), username, sandbox: the business's own SSLCommerz store or bKash account, one of each per business (D49, D109). No route returns a secret |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
@@ -432,7 +432,7 @@ SQLAlchemy doesn't see in-place edits.
 | Method | Path | Does |
 |---|---|---|
 | GET | `/` | Dev chat page (development only) |
-| GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
+| GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), `voice` (true when it takes calls, so the page shows its Call button, D108) and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup` | A new business and its owner → 204, and an email with a 6-digit code; no token until it's typed (D93, D94) |
@@ -473,14 +473,17 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/messenger` | Messenger's webhook, one for every Page: checked by `X-Hub-Signature-256` with `META_APP_SECRET`, each message routed by its Page id, answered after the response |
 | GET/PUT/DELETE | `/api/agent/whatsapp` | The business's WhatsApp number: its id; connect it with its business account's id, the number's id and a system user's token; disconnect it (D103) |
 | GET/POST | `/api/whatsapp` | WhatsApp's webhook, one for every number: checked as Messenger's (the same verify token and app secret), each message routed by its `phone_number_id`, answered after the response (D103) |
-| GET | `/pay/{id}` | The visitor's payment link: off to SSLCommerz to pay for an unpaid order or appointment (D47, D48) |
+| GET | `/pay/{id}` | The visitor's payment link: off to the gateway to pay for an unpaid order or appointment (D47, D48); with both connected, a button for each, then `?via=sslcommerz` or `?via=bkash` (D109) |
+| GET | `/pay/{id}/bkash` | bKash sends the visitor back here with `paymentID` and `status`; only a `success`, executed with the business's bKash account, counts (D109) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
 | POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
 | GET | `/api/billing` | The business's plan, `paid_until`, `active`, replies used in the last 30 days and the plan's limit, and the plans it can buy (D106). Owners only |
-| POST | `/api/billing/checkout` | `{plan, months: 1 or 12}` → `{url}`: our SSLCommerz page; a 400 when no store is set up (D106). Owners only |
+| POST | `/api/billing/checkout` | `{plan, months: 1 or 12, gateway: sslcommerz or bkash}` → `{url}`: our gateway's page; a 400 when that gateway isn't set up (D106, D109). `/api/billing`'s `gateways` lists those that are. Owners only |
 | POST | `/billing/{id}/back`, `/api/billing/sslcommerz/{id}` | The owner's return and the gateway's notice; only `val_id`, checked with our store, counts (D106) |
+| GET | `/billing/{id}/bkash` | bKash's return for a plan: only a `success` `paymentID`, executed with our bKash account, counts (D109) |
 | PUT | `/api/admin/businesses/{id}/plan` | `{plan, paid_until}`: set by hand, for a payment made another way; audited (D106) |
 | GET/PUT/DELETE | `/api/agent/sslcommerz` | The business's own SSLCommerz store: its id and test mode; connect it (checked with SSLCommerz first); disconnect it (D49). The password never comes back |
+| GET/PUT/DELETE | `/api/agent/bkash` | The business's own bKash account: `{app_key, app_secret, username, password, sandbox}`; connect it (checked by granting a token); disconnect it (D109). Only the username and test mode come back |
 | GET | `/health` | DB reachable |
 
 Lists that grow (orders, appointments, shop orders, messages, conversations, the
@@ -551,7 +554,9 @@ for a 422. A conversation takes at most `MAX_TURNS` visitor messages (D21). A st
 change a table's flow doesn't allow is a 409 `invalid_transition` (§8).
 
 SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
-`handoff {message, phone}`, `photos {items: [{name, price, url}]}` (D57), `done {interrupted}`, `error {message}`.
+`handoff {message, phone}`, `photos {items: [{name, price, url}]}` (D57), `card {kind, data}`
+(D110), `choices {items: [text]}` (just before `done`, when the reply has buttons, D99, D110),
+`done {interrupted}`, `error {message}`.
 
 Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
 tokens, cost, error (rule 7). The same save adds a row to `turns` (D71, changing D15's
@@ -1021,14 +1026,72 @@ show_photos ─► each card gets an Order button whose tap says "Order [kurti]"
 - **The limits:** a choice is at most 20 characters (Messenger's quick reply) and 64 bytes
   (Telegram's button data), at most 13 of them; a longer one gets no button and is typed. An
   Order button needs "Order [code]" within 64 bytes.
-- **Web chat and voice** ignore the choices: the web chat's cards are unchanged (its photos
-  now carry the `code`), and a call stays words.
+- **The web chat** shows them too, since D110: a `choices` event at the end of the reply, and a
+  tap sends its words as the next message. A call stays words.
 - **Postbacks are signed** like messages: they come to the same `/api/messenger`. Our app
   subscribes a Page to `messages,messaging_postbacks`, and the Meta app's webhook needs the
   `messaging_postbacks` field. Telegram's webhook allows `message` and `callback_query`. A Page
   or bot connected before D99 is connected again once to get them.
 - The model is told, in the Telegram and Messenger channel lines, that a tap arrives as its
   words, and to reply in the language they've been writing in (the buttons are English).
+
+### Cards (D110)
+
+A tool can show a **card** next to its words: the details laid out, not just said. Python
+builds every value (rule 1); a screen only lays it out. `runtime/cards.py` builds them and
+documents each shape.
+
+```
+a tool's result ─► ToolResult.card {kind, data} ─► the loop yields a Card event (not on voice)
+   web chat: a `card` SSE event ─► the dev chat page (static/chat.js) and the Vue chat draw it
+   Messenger, Telegram, WhatsApp: Reply.card ─► ChannelService._send_card, each in its own way (D111)
+```
+
+| Kind | From | `data` |
+|------|------|--------|
+| `summary` | `ask_for_yes(read_back, tool, card)`: shop `place_order`, `change_order`; restaurant `place_order`, `change_order`, `book_table`; clinic `request_appointment`, `reschedule_appointment` | `{title, lines: [{label, qty?, amount?}], rows: [{label, value, at?}], total?}` |
+| `receipt` | the same writing tools once they saved: an order, a booking, an appointment | `{title, number, status, rows, total?, pay_url?}` |
+| `tracking` | `track_order` (shop, restaurant) | `{number, steps: [{label, done, current}], note}` |
+| `doctors` | clinic `find_doctor` | `{doctors: [{name, speciality, days, hours, fee, book}]}` |
+
+- **Amounts and times:** an amount is `{minor, currency, text}` (`text` from `speech.money`;
+  nothing to pay is "free"); a row with a time has `at`, ISO 8601 in UTC, beside its display
+  `value`.
+- **The read-back stays in the words.** A summary shows the same details as the read-back, but
+  the yes is still to the read-back string (D107), and voice and plain-text channels need it.
+  The model isn't told about cards: it says what it says without them.
+- **Buttons stay `choices`** (D99): Yes and Change under a summary. A doctor's `book` is the
+  words a Book button sends ("Book with Dr. Imran Hasan"): a tap is only words.
+- **A receipt's `pay_url`** is the `/pay/<id>` link a row saved unpaid gets (D47).
+- **Tracking:** a desk lists its steps (`STEPS` for the shop; `PICKUP_STEPS` or
+  `DELIVERY_STEPS` for the restaurant); a status off them (unpaid, cancelled, returned) is one
+  step on its own. `note` is the status in words.
+- **Not kept:** a card is shown when the tool runs; it isn't saved on the message like
+  `photos`, so a reloaded chat or the owner's view doesn't show it (§12).
+- Cancel tools, `take_message` and `request_exchange` show no card: their read-back is one line.
+
+**On Messenger, Telegram and WhatsApp (D111).** `Reply.card` is the turn's last card;
+`ChannelService._send_card` sends it **after the words**, so its buttons are the last thing in
+the chat. `card_text` writes it as lines: the title in bold (Telegram's HTML, every value
+escaped; WhatsApp's `*stars*`; Messenger has no bold), a summary's lines as "2 × Cotton Kurti —
+৳1,800", rows as "Label: value", the total last in bold.
+
+| Kind | Telegram (`send_card`: HTML, a button a row) | Messenger | WhatsApp |
+|------|------|------|------|
+| `summary` | the text, with Yes and Change | the text, with Yes and Change as quick replies | the text, with Yes and Change as reply buttons |
+| `receipt` | the text, with a "💳 Pay now" URL button when `pay_url` | the text; with `pay_url`, a button template with a "Pay now" web_url button (`send_link`) | the text; with `pay_url`, an interactive `cta_url` "Pay now" (`send_link`) |
+| `tracking` | "Order O-106", then "✅ Received → 🔵 Confirmed → ⚪ With the courier", then the note | the same, plain | the same, the title in bold |
+| `doctors` | one message, each doctor's name, speciality, days, hours and fee, and a "Book with …" button each | a carousel (`send_cards`, no photo), each with a Book postback | a list (`send_list`): a row each, the name as title (24), "speciality · days · hours · fee" as description (72) |
+
+- **The summary carries the buttons.** The words go first without buttons, then the summary
+  with Yes and Change under it. The read-back is in both: the model isn't told about cards, and
+  the yes is to the read-back's words (D107), so they stay; the card is what the buttons confirm.
+  Any other card leaves the turn's choices on the words.
+- **A tap is words**, as for every button (D99): a Book button's or a list row's id is the
+  doctor's `book` ("Book with Dr. Imran Hasan"), a callback's data on Telegram (64 bytes, else
+  no button), a postback on Messenger.
+- If a card fails to send, it's logged; the words have gone already. Text past a button
+  template's 640 characters or an interactive message's 1,024 is cut.
 
 ### The team on Telegram (D43)
 
@@ -1067,10 +1130,10 @@ owner replies /done ─► `active` again: the agent answers, and sees what the 
   silence. A phone call can't be answered this way; the owner is told to call back.
 - The `by` mark is taken off before the transcript goes to the model.
 
-### Paying first (D47–D49)
+### Paying first (D47–D49, D109)
 
-A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz,
-into the business's **own** store, before anything is placed. The shop sets it per delivery area
+A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz or
+bKash, into the business's **own** account, before anything is placed. The shop sets it per delivery area
 (`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the table's
 `Payable.due`, and the payment moves the row to its `PAID_STATUS`:
 
@@ -1081,27 +1144,34 @@ into the business's **own** store, before anything is placed. The shop sets it p
 | Clinic | a deposit the owner sets, copied onto the appointment | the clinic phones to confirm |
 
 Nothing to pay (free delivery, a pickup) saves it `new` as before. The owner turns it on and
-off, sets the amounts and connects the store on the frontend's Agent → Payments section.
+off, sets the amounts and connects the gateways on the frontend's Agent → Payments section.
 
-**Each business's own store (D49).** `payment_accounts` holds its SSLCommerz store id,
-store password and test mode; `PUT /api/agent/sslcommerz` checks them with SSLCommerz first
-(it opens a ৳10 session no one pays; a 400 carries SSLCommerz's reason) and no route returns
-the password. The agent asks for payment only when `pay_first` is on (a shop: in some area,
-`ShopConfig.pay_first`) **and** a store is connected (`Store.pays_first`): without one, the prompt says nothing about paying, the tools
-place orders as before, and `missing` says "Connect your SSLCommerz account…".
-`services/payments.py` (`PaymentService`, its `PAYABLE` tables), `api/payments.py` (the
-pages) and the `PaymentGateway` port (`adapters/payments/sslcommerz.py`; `PAYMENTS=fake` for
+**Each business's own accounts (D49, D109).** `payment_accounts` holds one row per gateway
+(`provider`): an SSLCommerz store id, store password and test mode, and a bKash account's app
+key, app secret, username, password and test mode. `PUT /api/agent/sslcommerz` checks the store
+with SSLCommerz first (it opens a ৳10 session no one pays); `PUT /api/agent/bkash` checks the
+keys by granting a token. A 400 carries the gateway's reason, and no route returns a secret.
+The agent asks for payment only when `pay_first` is on (a shop: in some area,
+`ShopConfig.pay_first`) **and** a gateway is connected (`Store.pays_first`): without one, the
+prompt says nothing about paying, the tools place orders as before, and `missing` says
+"Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`, its `PAYABLE`
+tables), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
+provider (`Gateways`: `adapters/payments/sslcommerz.py` and `bkash.py`; `PAYMENTS=fake` for
 tests) do it. `desks/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
 line (`pay_first_rule`).
 
 ```
 yes to the read-back ─► the tool saves it `unpaid` (a shop's items held), returns
     pay_link = PUBLIC_URL/pay/<id>; no alert yet
-visitor opens the link ─► a new SSLCommerz session for `due` ─► its page
+visitor opens the link ─► both connected? a button for each; the visitor picks (?via=…)
+    ─► a new session with that gateway for `due` ─► its page
 SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
     /api/payments/sslcommerz/<id>)
     ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
        for this row (its tran_id), this amount
+bKash sends the browser to /pay/<id>/bkash?paymentID=…&status=success (failure, cancel: nothing)
+    ─► settle(id, paymentID, "bkash"): the business's bKash account executes it (or asks its
+       status): Completed, for this row (its merchantInvoiceNumber), this amount
     ─► UPDATE … WHERE status = 'unpaid' → PAID_STATUS (new; a shop order confirmed), paid,
        payment_ref (only the first post wins)
     ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
@@ -1110,13 +1180,18 @@ SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN
 
 - The agent can't mark anything paid: no tool moves `unpaid` (moving an unpaid appointment
   keeps it unpaid), and the prompt says nothing is placed until a message says so. What the
-  browser posts is never trusted; only `val_id`, asked about with the business's own store.
+  browser posts is never trusted; only `val_id` or `paymentID`, asked about with the
+  business's own account.
+- bKash (Tokenized Checkout, `adapters/payments/bkash.py`) grants a fresh token for each call
+  rather than keeping one. It has no server-to-server notice like SSLCommerz's IPN, so its
+  return is the one path; bKash takes the money only when we execute, so a buyer who closes
+  the tab first isn't charged.
 - The link opens a fresh session each time, so it doesn't run out. The row's id is long and
   random: the link is its own key, like the Telegram webhook's channel id.
 - The owner can still move `unpaid` → `new` (a shop order: `confirmed`) when it was paid some
   other way, or cancel it.
 
-### Plans and billing (D106)
+### Plans and billing (D106, D109)
 
 A business pays HeyDesk for a **plan**: AI replies in any 30 days, and moderators
 (`services/billing.py`, `PLANS`). Prices are in taka, before VAT:
@@ -1130,10 +1205,11 @@ A business pays HeyDesk for a **plan**: AI replies in any 30 days, and moderator
 
 ```
 signup ─► the trial: plan trial, paid_until = now + TRIAL_DAYS (14)
-billing page ─► POST /api/billing/checkout {plan, months} ─► a subscription_payments row (unpaid)
-             ─► our SSLCommerz page (BILLING_STORE_*, not the business's own store)
-gateway posts back (/billing/<id>/back, and its notice) ─► settle: our store says paid, this
-             payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
+billing page ─► POST /api/billing/checkout {plan, months, gateway} ─► a subscription_payments row
+             (unpaid) ─► our SSLCommerz page (BILLING_STORE_*) or our bKash page
+             (BILLING_BKASH_*, D109), not the business's own accounts
+gateway sends word back (SSLCommerz: /billing/<id>/back and its notice; bKash: /billing/<id>/bkash
+             with status=success) ─► settle: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
              paid_until = max(now, paid_until) + 30 days a month (365 a year); a trial's days aren't kept
 every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
              or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
@@ -1142,8 +1218,10 @@ every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRAC
 - A **reply** is a saved turn (`turns`, D71): what the model actually cost us. A turn the team
   answers isn't one.
 - The plan's moderators cap invites (it replaces D97's `MAX_MODERATORS`).
-- An admin sets a plan by hand (`PUT /api/admin/businesses/{id}/plan`), for a bKash payment
-  made to us outside the site; it goes in the audit log.
+- `/api/billing`'s `gateways` lists ours that have keys, so the page shows a Pay button for
+  each; with none, it can't take payments online.
+- An admin sets a plan by hand (`PUT /api/admin/businesses/{id}/plan`), for a payment made to
+  us another way; it goes in the audit log.
 - The dev workspace is Pro for ten years, so the dev chat and the demo never stop.
 - Changing plans mid-way isn't prorated: the new plan starts at once and the days run on.
   Nothing is emailed when a plan is about to end: the owner sees it on the billing page.
@@ -1155,7 +1233,7 @@ Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
 | The order | Confirmed by | It's saved | The buyer hears |
 |---|---|---|---|
 | Its area has `pay_first` (and a store is connected) | the advance: the delivery charge paid online | `unpaid`, then `confirmed` by the payment | "Payment received… your order is confirmed; pay the rest to the delivery man" |
-| Cash on delivery, `call_to_confirm` on (the default) | the shop's call: by hand, or `calls` (D89) | `new`, then `confirmed` after the call | "The shop will call … to confirm it before sending it" |
+| Cash on delivery, `call_to_confirm` on (the default) | the shop's call, by hand (`calls`, D89, is off for now: D108) | `new`, then `confirmed` after the call | "The shop will call … to confirm it before sending it" |
 | Cash on delivery, `call_to_confirm` off | nothing | `confirmed` at once, for the owner to send (D95) | "It's confirmed and will be sent out" |
 
 A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
@@ -1170,6 +1248,10 @@ WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
 after 0.5s of silence, D39; `STT_PROVIDER=whisper` to our Whisper, D87) and Piper for
 text-to-speech.
 
+- **Only the receptionist and the clinic (D108):** `Desk.takes_voice`, like `takes_photos`.
+  `GET /api/chat/{key}` says `voice: true` for them, so the page shows its Call button;
+  `POST /api/voice/offer` for any other desk is a 403 `no_voice`. A shop's buyers and a
+  restaurant's guests use the web chat and the messaging apps.
 - **Bangla (D84, D86):** the server's `VOICE_LANGUAGE` (`bn`, the default, or `en`) says what
   every call hears and speaks, whatever the agent. A `bn` call asks Deepgram for Bangla
   (`language=bn`) and speaks with our Bangla voice:
@@ -1212,6 +1294,10 @@ text-to-speech.
   one starts.
 
 ### Confirmation calls (D88, D89)
+
+**Off for now (D108):** the shop takes no voice, so no call is queued for an order and the
+owner's "Call to confirm" is a 409, the same refusal as production's (D105). The code below
+stays, unused, for when a shop takes calls again.
 
 A shop can turn on calls (`calls.enabled`, off by default): the agent then phones each buyer
 who placed an order, reads it back and asks them to confirm it. There is no phone carrier, and
@@ -1295,8 +1381,9 @@ version handles them.
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
-| Billing, phone numbers, hosting | No plans or billing; voice in the browser only (a confirmation call rings a `/phone` page, D88, D89); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
-| Telegram: voice notes, messages over 4,096 characters, buttons on the web chat, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, for a receptionist or a clinic (D108); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
+| Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
+| Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Ending logins when a password changes | A login token lasts 7 days, and a new password (changed, or reset with the emailed code, D93) doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
@@ -1310,6 +1397,6 @@ version handles them.
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
-| Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89) |
+| Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89), and off while the shop takes no voice (D108) |
 | Two records saved in the same instant in one business | Its next number is the highest + 1, read inside the save's transaction; the database's unique (workspace, number) refuses the second, which saves nothing and becomes the tool's "something went wrong": the visitor asks again |
-| Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in SSLCommerz's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |
+| Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in the gateway's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

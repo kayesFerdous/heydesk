@@ -6,6 +6,8 @@ Python checks that this call's details are the last ones read back on an earlier
 the visitor heard exactly what is saved (D107).
 """
 
+from typing import Any
+
 from heydesk.domain.values import Confirmed
 from heydesk.runtime.tool import ToolResult
 
@@ -16,8 +18,9 @@ def confirm[T](heard: str, value: T, read_back: str) -> Confirmed[T] | None:
     return Confirmed(value) if heard and heard == read_back else None
 
 
-def ask_for_yes(read_back: str, tool: str) -> ToolResult:
-    """What a writing tool returns until the visitor has said yes to its read-back."""
+def ask_for_yes(read_back: str, tool: str, card: dict[str, Any] | None = None) -> ToolResult:
+    """What a writing tool returns until the visitor has said yes to its read-back. `card`:
+    the same details as a summary card, for a screen (D110); the yes is still to `read_back`."""
     return ToolResult(
         ok=False,
         data={
@@ -27,4 +30,5 @@ def ask_for_yes(read_back: str, tool: str) -> ToolResult:
         },
         state={"read_back": read_back},  # kept until another read-back replaces it
         choices=["Yes", "Change"],  # a tapped Yes is the visitor's words, like a typed one (D99)
+        card=card,
     )

@@ -96,6 +96,14 @@ STATUS_WORDS = {  # what track_order says about each status
     "delivered": "delivered",
     "cancelled": "cancelled",
 }
+# An order's steps on the tracking card (D110); unpaid and cancelled are off them
+PICKUP_STEPS = [("new", "Received"), ("ready", "Ready"), ("collected", "Picked up")]
+DELIVERY_STEPS = [
+    ("new", "Received"),
+    ("ready", "Ready"),
+    ("out_for_delivery", "On its way"),
+    ("delivered", "Delivered"),
+]
 CANCELLABLE = {"unpaid", "new"}  # not once it's ready
 # Its time, address or note can change until it's ready. An unpaid order isn't placed yet:
 # cancel it and order again
@@ -208,8 +216,8 @@ class RestaurantConfig(AgentConfig):
     policies: str = ""  # allergens disclaimer, payment, parking…
     delivers: bool = False  # off: pickup only
     delivery_charge: int = Field(default=0, ge=0)  # minor units, the same to any address
-    # A delivery order's charge is paid online first (SSLCommerz); the order is placed only
-    # when the payment comes in, and the rest is cash on delivery (D48)
+    # A delivery order's charge is paid online first (SSLCommerz or bKash); the order is placed
+    # only when the payment comes in, and the rest is cash on delivery (D48)
     pay_first: bool = False
     takes_bookings: bool = False  # off: no table bookings, and the agent doesn't offer them
     seats: int = Field(default=0, ge=0)  # people we can seat at once

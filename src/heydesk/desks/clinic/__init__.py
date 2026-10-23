@@ -47,6 +47,7 @@ class ClinicDesk(Desk):
     config_model = ClinicConfig
     tools = TOOLS
     columns = DOCTOR_COLUMNS
+    takes_voice = True  # a visitor can call it (D108)
 
     def store(self, *args: Any, **kwargs: Any) -> ClinicStore:
         return ClinicStore(*args, **kwargs)

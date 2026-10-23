@@ -22,10 +22,15 @@ def pay_first_rule(pay_for: str, tool: str) -> str:
 
 
 def awaiting_payment(
-    code: str, link: str, amount: str, pay_for: str, state: dict[str, Any] | None = None
+    code: str,
+    link: str,
+    amount: str,
+    pay_for: str,
+    state: dict[str, Any] | None = None,
+    card: dict[str, Any] | None = None,
 ) -> ToolResult:
     """What a writing tool returns once it saved something unpaid (D47): a link to pay, no
-    alert. Only the payment check places it; no tool can."""
+    alert. Only the payment check places it; no tool can. `card`: its receipt, with the link."""
     return ToolResult(
         ok=True,
         data={
@@ -37,6 +42,7 @@ def awaiting_payment(
             "payment comes in.",
         },
         state=state,
+        card=card,
     )
 
 

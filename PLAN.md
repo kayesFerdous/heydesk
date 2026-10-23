@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -421,6 +421,68 @@ G12 in docs/competitor-gaps.md.
 
 **Done when:** `scripts/check.sh` is green [x] (22 Oct); the billing page and the live check
 above pass, then tick G5 in docs/competitor-gaps.md.
+
+### Day V5: voice only for the receptionist and the clinic (D108)
+
+- [x] `Desk.takes_voice` (like `takes_photos`): True for the receptionist and the clinic
+- [x] `/api/voice/offer` refuses an agent whose desk takes no voice; `/agent` info says `voice`
+      so the chat page hides its call button
+- [x] The shop's confirmation calls are off: no call is queued, "Call to confirm" is refused
+      (the code stays, unused for now)
+- [x] design.md, D108, docs/demo.md if it shows a shop or restaurant call
+- [x] Tests: a clinic call starts, a shop call is refused, a shop order queues no call
+
+**Done when:** `scripts/check.sh` is green [x] (23 Oct).
+
+### Day K1: bKash, for a business's payments and for HeyDesk's plans (D109)
+
+- [x] `BkashCheckout` (Tokenized Checkout over httpx: grant a token, create, execute after the
+      callback) and `FakeBkash`, behind `PaymentGateway`; the account's keys: app key, app
+      secret, username, password
+- [x] `payment_accounts.provider` (`sslcommerz` or `bkash`), one of each per business, the
+      secrets encrypted (one migration); connect and disconnect bKash on the owner's routes
+- [x] `/pay/<id>` shows a button for each connected gateway; bKash's callback is checked with
+      bKash (this payment, this amount, once), then the row moves on as with SSLCommerz
+- [x] Billing: `BILLING_BKASH_*` settings; `/api/billing/checkout` takes `gateway`; the
+      callback settles the plan the same way
+- [x] design.md, D109, `.env.example`, docs/api.md in `../heydesk-frontend`
+- [x] Tests (the fake): connect and refuse, a bKash payment moves an order once and only for
+      its amount, a plan paid by bKash, a failed or cancelled callback changes nothing
+- [ ] Live: bKash's sandbox, an order paid and a plan paid
+
+**Done when:** `scripts/check.sh` is green [x] (23 Oct); the live check above passes.
+
+### Day U1: cards in the chat, and the website chat's buttons (D110)
+
+- [x] `ToolResult.card` and a `Card` event `{kind, data}`, the data built by Python (rule 1);
+      the kinds: `summary` (the read-back: lines, delivery, total), `receipt` (number, total,
+      status, a pay link when unpaid), `tracking` (the order's steps), `doctors`
+- [x] The tools that give them: `ask_for_yes`'s read-back → summary; a saved order, booking
+      or appointment → receipt; `track_order` → tracking; `find_doctor` → doctors
+- [x] SSE sends `card` and `choices`; the dev chat page (`static/chat.js`) shows both
+- [x] docs/prompt-rules.md if the model is told anything new (it isn't); design.md, D110
+- [x] Tests: each tool's card, the numbers from Python, no card on a voice call
+
+**Done when:** `scripts/check.sh` is green, and the dev chat shows each card.
+
+### Day U2: the cards on Messenger, Telegram and WhatsApp
+
+- [x] `Reply.card` through `ChannelService`; each adapter sends it in its own way: summary as
+      formatted text with Yes/Change, receipt with a Pay URL button (Messenger button
+      template, Telegram URL button, WhatsApp CTA URL), tracking as steps, doctors as a
+      Messenger carousel, Telegram messages with Book, a WhatsApp list
+- [x] Tests (the fakes): each card on each channel
+
+**Done when:** `scripts/check.sh` is green; the live check on a real bot, Page and number.
+
+### Day U3: the screens in `../heydesk-frontend`
+
+- [x] The chat (`AgentChat.vue`, the bubble): the buttons, and a component for each card
+- [x] The call button only when the agent says `voice`
+- [x] Payments: connect bKash beside SSLCommerz; billing: Pay with bKash
+- [x] en and bn strings; docs/api.md
+
+**Done when:** `pnpm lint` and `pnpm build` pass [x] (23 Oct), and in the browser each card shows.
 
 ## Still open
 

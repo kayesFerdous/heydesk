@@ -46,6 +46,20 @@ class TelegramBot:
             }
         await self._call(token, "sendMessage", json=params)
 
+    async def send_card(
+        self, token: str, chat_id: str, html: str, buttons: list[dict[str, str]]
+    ) -> None:
+        params: dict[str, Any] = {"chat_id": chat_id, "text": html, "parse_mode": "HTML"}
+        if buttons:  # one to a row: a doctor's Book button is long
+            keyboard = [
+                [{"text": b["title"], "url": b["url"]}]
+                if "url" in b
+                else [{"text": b["title"], "callback_data": b["choice"]}]
+                for b in buttons
+            ]
+            params["reply_markup"] = {"inline_keyboard": keyboard}
+        await self._call(token, "sendMessage", json=params)
+
     async def send_photo(
         self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
     ) -> None:

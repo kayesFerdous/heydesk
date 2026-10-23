@@ -20,6 +20,7 @@ from heydesk.desks.shop.values import (
     LOW_STOCK,
     OWN,
     STATUS_WORDS,
+    STEPS,
     NewOrder,
     OrderCancel,
     OrderConfirm,
@@ -33,7 +34,7 @@ from heydesk.desks.shop.values import (
     mobile,
 )
 from heydesk.domain.values import parse_code
-from heydesk.runtime import parse
+from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
@@ -64,10 +65,10 @@ async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
     shown = [] if ctx.channel == "voice" else [p for p in found if p.photos][:3]
     if shown:
         data["shown"] = [p.name for p in shown]  # their photos are on the screen already
-    return ToolResult(ok=True, data=data, photos=cards(shown, currency) or None)
+    return ToolResult(ok=True, data=data, photos=photo_cards(shown, currency) or None)
 
 
-def cards(products: list[Product], currency: str) -> list[dict[str, str]]:
+def photo_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
     """Each product's first photo, name and price, for the visitor's screen (D57)."""
     return [
         {
@@ -288,17 +289,31 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         f"total {data['total']}, {how}; to {address}; "
         f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
     )
+    rows = [  # the card's details (D110), the same as the read-back's
+        cards.row("Payment", how),
+        cards.row("Address", address),
+        cards.row("Name", name),
+        cards.row("Mobile", phone),
+    ] + ([cards.row("Note", order.note)] if order.note else [])
+    total = cards.amount(order.subtotal + charge, currency)
     confirmed = confirm(ctx.heard, order, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "place_order")
+        delivery = cards.line(f"Delivery ({zone.name})", cost=cards.amount(charge, currency))
+        lines = [*_card_lines(cart["lines"], currency), delivery]
+        return ask_for_yes(
+            read_back, "place_order", cards.summary("Your order", rows, lines, total)
+        )
     try:
         saved = await ctx.store.place_order(confirmed)
     except OutOfStock as error:
         return fail(f"Sold out since the order was made: {error}. Tell the visitor.")
     code = saved.code
+    items = cards.row("Items", lines_text(cart["lines"]))
+    status = STATUS_WORDS[order.status].capitalize()
     if order.status == "unpaid":  # the owner hears about it once it's paid (D47)
         link = ctx.store.pay_link(saved.id)
-        return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}})
+        card = cards.receipt("Order saved", code, status, [items, *rows], total, link)
+        return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}}, card)
     takes = f" Delivery usually takes {zone.days}." if zone.days else ""
     sent = (
         f"that the shop will call {phone} to confirm it before sending it"
@@ -315,7 +330,19 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         },
         state={"cart": {}},
         alert=await _order_alert(ctx.store, code, read_back, phone, cart["lines"]),
+        card=cards.receipt("Order placed", code, status, [items, *rows], total),
     )
+
+
+def _card_lines(lines: list[dict[str, Any]], currency: str) -> list[dict[str, Any]]:
+    """An order's items as a card's lines: "Cotton Panjabi (L, White)", 2, ৳3,700 (D110)."""
+    found = []
+    for item in lines:
+        picked = ", ".join(p for p in (item["size"], item["colour"]) if p)
+        label = item["name"] + (f" ({picked})" if picked else "")
+        cost = cards.amount(item["price"] * item["quantity"], currency)
+        found.append(cards.line(label, item["quantity"], cost))
+    return found
 
 
 async def _order_alert(
@@ -439,7 +466,10 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:
         data["usually_takes"] = zone.days
-    return ToolResult(ok=True, data=data)
+    takes = data.get("usually_takes")
+    note = data["status"].capitalize() + (f". Delivery usually takes {takes}." if takes else "")
+    card = cards.tracking(found.code, STEPS, found.status, note)
+    return ToolResult(ok=True, data=data, card=card)
 
 
 TRACK_ORDER = Tool(
@@ -621,7 +651,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         note=" ".join(args.note.split())[:500] or found.note,
     )
     changes = [
-        f"{label}: {old} → {new}"
+        (label, old, new)
         for label, old, new in (
             ("items", lines_text(found.lines), lines_text(lines)),
             ("address", found.address, edit.address),
@@ -639,10 +669,14 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     ]
     if not changes:
         return fail("That's what the order already has. Ask what they want to change.")
-    read_back = f"Change order {found.code}: " + "; ".join(changes)
+    title = f"Change order {found.code}"
+    read_back = f"{title}: " + "; ".join(f"{label}: {old} → {new}" for label, old, new in changes)
     confirmed = confirm(ctx.heard, edit, read_back)
     if confirmed is None:
-        return ask_for_yes(read_back, "change_order")
+        rows = [cards.row(label.capitalize(), f"{old} → {new}") for label, old, new in changes]
+        new_lines = _card_lines(lines, found.currency) if args.items else None
+        total = cards.amount(subtotal + edit.delivery_charge, found.currency)
+        return ask_for_yes(read_back, "change_order", cards.summary(title, rows, new_lines, total))
     try:
         await ctx.store.change_order(confirmed)
     except TooLate:
@@ -777,7 +811,7 @@ async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
         data["next"] = "Describe the ones with no photo from their line."
     else:
         data["next"] = "They can see the photos now. Ask if it's what they're looking for."
-    return ToolResult(ok=True, data=data, photos=cards(shown, ctx.agent.currency) or None)
+    return ToolResult(ok=True, data=data, photos=photo_cards(shown, ctx.agent.currency) or None)
 
 
 SHOW_PHOTOS = Tool(

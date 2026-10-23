@@ -335,6 +335,13 @@ STATUS_WORDS = {  # what track_order says about each status
     "returned": "returned to the shop",
     "cancelled": "cancelled",
 }
+# An order's steps on the tracking card (D110); unpaid, returned and cancelled are off them
+STEPS = [
+    ("new", "Received"),
+    ("confirmed", "Confirmed"),
+    ("shipped", "With the courier"),
+    ("delivered", "Delivered"),
+]
 CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
 # The items, address, area, mobile or note can change until the courier has it. An unpaid
 # order isn't placed yet: cancel it and order again

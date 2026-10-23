@@ -51,6 +51,8 @@ class ToolResult:
     # Buttons with the reply on Telegram and Messenger: what the visitor can tap, picked by
     # Python (D99). A tap is only its words, a message like any other
     choices: list[str] | None = None
+    # A card on the visitor's screen, `{kind, data}`, built with `runtime/cards.py` (D110)
+    card: dict[str, Any] | None = None
 
 
 def fail(hint: str) -> ToolResult:

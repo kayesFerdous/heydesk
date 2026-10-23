@@ -17,7 +17,7 @@ from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.tools import FindOrderInput, track_order
 from heydesk.errors import InvalidConfig
 from heydesk.ports.llm import ToolCall
-from heydesk.ports.payments import Paid
+from heydesk.ports.payments import Account, Paid
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.services.payments import Payable
@@ -39,9 +39,10 @@ async def paying_first(
     connected, and its fake gateway. A shop pays first inside Dhaka only."""
     await services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
     await services.agents.update(DEV_WORKSPACE_ID, {**pay_first(services, kind), **settings})
-    await services.payments.connect(DEV_WORKSPACE_ID, "nakshi-test", "store-password", True)
+    store = Account("nakshi-test", "store-password", True)
+    await services.payments.connect(DEV_WORKSPACE_ID, "sslcommerz", store)
     agent = await services.agents.by_key(f"dev-{kind}")
-    return agent, cast(FakePayments, services.payments.gateway)
+    return agent, cast(FakePayments, services.payments.gateways["sslcommerz"])
 
 
 def pay_first(services: Services, kind: str) -> dict[str, Any]:
@@ -242,7 +243,7 @@ async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world
     agent = await services.agents.by_key("dev-shop")
     assert "paid online first" not in await SHOP.prompt(agent.config, world.store(agent))
     assert (
-        "Connect your SSLCommerz account to take payments first."
+        "Connect SSLCommerz or bKash to take payments first."
         in (await services.agents.get(DEV_WORKSPACE_ID)).missing
     )
 
@@ -273,9 +274,89 @@ async def test_the_owner_connects_the_business_s_own_store(
     async with app.state.sessions() as s:
         stored = await s.scalar(text("SELECT password FROM payment_accounts"))
     assert stored and "the-api-password" not in stored  # encrypted in the database (D74)
-    assert (await app.state.services.payments.account(DEV_WORKSPACE_ID)).password == body[
-        "password"
-    ]
+    assert (
+        await app.state.services.payments.account(DEV_WORKSPACE_ID, "sslcommerz")
+    ).password == body["password"]
 
     assert (await client.delete("/api/agent/sslcommerz")).status_code == 204
     assert (await client.get("/api/agent/sslcommerz")).status_code == 404
+
+
+BKASH = {
+    "app_key": "shop-app-key",
+    "app_secret": "the-app-secret",
+    "username": "shop-user",
+    "password": "the-bkash-password",
+    "sandbox": True,
+}
+
+
+async def test_the_owner_connects_bkash_too(app: FastAPI, client: AsyncClient) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    assert (await client.get("/api/agent/bkash")).status_code == 404
+
+    refused = await client.put("/api/agent/bkash", json={**BKASH, "app_key": "bad"})
+    assert refused.status_code == 400
+    assert "bKash didn't accept these: Invalid App Key" in refused.text
+
+    assert (await client.put("/api/agent/bkash", json=BKASH)).status_code == 200
+    shown = (await client.get("/api/agent/bkash")).json()
+    assert (shown["username"], shown["sandbox"]) == ("shop-user", True)
+    assert "the-app-secret" not in str(shown) and "the-bkash-password" not in str(shown)
+    async with app.state.sessions() as s:
+        stored = await s.scalar(text("SELECT app_secret FROM payment_accounts"))
+    assert stored and "the-app-secret" not in stored  # encrypted in the database (D74)
+
+    assert (await client.delete("/api/agent/bkash")).status_code == 204
+    assert (await client.get("/api/agent/bkash")).status_code == 404
+
+
+async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    services = app.state.services
+    agent, _ = await paying_first(services, "shop")
+    await client.put("/api/agent/bkash", json=BKASH)
+    bkash = cast(FakePayments, services.payments.gateways["bkash"])
+    services.conversations.runtime.llm.script = [
+        ToolCall("c1", "update_cart", SHOP_ORDER),
+        ToolCall("c2", "place_order", SHOP_DETAILS),
+        "Shall I place it?",
+        ToolCall("c3", "place_order", SHOP_DETAILS),
+        "Pay here…",
+    ]
+    chat = f"/api/chat/{agent.public_key}"
+    first = await client.post(chat, json={"visitor_id": "test-visitor", "message": "a kurti"})
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
+    await client.post(
+        chat, json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id}
+    )
+    [order] = (await client.get("/api/shop/orders")).json()
+    pay = f"/pay/{order['id']}"
+
+    choose = await client.get(pay)  # both connected: the visitor picks
+    assert "Pay with bKash" in choose.text and "Pay with a card or mobile banking" in choose.text
+    went = await client.get(f"{pay}?via=bkash")
+    assert (went.status_code, went.headers["location"]) == (
+        303,
+        f"https://bkash.test/{order['id']}",
+    )
+    [(account, checkout)] = bkash.started
+    assert (account.app_key, account.app_secret) == ("shop-app-key", "the-app-secret")
+    assert checkout.back_url == f"https://heydesk.test{pay}/bkash"
+
+    bkash.paid["P1"] = Paid(order["id"], 6000, "BDT", "TRX1")
+    for outcome in ("failure", "cancel"):  # bKash's word never asked: nothing changes
+        back = await client.get(f"{pay}/bkash", params={"paymentID": "P1", "status": outcome})
+        assert "didn't go through" in back.text
+    bkash.paid["short"] = Paid(order["id"], 1000, "BDT", "TRX0")  # ৳10, not ৳60
+    short = await client.get(f"{pay}/bkash", params={"paymentID": "short", "status": "success"})
+    assert "didn't go through" in short.text
+
+    paid = await client.get(f"{pay}/bkash", params={"paymentID": "P1", "status": "success"})
+    assert "Payment received. Your order O-101 is confirmed" in paid.text
+    await client.get(f"{pay}/bkash", params={"paymentID": "P1", "status": "success"})  # again
+    shown = (await client.get(f"/api/shop/orders/{order['id']}")).json()
+    assert (shown["status"], shown["paid"], shown["payment_ref"]) == ("confirmed", 6000, "TRX1")
+    told = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages
+    assert sum("Payment received" in str(m) for m in told) == 1  # placed once

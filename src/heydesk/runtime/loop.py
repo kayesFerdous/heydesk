@@ -24,7 +24,7 @@ from heydesk.ports.llm import (
     ToolOutcome,
 )
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.events import Event, HandOff, Photos, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, ToolStarted, TurnEnded
 from heydesk.runtime.tool import Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
@@ -140,6 +140,8 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                     alerts.append(result.alert)
                 if result.photos:
                     yield Photos(result.photos)
+                if result.card and turn.channel != "voice":  # a call has no screen (D110)
+                    yield Card(result.card["kind"], result.card["data"])
                 shown.append(result.photos)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
             results = rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
