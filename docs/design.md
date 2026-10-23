@@ -71,10 +71,10 @@ src/heydesk/
 │   ├── clinic/          the same
 │   ├── shop/            the same
 │   ├── receptionist/    __init__ only: no tools or tables of its own
-│   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53)
+│   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53, D115)
 ├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
-│                        knowledge, photos (D57), imports (D53), sheets (D58), woo (D75), channels (Telegram,
+│                        knowledge, photos (D57), sheets (D58), woo (D75), channels (Telegram,
 │                        Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43), payments (D47)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2); bangla_tts.py, the Bangla voice's client (D84)
@@ -453,7 +453,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
 | GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
 | POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
-| POST | `/api/menu/import/suggest`, `/api/doctors/import/suggest`, `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and the AI's suggested match for the owner to check (D53) |
+| POST | `/api/menu/import/suggest`, `/api/doctors/import/suggest`, `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and a suggested match by the column names for the owner to check (D53, D115) |
 | GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status (the visitor hears ready, on its way or cancelled in their chat, D66) |
 | GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
@@ -606,29 +606,30 @@ The counts are in this server's memory: a restart clears them, and a second serv
 keep its own. The IP is the real visitor's when a proxy on the same machine sends
 `X-Forwarded-For` (uvicorn trusts it from `127.0.0.1` by default).
 
-### Importing a list: their columns, our fields (D50, D53)
+### Importing a list: their columns, our fields (D50, D53, D115)
 
 A business's spreadsheet has its own column names ("Item Title", "MRP", "Qty"). It doesn't have
-to rename them to ours: the owner matches each of our fields to one of their columns, with the
-AI's suggestion to start from. Three steps, each knowing nothing of the others:
+to rename them to ours: the owner matches each of our fields to one of their columns, with
+Python's suggestion from the column names to start from (no model, D115). Three steps, each knowing nothing of the others:
 
 ```
 their file ─► 1. read: rows as {their column: text}            csv_import.peek / parse
-           ─► 2. match: {our field: their column}               the AI suggests, the owner decides
+           ─► 2. match: {our field: their column}               Python suggests, the owner decides
            ─► 3. a row becomes our item: Product, MenuItem…     the desk's own row(), as before
 ```
 
 **A desk lists its fields once:** `PRODUCT_COLUMNS`, `MENU_COLUMNS`, `DOCTOR_COLUMNS` in its
-`values.py`, each a `Column(name, about, required)`. `about` is what the field holds, in plain
-words, for the owner's screen and for the model. The required ones are what `parse` needs.
+`values.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
+plain words, for the owner's screen; `aliases` are the other names sheets give it, in English,
+Bangla and Banglish (`"mrp"`, `"dam"`, `"দাম"`). The required ones are what `parse` needs.
 
 **The flow:**
 
 1. `POST /api/products/import/suggest {csv}` → the file's `headers`, its first 3 rows as
    `samples`, our `columns`, a `mapping` (`{"name": "Item Title", "price": "MRP"}`, a field with
-   no column left out) and `by_ai`.
-2. The owner's screen shows each of our fields with a dropdown of their columns, the AI's choice
-   picked. They change what's wrong.
+   no column left out).
+2. The owner's screen shows each of our fields with a dropdown of their columns, the suggested
+   one picked. They change what's wrong.
 3. `POST /api/products/import {csv, mapping, dry_run: true}` → the first rows as they'll be
    saved, or the problems per row. Then the same without `dry_run` saves them.
 
@@ -646,14 +647,13 @@ no variant. A different price
 stays its own product: a product has one price. A sheet gets the same, since it's read by the
 same function.
 
-**The AI only matches; Python checks it and does the values** (rule 1). `ImportService.suggest`
-(`services/imports.py`) sends the model our fields with their `about`, the file's headers and the
-3 sample rows (never the whole file), and asks for one JSON object, field → column. From the
-reply, `csv_import.check_mapping` keeps only our fields, the file's columns, and each column once.
-If the model fails, times out (`SUGGEST_TIMEOUT`, 20s) or answers something that isn't that
-object or matches nothing, the suggestion is the columns whose name already matches ours (`by_ai: false`) and the
-owner fills in the rest. An upload never fails because of the AI. Turning "৳1,850" into 185000,
-"M; L" into a list or "yes" into `True` stays in the desk's `row()`.
+**The suggestion is the column names, in Python** (D115). `csv_import.suggest` reads the headers
+and 3 sample rows; `match` scores each header against each field's name and `aliases`: 1 for the
+same words ("Price (৳)" and `price`), 0.9 when they're inside it ("Selling Price"), and a close
+misspelling ("Catagory", "Colors") by `difflib` at 0.8 alike or more, scored below both. The best
+scores are taken first, each field and each column once; a field nothing fits is left for the
+owner. A new name owners use is one more alias. Turning "৳1,850" into 185000, "M; L" into a list
+or "yes" into `True` stays in the desk's `row()`.
 
 **Later sources** (Shopify, a POS) are another step 1: something that returns rows as
 `{their field: text}`. Their field names are the same for every store, so their mapping is
@@ -748,7 +748,7 @@ every SHEET_SYNC_MINUTES (5):
 
 | Method | Path | What |
 |---|---|---|
-| POST | `/api/agent/sheet/suggest` | `{url}` → fetches it, then the same as D53's suggest: its columns, 3 rows, our fields, the AI's `mapping` |
+| POST | `/api/agent/sheet/suggest` | `{url}` → fetches it, then the same as D53's suggest: its columns, 3 rows, our fields, the suggested `mapping` |
 | PUT | `/api/agent/sheet` | `{url, mapping, dry_run}` → reads the whole sheet like an import and answers like one (`saved`, `count`, `preview`): problems per row and nothing saved; `dry_run` only checks; otherwise the link is saved and the list taken from it |
 | GET | `/api/agent/sheet` | The link, `synced_at`, `problem` |
 | DELETE | `/api/agent/sheet` | Stops syncing. The list stays as it is and can be edited again |
@@ -1415,7 +1415,7 @@ version handles them.
 | Messenger: Facebook Login to connect a Page, the Get Started button, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text, photos (D62) and Python's buttons (D99). A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
-| Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the AI's suggestion makes that quick); the owner splits the column in the sheet; suggest is for logged-in owners only, one model call a click; CSV only for now (D53) |
+| Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the suggestion makes that quick); the owner splits the column in the sheet; CSV only for now (D53). Matching by what a column holds (a column of links is `photos`) waits until names miss (D115) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |

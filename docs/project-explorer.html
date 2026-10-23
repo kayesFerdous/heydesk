@@ -836,7 +836,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "csv_import",
    "type": "core",
    "file": "src/heydesk/desks/csv_import.py",
-   "purpose": "CSV → a desk's list, all-or-nothing, problems per row; column mapping.",
+   "purpose": "CSV → a desk's list, all-or-nothing, problems per row; suggests the column mapping from names and aliases, no model (D115).",
    "inputs": "csv text, mapping",
    "outputs": "list or InvalidConfig",
    "fn": "parse"
@@ -1809,7 +1809,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "a-desk-restaurant",
-   "target": "ag-matcher",
+   "target": "k-csv",
    "label": "suggest"
   },
   {
@@ -1819,7 +1819,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "a-desk-clinic",
-   "target": "ag-matcher",
+   "target": "k-csv",
    "label": "suggest"
   },
   {
@@ -1839,7 +1839,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "a-desk-shop",
-   "target": "ag-matcher",
+   "target": "k-csv",
    "label": "suggest"
   },
   {
@@ -2049,7 +2049,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "s-sheets",
-   "target": "ag-matcher",
+   "target": "k-csv",
    "label": "suggest"
   },
   {
@@ -2206,16 +2206,6 @@ tr.hl td { background: var(--accent-soft); }
    "source": "k-store",
    "target": "k-csv",
    "label": "take_sheet"
-  },
-  {
-   "source": "ag-matcher",
-   "target": "p-llm",
-   "label": "one JSON reply"
-  },
-  {
-   "source": "ag-matcher",
-   "target": "k-csv",
-   "label": "check_mapping"
   },
   {
    "source": "v-call",
@@ -2660,7 +2650,7 @@ tr.hl td { background: var(--accent-soft); }
 <!-- SECTION:data-modules END -->
 
 <!-- SECTION:data-agents START -->
-<!-- the agents (desks, commit judge, column matcher) and which tools each calls, when and why -->
+<!-- the agents (desks, commit judge) and which tools each calls, when and why -->
 <script type="application/json" id="data-agents">
 {
  "agents": [
@@ -2985,16 +2975,6 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Not a model: the talking model judges the yes by calling the tool again; Python saves only the details read back on an earlier turn (D107). Fails closed.",
    "inputs": "heard (state.read_back at the turn's start), the call's read_back",
    "outputs": "Confirmed or None",
-   "tools": []
-  },
-  {
-   "id": "ag-matcher",
-   "label": "Column matcher",
-   "file": "src/heydesk/services/imports.py",
-   "fn": "ImportService.suggest",
-   "purpose": "One LLM call that guesses which spreadsheet column is which field; Python checks it, the owner decides (D53).",
-   "inputs": "our fields, the file's headers, 3 sample rows",
-   "outputs": "{field: column} mapping, by_ai flag",
    "tools": []
   }
  ]
@@ -4281,20 +4261,6 @@ tr.hl td { background: var(--accent-soft); }
    }
   },
   {
-   "id": "provider_m",
-   "label": "LLM provider",
-   "group": "Server",
-   "type": "select",
-   "options": [
-    "gigalogy",
-    "groq"
-   ],
-   "default": "gigalogy",
-   "prompts": [
-    "columns"
-   ]
-  },
-  {
    "id": "outcome",
    "label": "Tool outcome",
    "group": "Tool result",
@@ -5370,60 +5336,6 @@ tr.hl td { background: var(--accent-soft); }
      "file": "src/heydesk/runtime/guards.py",
      "fn": "ask_for_yes",
      "text": "{\"read_back\": \"...\", \"next\": \"Read this back and ask for a clear yes. Only after their clear yes, call <tool> again with the same details. A change, a question or a maybe is not a yes.\"}\nstate: {\"read_back\": \"...\"}\nchoices: [\"Yes\", \"Change\"]"
-    }
-   ]
-  },
-  {
-   "id": "columns",
-   "title": "Column matcher",
-   "file": "src/heydesk/services/imports.py",
-   "purpose": "One model call guesses which spreadsheet column is which field.",
-   "trigger": "Owner: POST /api/menu|doctors|products/import/suggest, or POST /api/agent/sheet/suggest.",
-   "fragments": [
-    {
-     "id": "sys",
-     "title": "System: MATCH_COLUMNS",
-     "owner": "platform",
-     "file": "src/heydesk/services/imports.py",
-     "fn": "MATCH_COLUMNS",
-     "text": "You match the columns of a business's spreadsheet to the fields of our list.\nReply with one JSON object and nothing else: each of our field names as a key, and as its value\nthe exact name of the file's column that holds it. Use each column at most once. Leave a field\nout when no column holds it; don't guess."
-    },
-    {
-     "id": "user",
-     "title": "User message",
-     "owner": "python",
-     "file": "src/heydesk/services/imports.py",
-     "fn": "ImportService._ask",
-     "text": "Our fields:\n- name: the dish's name (required)\n- price: its price: 350 or ৳350 (required)\n…\n\nThe file's columns: [\"Item\", \"MRP\", …]\n\nIts first rows: [{…}, {…}, {…}]",
-     "vars": [
-      [
-       "fields",
-       "the desk's columns (MENU_COLUMNS / DOCTOR_COLUMNS / PRODUCT_COLUMNS)"
-      ],
-      [
-       "columns, rows",
-       "csv_import.peek(): headers + 3 sample rows"
-      ]
-     ]
-    },
-    {
-     "id": "maira",
-     "title": "Maira wrapper (no tools)",
-     "owner": "adapter",
-     "file": "src/heydesk/adapters/llm/gigalogy.py",
-     "fn": "build_query",
-     "text": "Write only the Agent's next reply to the Visitor.",
-     "when": {
-      "provider_m": "gigalogy"
-     }
-    },
-    {
-     "id": "check",
-     "title": "Python checks the reply",
-     "owner": "python",
-     "file": "src/heydesk/desks/csv_import.py",
-     "fn": "check_mapping",
-     "text": "json_object(reply) → only our fields, only real headers, each column once.\nEmpty, timeout (20 s) or LLMUnavailable → match by name (by_ai: false)."
     }
    ]
   },
@@ -8038,24 +7950,10 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "from": "s-sheets",
-     "to": "ag-matcher",
-     "data": "headers + 3 rows + our fields",
-     "file": "src/heydesk/services/imports.py",
-     "fn": "suggest"
-    },
-    {
-     "from": "ag-matcher",
-     "to": "p-llm",
-     "data": "one JSON object reply (20 s)",
-     "file": "src/heydesk/services/imports.py",
-     "fn": "_ask"
-    },
-    {
-     "from": "ag-matcher",
      "to": "k-csv",
-     "data": "check_mapping; else match by name",
+     "data": "headers + 3 rows → match() by names and aliases, no model (D115)",
      "file": "src/heydesk/desks/csv_import.py",
-     "fn": "check_mapping"
+     "fn": "suggest"
     },
     {
      "from": "c-owner",

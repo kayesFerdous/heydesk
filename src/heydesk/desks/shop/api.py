@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
-from heydesk.desks.csv_import import Suggestion
+from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import PRODUCT_COLUMNS, Product, products_from_csv
@@ -100,10 +100,10 @@ async def add_product_photo(
 
 
 @router.post("/api/products/import/suggest")
-async def suggest_products_columns(body: SuggestIn, services: Svc, _: Shop) -> Suggestion:
-    """The file's columns, a few rows and our fields, with the AI's guess at which column is
-    which field. The owner checks it, then imports with that `mapping` (D53)."""
-    return await services.imports.suggest(body.csv, PRODUCT_COLUMNS)
+async def suggest_products_columns(body: SuggestIn, _: Shop) -> Suggestion:
+    """The file's columns, a few rows and our fields, with a guess at which column is which
+    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    return suggest(body.csv, PRODUCT_COLUMNS)
 
 
 @router.post("/api/products/import")

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
-from heydesk.desks.csv_import import Suggestion
+from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.desks.restaurant.models import Booking, Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.values import MENU_COLUMNS, MenuItem, menu_from_csv
@@ -93,10 +93,10 @@ async def tell_visitor(services: Svc, row: Order | Booking) -> None:
 
 
 @router.post("/api/menu/import/suggest")
-async def suggest_menu_columns(body: SuggestIn, services: Svc, _: Restaurant) -> Suggestion:
-    """The file's columns, a few rows and our fields, with the AI's guess at which column is
-    which field. The owner checks it, then imports with that `mapping` (D53)."""
-    return await services.imports.suggest(body.csv, MENU_COLUMNS)
+async def suggest_menu_columns(body: SuggestIn, _: Restaurant) -> Suggestion:
+    """The file's columns, a few rows and our fields, with a guess at which column is which
+    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    return suggest(body.csv, MENU_COLUMNS)
 
 
 @router.post("/api/menu/import")

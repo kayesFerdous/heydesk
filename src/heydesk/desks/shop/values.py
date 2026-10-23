@@ -401,19 +401,74 @@ class OrderEdit:
 
 
 PRODUCT_COLUMNS = [
-    csv_import.Column(name="name", about="the product's name", required=True),
-    csv_import.Column(name="price", about="its price: 1850 or ৳1,850", required=True),
-    csv_import.Column(name="was_price", about="its price before a sale; empty when not on sale"),
-    csv_import.Column(name="category", about="a group it's listed under: Panjabi, Saree"),
-    csv_import.Column(name="description", about="a line or two about it"),
-    csv_import.Column(name="sizes", about='the sizes it comes in: "M; L; XL"'),
-    csv_import.Column(name="colours", about='the colours it comes in: "white; black"'),
+    csv_import.Column(
+        name="name",
+        about="the product's name",
+        required=True,
+        aliases=[
+            "product",
+            "product name",
+            "item",
+            "item name",
+            "title",
+            "item title",
+            "naam",
+            "পণ্য",
+            "পণ্যের নাম",
+            "নাম",
+        ],
+    ),
+    csv_import.Column(
+        name="price",
+        about="its price: 1850 or ৳1,850",
+        required=True,
+        aliases=["mrp", "rate", "selling price", "sale price", "dam", "daam", "taka", "দাম", "মূল্য"],
+    ),
+    csv_import.Column(
+        name="was_price",
+        about="its price before a sale; empty when not on sale",
+        aliases=[
+            "regular price",
+            "old price",
+            "original price",
+            "compare at price",
+            "ager dam",
+            "আগের দাম",
+        ],
+    ),
+    csv_import.Column(
+        name="category",
+        about="a group it's listed under: Panjabi, Saree",
+        aliases=["group", "type", "collection", "ক্যাটাগরি", "ধরন"],
+    ),
+    csv_import.Column(
+        name="description",
+        about="a line or two about it",
+        aliases=["details", "about", "desc", "বিবরণ"],
+    ),
+    csv_import.Column(
+        name="sizes", about='the sizes it comes in: "M; L; XL"', aliases=["size", "সাইজ"]
+    ),
+    csv_import.Column(
+        name="colours",
+        about='the colours it comes in: "white; black"',
+        aliases=["colour", "color", "colors", "rong", "rang", "রং", "রঙ"],
+    ),
     csv_import.Column(
         name="stock",
         about='how many are left, or per size and colour: "M: 5; L: 0"; empty when not counted',
+        aliases=["qty", "quantity", "stock qty", "inventory", "স্টক", "পরিমাণ"],
     ),
-    csv_import.Column(name="code", about="the shop's own short id or SKU for it"),
-    csv_import.Column(name="photos", about="links to its photos, up to 3: https://…jpg"),
+    csv_import.Column(
+        name="code",
+        about="the shop's own short id or SKU for it",
+        aliases=["sku", "id", "product id", "product code", "item code", "কোড"],
+    ),
+    csv_import.Column(
+        name="photos",
+        about="links to its photos, up to 3: https://…jpg",
+        aliases=["photo", "image", "images", "picture", "pic", "image url", "ছবি"],
+    ),
 ]
 
 

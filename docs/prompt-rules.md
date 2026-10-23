@@ -163,15 +163,3 @@ A prompt rule can be ignored, so the ones that matter are also enforced in code:
 | A doctor's days and hours | `Doctor.works_at` (D37) |
 | A place's delivery area and charge | The model gives the district; `match_zone` checks it's one of the 64 and picks its district's area, else everywhere else (D98, D100) |
 | Staying on the business | `VisitorService`: daily turns per visitor and per business, and a block after off-topic strikes (D51) |
-
-## Matching a file's columns (D53)
-
-Not an agent's prompt: one call when an owner uploads a spreadsheet to import their list.
-`MATCH_COLUMNS` in [`services/imports.py`](../src/heydesk/services/imports.py) asks for one JSON
-object, our field → the file's exact column name, each column at most once, a field left out when
-no column holds it. The message after it has our fields with what each holds, the file's columns,
-and its first 3 rows.
-
-Backed by Python: `csv_import.check_mapping` drops whatever isn't our field or the file's column,
-and a reply that isn't that object (or no reply) falls back to matching by name. The model never
-reads or changes a value.

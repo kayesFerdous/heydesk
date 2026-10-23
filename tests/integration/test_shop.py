@@ -16,6 +16,7 @@ from httpx import AsyncClient
 from PIL import Image
 from sqlalchemy import select
 
+from heydesk.desks import csv_import
 from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
@@ -36,13 +37,14 @@ from heydesk.desks.shop.tools import (
 )
 from heydesk.desks.shop.values import (
     LONG_LIST,
+    PRODUCT_COLUMNS,
     STATUS_WORDS,
     Product,
     mobile,
     products_from_csv,
     stock_cell,
 )
-from heydesk.ports.llm import LLMUnavailable, ToolCall
+from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -382,14 +384,12 @@ SHEET = 'Item Title,MRP,Qty,Supplier\nCotton Panjabi,"৳1,850",12,Rahim & Co\nT
 async def test_their_columns_are_matched_to_ours_and_imported(
     app: FastAPI, client: AsyncClient
 ) -> None:
+    """Python matches the columns by their names, with no model (D115); the owner's checked
+    mapping is what the import takes."""
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    app.state.services.imports.llm.script.append(
-        'Here: {"name": "Item Title", "price": "MRP", "stock": "Qty", '
-        '"colours": "Nope", "owner": "Supplier"}'  # a column that isn't there; not our field
-    )
     suggested = (await client.post("/api/products/import/suggest", json={"csv": SHEET})).json()
     assert suggested["mapping"] == {"name": "Item Title", "price": "MRP", "stock": "Qty"}
-    assert suggested["by_ai"] and suggested["headers"][0] == "Item Title"
+    assert suggested["headers"][0] == "Item Title"
     assert suggested["samples"][0]["MRP"] == "৳1,850"
 
     body = {"csv": SHEET, "mapping": suggested["mapping"]}
@@ -398,20 +398,25 @@ async def test_their_columns_are_matched_to_ours_and_imported(
     assert (panjabi["name"], panjabi["price"], panjabi["stock"]) == ("Cotton Panjabi", 185000, 12)
     assert (tee["price"], tee["stock"]) == (35000, None)
 
-
-async def test_without_the_model_columns_match_by_name(app: FastAPI, client: AsyncClient) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    sheet = "Name,Price (৳),Supplier\nTee,350,Rahim\n"
-    for failure in [LLMUnavailable("down"), '{"Name": "Tee"}']:  # down, or nothing usable
-        app.state.services.imports.llm.script.append(failure)
-        reply = await client.post("/api/products/import/suggest", json={"csv": sheet})
-        suggested = reply.json()
-        assert suggested["mapping"] == {"name": "Name", "price": "Price (৳)"}
-        assert not suggested["by_ai"]
-
-    no_price = {"csv": sheet, "mapping": {"name": "Name"}}
+    no_price = {"csv": SHEET, "mapping": {"name": "Item Title"}}  # the owner took price off
     refused = await client.post("/api/products/import", json=no_price)
     assert refused.status_code == 422 and "price" in refused.text
+
+
+def test_columns_match_by_other_names_bangla_and_misspellings() -> None:
+    headers = ["পণ্যের নাম", "দাম (৳)", "Regular Price", "Colors", "Catagory", "SKU", "Notes"]
+    assert csv_import.match(headers, PRODUCT_COLUMNS) == {
+        "name": "পণ্যের নাম",
+        "price": "দাম (৳)",
+        "was_price": "Regular Price",
+        "colours": "Colors",
+        "category": "Catagory",  # misspelt
+        "code": "SKU",
+    }  # "Notes" fits nothing: left for the owner
+    assert csv_import.match(["Product Name", "Category Name"], PRODUCT_COLUMNS) == {
+        "name": "Product Name",
+        "category": "Category Name",
+    }
 
 
 async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:

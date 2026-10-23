@@ -7,7 +7,6 @@ from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
-from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
@@ -29,7 +28,6 @@ class Services:
     channels: ChannelService
     conversations: ConversationService
     courier: CourierService  # books and follows a shop's parcels (D90, D112)
-    imports: ImportService
     knowledge: KnowledgeService
     members: MemberService  # the business's moderators and what its team did (D97)
     payments: PaymentService

@@ -52,7 +52,6 @@ from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
-from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
@@ -191,7 +190,6 @@ def build_services(
     team = TeamService(sessions, llm, telegram, messenger, whatsapp, now)
     visitors = VisitorService(sessions, settings, now)
     rate_limits = RateLimiter()
-    imports = ImportService(llm, settings.MODEL)
     public = settings.PUBLIC_URL.rstrip("/")
     woo_service = WooService(
         sessions,
@@ -241,7 +239,6 @@ def build_services(
             # a shop with no courier linked: the fake one, except in production (by hand)
             fallback=None if settings.APP_ENV == "production" else "fake",
         ),
-        imports=imports,
         knowledge=knowledge,
         members=MemberService(sessions, users, now),
         photos=photos,
@@ -249,7 +246,7 @@ def build_services(
         users=users,
         visitors=visitors,
         rate_limits=rate_limits,
-        sheets=SheetService(sessions, agents, imports, team, fetch_sheet),
+        sheets=SheetService(sessions, agents, team, fetch_sheet),
         team=team,
         woo=woo_service,
     )

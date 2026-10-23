@@ -17,12 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks import DESKS
-from heydesk.desks.csv_import import Suggestion
+from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
-from heydesk.services.imports import ImportService
 from heydesk.services.team import TeamService
 
 log = logging.getLogger(__name__)
@@ -52,22 +51,20 @@ class SheetService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         agents: AgentService,
-        imports: ImportService,
         team: TeamService,
         fetch: FetchCsv,
     ) -> None:
         self.sessions = sessions
         self.agents = agents
-        self.imports = imports
         self.team = team
         self.fetch = fetch
 
     async def suggest(self, ws: str, url: str) -> Suggestion:
-        """The sheet's columns and the AI's match to the desk's fields, for the owner to check."""
+        """The sheet's columns and their match to the desk's fields, for the owner to check."""
         columns = DESKS[(await self.agents.get(ws)).kind].columns
         if not columns:
             raise NotFound("This agent has no list to keep in a sheet.")
-        return await self.imports.suggest(await self._read(url), columns)
+        return suggest(await self._read(url), columns)
 
     async def link(
         self, ws: str, url: str, mapping: dict[str, str], dry_run: bool = False

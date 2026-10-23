@@ -10,7 +10,7 @@ from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Sv
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.values import DOCTOR_COLUMNS, Doctor, doctors_from_csv
-from heydesk.desks.csv_import import Suggestion
+from heydesk.desks.csv_import import Suggestion, suggest
 
 router = APIRouter(tags=["clinic"])
 
@@ -79,10 +79,10 @@ async def set_status(appointment_id: str, body: StatusIn, store: Clinic) -> Appo
 
 
 @router.post("/api/doctors/import/suggest")
-async def suggest_doctors_columns(body: SuggestIn, services: Svc, _: Clinic) -> Suggestion:
-    """The file's columns, a few rows and our fields, with the AI's guess at which column is
-    which field. The owner checks it, then imports with that `mapping` (D53)."""
-    return await services.imports.suggest(body.csv, DOCTOR_COLUMNS)
+async def suggest_doctors_columns(body: SuggestIn, _: Clinic) -> Suggestion:
+    """The file's columns, a few rows and our fields, with a guess at which column is which
+    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    return suggest(body.csv, DOCTOR_COLUMNS)
 
 
 @router.post("/api/doctors/import")

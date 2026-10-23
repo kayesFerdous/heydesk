@@ -178,13 +178,53 @@ def free_times(
 
 
 MENU_COLUMNS = [
-    csv_import.Column(name="name", about="the dish's name", required=True),
-    csv_import.Column(name="price", about="its price: 350 or ৳350", required=True),
-    csv_import.Column(name="category", about="the part of the menu: Starters, Rice, Drinks"),
-    csv_import.Column(name="description", about="a line about the dish"),
-    csv_import.Column(name="tags", about='words about it: "spicy; popular; vegetarian"'),
-    csv_import.Column(name="available", about="whether it's served now: yes or no"),
-    csv_import.Column(name="code", about="the restaurant's own short id for it"),
+    csv_import.Column(
+        name="name",
+        about="the dish's name",
+        required=True,
+        aliases=[
+            "dish",
+            "dish name",
+            "item",
+            "item name",
+            "food",
+            "menu item",
+            "khabar",
+            "খাবার",
+            "নাম",
+        ],
+    ),
+    csv_import.Column(
+        name="price",
+        about="its price: 350 or ৳350",
+        required=True,
+        aliases=["rate", "mrp", "dam", "daam", "দাম", "মূল্য"],
+    ),
+    csv_import.Column(
+        name="category",
+        about="the part of the menu: Starters, Rice, Drinks",
+        aliases=["section", "group", "type", "menu section", "ক্যাটাগরি", "ধরন"],
+    ),
+    csv_import.Column(
+        name="description",
+        about="a line about the dish",
+        aliases=["details", "about", "desc", "বিবরণ"],
+    ),
+    csv_import.Column(
+        name="tags",
+        about='words about it: "spicy; popular; vegetarian"',
+        aliases=["tag", "labels", "keywords"],
+    ),
+    csv_import.Column(
+        name="available",
+        about="whether it's served now: yes or no",
+        aliases=["availability", "in stock", "active"],
+    ),
+    csv_import.Column(
+        name="code",
+        about="the restaurant's own short id for it",
+        aliases=["sku", "id", "item code", "কোড"],
+    ),
 ]
 
 
