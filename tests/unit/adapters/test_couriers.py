@@ -4,10 +4,11 @@ words map to the order's end."""
 import json
 
 import httpx
+import pytest
 
 from heydesk.adapters.courier.pathao import SANDBOX, Pathao
 from heydesk.adapters.courier.steadfast import BASE, Steadfast
-from heydesk.ports.courier import CourierAccount, Parcel
+from heydesk.ports.courier import CourierAccount, CourierError, Parcel
 
 PARCEL = Parcel("O-101", "Rahim", "01712345678", "House 3, Road 4, Mirpur", 360, "1 Tupi", 1)
 
@@ -67,3 +68,13 @@ async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
     assert "recipient_city" not in booking  # Pathao finds it from the address
     assert (booking["store_id"], booking["amount_to_collect"]) == (9, 360)
     assert sent[2].headers["Authorization"] == "Bearer t1"
+
+
+async def test_steadfast_says_when_the_account_isnt_active_yet() -> None:
+    def answer(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="Account is not active!")  # its keys read the balance
+
+    steadfast = Steadfast()
+    steadfast.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    with pytest.raises(CourierError, match="isn't active yet"):
+        await steadfast.book(CourierAccount("steadfast", "k", "s"), PARCEL)

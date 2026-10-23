@@ -64,6 +64,13 @@ class Steadfast:
             data: dict[str, Any] = response.json()
         except ValueError:
             data = {}
+        # Steadfast also answers 401 "Account is not active!" (plain text) to bookings from
+        # an account it hasn't activated yet, though the same keys read the balance
+        if response.status_code == 401 and "not active" in response.text.lower():
+            raise CourierError(
+                "Steadfast says the account isn't active yet: finish its activation in the "
+                "Steadfast panel, or ask Steadfast to activate API bookings."
+            )
         if response.status_code == 401:
             raise CourierError("Steadfast refused the keys: check the API key and secret key.")
         if response.status_code == 403:
