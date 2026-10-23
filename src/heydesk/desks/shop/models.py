@@ -63,6 +63,9 @@ class ShopOrder(Taken, Payable, Base):
     # In a linked WooCommerce store (D75): its id there, and our status as last written ("" never)
     woo_id: Mapped[int | None] = mapped_column(default=None)
     woo_sent: Mapped[str] = mapped_column(String(20), default="")
+    # Booked with the courier (D112): its parcel id ("" not booked), and its last words
+    parcel_id: Mapped[str] = mapped_column(String(50), default="")
+    courier_status: Mapped[str] = mapped_column(String(100), default="")
 
     @property
     def due(self) -> int:
@@ -72,7 +75,7 @@ class ShopOrder(Taken, Payable, Base):
         return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
 
     def news(self) -> str:
-        """What the buyer is told in their chat when the owner moves it here; "" for nothing
+        """What the buyer is told in their chat when the owner or the courier moves it here; "" for nothing
         (as the restaurant's, D66)."""
         if self.status == "confirmed":
             return f"✅ Your order {self.code} is confirmed and will be sent out."
@@ -81,6 +84,8 @@ class ShopOrder(Taken, Payable, Base):
                 f"📦 Your order {self.code} is with the courier. The delivery man calls before "
                 "he comes."
             )
+        if self.status == "delivered":
+            return f"🎉 Your order {self.code} was delivered. Thank you for shopping with us!"
         if self.status == "cancelled":
             return f"Sorry, the shop had to cancel your order {self.code}."
         return ""

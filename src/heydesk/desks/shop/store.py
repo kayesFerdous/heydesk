@@ -119,6 +119,40 @@ class ShopStore(Store):
             order = await self._one(s, ShopOrder, order_id)
             order.woo_id, order.woo_sent = woo_id, status
 
+    async def orders_for_courier(self, status: str) -> list[ShopOrder]:
+        """The orders the courier deals with (D112), oldest first: `confirmed` ones with no
+        parcel yet, to book; `shipped` ones with a parcel, to follow."""
+        booked = ShopOrder.parcel_id == "" if status == "confirmed" else ShopOrder.parcel_id != ""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(ShopOrder)
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.status == status,
+                    booked,
+                )
+                .order_by(ShopOrder.created_at)
+            )
+            return list(rows)
+
+    async def parcel_booked(self, order_id: str, parcel_id: str) -> ShopOrder:
+        """The courier has the order's parcel: it's `shipped`, unless it moved meanwhile."""
+        async with self.sessions() as s, s.begin():
+            order = await self._one(s, ShopOrder, order_id)
+            order.parcel_id = parcel_id
+            if order.status == "confirmed":
+                self._move(order, "shipped")
+        return order
+
+    async def courier_said(self, order_id: str, said: str, ending: str | None) -> ShopOrder:
+        """The courier's words about the parcel, and its end: delivered or returned."""
+        async with self.sessions() as s, s.begin():
+            order = await self._one(s, ShopOrder, order_id)
+            order.courier_status = said[:100]
+            if ending and order.status == "shipped":
+                self._move(order, ending)
+        return order
+
     async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
         """Takes the items out of stock and saves the order as its status says: `unpaid` when
         its delivery charge is paid first (D47), `new` for the shop's call, or `confirmed`

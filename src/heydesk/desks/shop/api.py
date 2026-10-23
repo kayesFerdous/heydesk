@@ -43,6 +43,8 @@ class ShopOrderOut(BaseModel):
     zone: str
     address: str
     note: str
+    parcel_id: str  # booked with the courier (D112); "" not booked
+    courier_status: str  # the courier's last words about it
     created_at: datetime
     updated_at: datetime
 
@@ -136,7 +138,7 @@ async def change_order(
     order_id: str, body: OrderChange, store: Shop, services: Svc
 ) -> ShopOrderOut:
     """Move it along (`{"status": "confirmed"}` after calling the buyer, `shipped` once the
-    owner has booked the courier). Cancelling puts its items back in stock. The buyer hears
+    owner has booked a courier by hand; D112 books it in development). Cancelling puts its items back in stock. The buyer hears
     it in their chat when it's confirmed, shipped or cancelled, as the team's message (D66)."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status)

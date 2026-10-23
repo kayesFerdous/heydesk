@@ -466,6 +466,8 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:
         data["usually_takes"] = zone.days
+    if found.status == "shipped" and found.courier_status:  # the courier's own words (D112)
+        data["courier_says"] = found.courier_status
     takes = data.get("usually_takes")
     note = data["status"].capitalize() + (f". Delivery usually takes {takes}." if takes else "")
     card = cards.tracking(found.code, STEPS, found.status, note)

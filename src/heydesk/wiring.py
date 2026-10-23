@@ -9,6 +9,7 @@ from datetime import datetime
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from heydesk.adapters.courier.fake import FakeCourier
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.embedder.gemini import GeminiEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
@@ -47,6 +48,7 @@ from heydesk.services.billing import BillingService
 from heydesk.services.calls import CallService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
+from heydesk.services.courier import CourierService
 from heydesk.services.imports import ImportService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.members import MemberService
@@ -227,6 +229,11 @@ def build_services(
             now,
         ),
         conversations=conversations,
+        # ponytail: the fake courier only; production books by hand until Pathao or Steadfast
+        # has an adapter, with each shop's own merchant login
+        courier=None
+        if settings.APP_ENV == "production"
+        else CourierService(sessions, agents, team, FakeCourier(now)),
         imports=imports,
         knowledge=knowledge,
         members=MemberService(sessions, users, now),

@@ -247,7 +247,7 @@ merged into the conversation's `state`, saved with the turn.
 | `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends the cards of its first 3 products with a photo, as `show_photos` does, and names them in `shown` (D102) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45) |
 | `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`Checks(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
-| `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or on Telegram and Messenger nothing finds this buyer's last order (D92), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, and the `pay_link` while it's unpaid. A wrong code and a wrong number get the same answer |
+| `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or on Telegram and Messenger nothing finds this buyer's last order (D92), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, and the `pay_link` while it's unpaid; while shipped, the courier's last words (`courier_says`, D112). A wrong code and a wrong number get the same answer |
 | `change_order` | shop | **yes** | Found like `track_order`, except the mobile alone: a change needs the code (or the order from this chat, or this buyer's last). Then any of new `items` (the whole list, checked and priced as `update_cart`'s, with the order's own items counted as on the shelf, D92), `address` (with its `district`, or it asks for it, D98), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). New items or a new district work out the delivery charge (free or not) and total again; not once its charge was paid online. The store swaps the stock in one transaction. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `change_order` (the mobile alone isn't enough: the code, or the order from this chat, or this buyer's last); only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
@@ -415,7 +415,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92); confirmed → shipped → delivered or returned; unpaid, new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92); confirmed → shipped → delivered or returned; unpaid, new or confirmed → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -1238,6 +1238,24 @@ Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
 
 A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
 needs `call_to_confirm` (a 422 otherwise).
+
+### The courier (D112)
+
+Outside production, a confirmed order goes to the courier on its own. `CourierApi`
+(`ports/courier.py`) has `book(Parcel) → parcel id` and `status(parcel id) → Tracked(said,
+ending)`; the only adapter is `FakeCourier`, which moves a parcel one step every 2 minutes
+and delivers it after 8. `CourierService.run`, every `COURIER_SYNC_MINUTES`, for each shop
+with a parcel to book or follow:
+
+1. Each `confirmed` order with no `parcel_id` is booked (the cash still owed in whole taka,
+   the order code as the invoice): it's `shipped`, the buyer hears so, the owner is told to pack it.
+2. Each `shipped` order with a parcel is asked about: the words go in `courier_status`
+   (`track_order` gives them), and `delivered` or `returned` moves the order; the buyer hears
+   a delivery, the owner a return.
+
+A `CourierError` stops that shop's round; it's tried again next time. In production
+`Services.courier` is None and the owner moves orders by hand (D95), until Pathao or
+Steadfast has an adapter with each shop's merchant login.
 
 ## 10. Voice (M2)
 

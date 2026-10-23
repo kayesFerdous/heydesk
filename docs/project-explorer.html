@@ -643,6 +643,16 @@ tr.hl td { background: var(--accent-soft); }
    "fn": "sync"
   },
   {
+   "id": "s-courier",
+   "label": "CourierService",
+   "type": "service",
+   "file": "src/heydesk/services/courier.py",
+   "purpose": "Books every confirmed shop order with the courier (it's shipped then) and follows each parcel until delivered or returned; the buyer hears each move (D112). Off in production.",
+   "inputs": "confirmed / shipped orders",
+   "outputs": "parcel_id, courier_status, status",
+   "fn": "sync"
+  },
+  {
    "id": "s-users",
    "label": "UserService",
    "type": "service",
@@ -972,6 +982,15 @@ tr.hl td { background: var(--accent-soft); }
    "outputs": ""
   },
   {
+   "id": "p-courier",
+   "label": "CourierApi",
+   "type": "port",
+   "file": "src/heydesk/ports/courier.py",
+   "purpose": "Book a parcel → its id; a parcel's status → the courier's words and its ending (D112).",
+   "inputs": "Parcel",
+   "outputs": "parcel id / Tracked"
+  },
+  {
    "id": "p-sheets",
    "label": "FetchCsv",
    "type": "port",
@@ -1127,6 +1146,15 @@ tr.hl td { background: var(--accent-soft); }
    "type": "adapter",
    "file": "src/heydesk/adapters/woo.py",
    "purpose": "WooCommerce REST v3 with Basic auth; can_write probes with a bad status; webhooks.",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
+   "id": "ad-courier",
+   "label": "FakeCourier",
+   "type": "adapter",
+   "file": "src/heydesk/adapters/courier/fake.py",
+   "purpose": "Delivers every parcel on its own: one step every 2 min, delivered after 8; the booked time is in the parcel id. Pathao and Steadfast come with production (D112).",
    "inputs": "",
    "outputs": ""
   },
@@ -2010,6 +2038,26 @@ tr.hl td { background: var(--accent-soft); }
    "source": "s-woo",
    "target": "p-woo",
    "label": ""
+  },
+  {
+   "source": "s-courier",
+   "target": "p-courier",
+   "label": "book / status"
+  },
+  {
+   "source": "ad-courier",
+   "target": "p-courier",
+   "label": "implements"
+  },
+  {
+   "source": "s-courier",
+   "target": "k-store",
+   "label": "orders_for_courier / parcel_booked / courier_said"
+  },
+  {
+   "source": "s-courier",
+   "target": "s-team",
+   "label": "notify / tell_visitor"
   },
   {
    "source": "s-woo",
@@ -6192,13 +6240,13 @@ tr.hl td { background: var(--accent-soft); }
    "title": "Background loops",
    "kind": "schedulers",
    "file": "src/heydesk/main.py",
-   "summary": "Three asyncio tasks started in the lifespan; one failing item never stops the loop.",
+   "summary": "Three asyncio tasks started in the lifespan, and the courier's outside production; one failing item never stops the loop.",
    "nodes": [
     {
      "id": "life",
      "label": "lifespan start",
      "shape": "event",
-     "code": "loops = [\n  asyncio.create_task(services.sheets.run(SHEET_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.woo.run(WOO_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.calls.run(CALL_QUEUE_SECONDS)),\n]",
+     "code": "loops = [\n  asyncio.create_task(services.sheets.run(SHEET_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.woo.run(WOO_SYNC_MINUTES * 60)),\n  asyncio.create_task(services.calls.run(CALL_QUEUE_SECONDS)),\n]\nif services.courier:\n  loops.append(asyncio.create_task(services.courier.run(COURIER_SYNC_MINUTES * 60)))",
      "fn": "create_app.lifespan"
     },
     {
@@ -6244,6 +6292,14 @@ tr.hl td { background: var(--accent-soft); }
      "shape": "step",
      "file": "src/heydesk/services/woo.py",
      "fn": "sync"
+    },
+    {
+     "id": "courier",
+     "label": "Every 1 min: each shop with a parcel to book or follow",
+     "shape": "loop",
+     "code": "for order in await shop.orders_for_courier(\"confirmed\"):\n    parcel_id = await self.api.book(parcel(order))  # → shipped\nfor order in await shop.orders_for_courier(\"shipped\"):\n    tracked = await self.api.status(order.parcel_id)  # delivered / returned ends it",
+     "file": "src/heydesk/services/courier.py",
+     "fn": "run"
     },
     {
      "id": "calls",
@@ -6292,6 +6348,11 @@ tr.hl td { background: var(--accent-soft); }
     [
      "life",
      "woo"
+    ],
+    [
+     "life",
+     "courier",
+     "not production"
     ],
     [
      "woo",

@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     SHEET_SYNC_MINUTES: float = 5  # how often a linked Google Sheet is read again (D58)
     # how often a linked WooCommerce store is synced when it has no webhooks (D75, D78)
     WOO_SYNC_MINUTES: float = 2
+    # how often confirmed orders are booked with the courier and parcels followed (D112)
+    COURIER_SYNC_MINUTES: float = 1
 
     # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
     # development). Needed to connect a business's Telegram bot (D42)
