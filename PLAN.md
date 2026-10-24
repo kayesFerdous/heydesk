@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47), starting with R1, the agent feels human.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -499,6 +499,218 @@ above pass, then tick G5 in docs/competitor-gaps.md.
 - [x] en and bn strings; docs/api.md
 
 **Done when:** `pnpm lint` and `pnpm build` pass [x] (23 Oct), and in the browser each card shows.
+
+## Next: what the "AI Practor" reel shows (from 25 Oct)
+
+The gaps are in [docs/competitor-gaps.md](docs/competitor-gaps.md) (G-numbers). Tick the gap there
+too when its day passes. A day that changes the design adds its D-number then. Each screen goes in
+`../heydesk-frontend` the same day, en and bn. Comments (R15, R16) need Meta App Review for
+`pages_manage_engagement` and `pages_read_user_content`: **start that paperwork on day R1.**
+
+### Day R1: the agent feels human (G21–G24)
+
+- [ ] Many bubbles, one turn: `ChannelService._answer` waits ~3 s after a chat's last message
+      (an `asyncio` task reset by each new one, in memory) and runs one turn on all of them
+- [ ] Messenger: `mark_seen` then `typing_on` while a turn runs (Telegram and WhatsApp have typing)
+- [ ] A reply to an earlier message: Messenger `reply_to.mid`, Telegram `reply_to_message`,
+      WhatsApp `context.id` → `(replying to: "…")` before the text; a quoted photo is searched
+- [ ] A platform line: address the buyer the way the shop does (Bhaiya/Apu, Sir/Ma'am) and keep
+      it once known (docs/prompt-rules.md)
+- [ ] Tests: three quick bubbles are one turn and one reply; a quoted message reaches the model
+
+**Done when:** `scripts/check.sh` is green; on a real Page, three quick messages get one reply
+after "seen" and typing.
+
+### Day R2: product cards side by side (G25, G27, G16)
+
+- [ ] A `products` card from `find_product`: up to 10, each a photo, name, price, *I want this*
+      (the code as the tap's text) and *Details*
+- [ ] Each channel its way: Messenger carousel, WhatsApp list, Telegram a photo each, web chat a row
+- [ ] `videos` (links) on a product, from the list and the sheet; `show_photos` sends them
+- [ ] `goes_with` (codes) on a product; `update_cart` returns it and the prompt offers it once
+- [ ] Tests: the card's prices come from Python; *I want this* starts the order; a video link is sent
+
+**Done when:** `scripts/check.sh` is green; on the dev chat page and a real Page, a search shows
+the cards and a tap starts the order.
+
+### Day R3: a product page and an order page (G26)
+
+- [ ] `/p/<code>`: photos, price, sizes, delivery time, *Buy now* → a short form; server-rendered
+- [ ] The form's submit is the buyer's yes: it saves through `Confirmed[T]` (a decision, D-next)
+- [ ] The receipt card goes into the buyer's chat when the page was opened from it
+- [ ] `/o/<id>`: the order's status, linked from every receipt (an unguessable id)
+- [ ] Tests: an order from the page is saved once, with Python's total; a wrong id is a 404
+
+**Done when:** `scripts/check.sh` is green; from Messenger, *Details* → *Buy now* → the receipt
+lands back in the chat.
+
+### Day R4: order steps, money in, team orders, export (G28, G30, G6)
+
+- [ ] Statuses *on hold* and *packed*; on delivered or returned, `paid_in` and a `reason`
+      (returned, damaged, refused, cancelled because…)
+- [ ] The owner adds an order for a buyer who called: its own writing method, no yes (D-next)
+- [ ] `GET /api/shop/orders.csv` (and restaurant orders, bookings, appointments) with the list's filter
+- [ ] Screens: the new statuses, *money in*, a reason, *New order*, *Export*
+- [ ] Tests: a team order is saved and alerted; a CSV has the filtered rows and no other business's
+
+**Done when:** `scripts/check.sh` is green; in the browser, an order moves on hold → packed →
+delivered with money in, and the CSV opens in a spreadsheet.
+
+### Day R5: the buyer's record (G29, G17)
+
+- [ ] A buyers list grouped by mobile: orders, returns, cancels, channels, conversations
+- [ ] On each order: "3 orders, 1 returned" from ours, plus Steadfast's fraud check when linked
+- [ ] Tests: the counts; another business's orders never counted
+
+**Done when:** `scripts/check.sh` is green; in the browser, an order shows its buyer's record.
+
+### Day R6: coupons (G31)
+
+- [ ] A `coupons` table: code, percent or amount or free delivery, end date, max uses
+- [ ] `update_cart` takes `coupon`; Python checks it and puts the discount on the bill (rule 1);
+      a bad code is `ok=False` with a hint
+- [ ] Screens: the coupons list and form
+- [ ] Tests: each kind's total, an ended code, a used-up code, the read-back shows the discount
+
+**Done when:** `scripts/check.sh` is green; in the dev chat, "code EID10" puts 10% on the bill.
+
+### Day R7: delivery-day reminder and a review request (G32)
+
+- [ ] The courier round: on "out for delivery", remind the buyer; a day after delivered, ask how
+      it was (👍 / 👎 / write). Once each, and only inside each app's window
+- [ ] Tests (the fake courier): one reminder, one review request, none outside the window
+
+**Done when:** `scripts/check.sh` is green; on the dev chat page, the fake courier's delivery
+brings both messages.
+
+### Day R8: take over with a dot (G33)
+
+- [ ] Messenger `message_echoes`: the Page's own messages (not ours) arrive and are added to the
+      conversation as the team's (rule 5)
+- [ ] "." from the owner stops the agent for that chat; "." again, or 30 min of quiet, hands it back
+- [ ] The same from our inbox screen (a *Take over* switch) and on Telegram and WhatsApp
+- [ ] Tests: while taken over, a buyer's message runs no turn; the owner's words are in the next
+      turn's history
+
+**Done when:** `scripts/check.sh` is green; on a real Page, "." in Business Suite silences the
+agent, and "." gives it back.
+
+### Day R9: the inbox: search, done, snooze, assign (G34)
+
+- [ ] Search names, phones, order codes and message text (`ILIKE`; Postgres full text later)
+- [ ] *Done* hides a chat until the buyer writes again; *Snooze until* brings it back with an alert
+- [ ] *Assign* to a moderator, who gets the alert
+- [ ] Screens: the search box, the three actions, *Mine* and *Done* filters
+- [ ] Tests: a done chat comes back on a new message; a snoozed one at its time; search stays in
+      one business
+
+**Done when:** `scripts/check.sh` is green; in the browser, each action works on a real chat.
+
+### Day R10: notes, labels, saved replies, the buyer beside the chat (G9, G35)
+
+- [ ] `labels` on `conversations` with a filter; a `notes` table (insert only) the visitor never sees
+- [ ] Saved replies in the agent's config, picked from the reply box
+- [ ] The chat screen's side: the buyer's orders, bookings and notes (R5's record)
+- [ ] Tests: a note never reaches the prompt or the visitor
+
+**Done when:** `scripts/check.sh` is green; in the browser, a labelled chat with a note shows its
+buyer's orders.
+
+### Day R11: AI help for the moderator (G36, G14)
+
+- [ ] On a chat: *Summary*, *Ask about this chat*, *Draft a reply*: the model with no tools
+- [ ] Nothing is sent until the moderator sends it; each is a traced, billed turn
+- [ ] Tests (FakeLLM): a draft is shown, not sent
+
+**Done when:** `scripts/check.sh` is green; in the browser, a draft fills the reply box.
+
+### Day R12: complaints become tickets; AI off for one buyer (G37, G10, G38)
+
+- [ ] `flag_complaint(reason)`: hands off (D43) and opens a ticket: who has it, open or solved, age
+- [ ] A tickets list; a ticket stays open until someone marks it solved
+- [ ] *Turn AI off for them*: their messages are kept but run no turn and cost nothing
+- [ ] Tests: a complaint opens one ticket and alerts; a buyer with AI off runs no turn
+
+**Done when:** `scripts/check.sh` is green; in the dev chat, an angry message opens a ticket.
+
+### Day R13: nudges and leads (G7, G39)
+
+- [ ] A timed round: a read-back with no yes, 1–3 h later and inside the window, gets one nudge
+- [ ] `take_lead(when, note)`: "call me Friday 5pm" → a lead at that time (Python reads the date)
+- [ ] A leads list; the team taps the outcome (sold, not now, lost: why); the *why* counts
+- [ ] Tests: one nudge, never two; the lead's time from FIXED_NOW
+
+**Done when:** `scripts/check.sh` is green; in the dev chat, a callback request shows in leads.
+
+### Day R14: an offer to everyone who wrote today (G40)
+
+- [ ] The owner writes an offer with an end time; it goes to everyone who wrote in the last 24 h
+      (inside Messenger's window), and who got it is saved
+- [ ] `update_cart` applies it only to them and only until it ends (R6's discount path)
+- [ ] Tests: a buyer who got it gets free delivery; one who didn't, or after the end, doesn't
+
+**Done when:** `scripts/check.sh` is green; on the dev chat page, the offer reaches a recent chat
+and its bill.
+
+### Day R15: comment to inbox (G1, G43)
+
+- [ ] Subscribe the Page's `feed`; a new comment gets one public reply and one private reply
+      that opens the Messenger chat with the post's product
+- [ ] The comment goes into that buyer's conversation (same Page-scoped id)
+- [ ] Tests: one comment, one public and one private reply; a second comment from them adds no
+      second private reply
+
+**Done when:** `scripts/check.sh` is green and App Review passed; on a real post, "dam koto?"
+gets both replies.
+
+### Day R16: posts with many products, and one more nudge (G41, G42)
+
+- [ ] A post → products map: the owner tags it, or its photos are matched (D57)
+- [ ] Many products: the price range in the comment, R2's cards in the inbox
+- [ ] No answer in ~2 h: one more comment reply, once
+- [ ] Tests: the range from Python; one nudge only
+
+**Done when:** `scripts/check.sh` is green; on a real post with three products, the inbox gets
+three cards.
+
+### Day R17: what it couldn't answer, and practice mode (G44, G46)
+
+- [ ] Save a question when `search_knowledge` finds nothing or the turn hands off for "don't
+      know"; a list grouped by likeness with a count, and *Teach it* (a knowledge entry)
+- [ ] Practice mode: a new agent answers only the owner's listed test accounts until *Go live*
+- [ ] Tests: a taught answer is found next time; practice mode ignores a stranger
+
+**Done when:** `scripts/check.sh` is green; in the browser, a missed question is taught and then
+answered.
+
+### Day R18: change the agent in plain words (G45)
+
+- [ ] The owner writes the change; the model rewrites the editable prompt section; a test chat
+      shows the new version; *Save* or *Undo*; the last few versions kept (bends D15: D-next)
+- [ ] Platform rules stay untouched (rule 3); docs/prompt-rules.md
+- [ ] Tests (FakeLLM): nothing changes until *Save*; *Undo* brings back the last one
+
+**Done when:** `scripts/check.sh` is green; in the browser, a change is tried, saved and undone.
+
+### Day R19: the owner's dashboard (G4)
+
+- [ ] `GET /api/stats?days=7`: conversations, orders or bookings and their total, chats that
+      ended in an order, AI-handled vs handed off, where each order came from (chat, page, team),
+      leads not bought
+- [ ] One card row on the owner's home page; today and yesterday
+- [ ] Tests: the sums from seeded rows; one business only
+
+**Done when:** `scripts/check.sh` is green; in the browser, the cards match the lists.
+
+### Day R20: service businesses: reminders and the advance's TrxID (G18, G47)
+
+- [ ] A timed round: a reminder the day before a booking or appointment (Telegram; Messenger and
+      WhatsApp only where Meta's rules allow, check first)
+- [ ] The booking takes the bKash or Nagad TrxID the buyer typed; the owner ticks it checked
+- [ ] Tests: one reminder per booking; the TrxID on the booking
+
+**Done when:** `scripts/check.sh` is green; in the dev chat, a clinic booking keeps its TrxID and
+gets its reminder.
 
 ## Still open
 

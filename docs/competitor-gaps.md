@@ -73,7 +73,7 @@ Keep these in the pitch.
   - *Smallest build:* a `GET /api/stats?days=7` route that adds up rows we already have:
     conversations, orders or bookings and their total, how many chats ended in an order, and
     hand-offs. Add one card row on the owner's home page.
-- [ ] **G5 Plans, usage and billing** · M
+- [x] **G5 Plans, usage and billing** · M *(built 22 Oct, D106; plan changes D116)*
   - *Who has it:* everyone. ARA warns at 80% of the quota.
   - *Why:* we can't charge without it. The tiers are in the 22 Oct pricing research (Starter
     ৳1,490, Growth ৳3,990, Pro ৳8,990, metered by AI replies).
@@ -124,7 +124,7 @@ Keep these in the pitch.
   - *Smallest build:* the same alerts (new order, hand-off) by email through Brevo, which we
     already use for signup codes. The owner picks Telegram, email or both. A mobile app or web
     push comes later.
-- [ ] **G12 WhatsApp** · L · Meta
+- [x] **G12 WhatsApp** · L · Meta *(built, D103; live check still open)*
   - *Who has it:* Sellzy, LazyChat, ChatBD, Revora, ARA.
   - *Why:* WhatsApp is growing in BD, and ChatBD is built around it.
   - *Smallest build:* the Cloud API's webhook works like Messenger's, so it's another
@@ -175,11 +175,157 @@ Keep these in the pitch.
   - *Why:* few BD f-shops use it; WooCommerce (D75) covers most websites. Build it only if a
     paying customer has Shopify.
 
+## From the "AI Practor" reel (24 Oct)
+
+A Bangla sales reel from a BD competitor (name as heard: "AI Practor"). They sell an
+inbox, an agent and an order system with **no monthly fee**, ৳0.05–0.20 per AI reply. Below is
+only what we don't have yet. What the reel shows that we **already have**: Messenger, WhatsApp
+and web chat; photo search; buttons for choices; cards; stock; changing or cancelling an order
+before it's confirmed (`change_order`, `cancel_order`); "where's my parcel" (`track_order`);
+courier booking with status news to the buyer (D112, D113); remembering a returning buyer
+(D114); refusing off-topic talk (`off_topic`); bookings for a service business; billing per reply.
+
+### Next: cheap, and they make the agent feel human
+
+- [ ] **G21 Many messages, one reply** · S
+  - A buyer sends "hi" / "dam koto" / a photo in three bubbles. Wait ~3 s after the last one,
+    then run one turn on all of them. Today each bubble is its own turn and its own reply.
+  - *Smallest build:* in `ChannelService._answer`, a per-chat debounce (an `asyncio` task that
+    is reset by each new message). In memory is fine for one process.
+- [ ] **G22 "Seen", then typing, on Messenger** · S (finishes G15's first half)
+  - Telegram and WhatsApp already show typing. Messenger needs `mark_seen` + `typing_on`.
+- [ ] **G23 A reply to an earlier message** · S
+  - When the buyer replies to one of their old messages (Messenger `reply_to.mid`, Telegram
+    `reply_to_message`, WhatsApp `context.id`), put the quoted text before theirs:
+    `(replying to: "…")`. A quoted photo is searched as a photo.
+- [ ] **G24 Sir or ma'am** · S · prompt only
+  - One platform line: address the buyer as the shop does (Bhaiya/Apu, Sir/Ma'am), and keep it
+    once known. Goes in docs/prompt-rules.md.
+
+### Then: the shop sells without a website
+
+- [ ] **G25 Product cards side by side** · M
+  - `find_product` returns a `products` card: up to 10, each a photo, name, price and two
+    buttons, *I want this* (sends the product's code as the tap's text) and *Details*.
+    Messenger generic template carousel, WhatsApp list, Telegram one photo each, web chat a row.
+- [ ] **G26 A product page and an order page** · M
+  - `/p/<code>`: photos, price, sizes, delivery time, and *Buy now* → a short order form →
+    saved through the same `Confirmed[T]` path (the form's submit is the yes). The receipt
+    card is sent back into the buyer's chat. `/o/<id>`: the order's status page, linked from
+    the receipt. Server-rendered, no SPA.
+- [ ] **G27 Videos and more photos per product** · S
+  - `videos` (links) on a product; `show_photos` can send them. A how-to video is just a link.
+- [ ] **G16** (suggest a second product) moves up here.
+
+### Then: orders the team runs
+
+- [ ] **G28 More order steps and money in** · M
+  - Statuses today: new, confirmed, shipped, delivered, returned (+ cancelled). Add *on hold*,
+    *packed* (ready to ship), and on delivered/returned a `paid_in` flag and a `reason`
+    (returned, damaged, refused, cancelled because…). Resist the reel's eight steps: add one
+    only when an owner asks.
+- [ ] **G29 A buyer's record before shipping** · M
+  - By mobile: our own orders, returns and cancels for this shop, plus the courier's fraud
+    record (Steadfast has a fraud-check endpoint; Pathao doesn't publicly). Shown on the order
+    as "3 orders, 1 returned". Overlaps G17.
+- [ ] **G30 Orders typed by the team** · S
+  - The owner's screen can add an order for a buyer who called. It skips the yes (the team is
+    the yes), so it needs its own writing method; say so in decisions.md.
+- [ ] **G31 Coupons** · M
+  - A `coupons` table: code, % or fixed or free delivery, end date, max uses. `update_cart`
+    takes `coupon`; Python checks it and puts the discount on the bill (rule 1).
+- [ ] **G32 Delivery-day reminder and a review request** · S
+  - Two more lines in the courier round: on "out for delivery", remind the buyer; a day after
+    delivered, ask how it was (one button row: 👍 / 👎 / write). Only inside each app's window.
+- [ ] **G6** (export orders) stays here.
+
+### Then: the inbox
+
+- [ ] **G33 Take over with a dot** · M · Meta
+  - The owner types "." from Messenger or Business Suite → the agent stops for that chat; "."
+    again, or 30 min of quiet, hands it back. Needs Messenger's `message_echoes` field (our own
+    Page's messages arrive as echoes; ignore the ones we sent). The agent sees the owner's
+    words in the history next turn (rule 5: they're added, not edited).
+- [ ] **G34 Inbox: search, done, snooze, assign** · M (with G9)
+  - Search names, phones, order codes and message text (`ILIKE` first; Postgres full text
+    later). *Done* hides a chat until the buyer writes again. *Snooze until* brings it back with
+    an alert. *Assign* to a moderator, who gets the alert. G9's notes and labels go with it.
+- [ ] **G35 The buyer beside the chat** · M (= G17)
+  - The chat screen's right side: their orders, bookings, notes. Built on G17's list.
+- [ ] **G36 AI help for the moderator** · S–M (G14, bigger)
+  - Three buttons on a chat: *Summary*, *Ask about this chat*, *Draft a reply*. The model with
+    no tools; nothing is sent until the moderator sends it.
+- [ ] **G37 Complaints become tickets** · M (G10, bigger)
+  - `flag_complaint(reason)` hands off and opens a ticket: who has it, open/solved, how old.
+    One table, one list screen.
+- [ ] **G38 AI off for one buyer** · S
+  - A spammer is handed off by `off_topic`; the owner taps *Turn AI off for them* and their
+    messages are stored but never run (and never billed). Same switch as "Later: blocked
+    visitors".
+
+### Then: follow-ups and leads
+
+- [ ] **G7** (nudge an unfinished order) comes first here.
+- [ ] **G39 Leads with a callback time** · M
+  - A `take_lead(when, note)` tool: "call me Friday 5pm" → a lead with that time (Python reads
+    the date, rule 1). A leads list; the team taps the outcome (sold / not now / lost: why).
+    The *why* counts become "why we lose sales".
+- [ ] **G40 An offer to everyone who wrote today** · M · Meta
+  - The owner writes "free delivery for the next 12 hours" and sends it to everyone who wrote
+    in the last 24 h (inside Messenger's window, so it's free). The offer is saved with its
+    end time and who got it; `update_cart` applies it only to them, only until then. Shares
+    G31's discount code path. This is the safe half of G13.
+
+### Then: comments (all need G1 first)
+
+- [ ] **G1** first: one product's post → reply in the comment and in the inbox.
+- [ ] **G41 Many products in one post** · S after G1
+  - The comment gets the price range; the inbox gets the post's products as G25's cards.
+  - Needs a post → products map: the owner tags it, or we match the post's photos (D57).
+- [ ] **G42 One more nudge under the comment** · S after G1
+  - If they don't answer the inbox in ~2 h, one more comment reply. Once.
+- [ ] **G43 One buyer across comments and inbox** · S after G1
+  - A comment's sender id is the same Page-scoped id as their Messenger chat, so the comment
+    goes into that conversation's history. Mostly free once G1 stores it there.
+
+### Then: teaching the agent
+
+- [ ] **G44 Questions it couldn't answer** · S
+  - When `search_knowledge` finds nothing or the turn hands off for "don't know", save the
+    question. A list grouped by likeness with a count, and a *Teach it* box that adds a
+    knowledge entry.
+- [ ] **G45 Change it in plain words, try it, then save** · M
+  - The owner writes "say the delivery price before the total". The model rewrites the agent's
+    editable prompt section; the owner sees a test chat with the new version, then *Save* or
+    *Undo*. Keep the last few versions on the agent (this bends D15's "no versions", so it needs
+    a decision).
+- [ ] **G46 Practice mode** · S
+  - A new agent answers only the owner's own test accounts (listed ids) until they tap *Go live*.
+- [ ] **G4** (owner's dashboard) goes here, plus: AI-handled vs handed-off, and where each order
+  came from (chat, product page, team).
+
+### Service businesses
+
+- [ ] **G18** (reminder the day before) and **G47 Advance payment's TrxID** · S: the booking
+  takes the bKash/Nagad transaction id the buyer typed, and the owner ticks it as checked.
+
+### Not copying
+
+- **Instagram** stays G3 (Meta review); **WhatsApp on the shop's own number** needs the Cloud
+  API's coexistence onboarding, check before promising it.
+- **A Chrome extension for Business Suite.** G33's dot covers taking over from there.
+- **No monthly fee, pay per reply.** A pricing choice, not code: our metering (D106) could sell
+  it as a plan. Decide on price, not here.
+- **"Advanced caching, 24 hours."** That's the model provider's prompt cache. Our prompt is
+  built every turn (D15) with the date and time at the end, so the start is already stable and
+  cacheable; check whether Maira or Groq bill cached tokens less before doing anything.
+- **Asking for features inside the app.** A link to a form or Telegram is enough.
+- **Unlimited teammates.** A plan limit, not a feature.
+
 ## Decided against (for now)
 
-- **Courier booking and the courier's fraud record** (Sellzy). We built this as D90/D91 and
-  removed it in D95: owners book couriers in their own panels. Revisit if several paying shops
-  ask. It's the one feature where Sellzy beats us on order handling.
+- ~~**Courier booking**~~ is back: Steadfast and Pathao behind the courier port (D112, D113),
+  with status news sent to the buyer. The courier's fraud record is G29.
 - **Calls out to phone numbers, and payment-reminder calls** (ARA). There's no free and legal
   way to place automatic calls to BD mobiles (product-gaps §3). Our confirmation call is a link
   to the browser voice call (D88, D89).
