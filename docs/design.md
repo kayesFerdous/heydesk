@@ -1212,7 +1212,7 @@ billing page ─► POST /api/billing/checkout {plan, months, gateway} ─► a 
              (BILLING_BKASH_*, D109), not the business's own accounts
 gateway sends word back (SSLCommerz: /billing/<id>/back and its notice; bKash: /billing/<id>/bkash
              with status=success) ─► settle: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
-             paid_until = max(now, paid_until) + 30 days a month (365 a year); a trial's days aren't kept
+             priced again (quote, D116): applied, or held as review if the plan changed meanwhile
 every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
              or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
 ```
@@ -1225,8 +1225,24 @@ every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRAC
 - An admin sets a plan by hand (`PUT /api/admin/businesses/{id}/plan`), for a payment made to
   us another way; it goes in the audit log.
 - The dev workspace is Pro for ten years, so the dev chat and the demo never stop.
-- Changing plans mid-way isn't prorated: the new plan starts at once and the days run on.
-  Nothing is emailed when a plan is about to end: the owner sees it on the billing page.
+- **Changing plans (D116).** The plan is prepaid: nothing renews by itself, and not renewing is
+  how an owner cancels (no refunds). `quote` prices every purchase, and `GET /api/billing/quote`
+  shows it before the Pay button:
+
+  | Where the business stands | Buying | Costs | The plan after |
+  |---|---|---|---|
+  | On the trial, or the paid plan has ended | any plan | its full price | that plan, from now |
+  | A plan running | the same plan | its full price | the days added after the days left |
+  | A plan running | a bigger plan | the difference for the days left, at the rate of the cycle paid last (`workspaces.months`), whole taka, at least ৳10 | the bigger plan now, ending the same day |
+  | A plan running | a smaller plan | refused until it ends; the grace days keep answering meanwhile | |
+  | More moderators than the plan has | that plan | refused: remove some first | |
+
+  `settle` prices the payment again when the gateway says it's paid, under a row lock on the
+  workspace. If it's still the same kind and costs no more than was paid, it's applied;
+  otherwise (another payment or an admin changed the plan meanwhile) it's kept as `review`,
+  money taken but not applied, and an admin settles it by hand. `/api/billing` lists the
+  payments (`paid`, `review`), newest first.
+- Nothing is emailed when a plan is about to end: the owner sees it on the billing page.
 
 ### How a shop order is confirmed (D92)
 

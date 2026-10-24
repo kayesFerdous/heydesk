@@ -14,12 +14,12 @@ import secrets
 from collections.abc import Callable
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, NotFound
 from heydesk.models import TeamEvent, User, Workspace
-from heydesk.services.billing import PLANS
+from heydesk.services.billing import PLANS, count_moderators
 from heydesk.services.users import Principal, UserService
 
 
@@ -51,14 +51,10 @@ class MemberService:
                     if taken.workspace_id == ws
                     else "That email already has a HeyDesk account, so it can't join your team."
                 )
-            moderators = await s.scalar(
-                select(func.count())
-                .select_from(User)
-                .where(User.workspace_id == ws, User.role == "moderator")
-            )
+            moderators = await count_moderators(s, ws)
             business = await s.get(Workspace, ws)
             seats = PLANS[business.plan].moderators if business else 0  # the plan's (D106)
-            if (moderators or 0) >= seats:
+            if moderators >= seats:
                 raise Conflict(
                     f"Your plan has {seats} moderator{'s' if seats > 1 else ''}. "
                     "Choose a bigger plan on the billing page to add more."

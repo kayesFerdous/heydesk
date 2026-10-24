@@ -8,15 +8,18 @@ from heydesk.db import Base, new_id, utcnow
 
 class SubscriptionPayment(Base):
     """A business paying HeyDesk for a plan (D106): made unpaid when the owner starts paying,
-    marked paid once our SSLCommerz store says so. Its id is the gateway's `tran_id`."""
+        marked paid once our SSLCommerz store says so. Its id is the gateway's `tran_id`. `kind` is
+    `months` (time on a plan) or `upgrade` (the difference for the days left, D116); `review` is
+    paid but not applied, because the plan changed while the owner was paying."""
 
     __tablename__ = "subscription_payments"
-    __table_args__ = (CheckConstraint("status IN ('unpaid', 'paid')", name="status"),)
+    __table_args__ = (CheckConstraint("status IN ('unpaid', 'paid', 'review')", name="status"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     plan: Mapped[str] = mapped_column(String(10))
     months: Mapped[int]  # 1 or 12
+    kind: Mapped[str] = mapped_column(String(10), default="months")  # or "upgrade"
     amount: Mapped[int]  # minor units, BDT
     status: Mapped[str] = mapped_column(String(10), default="unpaid")
     payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id

@@ -422,6 +422,22 @@ G12 in docs/competitor-gaps.md.
 **Done when:** `scripts/check.sh` is green [x] (22 Oct); the billing page and the live check
 above pass, then tick G5 in docs/competitor-gaps.md.
 
+### Day B2: changing plans, priced (D116)
+
+- [x] `billing.quote`: full price on the trial or after the end; the same plan adds the days;
+      a bigger plan pays the difference for the days left and keeps the end day; a smaller plan
+      waits for the end; never more moderators than the plan has
+- [x] `settle` prices it again under a row lock; a plan changed meanwhile holds it as `review`
+- [x] `subscription_payments.kind`, the `review` status, `workspaces.months` (one migration);
+      `GET /api/billing/quote`; the payments in `/api/billing`
+- [x] design.md (Plans and billing), D116
+- [x] Tests: an upgrade's price and end day, a year of Starter then Pro, a smaller plan refused
+      until the end, a team too big for the plan, a stale upgrade held for review
+- [ ] The billing page in `../heydesk-frontend`: the quote before Pay, a smaller plan's
+      "once it ends", the receipts
+
+**Done when:** `scripts/check.sh` is green [x] (24 Oct); the billing page shows the quote.
+
 ### Day V5: voice only for the receptionist and the clinic (D108)
 
 - [x] `Desk.takes_voice` (like `takes_photos`): True for the receptionist and the clinic

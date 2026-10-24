@@ -357,9 +357,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Billing API",
    "type": "api",
    "file": "src/heydesk/api/billing.py",
-   "purpose": "The owner's plan and usage, and which of our gateways are set up; paying for a plan through our SSLCommerz store or bKash account; the gateways' returns and SSLCommerz's IPN (D106, D109).",
+   "purpose": "The owner's plan and usage, and which of our gateways are set up; a plan's price before paying (`/api/billing/quote`: an upgrade is the difference for the days left, a smaller plan waits for the end); paying through our SSLCommerz store or bKash account; the receipts; the gateways' returns and SSLCommerz's IPN (D106, D109, D116).",
    "inputs": "{plan, months, gateway}, val_id posts, bKash paymentID",
-   "outputs": "billing, {url}, HTML page",
+   "outputs": "billing, quote, {url}, HTML page",
    "fn": "get_billing"
   },
   {
@@ -617,7 +617,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "BillingService",
    "type": "service",
    "file": "src/heydesk/services/billing.py",
-   "purpose": "Plans (replies in 30 days, moderators); checkout and settle into our own SSLCommerz store or bKash account; `plan_problem` for every turn (D106, D109).",
+   "purpose": "Plans (replies in 30 days, moderators); `quote` prices a purchase from where the business stands (new, renewal, upgrade; a downgrade waits for the end); checkout and settle into our own SSLCommerz store or bKash account, priced again at settle (a changed plan holds it as review); `plan_problem` for every turn (D106, D109, D116).",
    "inputs": "plan, months, gateway, val_id or paymentID",
    "outputs": "plan and paid_until",
    "fn": "settle"

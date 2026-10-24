@@ -20,4 +20,5 @@ class Workspace(Base):
     suspended_reason: Mapped[str] = mapped_column(String(300), default="")  # empty while active
     plan: Mapped[str] = mapped_column(String(10), default="trial")  # a key of billing.PLANS
     paid_until: Mapped[datetime]  # the trial's end, or the last paid day
+    months: Mapped[int] = mapped_column(default=1)  # the last paid cycle: 1 or 12 (D116)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

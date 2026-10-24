@@ -3,7 +3,8 @@ pays with `/api/billing/checkout`, which returns our SSLCommerz or bKash page. S
 the owner back to `/billing/<id>/back` and tells the server itself at NOTIFY_PATH; only the
 `val_id` it posts counts, checked with our store. bKash sends them back to `/billing/<id>/bkash`;
 only its `paymentID`, executed with our bKash account, counts. Owners only: a moderator gets a
-403 (`owners_only`).
+403 (`owners_only`). `/api/billing/quote` shows what a plan costs before paying: an upgrade
+is the difference for the days left, and a smaller plan waits until this one ends (D116).
 """
 
 import html
@@ -34,6 +35,22 @@ class PlanOut(BaseModel):
     moderators: int
 
 
+class PaymentOut(BaseModel):
+    id: str
+    plan: str
+    months: int
+    kind: Literal["months", "upgrade"]
+    amount: int  # poisha
+    status: Literal["paid", "review"]  # review: paid, not applied yet; HeyDesk sorts it out
+    paid_at: datetime | None
+
+
+class QuoteOut(BaseModel):
+    kind: Literal["months", "upgrade"]  # upgrade: the difference for the days left, from now
+    amount: int  # poisha: what the Pay button charges
+    paid_until: datetime  # the plan's last paid day after paying
+
+
 class BillingOut(BaseModel):
     plan: str
     paid_until: datetime
@@ -43,6 +60,7 @@ class BillingOut(BaseModel):
     moderators: int
     plans: list[PlanOut]
     gateways: list[Provider]  # a Pay button for each; empty: paying online isn't set up
+    payments: list[PaymentOut]  # the receipts, newest first
 
 
 class CheckoutIn(BaseModel):
@@ -80,7 +98,17 @@ async def get_billing(ws: Workspace, services: Svc) -> BillingOut:
         moderators=b.moderators,
         plans=plans,
         gateways=b.gateways,
+        payments=[PaymentOut.model_validate(p, from_attributes=True) for p in b.payments],
     )
+
+
+@router.get("/api/billing/quote")
+async def get_quote(
+    ws: Workspace, services: Svc, plan: PlanKey, months: Literal[1, 12] = 1
+) -> QuoteOut:
+    """What paying for `plan` costs now; a 409 says why it can't be bought yet."""
+    q = await services.billing.quote(ws, plan, months)
+    return QuoteOut(kind=q.kind, amount=q.amount, paid_until=q.paid_until)
 
 
 @router.post("/api/billing/checkout")
@@ -129,6 +157,11 @@ async def bkash_back(
 
 
 async def result_page(payment: SubscriptionPayment | None, services: Svc) -> HTMLResponse:
+    if payment is not None and payment.status == "review":
+        return page(
+            "Payment received, but your plan changed while you were paying, so we haven't "
+            "applied it yet. HeyDesk will sort it out and get in touch."
+        )
     if payment is None or payment.status != "paid":
         return page("The payment didn't go through. Try again from the billing page.")
     b = await services.billing.billing(payment.workspace_id)
