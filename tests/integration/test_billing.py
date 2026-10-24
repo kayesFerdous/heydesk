@@ -126,7 +126,8 @@ async def test_a_cancelled_bkash_return_changes_nothing(app: FastAPI) -> None:
     owner = await new_business(app)
     assert (await owner.get("/api/billing")).json()["gateways"] == []  # nothing set up in tests
     back = await owner.get("/billing/nothing/bkash", params={"paymentID": "P1", "status": "cancel"})
-    assert "didn't go through" in back.text
+    assert back.status_code == 303  # back to the billing page in the same tab
+    assert back.headers["location"].endswith("/billing?payment=failed")
 
 
 def paying(world: World) -> tuple[BillingService, FakePayments]:

@@ -359,7 +359,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/api/billing.py",
    "purpose": "The owner's plan and usage, and which of our gateways are set up; a plan's price before paying (`/api/billing/quote`: an upgrade is the difference for the days left, a smaller plan waits for the end); paying through our SSLCommerz store or bKash account; the receipts; the gateways' returns and SSLCommerz's IPN (D106, D109, D116).",
    "inputs": "{plan, months, gateway}, val_id posts, bKash paymentID",
-   "outputs": "billing, quote, {url}, HTML page",
+   "outputs": "billing, quote, {url}, a redirect to /billing?payment=…",
    "fn": "get_billing"
   },
   {

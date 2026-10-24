@@ -1242,6 +1242,9 @@ every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRAC
   otherwise (another payment or an admin changed the plan meanwhile) it's kept as `review`,
   money taken but not applied, and an admin settles it by hand. `/api/billing` lists the
   payments (`paid`, `review`), newest first.
+- Both gateways' returns send the owner on to the billing page in the same tab,
+  `/billing?payment=paid|review|failed` (303). In development, Vite forwards `/billing/` to the
+  backend, as it does `/pay/`.
 - Nothing is emailed when a plan is about to end: the owner sees it on the billing page.
 
 ### How a shop order is confirmed (D92)

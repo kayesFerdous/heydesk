@@ -2,18 +2,18 @@
 pays with `/api/billing/checkout`, which returns our SSLCommerz or bKash page. SSLCommerz sends
 the owner back to `/billing/<id>/back` and tells the server itself at NOTIFY_PATH; only the
 `val_id` it posts counts, checked with our store. bKash sends them back to `/billing/<id>/bkash`;
-only its `paymentID`, executed with our bKash account, counts. Owners only: a moderator gets a
+only its `paymentID`, executed with our bKash account, counts. Both returns send the owner on
+to the billing page, `/billing?payment=paid|review|failed`, in the same tab. Owners only: a moderator gets a
 403 (`owners_only`). `/api/billing/quote` shows what a plan costs before paying: an upgrade
 is the difference for the days left, and a smaller plan waits until this one ends (D116).
 """
 
-import html
 from contextlib import suppress
 from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, Workspace
@@ -118,26 +118,24 @@ async def checkout(body: CheckoutIn, ws: Workspace, services: Svc) -> CheckoutOu
     return CheckoutOut(url=url)
 
 
-def page(text: str, status_code: int = 200) -> HTMLResponse:
-    body = (
-        '<!doctype html><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>HeyDesk billing</title>"
-        '<p style="font: 18px system-ui; max-width: 32em; margin: 3em auto; padding: 0 1em">'
-        f"{html.escape(text, quote=False)}<br><br>"
-        "You can close this page and go back to HeyDesk.</p>"
-    )
-    return HTMLResponse(body, status_code)
+def to_billing_page(payment: SubscriptionPayment | None, services: Svc) -> RedirectResponse:
+    """Back to the owner's billing page in the same tab, which says how it went: `paid`,
+    `review` (paid, not applied, D116) or `failed`. 303, so SSLCommerz's POST becomes a GET."""
+    outcome = payment.status if payment and payment.status != "unpaid" else "failed"
+    url = f"{services.billing.settings.public_url}/billing?payment={outcome}"
+    return RedirectResponse(url, status_code=303)
 
 
 @router.post("/billing/{payment_id}/back", include_in_schema=False)
-async def back(payment_id: str, services: Svc, val_id: Annotated[str, Form()] = "") -> HTMLResponse:
+async def back(
+    payment_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
+) -> RedirectResponse:
     """SSLCommerz sends the owner back here, paid, failed or cancelled."""
     payment = None
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
             payment = await services.billing.settle(payment_id, val_id)
-    return await result_page(payment, services)
+    return to_billing_page(payment, services)
 
 
 @router.get("/billing/{payment_id}/bkash", include_in_schema=False)
@@ -146,26 +144,14 @@ async def bkash_back(
     services: Svc,
     bkash_id: Annotated[str, Query(alias="paymentID")] = "",
     outcome: Annotated[str, Query(alias="status")] = "",
-) -> HTMLResponse:
+) -> RedirectResponse:
     """bKash sends the owner back here, paid, failed or cancelled (D109). Only a "success" is
     worth asking bKash about, and only bKash's answer counts."""
     payment = None
     if bkash_id and outcome == "success":
         with suppress(PaymentUnavailable):
             payment = await services.billing.settle(payment_id, bkash_id, "bkash")
-    return await result_page(payment, services)
-
-
-async def result_page(payment: SubscriptionPayment | None, services: Svc) -> HTMLResponse:
-    if payment is not None and payment.status == "review":
-        return page(
-            "Payment received, but your plan changed while you were paying, so we haven't "
-            "applied it yet. HeyDesk will sort it out and get in touch."
-        )
-    if payment is None or payment.status != "paid":
-        return page("The payment didn't go through. Try again from the billing page.")
-    b = await services.billing.billing(payment.workspace_id)
-    return page(f"Payment received. You're on {PLANS[b.plan].name} until {b.paid_until:%d %b %Y}.")
+    return to_billing_page(payment, services)
 
 
 @router.post(NOTIFY_PATH, include_in_schema=False)
