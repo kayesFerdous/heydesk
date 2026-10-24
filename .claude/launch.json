@@ -115,6 +115,17 @@
       "port": 8080
     },
     {
+      "name": "frontend-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "../heydesk-web",
+        "run",
+        "serve"
+      ],
+      "port": 8080
+    },
+    {
       "name": "widget-test",
       "runtimeExecutable": "uv",
       "runtimeArgs": [
