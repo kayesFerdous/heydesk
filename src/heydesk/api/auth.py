@@ -59,6 +59,7 @@ class BusinessOut(BaseModel):
 
 
 class MeOut(BaseModel):
+    id: str  # who "me" is when taking a chat (I1)
     email: str
     role: Role  # a moderator runs the inbox, not settings
     business: BusinessOut | None  # an owner's or moderator's business; None for an admin
@@ -123,6 +124,7 @@ async def change_password(body: PasswordIn, principal: User, services: Svc, ip: 
 async def me(principal: User, services: Svc) -> MeOut:
     user, business = await services.users.me(principal)
     return MeOut(
+        id=user.id,
         email=user.email,
         role=ROLES[user.role],
         business=BusinessOut(

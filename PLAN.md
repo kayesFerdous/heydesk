@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47). Day R1, the agent feels human (D117), built 25 Oct; its live check on a real Page is next. Day F1, Connect with Facebook (D118), built 25 Oct; connecting a real Page with it is next, then R2. Day R3a, a shop's imports add instead of replace (D120) and a product page from every card (D121), built 25 Oct; opening a product's page from a real Page is next. The agent remembers a visitor: a second order in the same chat is offered the first one's details (D123), and a `remember` tool keeps what they mention about themselves (D124); the website chat's product cards get *Order this* and *Details* (D123); built 25 Oct, a live check on a real Page is next. Day R2, product cards side by side (up to 10, Telegram and WhatsApp 3 photos then a list), videos and `goes_with` (D125), built 25 Oct; its live check on a real Page is next, then R3.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47). Day R1, the agent feels human (D117), built 25 Oct; its live check on a real Page is next. Day F1, Connect with Facebook (D118), built 25 Oct; connecting a real Page with it is next, then R2. Day R3a, a shop's imports add instead of replace (D120) and a product page from every card (D121), built 25 Oct; opening a product's page from a real Page is next. The agent remembers a visitor: a second order in the same chat is offered the first one's details (D123), and a `remember` tool keeps what they mention about themselves (D124); the website chat's product cards get *Order this* and *Details* (D123); built 25 Oct, a live check on a real Page is next. Day R2, product cards side by side (up to 10, Telegram and WhatsApp 3 photos then a list), videos and `goes_with` (D125), built 25 Oct; its live check on a real Page is next, then R3. **First, days I1–I3** (the team's inbox and spammers, asked 25 Oct): I1, who has a chat (D126), built 25 Oct; its browser check is next, then I2.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -500,6 +500,57 @@ above pass, then tick G5 in docs/competitor-gaps.md.
 
 **Done when:** `pnpm lint` and `pnpm build` pass [x] (23 Oct), and in the browser each card shows.
 
+## First: the team's inbox and spammers (asked 25 Oct)
+
+These go before R3. They take R9 (G34) and R12's *AI off for one buyer* (G38) forward, with what
+was asked: who answers a chat, and an agent that stops answering a spammer.
+
+### Day I1: who has a chat (G34's assign)
+
+- [x] `conversations.assigned_to` (a team member, or none); `PUT /api/conversations/{id}/assignee
+      {user_id | null}`. The owner assigns any chat to anyone on the team, or no one; a
+      moderator takes an unassigned one for themself and gives back their own, but never takes
+      a colleague's (a 403). Each move is in the team's activity (D97)
+- [x] `?assigned=me|none` on the list, and the assignee's email on each conversation
+- [x] *Assign hand-offs* (`handoff.auto_assign`, off at first): a hand-off goes to the joined
+      moderator with the fewest open chats (waiting or with the team); none: it stays unassigned
+- [x] A removed moderator's chats go back to unassigned
+- [x] Screens: *Mine* and *Unassigned*; on a chat, who has it, *Take*, *Give back*, and the
+      owner's *Assign to…*; the setting on the Agent page (en, bn)
+- [x] Tests: a moderator takes a free chat but not a colleague's; the owner moves any; a
+      hand-off goes to the least busy; another business's member can't be assigned
+
+- [ ] In the browser: a moderator takes a chat and sees it under *Mine*; the owner moves it
+
+**Done when:** `scripts/check.sh` is green; in the browser, a moderator takes a chat and sees it
+under *Mine*, and the owner moves it to someone else.
+
+### Day I2: the agent stops answering a spammer (G38)
+
+- [ ] On a chat, owner or moderator: *Block* (no reply at all, until *Unblock*) and *AI off*
+      (the team answers by hand). Their messages are still saved, run no turn and cost nothing
+- [ ] Automatic: too many messages too fast on any channel (`FLOOD_MESSAGES` in a minute) blocks
+      for `BLOCK_HOURS`, as five off-topic messages already do (D51); it says why
+- [ ] A blocked visitor is told once, then nothing (today each message on Messenger, Telegram and
+      WhatsApp gets the "limited" line)
+- [ ] A *Blocked* list: who, why (by whom, flooding, off-topic), until when, *Unblock*
+- [ ] Screens: the two buttons and a badge on the chat, the list (en, bn)
+- [ ] Tests: a blocked buyer's message is saved with no turn and no reply after the first
+      notice; AI off saves and alerts the team; a flood blocks; unblock lets them in again
+
+**Done when:** `scripts/check.sh` is green; in the dev chat, a blocked visitor gets one notice and
+then silence, and unblocking brings the agent back.
+
+### Day I3: search, done and snooze (the rest of G34)
+
+- [ ] Search names, phones, order codes and message text (`ILIKE`; Postgres full text later)
+- [ ] *Done* hides a chat until the buyer writes again; *Snooze until* brings it back with an alert
+- [ ] Screens: the search box, *Done*, *Snooze*, and a *Done* filter (en, bn)
+- [ ] Tests: a done chat comes back on a new message; a snoozed one at its time; search stays in
+      one business
+
+**Done when:** `scripts/check.sh` is green; in the browser, each works on a real chat.
+
 ## Next: what the "AI Practor" reel shows (from 25 Oct)
 
 The gaps are in [docs/competitor-gaps.md](docs/competitor-gaps.md) (G-numbers). Tick the gap there
@@ -644,14 +695,7 @@ agent, and "." gives it back.
 
 ### Day R9: the inbox: search, done, snooze, assign (G34)
 
-- [ ] Search names, phones, order codes and message text (`ILIKE`; Postgres full text later)
-- [ ] *Done* hides a chat until the buyer writes again; *Snooze until* brings it back with an alert
-- [ ] *Assign* to a moderator, who gets the alert
-- [ ] Screens: the search box, the three actions, *Mine* and *Done* filters
-- [ ] Tests: a done chat comes back on a new message; a snoozed one at its time; search stays in
-      one business
-
-**Done when:** `scripts/check.sh` is green; in the browser, each action works on a real chat.
+Moved forward: days I1 (assign) and I3 (search, done, snooze).
 
 ### Day R10: notes, labels, saved replies, the buyer beside the chat (G9, G35)
 
@@ -675,7 +719,7 @@ buyer's orders.
 
 - [ ] `flag_complaint(reason)`: hands off (D43) and opens a ticket: who has it, open or solved, age
 - [ ] A tickets list; a ticket stays open until someone marks it solved
-- [ ] *Turn AI off for them*: their messages are kept but run no turn and cost nothing
+- [ ] *Turn AI off for them*: moved forward to day I2
 - [ ] Tests: a complaint opens one ticket and alerts; a buyer with AI off runs no turn
 
 **Done when:** `scripts/check.sh` is green; in the dev chat, an angry message opens a ticket.

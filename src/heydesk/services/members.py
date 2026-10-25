@@ -14,11 +14,11 @@ import secrets
 from collections.abc import Callable
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, NotFound
-from heydesk.models import TeamEvent, User, Workspace
+from heydesk.models import Conversation, TeamEvent, User, Workspace
 from heydesk.services.billing import PLANS, count_moderators
 from heydesk.services.users import Principal, UserService
 
@@ -75,9 +75,15 @@ class MemberService:
         await self._send_invite(user, inviter_id)
 
     async def remove(self, ws: str, user_id: str) -> None:
-        """A moderator leaves the team, invited or joined. An owner can't be removed."""
+        """A moderator leaves the team, invited or joined, and their chats go back to
+        unassigned (I1). An owner can't be removed."""
         async with self.sessions() as s, s.begin():
             await s.delete(await self._moderator(s, ws, user_id))
+            await s.execute(
+                update(Conversation)
+                .where(Conversation.workspace_id == ws, Conversation.assigned_to == user_id)
+                .values(assigned_to=None)
+            )
 
     async def record(self, principal: Principal, action: str, target: str) -> None:
         assert principal.workspace_id is not None

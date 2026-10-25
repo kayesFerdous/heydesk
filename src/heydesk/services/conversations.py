@@ -7,19 +7,20 @@ from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.errors import (
     ConversationFull,
+    Forbidden,
     HeyDeskError,
     InvalidTransition,
     NotFound,
     UnreadablePhoto,
 )
-from heydesk.models import Conversation, Turn
+from heydesk.models import Conversation, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -28,6 +29,7 @@ from heydesk.services.calls import CallService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
+from heydesk.services.users import Principal
 from heydesk.services.visitors import VisitorService
 from heydesk.services.woo import WooService
 
@@ -230,11 +232,13 @@ class ConversationService:
         status: str | None = None,
         *,
         channel: str | None = None,
+        assigned_to: str | None = None,
+        unassigned: bool = False,
         limit: int = 100,
         before: datetime | None = None,
     ) -> list[Conversation]:
         """Newest activity first, a page at a time: the next page is `before=` the last
-        one's `updated_at`."""
+        one's `updated_at`. `assigned_to` a team member, or `unassigned` (I1)."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
@@ -245,6 +249,10 @@ class ConversationService:
             query = query.where(Conversation.status == status)
         if channel:
             query = query.where(Conversation.channel == channel)
+        if assigned_to:
+            query = query.where(Conversation.assigned_to == assigned_to)
+        if unassigned:
+            query = query.where(Conversation.assigned_to.is_(None))
         if before:
             query = query.where(Conversation.updated_at < before)
         async with self.sessions() as s:
@@ -253,6 +261,26 @@ class ConversationService:
     async def get(self, ws: str, conversation_id: str) -> Conversation:
         async with self.sessions() as s:
             return await self._get_by_id(s, ws, conversation_id)
+
+    async def assign(
+        self, ws: str, conversation_id: str, by: Principal, user_id: str | None
+    ) -> Conversation:
+        """Who has the chat (I1): the owner (or an admin) gives any chat to anyone on the team,
+        or no one; a moderator takes an unassigned one for themself and gives back their own."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            if by.role == "moderator":
+                takes = user_id == by.user_id and conv.assigned_to in (None, by.user_id)
+                gives_back = user_id is None and conv.assigned_to in (None, by.user_id)
+                if not (takes or gives_back):
+                    raise Forbidden("Only the owner can give a chat to someone else.")
+            if user_id is not None:
+                member = select(User.id).where(User.id == user_id, User.workspace_id == ws)
+                if await s.scalar(member) is None:
+                    raise NotFound("There's no such member on your team.")
+            conv.assigned_to = user_id
+        log.info("assigned", extra={"conversation_id": conv.id})
+        return conv
 
     async def hand_back(self, ws: str, conversation_id: str) -> Conversation:
         """The owner dealt with a hand-off from the console: the agent answers again, as
@@ -275,7 +303,7 @@ class ConversationService:
         async with aclosing(run_turn(turn, self.runtime)) as events:
             async for event in events:
                 if isinstance(event, TurnEnded):
-                    await self._save(conv, event)
+                    await self._save(conv, event, agent.config.handoff.auto_assign)
                     await self._alert(conv, event)
                     if event.alerts:  # a new shop order: its buyer may get a call (D89)
                         await self.calls.after_turn(agent, conv.id)
@@ -299,13 +327,15 @@ class ConversationService:
         if ended.handed_off:
             await self.team.alert(conv, handoff_alert([*conv.messages, *ended.added]))
 
-    async def _save(self, conv: Conversation, ended: TurnEnded) -> None:
+    async def _save(self, conv: Conversation, ended: TurnEnded, auto_assign: bool = False) -> None:
         async with self.sessions() as s, s.begin():
             saved = await self._get_by_id(s, conv.workspace_id, conv.id)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
             if ended.handed_off:
                 saved.status = "needs_human"
+                if auto_assign and saved.assigned_to is None:
+                    saved.assigned_to = await least_busy(s, conv.workspace_id)
             saved.updated_at = self.now()
             if not ended.trace.get("to_team"):  # a message to the team isn't an agent turn
                 s.add(self._turn(conv, ended))
@@ -366,3 +396,23 @@ class ConversationService:
         if conv is None:
             raise NotFound("There's no such conversation. Start a new one.")
         return conv
+
+
+async def least_busy(s: AsyncSession, ws: str) -> str | None:
+    """The joined moderator with the fewest open chats (waiting for a person, or with the team),
+    the longest on the team first when it's even; None with no moderator (I1)."""
+    open_chats = (
+        select(func.count())
+        .select_from(Conversation)
+        .where(
+            Conversation.workspace_id == ws,
+            Conversation.assigned_to == User.id,
+            Conversation.status.in_(("needs_human", "human")),
+        )
+        .correlate(User)
+        .scalar_subquery()
+    )
+    moderators = select(User.id).where(
+        User.workspace_id == ws, User.role == "moderator", User.email_verified_at.is_not(None)
+    )
+    return await s.scalar(moderators.order_by(open_chats, User.created_at).limit(1))

@@ -28,6 +28,10 @@ class Conversation(Base):
     name: Mapped[str | None] = mapped_column(String(100), default=None)
     # active, needs_human (the agent handed off), or human (the team is answering: D43)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # the team member who has it (I1), or None: unassigned
+    assigned_to: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, default=None
+    )
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
     )  # what a desk keeps between turns: the cart

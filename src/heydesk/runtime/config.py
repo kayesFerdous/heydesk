@@ -18,6 +18,8 @@ class Handoff(BaseModel):
     message: str = "Let me get a member of our team to help you."
     phone: str | None = None
     email: str | None = None
+    # a hand-off goes to the joined moderator with the fewest open chats (I1)
+    auto_assign: bool = False
 
 
 class Widget(BaseModel):

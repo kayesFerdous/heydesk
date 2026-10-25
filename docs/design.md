@@ -420,7 +420,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
@@ -484,7 +484,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | GET/PUT/DELETE, POST | `/api/agent/courier`, `/api/agent/courier/sync` | The shop's linked Steadfast or Pathao: its kind, store and problem; link it after checking the keys; unlink it; book and follow now (D90, D113) |
@@ -530,7 +530,19 @@ verifies them. One account per email, so an email that has one can't be added. R
 moderator deletes the user, and the database is asked on every one of their requests, so
 they're out at once. Every write an owner or moderator makes, once the route succeeds, is a
 `team_events` row (the route and the ids in its path; the dependency writes it after the
-route returns), which the owner reads at `/api/team/activity`. An **admin** runs the platform and belongs to
+route returns), which the owner reads at `/api/team/activity`.
+
+**Who has a chat (D126).** A conversation can have one team member (`assigned_to`). The owner
+(or an admin inside the business) gives any chat to anyone on the team, or to no one. A
+moderator can only *Take* an unassigned chat for themself and *Give back* their own; giving one
+to someone else, or taking a colleague's, is a 403, so the owner is the one who moves chats
+between people. With `handoff.auto_assign` on (off at first), a hand-off with no one on it goes
+to the joined moderator with the fewest open chats (`needs_human` or `human`), the longest on
+the team first when it's even; with no joined moderator it stays unassigned. Having a chat
+doesn't stop the agent: taking over is still a reply from the team (D43). Each move is a
+`team_events` row like any write.
+
+An **admin** runs the platform and belongs to
 none: made only by `uv run heydesk create-admin EMAIL [PASSWORD]`, never by signup.
 The command line also lists admins (`admins`), deletes one with no audit entries
 (`delete-admin EMAIL`), and replaces a forgotten password, an admin's or an owner's
