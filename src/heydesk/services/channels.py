@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
 
+PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
+
 
 def first_photo(message: dict[str, Any]) -> str | None:
     """The first image's URL in a Messenger message. A sticker is an image too, so it's not."""
@@ -492,29 +494,54 @@ class ChannelService:
     async def _send_photos(
         self, channel: Channel, chat_id: str, photos: list[dict[str, str]], key: str
     ) -> None:
-        """The products `show_photos` chose. On Messenger one carousel and on WhatsApp a message
-        each, which Meta fetches from us, so their URLs are made whole (D62, D103); on Telegram each photo is uploaded, with its
-        name and price as the caption (D63). Each has an Order button, whose tap says
-        "Order [code]" (D99), and a link to the product's page (D121). If it fails, the text
-        still goes."""
-        orders = [f"Order [{p['code']}]" for p in photos]
-        orders = [o if len(o.encode()) <= 64 else "" for o in orders]  # Telegram's data limit
-        pages = [self.product_page(key, p["code"], channel.kind) for p in photos]
+        """The products a tool showed, as cards side by side (D125). Messenger: one carousel of
+        up to 10, whose photos Meta fetches from us, so their URLs are made whole (D62, D103).
+        Telegram and WhatsApp send a message a photo, so the first 3 with a photo go as photos
+        (Telegram uploads them, D63) and the rest as one message to tap: a list on WhatsApp,
+        a button each on Telegram. Each Order says "Order [code]" (D99); a card links the
+        product's page (D121) and its first video (D125). If it fails, the text still goes."""
+        cards = [
+            {
+                **p,
+                "choice": f"Order [{p['code']}]",
+                "page": self.product_page(key, p["code"], channel.kind),
+            }
+            for p in photos
+        ]
+        for c in cards:
+            if channel.kind == TELEGRAM and len(c["choice"].encode()) > 64:  # its data limit
+                c["choice"] = ""
+            if c["url"] and channel.kind != TELEGRAM:
+                c["url"] = self.whole(c["url"])
+        sent = [c for c in cards if c["url"]][:PHOTOS_SENT]
+        rest = [c for c in cards if c not in sent and c["choice"]]
         try:
-            if channel.kind in (MESSENGER, WHATSAPP):
-                cards = [
-                    {**p, "url": self.whole(p["url"]), "choice": order, "page": page}
-                    for p, order, page in zip(photos, orders, pages, strict=True)
-                ]
-                if channel.kind == MESSENGER:
-                    await self.messenger.send_cards(channel.token, chat_id, cards)
-                else:
-                    await self.whatsapp.send_cards(channel.token, channel.address, chat_id, cards)
-                return
-            for p, order, page in zip(photos, orders, pages, strict=True):
-                jpeg = await self.photos.read(p["url"])
-                caption = f"{p['name']} · {p['price']}"
-                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order, page)
+            if channel.kind == MESSENGER:
+                await self.messenger.send_cards(channel.token, chat_id, cards)
+            elif channel.kind == WHATSAPP:
+                if sent:
+                    await self.whatsapp.send_cards(channel.token, channel.address, chat_id, sent)
+                if rest:  # a tapped row's id is its words
+                    rows = [
+                        {"id": c["choice"], "title": c["name"][:24], "description": c["price"]}
+                        for c in rest
+                    ]
+                    await self.whatsapp.send_list(
+                        channel.token, channel.address, chat_id, "More to order:", rows
+                    )
+            else:
+                for c in sent:
+                    jpeg = await self.photos.read(c["url"])
+                    caption = f"{c['name']} · {c['price']}"
+                    await self.telegram.send_photo(
+                        channel.token, chat_id, jpeg, caption, c["choice"], c["page"], c["video"]
+                    )
+                if rest:
+                    keys = [
+                        {"title": f"🛒 {c['name']} · {c['price']}", "choice": c["choice"]}
+                        for c in rest
+                    ]
+                    await self.telegram.send_card(channel.token, chat_id, "More to order:", keys)
         except (
             MessengerUnavailable,
             TelegramUnavailable,

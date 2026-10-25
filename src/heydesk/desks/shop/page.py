@@ -56,6 +56,9 @@ def product_page(product: Product, shop: str, currency: str, back: str) -> str:
                 body += f'<p>{label} in stock:</p><p class="chips">{chips}</p>'
     if product.description:
         body += f"<p>{e(product.description)}</p>"
+    for n, link in enumerate(product.videos, 1):  # links out, so nothing loads here (D125)
+        name = "Watch the video" if len(product.videos) == 1 else f"Watch video {n}"
+        body += f'<p><a href="{e(link)}" target="_blank" rel="noopener">▶ {name}</a></p>'
     order = f"Order [{product.code}]"
     body += f'<div class="order">To order, go back to the chat and say <b>{e(order)}</b>.'
     if back:

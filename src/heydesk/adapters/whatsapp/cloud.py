@@ -60,6 +60,8 @@ class WhatsAppCloud:
             caption = f"{c['name']} · {c['price']}"
             if c.get("page"):  # a product's page (D121): WhatsApp opens a link in a message
                 caption += f"\nDetails: {c['page']}"
+            if c.get("video"):  # its first video (D125)
+                caption += f"\nVideo: {c['video']}"
             if not c.get("choice"):
                 image = {"link": c["url"], "caption": caption}
                 await self._send(token, phone_id, to, type="image", image=image)

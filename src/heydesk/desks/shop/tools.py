@@ -16,6 +16,7 @@ from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
     CANCELLABLE,
+    CARDS,
     CHANGEABLE,
     LOW_STOCK,
     OWN,
@@ -52,8 +53,8 @@ class FindProductInput(BaseModel):
 
 async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
     """For a shop with too many products to list in the prompt (D80): the closest ones, as
-    the prompt's own lines. The first 3 with a photo are shown as cards, as `show_photos`
-    shows them, except on a call (D102)."""
+    the prompt's own lines. Each is shown as a card, side by side, except on a call (D102,
+    D125)."""
     found = find_products(await ctx.store.products(), args.query)
     if not found:
         return fail(
@@ -62,20 +63,22 @@ async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
         )
     currency = ctx.agent.currency
     data: dict[str, Any] = {"products": [p.line(currency) for p in found]}
-    shown = [] if ctx.channel == "voice" else [p for p in found if p.photos][:3]
-    if shown:
-        data["shown"] = [p.name for p in shown]  # their photos are on the screen already
-    return ToolResult(ok=True, data=data, photos=photo_cards(shown, currency) or None)
+    if ctx.channel == "voice":
+        return ToolResult(ok=True, data=data)
+    data["shown"] = [p.name for p in found]  # their cards are on the screen already
+    return ToolResult(ok=True, data=data, photos=product_cards(found, currency))
 
 
-def photo_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
-    """Each product's first photo, name and price, for the visitor's screen (D57)."""
+def product_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
+    """Each product's card for the visitor's screen: its first photo (or none), name, price and
+    first video (D57, D125). A tap on its Order button says "Order [code]" (D99)."""
     return [
         {
-            "code": p.code,  # a card's Order button on Telegram and Messenger (D99)
+            "code": p.code,
             "name": p.name,
             "price": money(p.price, currency),
-            "url": p.photos[0],
+            "url": p.photos[0] if p.photos else "",
+            "video": p.videos[0] if p.videos else "",
         }
         for p in products
     ]
@@ -86,7 +89,7 @@ FIND_PRODUCT = Tool(
     description=(
         "Look up the shop's products by a name, a group, a colour or what it's for. Returns up "
         "to 8, each with its code, price, sizes, colours and stock, and shows the visitor "
-        "photos of the first few (`shown`). Use it when the Products section says to."
+        "their cards (`shown`). Use it when the Products section says to."
     ),
     input_model=FindProductInput,
     run=find_product,
@@ -200,7 +203,30 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     elif subtotal and config.free_delivery_over:
         # Said outright: with nothing said, Maira made up a nudge with no amount (13 Oct)
         data["delivery"] = "free"
-    return ToolResult(ok=True, data=data, state={"cart": {"lines": lines, "subtotal": subtotal}})
+    state: dict[str, Any] = {"cart": {"lines": lines, "subtotal": subtotal}}
+    offer = _goes_with(products, lines, ctx.state.get("offered") or [])
+    if offer:  # each is offered once in a chat (D125)
+        data["goes_with"] = [p.line(currency) for p in offer]
+        state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
+    return ToolResult(ok=True, data=data, state=state)
+
+
+def _goes_with(
+    products: dict[str, Product], lines: list[dict[str, Any]], offered: list[str]
+) -> list[Product]:
+    """What goes with the cart's products (`Product.goes_with`, D125): the ones not in it, not
+    offered before and not sold out; at most 2."""
+    in_cart = {line["code"] for line in lines}
+    codes = dict.fromkeys(code for line in lines for code in products[line["code"]].goes_with)
+    fits = [
+        products[code]
+        for code in codes
+        if code in products
+        and code not in in_cart
+        and code not in offered
+        and not products[code].sold_out()
+    ]
+    return fits[:2]
 
 
 UPDATE_CART = Tool(
@@ -209,7 +235,8 @@ UPDATE_CART = Tool(
         "Set the visitor's whole order: every product with its quantity, and its size and "
         "colour when it has them. Call it after every change. Checks the sizes, colours and "
         "stock, and returns each line and the subtotal; tell the visitor them exactly as given. "
-        "It may also say how much more would make the delivery free, or that it's free."
+        "It may also say how much more would make the delivery free, or that it's free, and "
+        "what goes with it (`goes_with`)."
     ),
     input_model=UpdateCartInput,
     run=update_cart,
@@ -793,12 +820,15 @@ REQUEST_EXCHANGE = Tool(
 
 class ShowPhotosInput(BaseModel):
     products: list[str] = Field(
-        min_length=1, max_length=3, description="Up to 3 product codes, shown in [brackets]"
+        min_length=1,
+        max_length=CARDS,
+        description=f"Up to {CARDS} product codes, shown in [brackets]",
     )
 
 
 async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
-    """Each product's first photo, with its name and price, on the visitor's screen (D57)."""
+    """Each product's card, side by side, on the visitor's screen: its first photo, name and
+    price (D57, D125)."""
     if ctx.channel == "voice":  # Messenger and Telegram send them as photos (D62, D63)
         return fail("Photos can't be shown here. Describe the product from its line instead.")
     products = {p.code: p for p in await ctx.store.products()}
@@ -806,21 +836,22 @@ async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
     if unknown:
         return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
     chosen = [products[code] for code in dict.fromkeys(args.products)]
-    shown = [p for p in chosen if p.photos]
-    data: dict[str, Any] = {"shown": [p.name for p in shown]}
-    if len(shown) < len(chosen):
+    data: dict[str, Any] = {"shown": [p.name for p in chosen]}
+    if any(not p.photos for p in chosen):
         data["no_photo"] = [p.name for p in chosen if not p.photos]
         data["next"] = "Describe the ones with no photo from their line."
     else:
         data["next"] = "They can see the photos now. Ask if it's what they're looking for."
-    return ToolResult(ok=True, data=data, photos=photo_cards(shown, ctx.agent.currency) or None)
+    if any(p.videos for p in chosen):  # the card has a Video button
+        data["video"] = [p.name for p in chosen if p.videos]
+    return ToolResult(ok=True, data=data, photos=product_cards(chosen, ctx.agent.currency))
 
 
 SHOW_PHOTOS = Tool(
     name="show_photos",
     description=(
-        "Show the visitor photos of up to 3 products, with their names and prices: to ask if a "
-        "photo they sent is one of them, or when they ask to see a product."
+        f"Show the visitor up to {CARDS} products side by side, each with its photo, name and "
+        "price: to ask if a photo they sent is one of them, or when they ask to see a product."
     ),
     input_model=ShowPhotosInput,
     run=show_photos,

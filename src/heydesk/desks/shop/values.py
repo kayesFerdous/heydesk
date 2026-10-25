@@ -18,6 +18,8 @@ LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and th
 OWN = -1  # `Product.counter`: the product's own stock, not a variant's
 LONG_LIST = 60  # more products than this, and the prompt lists the groups, not each one (D80)
 FOUND = 8  # the most products find_product returns
+CARDS = 10  # the most product cards in a row: Messenger's carousel holds 10 (D125)
+KEPT = ("photos", "videos", "goes_with")  # what an import leaves when its product has none
 
 
 class Variant(BaseModel):
@@ -52,6 +54,18 @@ class Product(BaseModel):
     # Up to 3 photo URLs, from `POST /api/products/photos`; the first is the one the agent shows.
     # Read from a list (a CSV, a sheet, Woo) they're its links, until the store takes them (D102)
     photos: list[str] = Field(default=[], max_length=3)
+    # Up to 3 video links (a YouTube or Facebook video, a how-to); its card links the first (D125)
+    videos: list[str] = Field(default=[], max_length=3)
+    # Up to 3 codes of products that go with it; update_cart offers them once (D125)
+    goes_with: list[str] = Field(default=[], max_length=3)
+
+    @field_validator("videos")
+    @classmethod
+    def _links(cls, videos: list[str]) -> list[str]:
+        for link in videos:
+            if not link.startswith(("http://", "https://")):
+                raise ValueError(f"{link!r} isn't a link: it starts with https://")
+        return videos
 
     @model_validator(mode="after")
     def _variants_fit(self) -> Self:
@@ -469,13 +483,24 @@ PRODUCT_COLUMNS = [
         about="links to its photos, up to 3: https://…jpg",
         aliases=["photo", "image", "images", "picture", "pic", "image url", "ছবি"],
     ),
+    csv_import.Column(
+        name="videos",
+        about="links to its videos, up to 3: https://youtu.be/…",
+        aliases=["video", "youtube", "video link", "ভিডিও"],
+    ),
+    csv_import.Column(
+        name="goes_with",
+        about='codes of up to 3 products that go with it: "pajama-white; tupi"',
+        aliases=["goes with", "pair with", "pairs with", "related", "upsell", "add on"],
+    ),
 ]
 
 
 def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
     """Columns: name, price, and optionally was_price (before a sale), category, description,
     sizes ("M; L; XL"), colours, stock (a number, "M: 5; L White: 0" per size and colour, or
-    empty: not counted), code, photos (links, D102). `mapping` names them in the file (D53)."""
+    empty: not counted), code, photos (links, D102), videos (links) and goes_with (codes, D125).
+    `mapping` names them in the file (D53)."""
 
     def row(cells: dict[str, str]) -> Product:
         sizes = csv_import.items(cells.get("sizes", ""))
@@ -495,6 +520,8 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
                 "stock": stock,
                 "variants": variants,
                 "photos": links(cells.get("photos", "")),
+                "videos": links(cells.get("videos", "")),
+                "goes_with": csv_import.items(cells.get("goes_with", ""))[:3],
             }
         )
 
@@ -502,7 +529,8 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
 
 
 def links(text: str) -> list[str]:
-    """A photos cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|" (D102)."""
+    """A photos (or videos) cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|"
+    (D102)."""
     found = [
         part for part in re.split(r"[\s,;|]+", text) if part.startswith(("http://", "https://"))
     ]
@@ -625,7 +653,8 @@ def added(ours: list[Product], found: list[Product], gone: set[str] | None = Non
     """Our list with a source's products in it (D120): each found product updates the one it
     is (the same code, or else the only one with the same name) in its place, or joins the
     end. Ours stay, except the `gone` codes: a linked list's products it doesn't have any more.
-    A found product with no photos keeps the ones it has here."""
+    A found product with no photos, videos or goes_with keeps the ones it has here (an owner
+    adds them by hand, D125)."""
     kept = [p for p in ours if p.code not in (gone or set())]
     free = set(range(len(kept)))  # ours no found product has updated yet
     for p in found:
@@ -636,7 +665,8 @@ def added(ours: list[Product], found: list[Product], gone: set[str] | None = Non
             kept.append(p)
             continue
         i = same[0]
-        kept[i] = p if p.photos else p.model_copy(update={"photos": kept[i].photos})
+        empty = [field for field in KEPT if not getattr(p, field)]
+        kept[i] = p.model_copy(update={field: getattr(kept[i], field) for field in empty})
         free.discard(i)
     return kept
 

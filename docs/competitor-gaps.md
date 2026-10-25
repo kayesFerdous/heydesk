@@ -156,6 +156,7 @@ Keep these in the pitch.
   - *Who has it:* LazyChat and Revora (recommendations), Sellzy (upsell).
   - *Smallest build:* an optional `goes_with` list of codes on a product. `update_cart` returns
     it, and the prompt offers it once. Don't add a recommendation engine.
+  - 25 Oct, D125: built (day R2); the live check on a real Page is next.
 - [ ] **G17 A customer's history** · M
   - *Who has it:* ARA (Customer 360), ChatBD (contacts and tags).
   - *Smallest build:* a buyers list grouped by mobile, with their orders, channels and
@@ -208,6 +209,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
   - `find_product` returns a `products` card: up to 10, each a photo, name, price and two
     buttons, *I want this* (sends the product's code as the tap's text) and *Details*.
     Messenger generic template carousel, WhatsApp list, Telegram one photo each, web chat a row.
+  - 25 Oct, D125: built (day R2): up to 10; Telegram and WhatsApp send the first 3 photos,
+    then one message to tap. The live check on a real Page is next.
 - [ ] **G26 A product page and an order page** · M
   - `/p/<code>`: photos, price, sizes, delivery time, and *Buy now* → a short order form →
     saved through the same `Confirmed[T]` path (the form's submit is the yes). The receipt
@@ -217,6 +220,7 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     `/o/<id>` are next (Day R3).
 - [ ] **G27 Videos and more photos per product** · S
   - `videos` (links) on a product; `show_photos` can send them. A how-to video is just a link.
+  - 25 Oct, D125: built (day R2); the live check on a real Page is next.
 - [ ] **G16** (suggest a second product) moves up here.
 
 ### Then: orders the team runs

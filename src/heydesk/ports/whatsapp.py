@@ -29,7 +29,8 @@ class WhatsAppApi(Protocol):
         self, token: str, phone_id: str, to: str, cards: list[dict[str, str]]
     ) -> None:
         """Products, one message each: `{name, price, url}`, the photo's full URL, and maybe
-        `choice`: an Order button whose tap comes back with it (D99)."""
+        `choice`: an Order button whose tap comes back with it (D99). Its `page` and `video`
+        are links in the caption (D121, D125)."""
         ...
 
     async def send_link(

@@ -130,6 +130,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
         "name": "Cotton Kurti",
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
+        "video": "",
         "choice": "Order [kurti]",  # its button's tap (D99)
         "page": "https://heydesk.test/p/dev-shop/kurti?from=messenger",  # its page (D121)
     }

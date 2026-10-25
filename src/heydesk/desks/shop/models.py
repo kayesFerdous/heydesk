@@ -28,6 +28,8 @@ class ProductRow(Base):
     stock: Mapped[int | None]  # None: not counted
     variants: Mapped[list[Any]] = mapped_column(JSON, default=list)  # {size, colour, stock} (D56)
     photos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # photo URLs (D57)
+    videos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # video links (D125)
+    goes_with: Mapped[list[Any]] = mapped_column(JSON, default=list)  # product codes (D125)
     position: Mapped[int] = mapped_column(default=0)  # the shop's order, for the prompt
 
 

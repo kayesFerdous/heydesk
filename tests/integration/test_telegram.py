@@ -237,3 +237,27 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
     assert sent(app) == [
         (str(CHAT), '(fake model) You said: (replying to: "Beef Bhuna") is it spicy?')
     ]
+
+
+async def test_more_cards_than_photos_are_one_message_to_tap(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """A photo each for the first 3 with one, the rest one message with an Order each (D125)."""
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await kurti_with_photo(client)
+    path, secret = await connect(app, client)
+    fake = services.channels.telegram
+    llm = services.conversations.runtime.llm
+    codes = ["kurti", "panjabi-cotton", "kids-panjabi"]
+    llm.script = [ToolCall("c1", "show_photos", {"products": codes}), "Which one?"]
+
+    await send(client, path, secret, message("panjabi dekhan"))
+
+    assert fake.photos == [(str(CHAT), "Cotton Kurti · ৳950")]
+    [(_, text, keys)] = fake.cards
+    assert text == "More to order:"
+    assert keys == [
+        {"title": "🛒 Cotton Panjabi · ৳1,850", "choice": "Order [panjabi-cotton]"},
+        {"title": "🛒 Kids Panjabi · ৳890", "choice": "Order [kids-panjabi]"},
+    ]

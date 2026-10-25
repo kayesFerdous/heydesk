@@ -93,23 +93,32 @@ const handle = (event, data, reply) => {
       for (const how of [data.phone, data.email].filter(Boolean)) card.append("\n" + how);
       break;
     }
-    case "photos": {  // products a tool showed (D57): a card each, photo, name and price
+    case "photos": {  // products a tool showed (D57): a card each in a row (D125)
       const row = add("photos", "");
       for (const item of data.items) {
         const card = el("div", "", "photo");
         const page = document.createElement("a");  // opens the product's page (D121)
         page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web`;
         page.target = "_blank";
-        const img = document.createElement("img");
-        img.src = item.url;
-        img.alt = item.name;
-        page.append(img, el("div", `${item.name} · ${item.price}`));
+        if (item.url) {  // a product with no photo is a card with no picture
+          const img = document.createElement("img");
+          img.src = item.url;
+          img.alt = item.name;
+          page.append(img);
+        }
+        page.append(el("div", `${item.name} · ${item.price}`));
         // Order this says "Order [code]", as the button on Messenger does (D123)
         const taps = el("div", "", "taps");
         const details = el("a", "Details");
         details.href = page.href;
         details.target = "_blank";
         taps.append(button("Order this", () => say(`Order [${item.code}]`)), details);
+        if (item.video) {  // its first video (D125)
+          const video = el("a", "Video");
+          video.href = item.video;
+          video.target = "_blank";
+          taps.append(video);
+        }
         card.append(page, taps);
         row.append(card);
       }

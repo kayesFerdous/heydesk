@@ -9,6 +9,7 @@ class FakeTelegram:
         self.sent: list[tuple[str, str]] = []  # (chat_id, text), in order
         self.photos: list[tuple[str, str]] = []  # (chat_id, caption) of each photo sent
         self.pages: list[tuple[str, str]] = []  # (chat_id, url) of each photo's Details button
+        self.videos: list[tuple[str, str]] = []  # (chat_id, url) of each photo's Video button
         self.choices: list[tuple[str, list[str]]] = []  # (chat_id, buttons) of a message or photo
         self.cards: list[tuple[str, str, list[dict[str, str]]]] = []  # (chat_id, html, buttons)
         self.answered: list[str] = []  # the callback queries answered
@@ -38,13 +39,22 @@ class FakeTelegram:
         self.cards.append((chat_id, html, buttons))
 
     async def send_photo(
-        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = "", page: str = ""
+        self,
+        token: str,
+        chat_id: str,
+        jpeg: bytes,
+        caption: str,
+        choice: str = "",
+        page: str = "",
+        video: str = "",
     ) -> None:
         self.photos.append((chat_id, caption))
         if choice:
             self.choices.append((chat_id, [choice]))
         if page:
             self.pages.append((chat_id, page))
+        if video:
+            self.videos.append((chat_id, video))
 
     async def answer_callback(self, token: str, callback_id: str) -> None:
         self.answered.append(callback_id)

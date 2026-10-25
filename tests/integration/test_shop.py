@@ -40,6 +40,7 @@ from heydesk.desks.shop.values import (
     PRODUCT_COLUMNS,
     STATUS_WORDS,
     Product,
+    added,
     mobile,
     products_from_csv,
     stock_cell,
@@ -749,7 +750,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
         for f in res.text.split("\n\n")
         if f.startswith("event: photos")
     )
-    item = {"code": "kurti", "name": "Cotton Kurti", "price": "৳950", "url": url}
+    item = {"code": "kurti", "name": "Cotton Kurti", "price": "৳950", "url": url, "video": ""}
     assert shown == {"items": [item]}
 
     conv_id = res.text.split('"conversation_id": "')[1].split('"')[0]
@@ -812,14 +813,15 @@ async def test_only_the_shop_takes_photos_and_only_real_ones(
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "unreadable_photo"
 
 
-async def test_show_photos_works_only_on_the_web_chat(world: World) -> None:
+async def test_show_photos_works_everywhere_but_a_call(world: World) -> None:
     agent = await world.agent("shop")
     store = world.store(agent)
     args = ShowPhotosInput(products=["kurti"])
     on_call = await show_photos(make_ctx(store, agent=agent.config, channel="voice"), args)
     assert not on_call.ok and "can't be shown here" in on_call.data["error"]
     no_photo = await show_photos(make_ctx(store, agent=agent.config), args)
-    assert (no_photo.photos, no_photo.data["no_photo"]) == (None, ["Cotton Kurti"])
+    assert no_photo.photos and no_photo.photos[0]["url"] == ""  # a card with no picture (D125)
+    assert no_photo.data["no_photo"] == ["Cotton Kurti"]
 
 
 async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world: World) -> None:
@@ -941,8 +943,8 @@ async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: Worl
     assert fetched.count("https://cdn.example.com/gone.jpg") == 2  # tried again
 
 
-async def test_find_product_shows_photos_of_what_it_found(world: World) -> None:
-    """A search shows the first products it found that have a photo, except on a call (D102)."""
+async def test_find_product_shows_a_card_for_each_it_found(world: World) -> None:
+    """A search shows its products as cards, photo or not, except on a call (D102, D125)."""
     agent = await world.agent("shop")
     store = world.store(agent)
     url = "/media/dev/products/" + "b" * 32 + ".jpg"
@@ -957,7 +959,9 @@ async def test_find_product_shows_photos_of_what_it_found(world: World) -> None:
 
     found = await find_product(ctx, FindProductInput(query="silk panjabi"))
     assert found.photos and found.photos[0]["url"] == url
-    assert found.photos[0]["code"] == "panjabi-silk" and found.data["shown"] == ["Silk Panjabi"]
+    assert found.photos[0]["code"] == "panjabi-silk" and found.data["shown"][0] == "Silk Panjabi"
+    assert [c["name"] for c in found.photos] == found.data["shown"]  # the rest have no photo
+    assert all(c["url"] == "" for c in found.photos[1:])
     on_a_call = await find_product(
         make_ctx(store, agent=agent.config, channel="voice"), FindProductInput(query="silk")
     )
@@ -1021,3 +1025,55 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
     assert cancelled and cancelled["data"]["steps"] == [  # shown plainly
         {"label": "Cancelled", "done": True, "current": True}
     ]
+
+
+async def test_the_cart_offers_what_goes_with_it_once(world: World) -> None:
+    """`goes_with` (D125): one not in the cart, not sold out and in the shop, offered once."""
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    pairs = ["jamdani-saree", "lungi", "panjabi-cotton"]  # sold out, unknown, one to offer
+    await store.replace_products(
+        [
+            p.model_copy(update={"goes_with": pairs}) if p.code == "kurti" else p
+            for p in await store.products()
+        ]
+    )
+    ctx = make_ctx(store, agent=agent.config)
+
+    first = await update_cart(ctx, cart(KURTI))
+    [offer] = first.data["goes_with"]
+    assert offer.startswith("- Cotton Panjabi [panjabi-cotton] ৳1,850")
+    assert first.state and first.state["offered"] == ["panjabi-cotton"]
+    again = await update_cart(make_ctx(store, agent=agent.config, state=first.state), cart(KURTI))
+    assert "goes_with" not in again.data  # offered already
+    with_it = await update_cart(ctx, cart(KURTI, PANJABIS))
+    assert "goes_with" not in with_it.data  # in the cart already
+
+
+def test_videos_and_goes_with_come_from_a_csv_and_stay_when_a_file_has_none() -> None:
+    text = "Name,Price,Videos,Goes_with\nCotton Panjabi,1850,https://youtu.be/abc x,pajama; tupi\n"
+    [found] = products_from_csv(text)
+    assert found.videos == ["https://youtu.be/abc"] and found.goes_with == ["pajama", "tupi"]
+
+    [kept] = added([found], products_from_csv("Name,Price\nCotton Panjabi,1900\n"))
+    assert (kept.price, kept.videos, kept.goes_with) == (190000, found.videos, found.goes_with)
+    with pytest.raises(ValueError, match="isn't a link"):
+        Product(code="x", name="X", price=1, videos=["youtu.be/abc"])
+
+
+async def test_a_card_and_the_product_page_link_its_video(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    products = (await client.get("/api/products")).json()
+    next(p for p in products if p["code"] == "kurti")["videos"] = ["https://youtu.be/kurti"]
+    assert (await client.put("/api/products", json=products)).status_code == 200
+
+    page = await client.get("/p/dev-shop/kurti?from=web")
+    assert 'href="https://youtu.be/kurti"' in page.text and "Watch the video" in page.text
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID, "shop")
+    shown = await show_photos(
+        make_ctx(store, agent=agent.config), ShowPhotosInput(products=["kurti"])
+    )
+    assert shown.photos and shown.photos[0]["video"] == "https://youtu.be/kurti"
+    assert shown.data["video"] == ["Cotton Kurti"]

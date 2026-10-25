@@ -121,6 +121,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
         "name": "Cotton Kurti",
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
+        "video": "",
         "choice": "Order [kurti]",
         "page": "https://heydesk.test/p/dev-shop/kurti?from=whatsapp",  # its page (D121)
     }
@@ -196,3 +197,20 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
         FROM,
         '(fake model) You said: (replying to: "Beef Bhuna") is it spicy?',
     )
+
+
+async def test_more_cards_than_photos_are_one_list(app: FastAPI, client: AsyncClient) -> None:
+    """The cards with no photo (or past the first 3) are one list to tap (D125)."""
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await kurti_with_photo(client)
+    await connect(client)
+    llm = services.conversations.runtime.llm
+    codes = ["kurti", "panjabi-cotton"]
+    llm.script = [ToolCall("c1", "show_photos", {"products": codes}), "Which one?"]
+
+    await post(client, message("panjabi dekhan"))
+
+    assert [c["code"] for _, cards in fake(app).cards for c in cards] == ["kurti"]
+    row = {"id": "Order [panjabi-cotton]", "title": "Cotton Panjabi", "description": "৳1,850"}
+    assert fake(app).lists == [(FROM, "More to order:", [row])]

@@ -51,6 +51,8 @@ class MessengerGraph:
             if c.get("page"):  # a product's page (D121): the card's tap, and a button
                 element["default_action"] = {"type": "web_url", "url": c["page"]}
                 buttons.append({"type": "web_url", "title": "Details", "url": c["page"]})
+            if c.get("video"):  # its first video (D125)
+                buttons.append({"type": "web_url", "title": "▶ Video", "url": c["video"]})
             if buttons:
                 element["buttons"] = buttons
             elements.append(element)
