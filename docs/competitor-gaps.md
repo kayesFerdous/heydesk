@@ -269,6 +269,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
   - A spammer is handed off by `off_topic`; the owner taps *Turn AI off for them* and their
     messages are stored but never run (and never billed). Same switch as "Later: blocked
     visitors".
+  - 25 Oct, D127: built (day I2): Block, AI off, and a flood blocks by itself; the dev chat
+    check is next.
 
 ### Then: follow-ups and leads
 

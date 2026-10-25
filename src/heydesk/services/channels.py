@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.db import new_id
-from heydesk.errors import HeyDeskError, InvalidConfig, NotFound
+from heydesk.errors import HeyDeskError, InvalidConfig, NotFound, VisitorSilenced
 from heydesk.models import Channel
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
@@ -33,12 +33,12 @@ from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import MESSENGER, TELEGRAM, WHATSAPP, TeamService
+from heydesk.services.visitors import VisitorService
 
 log = logging.getLogger(__name__)
 
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
-
 PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
 
 
@@ -119,6 +119,7 @@ class ChannelService:
         sessions: async_sessionmaker[AsyncSession],
         agents: AgentService,
         conversations: ConversationService,
+        visitors: VisitorService,
         photos: PhotoService,
         team: TeamService,
         telegram: TelegramApi,
@@ -130,6 +131,7 @@ class ChannelService:
         self.sessions = sessions
         self.agents = agents
         self.conversations = conversations
+        self.visitors = visitors
         self.photos = photos
         self.team = team
         self.telegram = telegram
@@ -379,9 +381,13 @@ class ChannelService:
                 await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
                 await self._send(channel, chat_id, agent.greeting)
                 return
+            # every message counts toward a flood, even one batched into another's turn (I2)
+            await self.visitors.arrived(channel.workspace_id, f"{channel.kind}:{chat_id}")
             messages = await self._gather(channel, chat_id, message)
             if messages is not None:
                 await self._turn(channel, chat_id, messages)
+        except VisitorSilenced:  # blocked, and told once already (I2)
+            return
         except HeyDeskError as error:  # too long, or a suspended business: it says why
             await self._send(channel, chat_id, error.message)
         except Exception:

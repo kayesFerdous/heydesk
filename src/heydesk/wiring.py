@@ -222,6 +222,7 @@ def build_services(
             sessions,
             agents,
             conversations,
+            visitors,
             photos,
             team,
             telegram,

@@ -101,6 +101,11 @@ class VisitorLimited(HeyDeskError):
     code = "visitor_limited"
 
 
+class VisitorSilenced(VisitorLimited):
+    """A blocked visitor who was told already (I2): a messaging app sends nothing more. The web
+    chat still gets the 429 with the message, as it shows the error itself."""
+
+
 class TooFast(HeyDeskError):
     """Too many requests in a short time from one visitor, chat or address (D52)."""
 

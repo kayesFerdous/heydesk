@@ -7,8 +7,9 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
-from heydesk.models import Conversation, TeamMessage
+from heydesk.models import Conversation, TeamMessage, Visitor
 from heydesk.services import Services
+from heydesk.services.visitors import is_blocked, key_of
 
 router = APIRouter(tags=["conversations"])
 
@@ -44,8 +45,39 @@ class Line(BaseModel):
     photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url} (D57)
 
 
+class VisitorOut(BaseModel):
+    """What the team decided about one visitor (I2)."""
+
+    id: str
+    blocked: bool
+    blocked_why: str | None  # "team", "flooding" or "off_topic"
+    blocked_until: datetime | None  # None while blocked: until someone unblocks them
+    blocked_by: str | None  # the email of who pressed Block
+    ai_off: bool  # the team answers them by hand
+
+
+def visitor_out(visitor: Visitor, now: datetime) -> VisitorOut:
+    blocked = is_blocked(visitor, now)
+    return VisitorOut(
+        id=visitor.id,
+        blocked=blocked,
+        blocked_why=visitor.blocked_why if blocked else None,
+        blocked_until=visitor.blocked_until if blocked else None,
+        blocked_by=visitor.blocked_by if blocked else None,
+        ai_off=visitor.ai_off,
+    )
+
+
 class ConversationWithMessages(ConversationOut):
     messages: list[Line]  # what was said; tool calls and results left out
+    # who wrote it, for Block and AI off (I2); None for a chat from before visitors were known
+    visitor: VisitorOut | None = None
+
+
+class BlockedOut(VisitorOut):
+    conversation_id: str | None  # their latest chat
+    channel: str | None
+    name: str | None
 
 
 class MessageOut(BaseModel):
@@ -104,7 +136,13 @@ async def conversation(
         ):
             said.append(Line(role=m["role"], text=m["content"], photo=m.get("photo", "")))
     [head] = await out(services, ws, [conv])
-    return ConversationWithMessages(**head.model_dump(), messages=said)
+    found = (
+        await services.visitors.find(ws, key_of(conv.channel, conv.contact))
+        if conv.contact
+        else None
+    )
+    visitor = visitor_out(found, services.visitors.now()) if found else None
+    return ConversationWithMessages(**head.model_dump(), messages=said, visitor=visitor)
 
 
 class HandBackIn(BaseModel):
@@ -136,6 +174,42 @@ async def assign(
     conv = await services.conversations.assign(ws, conversation_id, principal, body.user_id)
     [assigned] = await out(services, ws, [conv])
     return assigned
+
+
+class VisitorIn(BaseModel):
+    blocked: bool | None = None  # true: no reply at all, until false
+    ai_off: bool | None = None  # true: their messages go to the team, with no AI turn
+
+
+@router.patch("/api/visitors/{visitor_id}")
+async def change_visitor(
+    visitor_id: str, body: VisitorIn, services: Svc, ws: Workspace, principal: User
+) -> VisitorOut:
+    """Block or unblock a visitor, or turn the AI off or on for them (I2); the owner or a
+    moderator. Their messages run no turn and cost nothing either way."""
+    emails = {u.id: u.email for u in await services.members.members(ws)}
+    by = emails.get(principal.user_id, "HeyDesk")  # an admin isn't on the team
+    visitor = await services.visitors.change(ws, visitor_id, by, body.blocked, body.ai_off)
+    return visitor_out(visitor, services.visitors.now())
+
+
+@router.get("/api/visitors/blocked")
+async def blocked(services: Svc, ws: Workspace) -> list[BlockedOut]:
+    """Who is blocked now, by the team, for flooding or for chatting off topic, with their
+    latest chat; the newest block first."""
+    now = services.visitors.now()
+    found = []
+    for v in await services.visitors.blocked(ws):
+        conv = await services.conversations.of_visitor(ws, v.key)
+        found.append(
+            BlockedOut(
+                **visitor_out(v, now).model_dump(),
+                conversation_id=conv.id if conv else None,
+                channel=conv.channel if conv else None,
+                name=conv.name if conv else None,
+            )
+        )
+    return found
 
 
 @router.get("/api/messages")

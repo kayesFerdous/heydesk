@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     WORKSPACE_DAILY_TURNS: int = 500  # all of a business's visitors together
     OFF_TOPIC_STRIKES: int = 5  # off-topic turns in a row before a visitor is blocked
     BLOCK_HOURS: int = 24
+    FLOOD_MESSAGES: int = 20  # messages in a minute on a messaging app that block a visitor (I2)
 
     SHEET_SYNC_MINUTES: float = 5  # how often a linked Google Sheet is read again (D58)
     # how often a linked WooCommerce store is synced when it has no webhooks (D75, D78)

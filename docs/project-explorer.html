@@ -567,9 +567,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "VisitorService",
    "type": "service",
    "file": "src/heydesk/services/visitors.py",
-   "purpose": "Daily turn limits (visitor 30, business 500) and off-topic strikes (5 → blocked 24 h).",
+   "purpose": "Daily turn limits (visitor 30, business 500), off-topic strikes (5 → blocked 24 h), the team's Block and AI off, and a flood on a messaging app (20 a minute → blocked 24 h) (D127).",
    "inputs": "agent, visitor key, tools used",
-   "outputs": "VisitorLimited or OK",
+   "outputs": "VisitorLimited (once), VisitorSilenced, AI off, or OK",
    "fn": "admit"
   },
   {
@@ -5665,7 +5665,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "admit",
      "label": "Blocked? ≥30 today? business ≥500?",
      "shape": "decision",
-     "code": "if visitor.blocked_until and visitor.blocked_until > now: 'blocked'\nif visitor.turns >= VISITOR_DAILY_TURNS: ...\nif business_turns >= WORKSPACE_DAILY_TURNS: ...",
+     "code": "if is_blocked(visitor, now): 'blocked'  # let_in already refused them (D127)\nif visitor.turns >= VISITOR_DAILY_TURNS: ...\nif business_turns >= WORKSPACE_DAILY_TURNS: ...",
      "file": "src/heydesk/services/visitors.py",
      "fn": "admit"
     },
@@ -6117,7 +6117,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "block",
      "label": "5 strikes → blocked 24 h",
      "shape": "fail",
-     "code": "if visitor.strikes >= OFF_TOPIC_STRIKES:\n    visitor.blocked_until = now + timedelta(hours=BLOCK_HOURS)"
+     "code": "if visitor.strikes >= OFF_TOPIC_STRIKES:\n    block(visitor, 'off_topic', now + timedelta(hours=BLOCK_HOURS))"
     },
     {
      "id": "done",

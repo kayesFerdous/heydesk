@@ -22,7 +22,13 @@ class Visitor(Base):
     day: Mapped[date]  # the business's local day that `turns` counts
     turns: Mapped[int] = mapped_column(default=0)  # turns on `day`
     strikes: Mapped[int] = mapped_column(default=0)  # off-topic turns since the last real one
+    # Blocked (I2): why is "team" (someone pressed Block), "flooding" or "off_topic"; None: not
+    # blocked. Until when; None with a why: until someone unblocks them
+    blocked_why: Mapped[str | None] = mapped_column(String(20), default=None)
     blocked_until: Mapped[datetime | None] = mapped_column(default=None)
+    blocked_by: Mapped[str | None] = mapped_column(String(320), default=None)  # their email
+    told_blocked: Mapped[bool] = mapped_column(default=False)  # the one notice went (I2)
+    ai_off: Mapped[bool] = mapped_column(default=False)  # the team answers them by hand (I2)
     # what the agent remembers about them (D124): `{about: note}`, oldest first, only what they
     # said themselves ("colours": "likes dark colours"). Assign a new dict to change it
     notes: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)

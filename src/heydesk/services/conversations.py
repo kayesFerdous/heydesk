@@ -100,6 +100,7 @@ class ConversationService:
             raise UnreadablePhoto("This chat can't take photos.")
         if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
+        runs_ai = await self.visitors.let_in(agent, visitor)  # a 429 when they're blocked (I2)
         # Read before anything is saved, so a file that isn't a photo changes nothing
         saved = await self.photos.save(agent.workspace_id, "chat", photo) if photo else None
         conv = None
@@ -110,6 +111,9 @@ class ConversationService:
                 raise ConversationFull("This conversation is very long. Please start a new one.")
             if conv.status == HUMAN:  # the team is answering: the agent stays quiet (D43)
                 return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
+        if not runs_ai:  # the AI is off for them (I2): the team has the chat, no turn is paid
+            conv = await self._for_team(agent, conv, channel, contact, name)
+            return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
         await self.visitors.admit(agent, visitor)  # counts the turn, or refuses it (D51)
         if conv is None:
             conv = self._new(agent, channel, contact, name)
@@ -262,6 +266,23 @@ class ConversationService:
         async with self.sessions() as s:
             return await self._get_by_id(s, ws, conversation_id)
 
+    async def of_visitor(self, ws: str, key: str) -> Conversation | None:
+        """The visitor's latest conversation (`key` as `visitors.key_of` makes it), for the
+        blocked list (I2)."""
+        kind, contact = key.split(":", 1)
+        channels = ("web", "voice") if kind == "web" else (kind,)
+        async with self.sessions() as s:
+            return await s.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.workspace_id == ws,
+                    Conversation.channel.in_(channels),
+                    Conversation.contact == contact,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+
     async def assign(
         self, ws: str, conversation_id: str, by: Principal, user_id: str | None
     ) -> Conversation:
@@ -309,6 +330,24 @@ class ConversationService:
                         await self.calls.after_turn(agent, conv.id)
                     await self.visitors.after_turn(agent, visitor, event.tools)
                 yield event
+
+    async def _for_team(
+        self,
+        agent: LiveAgent,
+        conv: Conversation | None,
+        channel: str,
+        contact: str | None,
+        name: str | None,
+    ) -> Conversation:
+        """The conversation (a new one if none) with the team answering it (I2)."""
+        async with self.sessions() as s, s.begin():
+            if conv is None:
+                conv = self._new(agent, channel, contact, name)
+                s.add(conv)
+            else:
+                (await self._get_by_id(s, agent.workspace_id, conv.id)).status = HUMAN
+            conv.status = HUMAN
+        return conv
 
     async def _to_team(self, conv: Conversation, text: str, channel: str) -> AsyncGenerator[Event]:
         """A turn with no agent: the message is saved and passed to the team."""

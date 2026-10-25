@@ -421,7 +421,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), state JSON, messages JSON |
-| `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51), notes (`{about: note}`: what the agent remembers about them, D124) |
+| `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `courier_links` | agent_id (unique), kind (`steadfast` or `pathao`), key, secret and password (encrypted, D74), username, store_id (Pathao's pick-up store), sandbox, problem (empty: fine). One per agent, shops only (D90, D113) |
@@ -484,7 +484,9 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127) |
+| PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
+| GET | `/api/visitors/blocked` | Who is blocked now, with why, by whom, until when and their latest chat (D127) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
 | GET/PUT/DELETE, POST | `/api/agent/sheet`, `/api/agent/sheet/suggest`, `/api/agent/sheet/sync` | The list's linked Google Sheet: its state; link it with a checked mapping; unlink it; suggest a mapping; sync now (D58) |
 | GET/PUT/DELETE, POST | `/api/agent/courier`, `/api/agent/courier/sync` | The shop's linked Steadfast or Pathao: its kind, store and problem; link it after checking the keys; unlink it; book and follow now (D90, D113) |
@@ -619,6 +621,32 @@ A turn the team answers (D43) isn't counted. A call is checked before it connect
 utterance is a turn like any other; a limited one is said out loud. On Telegram the refusal is
 sent as a message. The day is the business's local day. The IP address isn't used: on mobile data
 in Bangladesh many people share one.
+
+**Block and AI off (D127).** The team (owner or moderator) decides about one visitor from their
+chat: `PATCH /api/visitors/{id} {blocked | ai_off}`; `GET /api/visitors/blocked` lists who is
+blocked now, with their latest chat. A visitor is who `key_of(channel, contact)` names, so a
+block covers all their chats on that app (a web visitor's chats and calls share one).
+
+```
+any message ─► visitors.let_in (first, before the photo, the conversation or a count):
+                 blocked? (a why, and no end or an end still to come)
+                   first time since the block ─► 429 VisitorLimited with the hand-off line
+                   after that ─► VisitorSilenced: a messaging app sends nothing; the web chat
+                                 still gets the 429, as the page shows the error itself
+                 ai_off ─► the conversation becomes `human`, the message is saved and forwarded
+                           to the owner (D43's path): no turn, nothing paid
+a messaging app's message ─► visitors.arrived: FLOOD_MESSAGES (20) in a minute ─► blocked
+                             `flooding` for BLOCK_HOURS (counted per message, before D117's
+                             batching; in memory, like D52)
+```
+
+- **A block keeps nothing.** A blocked visitor's messages aren't saved or shown: they're spam,
+  and keeping them would mean a turn row for nothing. AI off keeps everything, since the team
+  answers it.
+- **Three reasons.** `team` (Block; lasts until Unblock), `flooding` and `off_topic` (D51's
+  strikes; both `BLOCK_HOURS`). Unblock clears the why, the strikes and the notice, so a later
+  block tells them once again.
+- The web chat's own burst limit (6 a minute, D52) answers before a flood could build there.
 
 ### Rate limits (D52)
 
