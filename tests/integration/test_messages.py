@@ -24,7 +24,9 @@ async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: 
     for desk in DESKS.values():
         config = (await world.agent(desk.kind)).config
         names = [t.name for t in tools_for(desk, config, has_documents=False)]
-        assert names[-3:] == ["take_message", "handoff_to_human", "off_topic"], desk.kind
+        assert names[-4:] == ["take_message", "handoff_to_human", "off_topic", "remember"], (
+            desk.kind
+        )
         assert "search_knowledge" in [t.name for t in tools_for(desk, config, True)]
 
 
@@ -73,6 +75,7 @@ async def test_the_receptionist_answers_from_its_own_fields(world: World) -> Non
         "take_message",
         "handoff_to_human",
         "off_topic",
+        "remember",
     ]
 
 

@@ -136,6 +136,7 @@ class ConversationService:
                 now,
                 agent.documents,
                 self.settings.VOICE_LANGUAGE,
+                await store.remembered(),  # what they told the agent before (D124)
             ),
             tools=tools_for(desk, config, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,

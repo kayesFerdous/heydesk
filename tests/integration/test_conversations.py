@@ -94,6 +94,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "take_message",
         "handoff_to_human",
         "off_topic",
+        "remember",
     ]
     assert "# The order so far" not in request.system
     assert "# The order so far\n2 × Chicken Biryani" in world.llm.requests[1].system

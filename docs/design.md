@@ -254,6 +254,7 @@ merged into the conversation's `state`, saved with the turn.
 | `show_photos` | shop | no | `products`: up to 3 codes. Sends a `photos` event with each one's name, price and first photo, and says which were shown; a product with no photo is named so the model describes it instead. Not on a call: there it says photos can't be shown here. Messenger gets a carousel (D62), Telegram a photo each (D63), each with an Order button (D99) (D57) |
 | `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
+| `remember` | every desk | no | `about` (a word or two) and `note`: something the visitor said on their own (a taste, a size, who they buy for, an allergy). Kept on their `visitors` row, replacing the note on the same `about`, newest 20; never asked for (D124) |
 
 **The commit check** (`runtime/guards.py`, D107): a writing tool's first call returns its
 read-back (`ask_for_yes`), which goes into the conversation state as `read_back`. The talking
@@ -401,7 +402,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), state JSON, messages JSON |
-| `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51) |
+| `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_until (D51), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
 | `courier_links` | agent_id (unique), kind (`steadfast` or `pathao`), key, secret and password (encrypted, D74), username, store_id (Pathao's pick-up store), sandbox, problem (empty: fine). One per agent, shops only (D90, D113) |
@@ -912,10 +913,31 @@ an unknown code is the same 404 page.
   `t.me/<bot>` (`ChannelService.chat_link`, from `from`). The website chat opens the page in a
   new tab, and WhatsApp in its own browser, so closing it goes back; no button. (WhatsApp's
   link needs the number, which we don't keep: the number's id isn't it.)
-- **The links** (`ChannelService.product_page`): web chat, the card itself; Messenger, the
+- **The links** (`ChannelService.product_page`): web chat, the card itself and a *Details*
+  button beside *Order this* (D123); Messenger, the
   card's tap (`default_action`) and a *Details* button beside *Order this* (D99); Telegram, a
   *Details* URL button beside *Order this*; WhatsApp, a `Details: <link>` line in the caption.
+- **Order this** on the website chat sends "Order [code]", as Messenger's postback does (D123),
+  so `# Right now` tells the web chat too that a tapped button arrives as its words (`TAPS`).
 - Day R3's *Buy now* form and `/o/<id>` order page come later; this page is their start.
+
+### Remembering a visitor (D114, D123, D124)
+
+A visitor is the same chat on a messaging app, or the same browser on the web chat and its calls.
+Two things make them feel known:
+
+- **Their last order, booking or message** (`Store.before`): in an earlier conversation *or this
+  one*, so a second order in the same Messenger chat is offered the first one's name, phone and
+  address instead of asking again (D123). The desk's `returning()` section says to offer them
+  once, when the details are needed.
+- **What they told the agent** (D124): the shared `remember` tool keeps a short note when the
+  visitor mentions something worth keeping ("likes dark colours", "buying for her son, 8",
+  "allergic to penicillin"). Notes live on the `visitors` row the limits already keep
+  (`web:<token>`, `messenger:<psid>`…), as `{about: note}`: a note on the same `about` replaces
+  the old one, and only the newest 20 stay. Every turn, `# What you remember about them` lists
+  them after the desk's sections; the rule says to use them naturally, not to read them out or
+  ask about them. They're the visitor's words, so they're never formatted (`fill`) and never
+  logged. The owner can't see or clear them yet.
 
 ### Telegram (D42)
 
@@ -1516,7 +1538,7 @@ version handles them.
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
 | Searching a long menu or doctor list; a shop's search that knows Banglish ("lal" for Red) or meanings | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41). A shop over `LONG_LIST` (60) products, such as a linked WooCommerce store, lists only its groups, and `find_product` matches plain words (D80) |
-| Knowing a returning visitor on a shared computer | The web chat and a call use the browser's token as the `contact` (D114), so someone else on the same browser is offered the last visitor's name, phone and address. Clearing the browser's data makes a new visitor |
+| Knowing a returning visitor on a shared computer | The web chat and a call use the browser's token as the `contact` (D114), so someone else on the same browser is offered the last visitor's name, phone and address, and gets their notes (D124). Clearing the browser's data makes a new visitor |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
 | The model calling a writing tool again after a "maybe" | The model judges the yes (D107). Python only makes sure the details are the ones last read back, so a wrong call saves what the visitor heard, never something else |

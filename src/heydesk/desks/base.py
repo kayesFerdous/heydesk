@@ -12,13 +12,20 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel
-from sqlalchemy import ScalarResult, String, cast, delete, or_, select
+from sqlalchemy import ScalarResult, String, and_, cast, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
-from heydesk.models import Conversation, PaymentAccount, SheetLink, TeamMessage, WooLink
+from heydesk.models import (
+    Conversation,
+    PaymentAccount,
+    SheetLink,
+    TeamMessage,
+    Visitor,
+    WooLink,
+)
 from heydesk.models.taken import Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
@@ -30,6 +37,7 @@ if TYPE_CHECKING:  # only a type here: services import the desks
 
 PAGE = 100  # the most rows a list returns at once (newest first)
 BROWSER = ("web", "voice")  # one browser's token is the contact on both (D114)
+MAX_NOTES = 20  # what the agent remembers about one visitor, at most (D124)
 
 
 class SheetLinked(Conflict):
@@ -237,35 +245,75 @@ class Store:
             return list(found)
 
     async def before[T: Taken](self, table: type[T], limit: int = 1) -> list[T]:
-        """What this visitor had in their earlier conversations, newest first (D81, D114): the
-        same chat on a messaging app, or the same browser on the web chat and its calls. Empty
-        when the conversation has no `contact`."""
-        if self.conversation_id is None:
+        """What this visitor had before, newest first (D81, D114): in this conversation or an
+        earlier one from the same chat on a messaging app, or the same browser on the web chat
+        and its calls. A second order in the same chat is offered the first one's details too
+        (D123). Only this conversation's when it has no `contact`."""
+        here = await self._here()
+        if here is None:
             return []
         ws = self.workspace_id
-        async with self.sessions() as s:
-            here = await s.scalar(
-                select(Conversation).where(
-                    Conversation.workspace_id == ws, Conversation.id == self.conversation_id
-                )
-            )
-            if here is None or here.contact is None:
-                return []
+        if here.contact is None:
+            same = table.conversation_id == here.id
+        else:
             channels = BROWSER if here.channel in BROWSER else (here.channel,)
+            same = and_(Conversation.channel.in_(channels), Conversation.contact == here.contact)
+        async with self.sessions() as s:
             found = await s.scalars(
                 select(table)
                 .join(Conversation, table.conversation_id == Conversation.id)
-                .where(
-                    table.workspace_id == ws,
-                    Conversation.workspace_id == ws,
-                    Conversation.channel.in_(channels),
-                    Conversation.contact == here.contact,
-                    Conversation.id != here.id,
-                )
+                .where(table.workspace_id == ws, Conversation.workspace_id == ws, same)
                 .order_by(table.created_at.desc())
                 .limit(limit)
             )
             return list(found)
+
+    # What the agent remembers about a visitor (D124): kept on their `Visitor` row
+
+    async def remembered(self) -> dict[str, str]:
+        """The notes on this visitor, `{about: note}`, oldest first. Empty without a contact."""
+        async with self.sessions() as s:
+            visitor = await self._visitor(s)
+            return dict(visitor.notes) if visitor else {}
+
+    async def remember(self, about: str, note: str) -> bool:
+        """Keeps `note` under `about`, replacing what was there; the oldest go past
+        MAX_NOTES. False when there's no visitor to keep it for."""
+        async with self.sessions() as s, s.begin():
+            visitor = await self._visitor(s)
+            if visitor is None:
+                return False
+            notes = {k: v for k, v in visitor.notes.items() if k != about}
+            notes[about] = note
+            visitor.notes = dict(list(notes.items())[-MAX_NOTES:])  # a new value, or it isn't saved
+        return True
+
+    async def _here(self) -> Conversation | None:
+        if self.conversation_id is None:
+            return None
+        async with self.sessions() as s:
+            found: Conversation | None = await s.scalar(
+                select(Conversation).where(
+                    Conversation.workspace_id == self.workspace_id,
+                    Conversation.id == self.conversation_id,
+                )
+            )
+            return found
+
+    async def _visitor(self, s: AsyncSession) -> Visitor | None:
+        """This conversation's visitor, keyed as the limits key them (D51): `web:<token>` for
+        the web chat and calls, `messenger:<psid>` and so on."""
+        here = await self._here()
+        if here is None or here.contact is None:
+            return None
+        channel = "web" if here.channel in BROWSER else here.channel
+        found: Visitor | None = await s.scalar(
+            select(Visitor).where(
+                Visitor.workspace_id == self.workspace_id,
+                Visitor.key == f"{channel}:{here.contact}",
+            )
+        )
+        return found
 
     async def get[T: Taken](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:

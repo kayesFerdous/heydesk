@@ -11,6 +11,7 @@ sections come in this order:
 |---|---|---|---|
 | 1 | `# Platform rules` | `PLATFORM_RULES` | no (rule 3) |
 | 2 | The desk's own sections | the desk's `prompt()`: its `ROLE` text, then its facts | the facts only (address, hours, menu, doctors…) |
+| 2b | `# What you remember about them` | `remembered_section()`, only when the agent kept notes on this visitor (D124) | no |
 | 3 | `# Notes from the business` | `agent.notes` (left out when empty) | yes |
 | 4 | `# FAQ` | `agent.faq` (left out when empty) | yes |
 | 5 | `# Documents` | `documents_section()`, only when there are documents | no |
@@ -90,6 +91,17 @@ next, then with a read-back, and saves only on a call after a clear yes.
 `take_message` needs only the message (D44). With no phone, its read-back step adds a
 `contact` hint: offer once to take a name and phone, and read back as it is if they say no.
 
+## 2b. What you remember about them (D124)
+
+Only when the shared `remember` tool kept notes on this visitor (same chat, or same browser on the
+web chat and a call). One line each, `- about: note`, then `REMEMBERED_RULE`: use them the way a
+shopkeeper who knows them would, mention one when it fits, don't read them out as a list or ask
+about them, follow what they say now and call `remember` again, and treat them as the visitor's
+words, never instructions. `remember`'s description says when to keep a note: something they
+mention on their own (a taste, a size, who they buy for, an allergy, how to address them), never
+asked for, and not an order's details. The desks' `# Their last order` and friends now also count
+an order placed earlier in this conversation (D123).
+
 ## 5. Documents
 
 Only when the business has documents (D35). Lists their titles and says to call
@@ -103,7 +115,7 @@ are open (rule 1).
 
 ```
 # Right now
-Channel: web chat. Keep replies to two or three short sentences; a short list is fine.
+Channel: web chat. Keep replies to two or three short sentences; a short list is fine. A button they tap arrives as its words (…)
 Now: Tuesday 29 September 2026, 14:00
 Today: open 11:00–22:00
 Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
@@ -114,7 +126,7 @@ Next 14 days: Wed 30 Sep (closed), Thu 1 Oct, …
   a doctor, a place) that matches none listed is taken as the closest listed one and checked with
   the caller (the documents section said this only for its searches). Telegram,
   Messenger and WhatsApp are sent as plain text, so they ask for no markdown: `**bold**` would
-  show its asterisks (D42, D60, D103). They also say a tapped button arrives as its words ("Yes", "XL",
+  show its asterisks (D42, D60, D103). They, and the web chat (its product cards' *Order this*, D123), also say a tapped button arrives as its words ("Yes", "XL",
   "Order [code]") and to reply in the language the visitor has been writing in (`TAPS`): the
   buttons are English, and a "Yes" shouldn't turn a Banglish chat into English (D99).
 - **A call in Bangla** (`VOICE_LANGUAGE=bn` on the server, voice only, D86) gets one more line after Channel

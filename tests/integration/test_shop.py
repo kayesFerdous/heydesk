@@ -881,6 +881,30 @@ async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: Wor
     assert "# Their last order" not in world.llm.requests[-1].system
 
 
+async def test_a_second_order_in_the_same_chat_is_offered_the_first_ones_details(
+    world: World,
+) -> None:
+    """Still in the same Messenger conversation after an order, the next one is offered its
+    details too (D123): the agent shouldn't ask for them all again."""
+    agent = await world.agent("shop")
+    talk = world.services.conversations
+    world.llm.script = [
+        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
+        ToolCall("c2", "place_order", DETAILS),
+        READ_BACK,
+    ]
+    await talk.reply(agent, "messenger", "psid-1", "a black kurti, size M…")
+    world.llm.script = [ToolCall("c3", "place_order", DETAILS), "Done: O-101."]
+    await talk.reply(agent, "messenger", "psid-1", "yes")
+    assert len(await orders(world)) == 1
+
+    world.llm.script = ["Ji, same details use korbo?"]
+    await talk.reply(agent, "messenger", "psid-1", "aro ekta order korbo")
+    system = world.llm.requests[-1].system
+    assert "# Their last order" in system
+    assert "name Kayes; mobile 01712345678" in system
+
+
 async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: World) -> None:
     """A CSV's, a sheet's or a WooCommerce store's photo links become the shop's own photos
     (D102): each downloaded the first time only, one that fails left out, and a product with
