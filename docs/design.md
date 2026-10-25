@@ -458,7 +458,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
-| GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422. Its CSV import adds and updates instead (D120) |
+| GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422, and so is a photo new to the list that isn't one of ours (one saved before is kept, D122). Its CSV import adds and updates instead (D120) |
 | GET | `/p/{public_key}/{code}` | A product's public page, HTML, no login (D121) |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |

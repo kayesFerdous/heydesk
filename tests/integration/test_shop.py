@@ -694,6 +694,25 @@ async def kurti_with_photo(client: AsyncClient) -> str:
     return url
 
 
+async def test_a_photo_saved_before_doesnt_block_saving_the_list(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """A photo kept on the disk before R2 was set has a /media address R2's check refuses
+    (D101); saving the list keeps it, and only a new photo is checked."""
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID, "shop")
+    old = f"/media/{DEV_WORKSPACE_ID}/products/old.jpg"  # not a name the check takes
+    products = await store.products()
+    products[0] = products[0].model_copy(update={"photos": [old]})
+    await store.replace_products(products)
+
+    listed = (await client.get("/api/products")).json()
+    listed[1]["price"] = 99900
+    assert (await client.put("/api/products", json=listed)).status_code == 200
+    listed[1]["photos"] = [old.replace("old", "new")]
+    assert (await client.put("/api/products", json=listed)).status_code == 422
+
+
 def as_base64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 

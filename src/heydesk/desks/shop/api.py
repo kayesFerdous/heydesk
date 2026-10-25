@@ -67,12 +67,14 @@ async def replace_products(
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
     from the next message. While a Google Sheet or WooCommerce store is linked too: a product
-    that came from it changes back when it changes there (D120)."""
+    that came from it changes back when it changes there (D120). Only a photo new to the
+    list is checked: one saved before stays, from wherever it was kept then (D101)."""
+    had = {url for p in await store.products() for url in p.photos}
     wrong = {
         f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
         for n, product in enumerate(body)
         for url in product.photos
-        if not services.photos.is_products(ws, url)
+        if url not in had and not services.photos.is_products(ws, url)
     }
     if wrong:
         raise InvalidConfig(wrong)
