@@ -61,13 +61,17 @@ class TelegramBot:
         await self._call(token, "sendMessage", json=params)
 
     async def send_photo(
-        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
+        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = "", page: str = ""
     ) -> None:
         files = {"photo": ("photo.jpg", jpeg, "image/jpeg")}
         data = {"chat_id": chat_id, "caption": caption}
-        if choice:  # a form field, so the keyboard goes as JSON text
-            button = {"text": "🛒 Order this", "callback_data": choice}
-            data["reply_markup"] = json.dumps({"inline_keyboard": [[button]]})
+        buttons = []
+        if choice:
+            buttons.append({"text": "🛒 Order this", "callback_data": choice})
+        if page:
+            buttons.append({"text": "Details", "url": page})
+        if buttons:  # a form field, so the keyboard goes as JSON text
+            data["reply_markup"] = json.dumps({"inline_keyboard": [buttons]})
         await self._call(token, "sendPhoto", files=files, data=data)
 
     async def answer_callback(self, token: str, callback_id: str) -> None:

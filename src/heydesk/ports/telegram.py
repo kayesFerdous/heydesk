@@ -37,10 +37,11 @@ class TelegramApi(Protocol):
         ...
 
     async def send_photo(
-        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = ""
+        self, token: str, chat_id: str, jpeg: bytes, caption: str, choice: str = "", page: str = ""
     ) -> None:
         """A photo uploaded from us, so it needs no public URL (D63); with `choice`, an Order
-        button under it whose tap sends it back (D99)."""
+        button under it whose tap sends it back (D99); with `page`, a Details button that opens
+        the product's page (D121)."""
         ...
 
     async def answer_callback(self, token: str, callback_id: str) -> None:

@@ -6,8 +6,8 @@ a chat is written at once, in the background, so the website can't sell the same
 (D77). Every 30 minutes a safety sync runs anyway and puts back a webhook Woo turned off; with
 no public address for webhooks, the store is synced every WOO_SYNC_MINUTES instead. A sync
 pushes, then pulls: each order whose status changed since it was last written is created or moved in Woo,
-so Woo's stock takes it off or puts it back; then Woo's products become the list, with Woo's
-count less the orders not in Woo yet. A problem keeps the old list, and the owner hears once.
+so Woo's stock takes it off or puts it back; then Woo's products join the list (D120), with
+Woo's count less the orders not in Woo yet, and the ones deleted in Woo leave it. A problem keeps the old list, and the owner hears once.
 """
 
 import asyncio
@@ -151,7 +151,7 @@ class WooService:
         except ValueError as error:
             raise InvalidConfig({"products": str(error)}) from None
         shop = await self._store(ws)
-        await shop.take_woo(found)
+        await shop.take_woo(found, set())
         hooks, hook_secret = await self._add_hooks(store, ws)
         async with self.sessions() as s, s.begin():
             old = await s.scalar(select(WooLink).where(WooLink.workspace_id == ws))
@@ -208,7 +208,7 @@ class WooService:
             items = await self.api.products(store)
             if digest(items) != checked:  # the same as last time: nothing to do
                 found, ids = products_from_woo(items)
-                await shop.take_woo(found)
+                await shop.take_woo(found, set(link.ids) - set(ids))  # deleted in Woo
                 checked = digest(items)
         except (WooUnreachable, ValueError) as error:  # the old list stays
             problem = problem or str(error)

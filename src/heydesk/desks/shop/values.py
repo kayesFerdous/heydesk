@@ -621,6 +621,26 @@ def merge(
     return kept
 
 
+def added(ours: list[Product], found: list[Product], gone: set[str] | None = None) -> list[Product]:
+    """Our list with a source's products in it (D120): each found product updates the one it
+    is (the same code, or else the only one with the same name) in its place, or joins the
+    end. Ours stay, except the `gone` codes: a linked list's products it doesn't have any more.
+    A found product with no photos keeps the ones it has here."""
+    kept = [p for p in ours if p.code not in (gone or set())]
+    free = set(range(len(kept)))  # ours no found product has updated yet
+    for p in found:
+        same = [i for i in free if kept[i].code == p.code]
+        if not same:
+            same = [i for i in free if kept[i].name.strip().lower() == p.name.strip().lower()]
+        if len(same) != 1:
+            kept.append(p)
+            continue
+        i = same[0]
+        kept[i] = p if p.photos else p.model_copy(update={"photos": kept[i].photos})
+        free.discard(i)
+    return kept
+
+
 # A linked WooCommerce store (D75): its fields are the same in every store, so they're matched here
 
 SIZE, COLOUR = {"size"}, {"colour", "color"}  # attribute names, in any case

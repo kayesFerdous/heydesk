@@ -122,6 +122,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
         "choice": "Order [kurti]",
+        "page": "https://heydesk.test/p/dev-shop/kurti?from=whatsapp",  # its page (D121)
     }
     assert fake(app).cards == [(FROM, [card])]
 

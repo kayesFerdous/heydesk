@@ -458,7 +458,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
-| GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422 |
+| GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422. Its CSV import adds and updates instead (D120) |
+| GET | `/p/{public_key}/{code}` | A product's public page, HTML, no login (D121) |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
@@ -675,6 +676,7 @@ every SHEET_SYNC_MINUTES (5):
                          ─► parse with the saved mapping (the desk's row(), as an import)
                          ─► a row has a problem? keep the old list, note it, alert the owner once
                          ─► merge (the shop's stock, below) ─► replace the list
+                            (a shop's: add to it, D120)
 ```
 
 - **The link.** The owner shares the sheet as *Anyone with the link: Viewer* and pastes its
@@ -735,9 +737,9 @@ every SHEET_SYNC_MINUTES (5):
   A sheet that can't be fetched is read whole again once it's back.
   The next clean sync clears it.
 - **While a sheet is linked, the sheet is the list.** `PUT /api/menu`, `PUT /api/doctors` and
-  every CSV import are a 409 `sheet_linked` (`Store.not_linked`), so an edit in HeyDesk isn't
-  silently undone 5 minutes later. Photos are still added in HeyDesk, so `PUT /api/products`
-  takes only each product's `photos` then; they're kept by code.
+  their CSV imports are a 409 `sheet_linked` (`Store.not_linked`), so an edit in HeyDesk isn't
+  silently undone 5 minutes later. *A shop's isn't, since D120:* its sheet adds and updates
+  only its own products (below), so `PUT /api/products` and its import still work.
 - **One sheet per agent**, because an agent is one desk with one list. The desk names its
   fields (`Desk.columns`, the same as the import's) and its store takes the sheet's text
   (`Store.take_sheet(text, mapping, seen) -> seen`): the menu and doctors are replaced; the
@@ -854,8 +856,8 @@ sync:
   `TeamService.notify`): the store can't be reached, the key stopped working, or an order
   couldn't be written ("O-106 wasn't added to WooCommerce: …"). The orders not written are tried
   again next sync, and the list stays as it was until a pull works. The next clean sync clears it.
-- **While linked, the store is the list:** the same 409 `sheet_linked` (`Store.not_linked`), and
-  `PUT /api/products` takes only photos. The owner moves orders in HeyDesk as before; each move
+- **While linked, the store's products are kept in step** (D120, below): `PUT /api/products`
+  and the import still work; linking a sheet too is a 409 `sheet_linked`. The owner moves orders in HeyDesk as before; each move
   reaches Woo with the next push. A change made to our order in Woo's admin isn't read back.
 
 **Routes:**
@@ -867,6 +869,53 @@ sync:
 | DELETE | `/api/agent/woo` | Stops syncing. The list stays and can be edited again; orders already in Woo stay there |
 | POST | `/api/agent/woo/sync` | Syncs now (push, then pull); returns what GET does |
 | POST | `/api/woo/hook/{workspace_id}` | Woo's webhooks: a signed post starts a sync 2 seconds later; no login (D78) |
+
+### A shop's list from many places (D120)
+
+A shop's products come from a CSV file, a linked Google Sheet or WooCommerce store, and edits
+by hand. **None of them replaces the list; each adds to it and updates what it has.**
+
+```python
+def added(ours, found, gone=None) -> list[Product]:     # values.py
+    kept = [p for p in ours if p.code not in gone]
+    for p in found:
+        same = the one free p with p.code, else the only free one with the same name
+        same ? kept[its place] = p (keeping its photos if p has none) : kept.append(p)
+    return kept
+```
+
+- **The same product** is the one with the same code, or else the only one with the same name
+  (spaces and capitals aside). Sizes and colours are inside a product (D56), so the name is
+  enough. Two of ours with that name: it's added, not guessed. A matched product takes the
+  source's code, so its next sync finds it by code.
+- **A file** (`POST /api/products/import`, `ShopStore.add_products`) never deletes; it answers
+  `added`, how many were new.
+- **A linked sheet or store** removes only the products **it** brought last time and has no
+  more: the codes in the sheet's `seen`, or in the Woo link's `ids`, less the ones read now.
+  The rest of the list stays. The first link deletes nothing.
+- **The source wins for its own products:** a hand edit to one stays until its row changes
+  there (the sheet's text, or Woo's products, changed). One sheet *or* one store, still.
+- Given up: a product the owner deleted here comes back when the sheet or store next changes;
+  delete it there. Two sources with different codes for one product swap its code at each sync.
+
+### A product's page (D121)
+
+Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<code>?from=<app>`.
+`public_key` is already public (it's in the chat link); the code is the product's. The page
+(`desks/shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
+sale), the sizes and colours in stock (`Product.in_stock`), the description, and "To order, go
+back to the chat and say *Order [code]*". No JSON and no `/api` link; a policy header lets
+nothing but its photos load and no script run. An unknown key, a key that isn't a shop's, or
+an unknown code is the same 404 page.
+
+- **Back to the chat:** on Messenger and Telegram a button opens `m.me/<page id>` or
+  `t.me/<bot>` (`ChannelService.chat_link`, from `from`). The website chat opens the page in a
+  new tab, and WhatsApp in its own browser, so closing it goes back; no button. (WhatsApp's
+  link needs the number, which we don't keep: the number's id isn't it.)
+- **The links** (`ChannelService.product_page`): web chat, the card itself; Messenger, the
+  card's tap (`default_action`) and a *Details* button beside *Order this* (D99); Telegram, a
+  *Details* URL button beside *Order this*; WhatsApp, a `Details: <link>` line in the caption.
+- Day R3's *Buy now* form and `/o/<id>` order page come later; this page is their start.
 
 ### Telegram (D42)
 

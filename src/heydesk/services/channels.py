@@ -15,6 +15,7 @@ import secrets
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -434,7 +435,7 @@ class ChannelService:
         finally:
             typing.cancel()
         if reply.photos:
-            await self._send_photos(channel, chat_id, reply.photos)
+            await self._send_photos(channel, chat_id, reply.photos, agent.public_key)
         # a summary's Yes and Change go under it, the last message (D111)
         summary = reply.card is not None and reply.card.kind == "summary"
         choices = buttons(reply.choices)
@@ -489,29 +490,31 @@ class ChannelService:
         return await self.messenger.download(url) if url else None
 
     async def _send_photos(
-        self, channel: Channel, chat_id: str, photos: list[dict[str, str]]
+        self, channel: Channel, chat_id: str, photos: list[dict[str, str]], key: str
     ) -> None:
         """The products `show_photos` chose. On Messenger one carousel and on WhatsApp a message
         each, which Meta fetches from us, so their URLs are made whole (D62, D103); on Telegram each photo is uploaded, with its
         name and price as the caption (D63). Each has an Order button, whose tap says
-        "Order [code]" (D99). If it fails, the text still goes."""
+        "Order [code]" (D99), and a link to the product's page (D121). If it fails, the text
+        still goes."""
         orders = [f"Order [{p['code']}]" for p in photos]
         orders = [o if len(o.encode()) <= 64 else "" for o in orders]  # Telegram's data limit
+        pages = [self.product_page(key, p["code"], channel.kind) for p in photos]
         try:
             if channel.kind in (MESSENGER, WHATSAPP):
                 cards = [
-                    {**p, "url": self.whole(p["url"]), "choice": order}
-                    for p, order in zip(photos, orders, strict=True)
+                    {**p, "url": self.whole(p["url"]), "choice": order, "page": page}
+                    for p, order, page in zip(photos, orders, pages, strict=True)
                 ]
                 if channel.kind == MESSENGER:
                     await self.messenger.send_cards(channel.token, chat_id, cards)
                 else:
                     await self.whatsapp.send_cards(channel.token, channel.address, chat_id, cards)
                 return
-            for p, order in zip(photos, orders, strict=True):
+            for p, order, page in zip(photos, orders, pages, strict=True):
                 jpeg = await self.photos.read(p["url"])
                 caption = f"{p['name']} · {p['price']}"
-                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order)
+                await self.telegram.send_photo(channel.token, chat_id, jpeg, caption, order, page)
         except (
             MessengerUnavailable,
             TelegramUnavailable,
@@ -561,6 +564,21 @@ class ChannelService:
                 await self._send(channel, chat_id, text, choices)
         except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable) as error:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
+
+    def product_page(self, key: str, code: str, kind: str) -> str:
+        """A product's public page (D121), on the app it was sent on."""
+        return f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}?from={kind}"
+
+    async def chat_link(self, ws: str, kind: str) -> str:
+        """Back to the business's chat on Messenger or Telegram, from a product's page (D121);
+        "" elsewhere: the page was opened over the chat, and closing it goes back."""
+        if kind not in (MESSENGER, TELEGRAM):
+            return ""
+        async with self.sessions() as s:
+            channel = await self._find(s, ws, kind)
+        if channel is None:
+            return ""
+        return f"https://{'m.me' if kind == MESSENGER else 't.me'}/{channel.address}"
 
     def whole(self, url: str) -> str:
         """A photo on this server's disk is "/media/…"; one in R2 is whole already (D101)."""

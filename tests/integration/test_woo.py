@@ -291,23 +291,28 @@ async def test_while_a_store_is_linked_the_list_is_changed_there(
     app: FastAPI, client: AsyncClient
 ) -> None:
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    app.state.services.woo.api = FakeWoo()
+    seeded = [p["code"] for p in (await client.get("/api/products")).json()]
+    woo = FakeWoo()
+    app.state.services.woo.api = woo
     body = {"url": URL, "key": "ck_1", "secret": "cs_1"}
     linked = (await client.put("/api/agent/woo", json=body)).json()
     assert (linked["url"], linked["products"], linked["problem"]) == (URL, 3, "")
     assert "secret" not in (await client.get("/api/agent/woo")).json()
     assert [p["code"] for p in (await client.get("/api/products")).json()] == [
+        *seeded,  # Woo's join the list (D120)
         "TP-1",
         "LP-1",
         "LP-1-2650",
     ]
     csv = {"csv": "Name,Price\nTee,350\n"}
-    refused = await client.post("/api/products/import", json=csv)
-    assert refused.status_code == 409 and refused.json()["error"]["code"] == "sheet_linked"
+    assert (await client.post("/api/products/import", json=csv)).json()["added"] == 1
     sheet = {"url": "https://docs.google.com/spreadsheets/d/abc/edit", "mapping": {}}
     assert (await client.put("/api/agent/sheet", json=sheet)).status_code == 409
 
+    woo.items = [item for item in woo.items if item.get("sku") != "TP-1"]  # deleted in Woo
     assert (await client.post("/api/agent/woo/sync")).json()["problem"] == ""
+    codes = [p["code"] for p in (await client.get("/api/products")).json()]
+    assert codes == [*seeded, "LP-1", "LP-1-2650", "tee"]  # only Woo's own deleted one went
     assert (await client.delete("/api/agent/woo")).status_code == 204
     assert (await client.get("/api/agent/woo")).status_code == 404
     assert (await client.post("/api/products/import", json=csv)).status_code == 200

@@ -44,9 +44,15 @@ class MessengerGraph:
             element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
             if c.get("url"):  # a doctor has no photo
                 element["image_url"] = c["url"]
+            buttons = []
             if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
                 title = c.get("button") or "Order this"
-                element["buttons"] = [{"type": "postback", "title": title, "payload": c["choice"]}]
+                buttons.append({"type": "postback", "title": title, "payload": c["choice"]})
+            if c.get("page"):  # a product's page (D121): the card's tap, and a button
+                element["default_action"] = {"type": "web_url", "url": c["page"]}
+                buttons.append({"type": "web_url", "title": "Details", "url": c["page"]})
+            if buttons:
+                element["buttons"] = buttons
             elements.append(element)
         payload = {
             "template_type": "generic",

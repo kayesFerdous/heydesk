@@ -160,3 +160,4 @@ class ImportOut[T](BaseModel):
     saved: bool
     count: int
     preview: list[T]  # the first few, as they'll be saved
+    added: int | None = None  # a shop's import (D120): how many were new; the rest were updated

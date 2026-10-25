@@ -2,7 +2,8 @@
 
 The owner shares the sheet by link and checks which column is which (as an import, D53). Then
 the list is the sheet's: each sync reads it as CSV, and when its text changed, the desk's store
-takes it (`Store.take_sheet`: the shop keeps its own count where the sheet's didn't change). A
+takes it (`Store.take_sheet`: the shop keeps its own count where the sheet's didn't change, and
+the products it has from elsewhere, D120). A
 sheet with a problem keeps the old list, and the owner hears once.
 """
 

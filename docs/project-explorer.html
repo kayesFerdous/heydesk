@@ -507,10 +507,20 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos, import), shop orders; moving one tells the buyer, cancelling restocks.",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks.",
    "inputs": "Product[], status",
    "outputs": "ShopOrderOut",
    "fn": "change_order"
+  },
+  {
+   "id": "a-product-page",
+   "label": "Product page",
+   "type": "api",
+   "file": "src/heydesk/desks/shop/page.py",
+   "purpose": "`/p/<public_key>/<code>`: a product's public HTML page (photos, price, sizes and colours in stock), linked from every product card; one 404 for anything else (D121).",
+   "inputs": "public_key, code, from",
+   "outputs": "HTML",
+   "fn": "product_page"
   },
   {
    "id": "s-conversations",
@@ -637,9 +647,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "SheetService",
    "type": "service",
    "file": "src/heydesk/services/sheets.py",
-   "purpose": "A desk's list from a Google Sheet, re-read every 5 min; keeps the old list on problems.",
+   "purpose": "A desk's list from a Google Sheet, re-read every 5 min; keeps the old list on problems. A shop's sheet adds and updates, and removes only its own gone rows (D120).",
    "inputs": "sheet url, mapping",
-   "outputs": "list replaced",
+   "outputs": "list replaced (a shop's: added to)",
    "fn": "sync"
   },
   {
@@ -1836,6 +1846,21 @@ tr.hl td { background: var(--accent-soft); }
    "source": "a-desk-shop",
    "target": "s-photos",
    "label": "product photo"
+  },
+  {
+   "source": "a-product-page",
+   "target": "s-agents",
+   "label": "by_key, the shop's products"
+  },
+  {
+   "source": "a-product-page",
+   "target": "s-channels",
+   "label": "chat_link (m.me, t.me)"
+  },
+  {
+   "source": "s-channels",
+   "target": "a-product-page",
+   "label": "Details link on each product card"
   },
   {
    "source": "a-desk-shop",
@@ -8793,7 +8818,7 @@ tr.hl td { background: var(--accent-soft); }
           {
            "f": "St",
            "t": "DB",
-           "m": "replace list"
+           "m": "replace list (a shop's: add to it, D120)"
           }
          ],
          "else": "same text",

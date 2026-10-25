@@ -213,6 +213,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     saved through the same `Confirmed[T]` path (the form's submit is the yes). The receipt
     card is sent back into the buyer's chat. `/o/<id>`: the order's status page, linked from
     the receipt. Server-rendered, no SPA.
+  - 25 Oct, D121: the product page, linked from every product card (Day R3a). *Buy now* and
+    `/o/<id>` are next (Day R3).
 - [ ] **G27 Videos and more photos per product** · S
   - `videos` (links) on a product; `show_photos` can send them. A how-to video is just a link.
 - [ ] **G16** (suggest a second product) moves up here.

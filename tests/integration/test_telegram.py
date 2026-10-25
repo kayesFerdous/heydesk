@@ -190,6 +190,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
     assert fake.photos == [(str(CHAT), "Cotton Kurti · ৳950")]
     assert fake.choices == [(str(CHAT), ["Order [kurti]"])]  # its button (D99)
+    assert fake.pages == [(str(CHAT), "https://heydesk.test/p/dev-shop/kurti?from=telegram")]
     assert sent(app) == [(str(CHAT), "Is it this one?")]
 
 

@@ -1,17 +1,20 @@
-"""A shop's own routes: its products, and the orders the agent took."""
+"""A shop's own routes: its products, and the orders the agent took; and a product's public
+page (D121)."""
 
 from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
 from heydesk.desks.csv_import import Suggestion, suggest
+from heydesk.desks.shop import page
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
 from heydesk.desks.shop.values import PRODUCT_COLUMNS, Product, products_from_csv
-from heydesk.errors import InvalidConfig
+from heydesk.errors import InvalidConfig, NotFound
 
 router = APIRouter(tags=["shop"])
 
@@ -63,7 +66,8 @@ async def replace_products(
     body: list[Product], store: Shop, services: Svc, ws: Workspace
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
-    from the next message. While a Google Sheet is the list, only their photos are taken (D58)."""
+    from the next message. While a Google Sheet or WooCommerce store is linked too: a product
+    that came from it changes back when it changes there (D120)."""
     wrong = {
         f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
         for n, product in enumerate(body)
@@ -72,12 +76,6 @@ async def replace_products(
     }
     if wrong:
         raise InvalidConfig(wrong)
-    if await store.linked():  # the rest is the sheet's
-        photos = {p.code: p.photos for p in body}
-        body = [
-            p.model_copy(update={"photos": photos.get(p.code, p.photos)})
-            for p in await store.products()
-        ]
     await store.replace_products(body)
     return body
 
@@ -108,14 +106,41 @@ async def suggest_products_columns(body: SuggestIn, _: Shop) -> Suggestion:
 
 @router.post("/api/products/import")
 async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
-    """Replaces the products with the CSV's rows. Problems come back per row, and nothing is
-    saved until the whole file is clean. `dry_run` only checks it."""
-    await store.not_linked()
+    """Adds the CSV's rows to the products (D120): a row with the code, or else the name, of
+    one we have updates it, and the rest are added; none is deleted. Problems come back per
+    row, and nothing is saved until the whole file is clean. `dry_run` only checks it."""
     found = products_from_csv(body.csv, body.mapping)  # a dry run shows the photo links
-    if not body.dry_run:
-        found = await store.with_photos(found)  # downloads the new links (D102)
-        await store.replace_products(found)
-    return ImportOut[Product](saved=not body.dry_run, count=len(found), preview=found[:5])
+    new = None if body.dry_run else await store.add_products(found)
+    return ImportOut[Product](
+        saved=not body.dry_run, count=len(found), preview=found[:5], added=new
+    )
+
+
+@router.get("/p/{public_key}/{code}", response_model=None, include_in_schema=False)
+async def product(
+    public_key: str,
+    code: str,
+    services: Svc,
+    via: Annotated[str, Query(alias="from")] = "web",
+) -> HTMLResponse:
+    """A product's public page (D121), linked from its card in a chat (`from`: the app it was
+    sent on). Only that shop's product, as HTML; anything else is the same 404."""
+    try:
+        agent = await services.agents.by_key(public_key)
+        store = cast(ShopStore, await services.agents.store(agent.workspace_id, "shop"))
+    except NotFound:
+        return html_page(page.not_found(), 404)
+    found = next((p for p in await store.products() if p.code == code), None)
+    if found is None:
+        return html_page(page.not_found(), 404)
+    back = await services.channels.chat_link(agent.workspace_id, via)
+    config = agent.config
+    return html_page(page.product_page(found, config.business_name, config.currency, back))
+
+
+def html_page(text: str, status_code: int = 200) -> HTMLResponse:
+    headers = {"Content-Security-Policy": page.POLICY, "Referrer-Policy": "no-referrer"}
+    return HTMLResponse(text, status_code, headers=headers)
 
 
 @router.get("/api/shop/orders")

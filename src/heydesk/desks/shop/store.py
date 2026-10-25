@@ -20,6 +20,7 @@ from heydesk.desks.shop.values import (
     OrderConfirm,
     OrderEdit,
     Product,
+    added,
     counted,
     merge,
     products_from_csv,
@@ -40,6 +41,24 @@ class ShopStore(Store):
 
     async def replace_products(self, products: list[Product]) -> None:
         await self.replace_rows(ProductRow, products)
+
+    async def add_products(self, found: list[Product]) -> int:
+        """A file's products join the list (D120): the ones we have are updated, the rest are
+        added, and none is deleted. Returns how many were new."""
+        found = await self.with_photos(found)  # downloads the new links (D102)
+        async with self.sessions() as s, s.begin():
+            ours = await self._products(s)
+            now = added(ours, found)
+            await self._replace(s, ProductRow, now)
+        return len(now) - len(ours)
+
+    async def _products(self, s: AsyncSession) -> list[Product]:
+        rows = await s.scalars(
+            select(ProductRow)
+            .where(ProductRow.workspace_id == self.workspace_id)
+            .order_by(ProductRow.position)
+        )
+        return [Product.model_validate(r, from_attributes=True) for r in rows]
 
     async def with_photos(self, found: list[Product]) -> list[Product]:
         """A list's products with their photos (D102): a product with photo links gets those
@@ -65,24 +84,27 @@ class ShopStore(Store):
         self, text: str, mapping: dict[str, str], seen: dict[str, Any]
     ) -> dict[str, Any]:
         """The sheet's products, keeping our count where the sheet's didn't change, and
-        taking a new count less the orders not shipped yet (D58), and its photos (D102)."""
+        taking a new count less the orders not shipped yet (D58), and its photos (D102). They
+        join the list (D120): the ones the sheet had last time (`seen`) and hasn't now go."""
         found = await self.with_photos(products_from_csv(text, mapping))
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
-            rows = await s.scalars(select(ProductRow).where(ProductRow.workspace_id == ws))
-            ours = {r.code: Product.model_validate(r, from_attributes=True) for r in rows}
+            listed = await self._products(s)
+            ours = {p.code: p for p in listed}
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
                 select(ShopOrder.lines).where(
                     ShopOrder.workspace_id == ws, ShopOrder.status.in_(HOLDS)
                 )
             )
             held = [line for lines in orders for line in lines]
-            await self._replace(s, ProductRow, merge(found, ours, seen, held))
+            gone = set(seen) - {p.code for p in found}
+            await self._replace(s, ProductRow, added(listed, merge(found, ours, seen, held), gone))
         return {p.code: counted(p) for p in found}
 
-    async def take_woo(self, found: list[Product]) -> None:
-        """The WooCommerce store's products become the list (D75), with Woo's count less the
-        orders that hold stock here but aren't in Woo yet, and Woo's photos (D102)."""
+    async def take_woo(self, found: list[Product], gone: set[str]) -> None:
+        """The WooCommerce store's products join the list (D75, D120), with Woo's count less
+        the orders that hold stock here but aren't in Woo yet, and Woo's photos (D102). The
+        `gone` codes, ones Woo had last time and hasn't now, leave it."""
         found = await self.with_photos(found)
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
@@ -95,7 +117,7 @@ class ShopStore(Store):
             )
             held = [line for lines in orders for line in lines]
             kept = [take_off(p, [line for line in held if line["code"] == p.code]) for p in found]
-            await self._replace(s, ProductRow, kept)
+            await self._replace(s, ProductRow, added(await self._products(s), kept, gone))
 
     async def orders_for_woo(self, since: datetime) -> list[ShopOrder]:
         """The orders placed since the store was linked whose status changed since it was

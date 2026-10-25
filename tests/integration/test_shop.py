@@ -351,12 +351,16 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
 
 async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> None:
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    seeded = [p["code"] for p in (await client.get("/api/products")).json()]
     csv = (
         "Name,Price (৳),Was price,Sizes,Colors,Stock\n"
         "Cotton Lungi,450,600,,Blue; Green,20\nTee,350,,S; M,,\n"
     )
-    await client.post("/api/products/import", json={"csv": csv})
-    lungi, tee = (await client.get("/api/products")).json()
+    first = (await client.post("/api/products/import", json={"csv": csv})).json()
+    assert (first["count"], first["added"]) == (2, 2)
+    listed = {p["code"]: p for p in (await client.get("/api/products")).json()}
+    assert list(listed) == [*seeded, "cotton-lungi", "tee"]  # added at the end, none deleted
+    lungi, tee = listed["cotton-lungi"], listed["tee"]
     assert (lungi["code"], lungi["price"], lungi["colours"], lungi["stock"]) == (
         "cotton-lungi",
         45000,
@@ -364,10 +368,14 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
         20,
     )
     assert lungi["was_price"] == 60000  # on sale
+    assert (tee["sizes"], tee["stock"], tee["was_price"]) == (["S", "M"], None, None)
 
     per_size = "Name,Price,Sizes,Stock\nTee,350,M; L,M: 2; L: 0\n"
-    await client.post("/api/products/import", json={"csv": per_size})
-    [tee_now] = (await client.get("/api/products")).json()
+    second = (await client.post("/api/products/import", json={"csv": per_size})).json()
+    assert second["added"] == 0  # the same code: updated
+    listed = {p["code"]: p for p in (await client.get("/api/products")).json()}
+    assert list(listed) == [*seeded, "cotton-lungi", "tee"]
+    tee_now = listed["tee"]
     assert (tee_now["stock"], tee_now["variants"]) == (
         None,
         [{"size": "M", "colour": "", "stock": 2}, {"size": "L", "colour": "", "stock": 0}],
@@ -375,7 +383,22 @@ async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> No
     no_such_size = [{**tee_now, "variants": [{"size": "XXL", "stock": 1}]}]
     refused = await client.put("/api/products", json=no_such_size)
     assert refused.status_code == 422 and "isn't one of its sizes" in refused.text
-    assert (tee["sizes"], tee["stock"], tee["was_price"]) == (["S", "M"], None, None)
+
+
+async def test_a_second_source_updates_the_same_product_by_name(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """Another source's code for a product we have: the same name is the same product (D120)."""
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await client.post("/api/products/import", json={"csv": "Name,Price\nCotton Lungi,450\n"})
+    count = len((await client.get("/api/products")).json())
+    mapping = {"code": "SKU", "name": "Title", "price": "Price"}
+    other = "SKU,Title,Price\nLG-7, cotton lungi ,480\nGM-1,Gamchha,150\n"
+    body = {"csv": other, "mapping": mapping}
+    assert (await client.post("/api/products/import", json=body)).json()["added"] == 1
+    listed = {p["code"]: p for p in (await client.get("/api/products")).json()}
+    assert len(listed) == count + 1  # Gamchha
+    assert "cotton-lungi" not in listed and listed["LG-7"]["price"] == 48000
 
 
 SHEET = 'Item Title,MRP,Qty,Supplier\nCotton Panjabi,"৳1,850",12,Rahim & Co\nTee,350,,\n'
@@ -394,7 +417,8 @@ async def test_their_columns_are_matched_to_ours_and_imported(
 
     body = {"csv": SHEET, "mapping": suggested["mapping"]}
     await client.post("/api/products/import", json=body)
-    panjabi, tee = (await client.get("/api/products")).json()
+    named = {p["name"]: p for p in (await client.get("/api/products")).json()}
+    panjabi, tee = named["Cotton Panjabi"], named["Tee"]
     assert (panjabi["name"], panjabi["price"], panjabi["stock"]) == ("Cotton Panjabi", 185000, 12)
     assert (tee["price"], tee["stock"]) == (35000, None)
 
@@ -694,7 +718,8 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     assert (await client.put("/api/products", json=products)).status_code == 422
     csv = "Name,Code,Price\nCotton Kurti,kurti,950\n"
     await client.post("/api/products/import", json={"csv": csv})
-    assert (await client.get("/api/products")).json()[0]["photos"] == [url]  # kept
+    kurti_now = next(p for p in (await client.get("/api/products")).json() if p["code"] == "kurti")
+    assert kurti_now["photos"] == [url]  # kept
 
     llm = services.conversations.runtime.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]

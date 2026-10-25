@@ -96,8 +96,10 @@ const handle = (event, data, reply) => {
     case "photos": {  // products a tool showed (D57): a card each, photo, name and price
       const row = add("photos", "");
       for (const item of data.items) {
-        const card = document.createElement("div");
+        const card = document.createElement("a");  // opens the product's page (D121)
         card.className = "photo";
+        card.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web`;
+        card.target = "_blank";
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.name;

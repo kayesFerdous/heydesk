@@ -131,12 +131,41 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
         "choice": "Order [kurti]",  # its button's tap (D99)
+        "page": "https://heydesk.test/p/dev-shop/kurti?from=messenger",  # its page (D121)
     }
     assert fake.cards == [(PSID, [card])]
     assert sent(app) == [(PSID, "Is it this one?")]
 
     await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up
     assert sent(app)[-1] == (PSID, NOT_TEXT)
+
+
+async def test_a_products_card_opens_its_public_page(app: FastAPI, client: AsyncClient) -> None:
+    """The page shows what a buyer may see, as HTML, with the way back to the chat; anything
+    else, another business's agent included, is the same 404 (D121)."""
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    url = await kurti_with_photo(client)
+    await connect(client)
+    products = (await client.get("/api/products")).json()
+    kurti = next(p for p in products if p["code"] == "kurti")
+    kurti["description"] = "<script>alert(1)</script>"
+    await client.put("/api/products", json=products)
+
+    page = await client.get("/p/dev-shop/kurti?from=messenger")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "default-src 'none'" in page.headers["content-security-policy"]
+    body = page.text
+    assert kurti["name"] in body and "৳950" in body and url in body
+    assert "<script>" not in body and "&lt;script&gt;" in body  # the owner's words, escaped
+    assert f'href="https://m.me/{PAGE}"' in body and "Order [kurti]" in body
+    assert "/api/" not in body and "workspace" not in body
+    assert "m.me" not in (await client.get("/p/dev-shop/kurti?from=web")).text
+
+    await services.agents.ensure_dev_agent("restaurant", SEEDS / "restaurant.yaml")
+    for wrong in ("/p/dev-shop/no-such", "/p/nobody/kurti", "/p/dev-restaurant/kurti"):
+        missing = await client.get(wrong)
+        assert missing.status_code == 404 and "Not found" in missing.text
 
 
 async def test_a_page_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:

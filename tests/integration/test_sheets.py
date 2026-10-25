@@ -80,11 +80,12 @@ async def test_a_sheet_with_a_problem_keeps_the_old_list(world: World) -> None:
     sheet = Sheet(products(silk="5"))
     world.services.sheets.fetch = sheet
     await world.services.sheets.link(DEV_WORKSPACE_ID, LINK, MAPPING)
+    before = await world.store(agent).products()
 
     sheet.text = products(silk="5", kurti_price="cheap")
     link = await world.services.sheets.sync(DEV_WORKSPACE_ID)
     assert "row 3" in link.problem and "cheap" in link.problem
-    assert len(await world.store(agent).products()) == 2
+    assert await world.store(agent).products() == before
 
     sheet.problem = "Share the sheet as 'Anyone with the link: Viewer', then try again."
     link = await world.services.sheets.sync(DEV_WORKSPACE_ID)
@@ -136,17 +137,29 @@ async def test_while_a_sheet_is_linked_the_list_is_changed_there(
     assert (await client.put("/api/menu", json=[])).status_code == 200
 
 
-async def test_a_linked_shop_still_takes_photos_here(app: FastAPI, client: AsyncClient) -> None:
+async def test_a_linked_shop_still_takes_edits_and_imports_here(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The sheet's products join the list; an edit or a file here adds to it, and a row deleted
+    in the sheet leaves it, but nothing else does (D120)."""
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    app.state.services.sheets.fetch = Sheet(products(silk="5"))
+    seeded = [p["code"] for p in (await client.get("/api/products")).json()]
+    sheet = Sheet(products(silk="5"))
+    app.state.services.sheets.fetch = sheet
     await client.put("/api/agent/sheet", json={"url": LINK, "mapping": MAPPING})
-    silk, kurti = (await client.get("/api/products")).json()
+    listed = (await client.get("/api/products")).json()
+    assert [p["code"] for p in listed] == seeded  # both were there already: updated in place
+    silk = next(p for p in listed if p["code"] == "panjabi-silk")
 
     file = {"file": ("p.png", photo("red"), "image/png")}
     url = (await client.post("/api/products/photos", files=file)).json()["url"]
-    edited = [{**silk, "price": 1, "photos": [url]}, kurti]
-    await client.put("/api/products", json=edited)
-    silk_now, _ = (await client.get("/api/products")).json()
-    assert (silk_now["photos"], silk_now["price"]) == ([url], 320000)  # the price is the sheet's
+    edited = [{**p, "photos": [url]} if p is silk else p for p in listed]
+    assert (await client.put("/api/products", json=edited)).status_code == 200
     csv = {"csv": "Name,Price\nTee,350\n"}
-    assert (await client.post("/api/products/import", json=csv)).status_code == 409
+    assert (await client.post("/api/products/import", json=csv)).json()["added"] == 1
+
+    sheet.text = "Code,Item,Price,Qty\npanjabi-silk,Silk Panjabi,3300,5\n"  # kurti deleted there
+    await client.post("/api/agent/sheet/sync")
+    now = {p["code"]: p for p in (await client.get("/api/products")).json()}
+    assert "kurti" not in now and "tee" in now  # the file's Tee stays
+    assert (now["panjabi-silk"]["price"], now["panjabi-silk"]["photos"]) == (330000, [url])
