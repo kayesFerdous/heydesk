@@ -1,7 +1,8 @@
 """Messaging apps: a business connects its own Telegram bot (D42), Facebook Page (D60) or
 WhatsApp number (D103), and the agent answers there.
 
-The app posts each message to our webhook; the reply is the whole turn, sent as one message.
+The app posts each message to our webhook. The agent waits a moment for the visitor's next
+message, then answers all of them in one turn, sent as one message (D117).
 """
 
 import asyncio
@@ -36,6 +37,9 @@ log = logging.getLogger(__name__)
 
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
+# what Connect with Facebook asks for (D118): list the owner's Pages (also those in a business
+# portfolio), subscribe our app to one, and answer its messages
+FACEBOOK_SCOPE = "pages_show_list,business_management,pages_manage_metadata,pages_messaging"
 
 
 def first_photo(message: dict[str, Any]) -> str | None:
@@ -133,6 +137,12 @@ class ChannelService:
         self.whatsapp = whatsapp
         self.settings = settings
         self.now = now
+        # a chat's messages not answered yet, while it waits for more (D117); in memory, so
+        # one server process
+        self.waiting: dict[str, list[dict[str, Any]]] = {}
+        # WhatsApp's webhook quotes only a message's id, so the buyers' recent messages are
+        # kept here, by id, for their replies (D117)
+        self.whatsapp_said: dict[str, dict[str, Any]] = {}
 
     async def connect_telegram(self, ws: str, token: str) -> Channel:
         """Checks the token with Telegram and points the bot's messages at us. Connecting
@@ -190,6 +200,33 @@ class ChannelService:
         channel = await self._save(ws, agent.id, MESSENGER, channel_id, token, "", page_id)
         log.info("messenger connected", extra={"channel_id": channel_id})
         return channel
+
+    def facebook_login(self) -> dict[str, str]:
+        """What the owner's Connect with Facebook button needs (D118): our app's id, and the
+        permissions it asks for. Listing and subscribing Pages, and answering on them."""
+        if not (self.settings.META_APP_ID and self.settings.META_APP_SECRET):
+            raise HeyDeskError("The server has no META_APP_ID, so Facebook login is off.")
+        return {"app_id": self.settings.META_APP_ID, "scope": FACEBOOK_SCOPE}
+
+    async def facebook_pages(self, user_token: str) -> list[dict[str, str]]:
+        """The Pages the owner's Facebook login manages, with their tokens (D118)."""
+        self.facebook_login()  # the app's id and secret are set
+        try:
+            return await self.messenger.pages(
+                self.settings.META_APP_ID, self.settings.META_APP_SECRET, user_token
+            )
+        except MessengerUnavailable:
+            raise InvalidConfig(
+                {"user_token": "Facebook didn't accept this login. Try connecting again."}
+            ) from None
+
+    async def connect_facebook(self, ws: str, user_token: str, page_id: str) -> Channel:
+        """Connects one of the login's Pages with its own token, as if typed in (D118)."""
+        pages = await self.facebook_pages(user_token)
+        page = next((p for p in pages if p["id"] == page_id), None)
+        if page is None:
+            raise InvalidConfig({"page_id": "This Facebook login doesn't manage that Page."})
+        return await self.connect_messenger(ws, page["token"], page_id)
 
     async def messenger_of(self, ws: str) -> Channel:
         return await self._of(ws, MESSENGER, "This business hasn't connected a Facebook Page.")
@@ -295,7 +332,10 @@ class ChannelService:
             message = {"text": event["postback"].get("payload") or ""}
         if not message or message.get("is_echo"):  # the Page's own messages
             return
-        await self._answer(channel, str(event["sender"]["id"]), message)
+        psid = str(event["sender"]["id"])
+        with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would (D117)
+            await self.messenger.mark_seen(channel.token, psid)
+        await self._answer(channel, psid, message)
 
     async def answer_whatsapp(
         self, channel: Channel, message: dict[str, Any], name: str | None = None
@@ -313,6 +353,10 @@ class ChannelService:
             said = {"text": choice.get("id") or ""}
         elif kind == "image":
             said = {"image": message["image"], "caption": message["image"].get("caption") or ""}
+        said["reply_to"] = (message.get("context") or {}).get("id")
+        self.whatsapp_said[message["id"]] = said
+        if len(self.whatsapp_said) > 10_000:  # the oldest goes
+            del self.whatsapp_said[next(iter(self.whatsapp_said))]
         with contextlib.suppress(WhatsAppUnavailable):  # "typing…" until the reply
             await self.whatsapp.send_typing(channel.token, channel.address, message["id"])
         await self._answer(channel, str(message["from"]), said | {"name": name})
@@ -327,42 +371,104 @@ class ChannelService:
             if chat_id == channel.owner_chat_id:  # the owner answering a visitor
                 await self.team.owner_wrote(channel, message)
                 return
-            agent = await self.agents.by_id(channel.agent_id)
-            photo = await self._photo(channel, message) if agent.desk.takes_photos else None
-            if photo is not None:  # its words, if any, are Telegram's caption
-                text = message.get("caption") or ""
-            if text is None:  # a sticker, a voice note, a file
-                await self._send(channel, chat_id, NOT_TEXT)
-            elif text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
+            if text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
+                agent = await self.agents.by_id(channel.agent_id)
                 await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
                 await self._send(channel, chat_id, agent.greeting)
-            else:
-                typing = asyncio.create_task(self._keep_typing(channel, chat_id))
-                try:
-                    reply = await self.conversations.reply(
-                        agent, channel.kind, chat_id, text or "", photo, message.get("name")
-                    )
-                finally:
-                    typing.cancel()
-                if reply.photos:
-                    await self._send_photos(channel, chat_id, reply.photos)
-                # a summary's Yes and Change go under it, the last message (D111)
-                summary = reply.card is not None and reply.card.kind == "summary"
-                choices = buttons(reply.choices)
-                if reply.text:
-                    await self._send(channel, chat_id, reply.text, [] if summary else choices)
-                if reply.card:
-                    await self._send_card(channel, chat_id, reply.card, choices if summary else [])
-                if reply.handoff:
-                    phone = reply.handoff.phone or reply.handoff.email
-                    await self._send(
-                        channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
-                    )
+                return
+            messages = await self._gather(channel, chat_id, message)
+            if messages is not None:
+                await self._turn(channel, chat_id, messages)
         except HeyDeskError as error:  # too long, or a suspended business: it says why
             await self._send(channel, chat_id, error.message)
         except Exception:
             log.exception("answer failed", extra={"channel_id": channel.id})
             await self._send(channel, chat_id, FAILED)
+
+    async def _gather(
+        self, channel: Channel, chat_id: str, message: dict[str, Any]
+    ) -> list[dict[str, Any]] | None:
+        """Many bubbles, one turn (D117): waits `CHAT_WAIT_SECONDS` after a message. If another
+        came meanwhile, that one answers both, so this gives None; if not, every message the
+        chat sent while it waited, in order."""
+        key = f"{channel.id}:{chat_id}"
+        waiting = self.waiting.setdefault(key, [])
+        waiting.append(message)
+        await asyncio.sleep(self.settings.CHAT_WAIT_SECONDS)
+        if waiting[-1] is not message:
+            return None
+        del self.waiting[key]
+        return waiting
+
+    async def _turn(self, channel: Channel, chat_id: str, messages: list[dict[str, Any]]) -> None:
+        """One turn on the visitor's messages: their words a line each, a quoted message before
+        the words that reply to it (D117), and the last photo, theirs or a quoted one."""
+        agent = await self.agents.by_id(channel.agent_id)
+        takes_photos = agent.desk.takes_photos
+        lines: list[str] = []
+        photo: bytes | None = None
+        for message in messages:
+            text = message.get("text")
+            sent = await self._photo(channel, message) if takes_photos else None
+            if sent is not None:  # its words, if any, are the caption
+                photo, text = sent, message.get("caption") or ""
+            if text is None:  # a sticker, a voice note, a file
+                continue
+            words, quoted = await self._quoted(channel, message, takes_photos)
+            lines.append(f'(replying to: "{words}") {text}' if words else text)
+            if quoted is not None and sent is None:
+                photo = quoted
+        if not lines:
+            await self._send(channel, chat_id, NOT_TEXT)
+            return
+        typing = asyncio.create_task(self._keep_typing(channel, chat_id))
+        try:
+            reply = await self.conversations.reply(
+                agent,
+                channel.kind,
+                chat_id,
+                "\n".join(line for line in lines if line),
+                photo,
+                messages[-1].get("name"),
+            )
+        finally:
+            typing.cancel()
+        if reply.photos:
+            await self._send_photos(channel, chat_id, reply.photos)
+        # a summary's Yes and Change go under it, the last message (D111)
+        summary = reply.card is not None and reply.card.kind == "summary"
+        choices = buttons(reply.choices)
+        if reply.text:
+            await self._send(channel, chat_id, reply.text, [] if summary else choices)
+        if reply.card:
+            await self._send_card(channel, chat_id, reply.card, choices if summary else [])
+        if reply.handoff:
+            phone = reply.handoff.phone or reply.handoff.email
+            await self._send(
+                channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
+            )
+
+    async def _quoted(
+        self, channel: Channel, message: dict[str, Any], takes_photos: bool
+    ) -> tuple[str, bytes | None]:
+        """The earlier message this one replies to (D117): its words, and its photo if the desk
+        takes photos. Telegram sends the whole message; Messenger its id, so it's fetched;
+        WhatsApp its id, so only a buyer's own message this server kept is known."""
+        try:
+            if channel.kind == TELEGRAM:
+                quoted = message.get("reply_to_message")
+            elif channel.kind == MESSENGER:
+                mid = (message.get("reply_to") or {}).get("mid")
+                quoted = await self.messenger.get_message(channel.token, mid) if mid else None
+            else:
+                quoted = self.whatsapp_said.get(message.get("reply_to") or "")
+            if not quoted:
+                return "", None
+            words = (quoted.get("text") or quoted.get("caption") or "")[:300]
+            photo = await self._photo(channel, quoted) if takes_photos else None
+        except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable):
+            return "", None  # the reply is read on its own
+        return words, photo
 
     async def _send(
         self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None

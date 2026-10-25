@@ -93,7 +93,9 @@ def make_test_settings() -> Settings:
         QDRANT_LOCAL_PATH=":memory:",
         PUBLIC_URL="https://heydesk.test",
         META_APP_SECRET="app-secret",
+        META_APP_ID="4242",
         MESSENGER_VERIFY_TOKEN="verify-me",
+        CHAT_WAIT_SECONDS=0,  # each message is its own turn, unless a test waits
         PAYMENTS="fake",
         MEDIA_DIR=tempfile.mkdtemp(prefix="heydesk-media-"),  # photos never land in the repo
         _env_file=None,

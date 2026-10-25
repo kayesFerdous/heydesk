@@ -25,6 +25,26 @@ class MessengerIn(BaseModel):
     page_id: str = Field(pattern=r"^\d{1,25}$", description="The Page's id, digits only")
 
 
+class FacebookLoginIn(BaseModel):
+    user_token: str = Field(
+        min_length=20, max_length=1000, description="The token Facebook's login gave the browser"
+    )
+
+
+class FacebookPageIn(FacebookLoginIn):
+    page_id: str = Field(pattern=r"^\d{1,25}$", description="One of the login's Pages")
+
+
+class FacebookLoginOut(BaseModel):
+    app_id: str
+    scope: str  # the permissions the login asks for, comma-separated
+
+
+class FacebookPageOut(BaseModel):
+    id: str
+    name: str
+
+
 class MessengerOut(BaseModel):
     page_id: str
     link: str  # share it with customers: it opens a chat with the Page
@@ -44,6 +64,29 @@ async def connect_messenger(body: MessengerIn, ws: Workspace, services: Svc) -> 
     """Connects the business's Facebook Page (its id and access token): the agent answers its messages."""
     channel = await services.channels.connect_messenger(ws, body.token.strip(), body.page_id)
     return messenger_out(channel)
+
+
+@router.get("/api/agent/messenger/login")
+async def facebook_login(ws: Workspace, services: Svc) -> FacebookLoginOut:
+    """What the Connect with Facebook button needs (D118). 400 if the server has no app id."""
+    return FacebookLoginOut(**services.channels.facebook_login())
+
+
+@router.post("/api/agent/messenger/pages")
+async def facebook_pages(
+    body: FacebookLoginIn, ws: Workspace, services: Svc
+) -> list[FacebookPageOut]:
+    """The Pages the owner's Facebook login manages, to pick one. Never their tokens."""
+    pages = await services.channels.facebook_pages(body.user_token)
+    return [FacebookPageOut(id=p["id"], name=p["name"]) for p in pages]
+
+
+@router.post("/api/agent/messenger/facebook")
+async def connect_facebook(body: FacebookPageIn, ws: Workspace, services: Svc) -> MessengerOut:
+    """Connects the chosen Page with its token from the login: no id or token to copy."""
+    return messenger_out(
+        await services.channels.connect_facebook(ws, body.user_token, body.page_id)
+    )
 
 
 @router.delete("/api/agent/messenger", status_code=status.HTTP_204_NO_CONTENT)

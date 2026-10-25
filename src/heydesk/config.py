@@ -106,7 +106,12 @@ class Settings(BaseSettings):
     # app's dashboard to PUBLIC_URL/api/messenger and /api/whatsapp with this verify token; Meta
     # signs each post with the secret
     META_APP_SECRET: str = ""
+    # The app's id, for the owner's "Connect with Facebook" button (D118): App settings > Basic
+    META_APP_ID: str = ""
     MESSENGER_VERIFY_TOKEN: str = ""
+    # On Telegram, Messenger and WhatsApp the agent waits this long after a visitor's message
+    # for another, then answers all of them at once (D117)
+    CHAT_WAIT_SECONDS: float = 3.0
 
     # Paying online before an order is placed (D47), into each business's own SSLCommerz store
     # or bKash account (D49, D109), which the owner connects on the frontend. sslcommerz: the

@@ -3,7 +3,7 @@
 Every call takes the Page's access token: each business connects its own Page.
 """
 
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class MessengerUnavailable(Exception):
@@ -43,4 +43,18 @@ class MessengerApi(Protocol):
 
     async def send_typing(self, token: str, psid: str) -> None:
         """Shows "typing…" in the chat, until the reply or about 20 seconds."""
+        ...
+
+    async def pages(self, app_id: str, app_secret: str, user_token: str) -> list[dict[str, str]]:
+        """The Pages a Facebook login manages (D118), each `{id, name, token}`. The login's
+        short token is first made a long-lived one, so the Pages' tokens don't expire."""
+        ...
+
+    async def mark_seen(self, token: str, psid: str) -> None:
+        """Shows the visitor their messages as "Seen" (D117)."""
+        ...
+
+    async def get_message(self, token: str, mid: str) -> dict[str, Any]:
+        """A message of the Page's chats by its id, the visitor's or the Page's own, in the
+        webhook's shape: `text`, and `attachments` with an image's `payload.url` (D117)."""
         ...

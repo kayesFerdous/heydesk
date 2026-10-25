@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47), starting with R1, the agent feels human.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47). Day R1, the agent feels human (D117), built 25 Oct; its live check on a real Page is next. Day F1, Connect with Facebook (D118), built 25 Oct; connecting a real Page with it is next, then R2.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -509,17 +509,39 @@ too when its day passes. A day that changes the design adds its D-number then. E
 
 ### Day R1: the agent feels human (G21–G24)
 
-- [ ] Many bubbles, one turn: `ChannelService._answer` waits ~3 s after a chat's last message
-      (an `asyncio` task reset by each new one, in memory) and runs one turn on all of them
-- [ ] Messenger: `mark_seen` then `typing_on` while a turn runs (Telegram and WhatsApp have typing)
-- [ ] A reply to an earlier message: Messenger `reply_to.mid`, Telegram `reply_to_message`,
+- [x] Many bubbles, one turn: `ChannelService._answer` waits ~3 s after a chat's last message
+      (in memory: each message sleeps, and the last one to arrive takes them all) and runs one
+      turn on all of them (D117)
+- [x] Messenger: `mark_seen` then `typing_on` while a turn runs (Telegram and WhatsApp have typing)
+- [x] A reply to an earlier message: Messenger `reply_to.mid`, Telegram `reply_to_message`,
       WhatsApp `context.id` → `(replying to: "…")` before the text; a quoted photo is searched
-- [ ] A platform line: address the buyer the way the shop does (Bhaiya/Apu, Sir/Ma'am) and keep
+- [x] A platform line: address the buyer the way the shop does (Bhaiya/Apu, Sir/Ma'am) and keep
       it once known (docs/prompt-rules.md)
-- [ ] Tests: three quick bubbles are one turn and one reply; a quoted message reaches the model
+- [x] Tests: three quick bubbles are one turn and one reply; a quoted message reaches the model
+- [ ] Live: on a real Page, three quick messages get one reply after "seen" and typing
 
 **Done when:** `scripts/check.sh` is green; on a real Page, three quick messages get one reply
 after "seen" and typing.
+
+### Day F1: Connect with Facebook (D118)
+
+Copying a Page id and token out of Meta's dashboard is too hard for a shop owner. A button opens
+Facebook's own login; the owner picks their Page and it's connected. While our Meta app is in
+development mode this works for anyone with a role on the app (admin, developer, tester), enough
+for the demo; for every business it needs Business Verification and App Review (started on R1).
+
+- [x] `META_APP_ID` in settings; `GET /api/agent/messenger/login` → `{app_id, scope}`
+- [x] `MessengerApi.pages(user_token)`: a long-lived user token (so the Page tokens don't expire),
+      then the Pages it manages with their tokens
+- [x] `POST /api/agent/messenger/pages {user_token}` → `[{id, name}]`, never a token;
+      `POST /api/agent/messenger/facebook {user_token, page_id}` → connects that Page
+- [x] Frontend: Facebook's JS SDK, "Connect with Facebook", one Page connects at once, several
+      are a list to pick; the old id-and-token form stays behind a small link (en, bn)
+- [x] Tests: a login lists its Pages without tokens; picking one connects it; a Page not in the
+      login is refused
+
+**Done when:** `scripts/check.sh` is green; on the owner's page, Connect with Facebook connects a
+real Page and it answers a message.
 
 ### Day R2: product cards side by side (G25, G27, G16)
 

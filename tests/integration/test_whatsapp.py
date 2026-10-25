@@ -160,6 +160,7 @@ async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
     alert = to(app, 777)[-1]
     assert "on WhatsApp" in alert
     await to_telegram(client, path, secret, from_owner("Hi, this is Rahim.", alert))
+    print("SENT", fake(app).sent)
     assert fake(app).sent[-1] == (FROM, "Hi, this is Rahim.")
 
 
@@ -179,3 +180,18 @@ async def test_the_list_filters_by_channel(client: AsyncClient) -> None:
     assert await channels(channel="messenger") == []
     res = await client.get("/api/conversations", params={"channel": "fax"})
     assert res.status_code == 422
+
+
+async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
+    """D117: WhatsApp sends only the quoted message's id; the buyer's own was kept."""
+    await connect(client)
+    await post(client, message("Beef Bhuna"))
+    reply = message("is it spicy?")
+    said = reply["entry"][0]["changes"][0]["value"]["messages"][0]
+    said |= {"id": "wamid.2", "context": {"id": "wamid.1"}}
+    await post(client, reply)
+
+    assert fake(app).sent[-1] == (
+        FROM,
+        '(fake model) You said: (replying to: "Beef Bhuna") is it spicy?',
+    )

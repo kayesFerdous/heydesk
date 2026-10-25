@@ -224,3 +224,15 @@ async def test_a_photo_to_a_desk_that_takes_none(app: FastAPI, client: AsyncClie
     assert sent(app) == [
         (str(CHAT), "I can only read text messages for now. Please type your question.")
     ]
+
+
+async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
+    """D117: Telegram sends the quoted message whole."""
+    path, secret = await connect(app, client)
+    update = message("is it spicy?")
+    update["message"]["reply_to_message"] = {"message_id": 0, "text": "Beef Bhuna"}
+    await send(client, path, secret, update)
+
+    assert sent(app) == [
+        (str(CHAT), '(fake model) You said: (replying to: "Beef Bhuna") is it spicy?')
+    ]

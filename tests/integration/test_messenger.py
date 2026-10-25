@@ -1,5 +1,6 @@
 """Messenger (D60): an owner connects their Facebook Page, and visitors talk to the agent there."""
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -213,3 +214,72 @@ async def test_a_yes_tapped_with_no_read_back_saves_nothing(
 
 async def services_shop(app: FastAPI) -> None:
     await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+
+
+async def test_three_quick_messages_get_one_reply_after_seen_and_typing(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """D117: the agent waits for the visitor's next message, then answers all of them."""
+    await connect(client)
+    channels = app.state.services.channels
+    channels.settings.CHAT_WAIT_SECONDS = 0.05
+    channel = await channels.messenger_page(PAGE)
+    bubbles = [
+        {"sender": {"id": PSID}, "message": {"mid": f"m{i}", "text": text}}
+        for i, text in enumerate(["hi", "dam koto", "biryani"])
+    ]
+    await asyncio.gather(*(channels.answer_messenger(channel, b) for b in bubbles))
+
+    assert sent(app) == [(PSID, "(fake model) You said: hi\ndam koto\nbiryani")]
+    actions = channels.messenger.actions
+    assert actions[:3] == [(PSID, "seen")] * 3 and (PSID, "typing") in actions[3:]
+
+
+async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    app.state.services.channels.messenger.messages["m0"] = {"text": "Chicken Biryani · ৳350"}
+    await post(client, message("how much for two?", reply_to={"mid": "m0"}))
+
+    said = '(replying to: "Chicken Biryani · ৳350") how much for two?'
+    assert sent(app) == [(PSID, f"(fake model) You said: {said}")]
+
+
+SHOP_PAGE = {"id": PAGE, "name": "Rina's Kurti", "token": TOKEN}
+
+
+async def test_connect_with_facebook_lists_pages_and_connects_the_chosen_one(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """D118: the owner logs in with Facebook and picks a Page; nothing to copy."""
+    fake = app.state.services.channels.messenger
+    other = {"id": "1002", "name": "Another Page", "token": "EAAB-another-page-token"}
+    fake.logins["a-facebook-user-token"] = [SHOP_PAGE, other]
+
+    res = await client.get("/api/agent/messenger/login")
+    assert res.json()["app_id"] == "4242" and "pages_messaging" in res.json()["scope"]
+
+    login = {"user_token": "a-facebook-user-token"}
+    res = await client.post("/api/agent/messenger/pages", json=login)
+    assert res.json() == [
+        {"id": PAGE, "name": "Rina's Kurti"},
+        {"id": "1002", "name": "Another Page"},
+    ]
+    assert TOKEN not in res.text  # a Page's token never leaves the server
+
+    res = await client.post("/api/agent/messenger/facebook", json=login | {"page_id": PAGE})
+    assert res.status_code == 200 and res.json()["page_id"] == PAGE
+    assert PAGE in fake.subscribed
+    await post(client, message("hi"))
+    assert sent(app) == [(PSID, "(fake model) You said: hi")]
+
+
+async def test_a_page_the_login_doesnt_manage_or_a_bad_login_is_refused(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    app.state.services.channels.messenger.logins["a-facebook-user-token"] = [SHOP_PAGE]
+    login = {"user_token": "a-facebook-user-token", "page_id": "1002"}
+    res = await client.post("/api/agent/messenger/facebook", json=login)
+    assert res.status_code == 422 and "page_id" in res.json()["error"]["fields"]
+
+    res = await client.post("/api/agent/messenger/pages", json={"user_token": "x" * 30})
+    assert res.status_code == 422 and "user_token" in res.json()["error"]["fields"]

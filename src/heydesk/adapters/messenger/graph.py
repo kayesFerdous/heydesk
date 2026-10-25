@@ -76,6 +76,37 @@ class MessengerGraph:
     async def send_typing(self, token: str, psid: str) -> None:
         await self._send(token, psid, sender_action="typing_on")
 
+    async def pages(self, app_id: str, app_secret: str, user_token: str) -> list[dict[str, str]]:
+        long = await self._call(
+            "GET",
+            "oauth/access_token",
+            "",
+            grant_type="fb_exchange_token",
+            client_id=app_id,
+            client_secret=app_secret,
+            fb_exchange_token=user_token,
+        )
+        body = await self._call(
+            "GET", "me/accounts", long["access_token"], fields="id,name,access_token", limit="100"
+        )
+        return [
+            {"id": p["id"], "name": p.get("name") or p["id"], "token": p["access_token"]}
+            for p in body.get("data", [])
+        ]
+
+    async def mark_seen(self, token: str, psid: str) -> None:
+        await self._send(token, psid, sender_action="mark_seen")
+
+    async def get_message(self, token: str, mid: str) -> dict[str, Any]:
+        body = await self._call("GET", mid, token, fields="message,attachments")
+        images = [a for a in (body.get("attachments") or {}).get("data", []) if "image_data" in a]
+        return {
+            "text": body.get("message") or "",
+            "attachments": [
+                {"type": "image", "payload": {"url": a["image_data"]["url"]}} for a in images
+            ],
+        }
+
     async def _send(self, token: str, psid: str, **body: Any) -> None:
         await self._call("POST", "me/messages", token, json={"recipient": {"id": psid}, **body})
 

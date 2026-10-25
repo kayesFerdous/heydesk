@@ -950,6 +950,61 @@ Meta ─► POST /api/whatsapp (signature checked, else 404) ─► 200 at once
   have other numbers, and this number's messages find no channel.
 - The token goes in the `Authorization` header, never a URL.
 
+### Feeling human on the chat apps (D117)
+
+A buyer writes like a person: "hi", then "dam koto", then a photo, in three bubbles, and
+sometimes replies to an older message. The agent answers like a person.
+
+```
+a message ─► (Messenger: "Seen" at once) ─► _gather: waits CHAT_WAIT_SECONDS (3)
+          ─► another came meanwhile? this one stops; the last one answers them all
+          ─► _turn: each message's words a line, a photo downloaded, a quoted message
+             put before the words that reply to it ─► one ConversationService.reply
+             (typing… while it runs) ─► one reply
+```
+
+- **The wait is in memory** (`ChannelService.waiting`, chat → messages not answered yet), so it
+  needs one server process. `/start`, the owner's chat and `/start owner_` don't wait. Tests set
+  `CHAT_WAIT_SECONDS=0`, so each message is its own turn unless a test waits.
+- **Several photos:** the last one is the turn's photo (one photo a turn, D57).
+- **A reply to an earlier message** reads `(replying to: "Beef Bhuna") is it spicy?` (the quote
+  cut at 300 characters). A quoted photo is the turn's photo when the reply has none.
+  Telegram sends the quoted message whole (`reply_to_message`); Messenger only its id
+  (`reply_to.mid`), so `MessengerApi.get_message` fetches it, the buyer's or the Page's own;
+  WhatsApp only its id (`context.id`), and Meta has no way to fetch it, so the server keeps the
+  buyers' last 10,000 messages by id (`whatsapp_said`). A quote of the agent's own WhatsApp
+  message, or from before a restart, isn't known: the reply is read on its own.
+- **Sir or Ma'am:** a platform rule (docs/prompt-rules.md) has the agent address the visitor as
+  the business does, without guessing which, and keep it once known.
+
+### Connect with Facebook (D118)
+
+Copying a Page's id and access token out of Meta's dashboard (D61) is too hard for a shop
+owner. The owner's page has a **Connect with Facebook** button instead; the id-and-token form
+stays behind a small link.
+
+```
+owner's page ─► GET /api/agent/messenger/login ─► {app_id: META_APP_ID, scope}
+            ─► Facebook's JS SDK: FB.login(scope) ─► Facebook's window: log in, allow the Pages
+            ─► a short user token, in the browser
+            ─► POST /api/agent/messenger/pages {user_token}
+                 MessengerApi.pages: oauth/access_token (fb_exchange_token, with the app's id
+                 and secret) ─► a long-lived user token ─► me/accounts ─► each Page's token
+                 (from a long-lived login, a Page token doesn't expire)
+               ─► [{id, name}]: never a token
+            ─► one Page: connected at once; several: the owner picks
+            ─► POST /api/agent/messenger/facebook {user_token, page_id}
+                 the Pages again, that one's token ─► connect_messenger, as if typed in
+```
+
+- **The scope:** `pages_show_list`, `business_management` (a Page in a business portfolio is
+  only listed with it), `pages_manage_metadata` (subscribing our app) and `pages_messaging`.
+- **Nothing kept from the login.** The user token is sent twice and forgotten; only the chosen
+  Page's token is saved, encrypted, as before.
+- **Who can use it.** While our Meta app is in development mode, only people with a role on it
+  (admin, developer, tester) can log in, which is enough for the demo. For every business, Meta
+  wants Business Verification and App Review of these permissions.
+
 ### Photos on Messenger (D62)
 
 The shop's photos (D57) work on Messenger as they do in the web chat: a buyer sends a

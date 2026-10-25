@@ -1,5 +1,7 @@
 """FakeMessenger: remembers what would have gone to Facebook, for tests. The token "bad" fails."""
 
+from typing import Any
+
 from heydesk.ports.messenger import MessengerUnavailable
 
 
@@ -11,6 +13,10 @@ class FakeMessenger:
         self.choices: list[tuple[str, list[str]]] = []  # (psid, quick replies), in order
         self.links: list[tuple[str, str, str, str]] = []  # (psid, text, button, url), in order
         self.files: dict[str, bytes] = {}  # what a visitor's photo URL downloads as
+        self.actions: list[tuple[str, str]] = []  # (psid, "seen" or "typing"), in order
+        self.messages: dict[str, dict[str, Any]] = {}  # what `get_message` finds, by mid
+        # a Facebook login's Pages, by its user token (D118)
+        self.logins: dict[str, list[dict[str, str]]] = {}
 
     async def subscribe(self, token: str, page_id: str) -> None:
         if token.startswith("bad"):
@@ -39,4 +45,17 @@ class FakeMessenger:
         return self.files[url]
 
     async def send_typing(self, token: str, psid: str) -> None:
-        pass
+        self.actions.append((psid, "typing"))
+
+    async def pages(self, app_id: str, app_secret: str, user_token: str) -> list[dict[str, str]]:
+        if user_token not in self.logins:
+            raise MessengerUnavailable("oauth/access_token: Invalid OAuth access token")
+        return self.logins[user_token]
+
+    async def mark_seen(self, token: str, psid: str) -> None:
+        self.actions.append((psid, "seen"))
+
+    async def get_message(self, token: str, mid: str) -> dict[str, Any]:
+        if mid not in self.messages:
+            raise MessengerUnavailable(f"{mid}: no such message")
+        return self.messages[mid]
