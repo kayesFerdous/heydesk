@@ -984,8 +984,8 @@ owner. The owner's page has a **Connect with Facebook** button instead; the id-a
 stays behind a small link.
 
 ```
-owner's page ─► GET /api/agent/messenger/login ─► {app_id: META_APP_ID, scope}
-            ─► Facebook's JS SDK: FB.login(scope) ─► Facebook's window: log in, allow the Pages
+owner's page ─► GET /api/agent/messenger/login ─► {app_id: META_APP_ID, config_id}
+            ─► Facebook's JS SDK: FB.login({config_id}) ─► Facebook's window: log in, allow the Pages
             ─► a short user token, in the browser
             ─► POST /api/agent/messenger/pages {user_token}
                  MessengerApi.pages: oauth/access_token (fb_exchange_token, with the app's id
@@ -997,8 +997,11 @@ owner's page ─► GET /api/agent/messenger/login ─► {app_id: META_APP_ID, 
                  the Pages again, that one's token ─► connect_messenger, as if typed in
 ```
 
-- **The scope:** `pages_show_list`, `business_management` (a Page in a business portfolio is
-  only listed with it), `pages_manage_metadata` (subscribing our app) and `pages_messaging`.
+- **The permissions live in Meta's dashboard (D119).** Our app is a Business app, so its login
+  is Facebook Login for Business, which takes a configuration's id (`META_LOGIN_CONFIG_ID`),
+  not a list of permissions. The configuration asks for `pages_show_list`,
+  `business_management` (a Page in a business portfolio is only listed with it),
+  `pages_manage_metadata` (subscribing our app) and `pages_messaging`.
 - **Nothing kept from the login.** The user token is sent twice and forgotten; only the chosen
   Page's token is saved, encrypted, as before.
 - **Who can use it.** While our Meta app is in development mode, only people with a role on it

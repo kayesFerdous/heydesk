@@ -37,7 +37,7 @@ class FacebookPageIn(FacebookLoginIn):
 
 class FacebookLoginOut(BaseModel):
     app_id: str
-    scope: str  # the permissions the login asks for, comma-separated
+    config_id: str  # Facebook Login for Business's configuration: the permissions (D119)
 
 
 class FacebookPageOut(BaseModel):

@@ -530,7 +530,8 @@ Facebook's own login; the owner picks their Page and it's connected. While our M
 development mode this works for anyone with a role on the app (admin, developer, tester), enough
 for the demo; for every business it needs Business Verification and App Review (started on R1).
 
-- [x] `META_APP_ID` in settings; `GET /api/agent/messenger/login` → `{app_id, scope}`
+- [x] `META_APP_ID` and `META_LOGIN_CONFIG_ID` in settings; `GET /api/agent/messenger/login` →
+      `{app_id, config_id}` (D119: Facebook Login for Business takes a configuration, not a scope)
 - [x] `MessengerApi.pages(user_token)`: a long-lived user token (so the Page tokens don't expire),
       then the Pages it manages with their tokens
 - [x] `POST /api/agent/messenger/pages {user_token}` → `[{id, name}]`, never a token;

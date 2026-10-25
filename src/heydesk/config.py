@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     META_APP_SECRET: str = ""
     # The app's id, for the owner's "Connect with Facebook" button (D118): App settings > Basic
     META_APP_ID: str = ""
+    # Facebook Login for Business > Configurations: the one listing the Pages permissions
+    # (pages_show_list, pages_messaging, pages_manage_metadata, business_management; D119)
+    META_LOGIN_CONFIG_ID: str = ""
     MESSENGER_VERIFY_TOKEN: str = ""
     # On Telegram, Messenger and WhatsApp the agent waits this long after a visitor's message
     # for another, then answers all of them at once (D117)

@@ -37,9 +37,6 @@ log = logging.getLogger(__name__)
 
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
-# what Connect with Facebook asks for (D118): list the owner's Pages (also those in a business
-# portfolio), subscribe our app to one, and answer its messages
-FACEBOOK_SCOPE = "pages_show_list,business_management,pages_manage_metadata,pages_messaging"
 
 
 def first_photo(message: dict[str, Any]) -> str | None:
@@ -203,10 +200,13 @@ class ChannelService:
 
     def facebook_login(self) -> dict[str, str]:
         """What the owner's Connect with Facebook button needs (D118): our app's id, and the
-        permissions it asks for. Listing and subscribing Pages, and answering on them."""
-        if not (self.settings.META_APP_ID and self.settings.META_APP_SECRET):
-            raise HeyDeskError("The server has no META_APP_ID, so Facebook login is off.")
-        return {"app_id": self.settings.META_APP_ID, "scope": FACEBOOK_SCOPE}
+        Facebook Login for Business configuration that holds the permissions it asks for (D119)."""
+        s = self.settings
+        if not (s.META_APP_ID and s.META_APP_SECRET and s.META_LOGIN_CONFIG_ID):
+            raise HeyDeskError(
+                "The server has no META_APP_ID or META_LOGIN_CONFIG_ID, so Facebook login is off."
+            )
+        return {"app_id": s.META_APP_ID, "config_id": s.META_LOGIN_CONFIG_ID}
 
     async def facebook_pages(self, user_token: str) -> list[dict[str, str]]:
         """The Pages the owner's Facebook login manages, with their tokens (D118)."""

@@ -256,7 +256,7 @@ async def test_connect_with_facebook_lists_pages_and_connects_the_chosen_one(
     fake.logins["a-facebook-user-token"] = [SHOP_PAGE, other]
 
     res = await client.get("/api/agent/messenger/login")
-    assert res.json()["app_id"] == "4242" and "pages_messaging" in res.json()["scope"]
+    assert res.json() == {"app_id": "4242", "config_id": "777"}
 
     login = {"user_token": "a-facebook-user-token"}
     res = await client.post("/api/agent/messenger/pages", json=login)

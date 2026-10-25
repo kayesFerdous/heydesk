@@ -94,6 +94,7 @@ def make_test_settings() -> Settings:
         PUBLIC_URL="https://heydesk.test",
         META_APP_SECRET="app-secret",
         META_APP_ID="4242",
+        META_LOGIN_CONFIG_ID="777",
         MESSENGER_VERIFY_TOKEN="verify-me",
         CHAT_WAIT_SECONDS=0,  # each message is its own turn, unless a test waits
         PAYMENTS="fake",
