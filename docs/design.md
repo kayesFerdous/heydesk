@@ -484,7 +484,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128) |
 | PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
 | GET | `/api/visitors/blocked` | Who is blocked now, with why, by whom, until when and their latest chat (D127) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
@@ -542,7 +542,11 @@ between people. With `handoff.auto_assign` on (off at first), a hand-off with no
 to the joined moderator with the fewest open chats (`needs_human` or `human`), the longest on
 the team first when it's even; with no joined moderator it stays unassigned. Having a chat
 doesn't stop the agent: taking over is still a reply from the team (D43). Each move is a
-`team_events` row like any write.
+`team_events` row like any write. So the team can see who is busy, each member on
+`/api/team/members` has `open_chats`, the same count a hand-off goes by; and
+`GET /api/conversations/counts` gives the inbox's tabs their numbers: how many shown chats wait
+for a person (`needs_human`), and of those the caller's (`mine`) and no one's (`unassigned`)
+(D129).
 
 **Finding a chat (D128).** The list leaves out a chat that is *Done* (`done_at`) or snoozed
 (`snoozed_until` still to come). *Done* lasts until the visitor writes again: saving their next

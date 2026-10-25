@@ -78,3 +78,26 @@ async def test_a_hand_off_goes_to_the_least_busy_moderator(
     llm.script = list(handoff)
     second = await chat(app, client, "visitor-two")
     assert (await client.get(f"/api/conversations/{second}")).json()["assigned_to"] == nila_id
+
+
+async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    rafi_id = await invite(client)
+    rafi = await join(app)
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone will help you."]
+    waiting = await chat(app, client, "visitor-one")
+    llm.script = ["Hello!"]
+    await chat(app, client, "visitor-two")  # the agent has it: no one waits
+
+    counts = {"needs_human": 1, "mine": 0, "unassigned": 1}
+    assert (await rafi.get("/api/conversations/counts")).json() == counts
+    assert await assign(rafi, waiting, rafi_id) == 200
+    counts = {"needs_human": 1, "mine": 1, "unassigned": 0}
+    assert (await rafi.get("/api/conversations/counts")).json() == counts
+    team = (await client.get("/api/team/members")).json()
+    assert {m["id"]: m["open_chats"] for m in team}[rafi_id] == 1
+
+    await client.put(f"/api/conversations/{waiting}/done", json={"done": True})
+    assert (await rafi.get("/api/conversations/counts")).json()["mine"] == 0  # out of sight

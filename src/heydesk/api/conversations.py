@@ -127,6 +127,18 @@ async def conversations(
     return await out(services, ws, found)
 
 
+class CountsOut(BaseModel):
+    needs_human: int  # shown chats waiting for a person
+    mine: int  # of those, the caller's
+    unassigned: int  # of those, no one's yet
+
+
+@router.get("/api/conversations/counts")
+async def counts(services: Svc, ws: Workspace, principal: User) -> CountsOut:
+    """The inbox's numbers: how many chats wait for a person, the caller's and no one's (I1)."""
+    return CountsOut(**await services.conversations.counts(ws, principal.user_id))
+
+
 @router.get("/api/conversations/{conversation_id}")
 async def conversation(
     conversation_id: str, services: Svc, ws: Workspace

@@ -25,6 +25,7 @@ class MemberOut(BaseModel):
     status: Literal["active", "invited"]  # invited: hasn't set a password with the code yet
     invited_at: datetime
     joined_at: datetime | None
+    open_chats: int = 0  # waiting for a person, or with them: what a hand-off goes by (I1)
 
 
 class EventOut(BaseModel):
@@ -34,7 +35,7 @@ class EventOut(BaseModel):
     at: datetime
 
 
-def member(user: UserRow) -> MemberOut:
+def member(user: UserRow, open_chats: int = 0) -> MemberOut:
     return MemberOut(
         id=user.id,
         email=user.email,
@@ -42,12 +43,15 @@ def member(user: UserRow) -> MemberOut:
         status="invited" if user.email_verified_at is None else "active",
         invited_at=user.created_at,
         joined_at=user.email_verified_at,
+        open_chats=open_chats,
     )
 
 
 @router.get("/members")
 async def members(ws: Workspace, services: Svc) -> list[MemberOut]:
-    return [member(u) for u in await services.members.members(ws)]
+    """The team, each with their open chats (I1)."""
+    open_chats = await services.conversations.open_chats(ws)
+    return [member(u, open_chats.get(u.id, 0)) for u in await services.members.members(ws)]
 
 
 @router.post("/members", status_code=status.HTTP_201_CREATED)

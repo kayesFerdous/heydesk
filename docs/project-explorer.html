@@ -417,7 +417,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Inbox API",
    "type": "api",
    "file": "src/heydesk/api/conversations.py",
-   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), one transcript, hand back to the agent, who has it (D126); messages for the team.",
+   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), the counts waiting per tab (D129), one transcript, hand back to the agent, who has it (D126); messages for the team.",
    "inputs": "filters",
    "outputs": "ConversationOut, MessageOut",
    "fn": "conversation"
@@ -427,7 +427,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Team API",
    "type": "api",
    "file": "src/heydesk/api/members.py",
-   "purpose": "Owner invites/removes moderators; the team's activity log.",
+   "purpose": "Owner invites/removes moderators, each with their open chats (D129); the team's activity log.",
    "inputs": "email",
    "outputs": "MemberOut, EventOut",
    "fn": "invite"

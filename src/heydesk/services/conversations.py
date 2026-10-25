@@ -7,7 +7,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import ColumnElement, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
@@ -37,6 +37,7 @@ from heydesk.services.woo import WooService
 log = logging.getLogger(__name__)
 
 MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed (I3)
+OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs (I1)
 
 
 @dataclass
@@ -277,14 +278,37 @@ class ConversationService:
         elif done:
             query = query.where(Conversation.done_at.is_not(None))
         else:
-            query = query.where(
-                Conversation.done_at.is_(None),
-                or_(Conversation.snoozed_until.is_(None), Conversation.snoozed_until <= self.now()),
-            )
+            query = query.where(*self._showing())
         if before:
             query = query.where(Conversation.updated_at < before)
         async with self.sessions() as s:
             return list(await s.scalars(query))
+
+    async def counts(self, ws: str, user_id: str) -> dict[str, int]:
+        """How many shown chats wait for a person: all of them, the caller's, and no one's (I1)."""
+        waiting = Conversation.status == "needs_human"
+        query = select(
+            func.count().filter(waiting),
+            func.count().filter(waiting, Conversation.assigned_to == user_id),
+            func.count().filter(waiting, Conversation.assigned_to.is_(None)),
+        ).where(Conversation.workspace_id == ws, *self._showing())
+        async with self.sessions() as s:
+            needs_human, mine, unassigned = (await s.execute(query)).one()
+        return {"needs_human": needs_human, "mine": mine, "unassigned": unassigned}
+
+    async def open_chats(self, ws: str) -> dict[str, int]:
+        """Each team member's open chats, the number a hand-off goes by (I1); none: not there."""
+        query = (
+            select(Conversation.assigned_to, func.count())
+            .where(
+                Conversation.workspace_id == ws,
+                Conversation.assigned_to.is_not(None),
+                Conversation.status.in_(OPEN),
+            )
+            .group_by(Conversation.assigned_to)
+        )
+        async with self.sessions() as s:
+            return {user_id: n for user_id, n in (await s.execute(query)).all() if user_id}
 
     async def get(self, ws: str, conversation_id: str) -> Conversation:
         async with self.sessions() as s:
@@ -486,6 +510,13 @@ class ConversationService:
             updated_at=self.now(),
         )
 
+    def _showing(self) -> tuple[ColumnElement[bool], ...]:
+        """The usual list's chats: not done, and not snoozed (I3)."""
+        return (
+            Conversation.done_at.is_(None),
+            or_(Conversation.snoozed_until.is_(None), Conversation.snoozed_until <= self.now()),
+        )
+
     def _is_full(self, conv: Conversation) -> bool:
         turns = sum(1 for m in conv.messages if m.get("role") == "user")
         return turns >= self.settings.MAX_TURNS
@@ -516,7 +547,7 @@ async def least_busy(s: AsyncSession, ws: str) -> str | None:
         .where(
             Conversation.workspace_id == ws,
             Conversation.assigned_to == User.id,
-            Conversation.status.in_(("needs_human", "human")),
+            Conversation.status.in_(OPEN),
         )
         .correlate(User)
         .scalar_subquery()
