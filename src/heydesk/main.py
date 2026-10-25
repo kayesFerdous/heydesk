@@ -90,6 +90,9 @@ def create_app(
             asyncio.create_task(app.state.services.woo.run(settings.WOO_SYNC_MINUTES * 60)),
             asyncio.create_task(app.state.services.calls.run(settings.CALL_QUEUE_SECONDS)),
             asyncio.create_task(app.state.services.courier.run(settings.COURIER_SYNC_MINUTES * 60)),
+            asyncio.create_task(
+                app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
+            ),
         ]
         yield
         for loop in loops:

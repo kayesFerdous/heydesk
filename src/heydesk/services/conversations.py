@@ -7,7 +7,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
@@ -16,6 +16,7 @@ from heydesk.errors import (
     ConversationFull,
     Forbidden,
     HeyDeskError,
+    InvalidConfig,
     InvalidTransition,
     NotFound,
     UnreadablePhoto,
@@ -34,6 +35,8 @@ from heydesk.services.visitors import VisitorService
 from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
+
+MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed (I3)
 
 
 @dataclass
@@ -238,11 +241,15 @@ class ConversationService:
         channel: str | None = None,
         assigned_to: str | None = None,
         unassigned: bool = False,
+        q: str = "",
+        done: bool = False,
         limit: int = 100,
         before: datetime | None = None,
     ) -> list[Conversation]:
         """Newest activity first, a page at a time: the next page is `before=` the last
-        one's `updated_at`. `assigned_to` a team member, or `unassigned` (I1)."""
+        one's `updated_at`. `assigned_to` a team member, or `unassigned` (I1). Chats that are
+        done or snoozed are left out, or only the done ones with `done`; a search (`q`: the
+        name, or anything said, such as a phone or an order code) looks through all (I3)."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
@@ -257,6 +264,23 @@ class ConversationService:
             query = query.where(Conversation.assigned_to == assigned_to)
         if unassigned:
             query = query.where(Conversation.assigned_to.is_(None))
+        if q.strip():
+            like = (
+                "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            )
+            query = query.where(
+                or_(
+                    Conversation.name.ilike(like, escape="\\"),
+                    cast(Conversation.messages, String).ilike(like, escape="\\"),
+                )
+            )
+        elif done:
+            query = query.where(Conversation.done_at.is_not(None))
+        else:
+            query = query.where(
+                Conversation.done_at.is_(None),
+                or_(Conversation.snoozed_until.is_(None), Conversation.snoozed_until <= self.now()),
+            )
         if before:
             query = query.where(Conversation.updated_at < before)
         async with self.sessions() as s:
@@ -302,6 +326,51 @@ class ConversationService:
             conv.assigned_to = user_id
         log.info("assigned", extra={"conversation_id": conv.id})
         return conv
+
+    async def mark_done(self, ws: str, conversation_id: str, done: bool) -> Conversation:
+        """Done hides the chat until the visitor writes again; not done shows it again (I3)."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            conv.done_at = self.now() if done else None
+            if done:
+                conv.snoozed_until = None
+        return conv
+
+    async def snooze(self, ws: str, conversation_id: str, until: datetime | None) -> Conversation:
+        """Hides the chat until `until`, when it comes back with an alert (I3); None: back now.
+        A time not in the future, or more than `MAX_SNOOZE_DAYS` ahead, is refused."""
+        now = self.now()
+        if until is not None and not now < until <= now + timedelta(days=MAX_SNOOZE_DAYS):
+            raise InvalidConfig({"until": f"Pick a time in the next {MAX_SNOOZE_DAYS} days."})
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            conv.snoozed_until = until
+            conv.done_at = None
+        return conv
+
+    async def run(self, every: float) -> None:
+        """Brings snoozed chats back when they're due, every `every` seconds, until cancelled
+        (the app's lifespan starts it)."""
+        while True:
+            await asyncio.sleep(every)
+            try:
+                await self.wake_snoozed()
+            except Exception:
+                log.exception("snoozed chats not woken")
+
+    async def wake_snoozed(self) -> None:
+        """Each snoozed chat that's due is back in the list, and the owner hears about it."""
+        async with self.sessions() as s, s.begin():
+            due = list(
+                await s.scalars(
+                    select(Conversation).where(Conversation.snoozed_until <= self.now())
+                )
+            )
+            for conv in due:
+                conv.snoozed_until = None
+        for conv in due:
+            await self.team.alert(conv, "⏰ A chat you snoozed is back.")
+            log.info("snooze over", extra={"conversation_id": conv.id})
 
     async def hand_back(self, ws: str, conversation_id: str) -> Conversation:
         """The owner dealt with a hand-off from the console: the agent answers again, as
@@ -371,6 +440,7 @@ class ConversationService:
             saved = await self._get_by_id(s, conv.workspace_id, conv.id)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
+            saved.done_at = saved.snoozed_until = None  # they wrote again: it's back (I3)
             if ended.handed_off:
                 saved.status = "needs_human"
                 if auto_assign and saved.assigned_to is None:

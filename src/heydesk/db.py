@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -98,5 +99,10 @@ def make_engine(url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]
     if url in ("sqlite+aiosqlite://", "sqlite+aiosqlite:///:memory:"):
         # one shared connection, or every session would see its own empty database
         kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
-    engine = create_async_engine(url, **kwargs)
+    # JSON keeps Bangla as letters, not \u escapes, so a search can find it (I3)
+    engine = create_async_engine(url, json_serializer=readable_json, **kwargs)
     return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+
+def readable_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)

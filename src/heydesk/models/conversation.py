@@ -32,6 +32,10 @@ class Conversation(Base):
     assigned_to: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True, default=None
     )
+    # Done (I3): hidden from the list until the visitor writes again
+    done_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Snoozed (I3): hidden until then; at that time it comes back with an alert to the owner
+    snoozed_until: Mapped[datetime | None] = mapped_column(default=None, index=True)
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
     )  # what a desk keeps between turns: the cart

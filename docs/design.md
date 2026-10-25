@@ -420,7 +420,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), state JSON, messages JSON |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), state JSON, messages JSON |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
@@ -484,7 +484,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128) |
 | PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
 | GET | `/api/visitors/blocked` | Who is blocked now, with why, by whom, until when and their latest chat (D127) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
@@ -543,6 +543,17 @@ to the joined moderator with the fewest open chats (`needs_human` or `human`), t
 the team first when it's even; with no joined moderator it stays unassigned. Having a chat
 doesn't stop the agent: taking over is still a reply from the team (D43). Each move is a
 `team_events` row like any write.
+
+**Finding a chat (D128).** The list leaves out a chat that is *Done* (`done_at`) or snoozed
+(`snoozed_until` still to come). *Done* lasts until the visitor writes again: saving their next
+turn clears `done_at` and `snoozed_until`. *Snooze* takes a time in the next 30 days
+(`MAX_SNOOZE_DAYS`); `ConversationService.run` checks every `SNOOZE_CHECK_SECONDS` (60), clears
+the ones that are due and alerts the owner ("⏰ A chat you snoozed is back", with its `Ref:`).
+`?q=` matches the name, or the messages as text (`CAST(messages AS TEXT) ILIKE`), so a phone,
+an order code or any words find it, in done and snoozed chats too; `%` and `_` are taken as
+letters. JSON is stored with real letters (`json_serializer`, `ensure_ascii=False`), so Bangla
+is found too; rows saved before keep their `\u` escapes. Postgres full text waits until
+`ILIKE` is too slow.
 
 An **admin** runs the platform and belongs to
 none: made only by `uv run heydesk create-admin EMAIL [PASSWORD]`, never by signup.

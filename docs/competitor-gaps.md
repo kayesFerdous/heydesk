@@ -256,7 +256,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
   - Search names, phones, order codes and message text (`ILIKE` first; Postgres full text
     later). *Done* hides a chat until the buyer writes again. *Snooze until* brings it back with
     an alert. *Assign* to a moderator, who gets the alert. G9's notes and labels go with it.
-  - 25 Oct, D126: *Assign* built (day I1), without the alert; search, done and snooze are I3.
+  - 25 Oct, D126: *Assign* built (day I1), without the alert; D128: search, done and snooze
+    built (day I3). Their browser checks are next.
 - [ ] **G35 The buyer beside the chat** · M (= G17)
   - The chat screen's right side: their orders, bookings, notes. Built on G17's list.
 - [ ] **G36 AI help for the moderator** · S–M (G14, bigger)

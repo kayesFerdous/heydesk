@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # Calls to confirm shop orders (D89): the queue is checked this often; a ring not answered
     # this long is missed; at most this many calls ring or talk at once, on the whole server
     CALL_QUEUE_SECONDS: int = 5
+    SNOOZE_CHECK_SECONDS: int = 60  # how often snoozed chats that are due come back (I3)
     RING_SECONDS: int = 30
     MAX_LIVE_CALLS: int = 1
 

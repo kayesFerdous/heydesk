@@ -1,9 +1,9 @@
 """Conversations, and the messages for the team that every desk takes (design §9)."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
@@ -23,6 +23,8 @@ class ConversationOut(BaseModel):
     status: str  # active / needs_human / human (the team is answering, D43)
     assigned_to: str | None  # the team member who has it, or None (I1)
     assigned_email: str | None = None
+    done_at: datetime | None  # Done: hidden until the visitor writes again (I3)
+    snoozed_until: datetime | None  # hidden until then (I3)
     created_at: datetime
     updated_at: datetime
 
@@ -104,15 +106,21 @@ async def conversations(
     status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
     assigned: Literal["me", "none"] | None = None,
+    q: Annotated[str, Query(max_length=100)] = "",
+    done: bool = False,
 ) -> list[ConversationOut]:
     """Newest activity first, a page at a time (`limit`, `before` an `updated_at`),
-    optionally from one channel, and only the caller's (`assigned=me`) or no one's (I1)."""
+    optionally from one channel, and only the caller's (`assigned=me`) or no one's (I1).
+    Done and snoozed chats are left out, or only the done ones with `done=true`; `q` searches
+    every chat's name and what was said, such as a phone or an order code (I3)."""
     found = await services.conversations.list(
         ws,
         status=status,
         channel=channel,
         assigned_to=principal.user_id if assigned == "me" else None,
         unassigned=assigned == "none",
+        q=q,
+        done=done,
         limit=page.limit,
         before=page.before,
     )
@@ -158,6 +166,37 @@ async def hand_back(
         services, ws, [await services.conversations.hand_back(ws, conversation_id)]
     )
     return handled
+
+
+class DoneIn(BaseModel):
+    done: bool
+
+
+@router.put("/api/conversations/{conversation_id}/done")
+async def mark_done(
+    conversation_id: str, body: DoneIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """Done hides the chat until the visitor writes again; `false` shows it again (I3)."""
+    [marked] = await out(
+        services, ws, [await services.conversations.mark_done(ws, conversation_id, body.done)]
+    )
+    return marked
+
+
+class SnoozeIn(BaseModel):
+    until: datetime | None  # with a timezone; None: back now
+
+
+@router.put("/api/conversations/{conversation_id}/snooze")
+async def snooze(
+    conversation_id: str, body: SnoozeIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """Hides the chat until `until`, when it comes back and the owner gets an alert (I3).
+    A 422 for a time not in the next 30 days."""
+    [snoozed] = await out(
+        services, ws, [await services.conversations.snooze(ws, conversation_id, body.until)]
+    )
+    return snoozed
 
 
 class AssigneeIn(BaseModel):
