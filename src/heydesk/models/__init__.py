@@ -11,6 +11,7 @@ from heydesk.models.document import Document
 from heydesk.models.lead import Lead
 from heydesk.models.note import Note
 from heydesk.models.payment_account import PaymentAccount
+from heydesk.models.post_comment import PostComment
 from heydesk.models.sheet_link import SheetLink
 from heydesk.models.subscription_payment import SubscriptionPayment
 from heydesk.models.team_event import TeamEvent
@@ -33,6 +34,7 @@ __all__ = [
     "Lead",
     "Note",
     "PaymentAccount",
+    "PostComment",
     "SheetLink",
     "SubscriptionPayment",
     "TeamEvent",

@@ -17,6 +17,10 @@ class FakeMessenger:
         self.messages: dict[str, dict[str, Any]] = {}  # what `get_message` finds, by mid
         # a Facebook login's Pages, by its user token (D118)
         self.logins: dict[str, list[dict[str, str]]] = {}
+        self.posts: dict[str, str] = {}  # a post's words, by its id (D141)
+        self.public: list[tuple[str, str]] = []  # (comment id, text), in order
+        self.private: list[tuple[str, str]] = []  # (comment id, text), in order
+        self.commenter = "7001"  # who a private reply reaches: their id on the Page
 
     async def subscribe(self, token: str, page_id: str) -> None:
         if token.startswith("bad"):
@@ -54,6 +58,16 @@ class FakeMessenger:
 
     async def mark_seen(self, token: str, psid: str) -> None:
         self.actions.append((psid, "seen"))
+
+    async def post_text(self, token: str, post_id: str) -> str:
+        return self.posts.get(post_id, "")
+
+    async def reply_public(self, token: str, comment_id: str, text: str) -> None:
+        self.public.append((comment_id, text))
+
+    async def reply_private(self, token: str, comment_id: str, text: str) -> str:
+        self.private.append((comment_id, text))
+        return self.commenter
 
     async def get_message(self, token: str, mid: str) -> dict[str, Any]:
         if mid not in self.messages:

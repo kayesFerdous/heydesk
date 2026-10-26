@@ -425,6 +425,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
 | `tickets` | the shared columns, reason (the agent's words for what's wrong). Code `C-101`; open ↔ solved; one open ticket per chat; who has it is the chat's `assigned_to` (D138) |
 | `leads` | the shared columns, call_at (UTC), note (what they want), why (a lost one's reason, lower case). Code `L-101`; open → sold / not_now / lost, and back to open (D139) |
+| `post_comments` | post_id, commenter (their id in the comment), comment_id (the one answered); unique per business, post and commenter: one public and one private reply each (D141) |
 | `notes` | conversation_id, author (the team member's email), text, created_at: the team's notes on a chat, insert only, never in the transcript (D136) |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
@@ -1099,6 +1100,24 @@ Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at 
   alert there, and the Page sends their words. Facebook only lets a Page answer within 24 hours
   of the visitor's last message; a later reply fails and is logged.
 - The token goes in the Graph API's query string, so it's never logged (httpx's log is off).
+
+**Comments on the Page's posts (D141).** The app is subscribed to the Page's `feed` too. A
+`feed` change with `item: comment` and `verb: add` runs `ChannelService.answer_comment`:
+
+1. The Page's own comments (`from.id` is the Page, our public replies among them) are skipped.
+2. A `post_comments` row per post and person (unique), so a second comment from them gets
+   nothing: the chat is open by then.
+3. The post's words (`MessengerApi.post_text`) name its product: on a shop, `post_product`
+   finds the product whose name (longest first) or code they have. The private reply says its
+   name, price and sizes from the list (rule 1), or that it's sold out; with no product, a
+   plain thanks. One public reply goes under the comment: "Sent you the details in Messenger
+   📩".
+4. The private reply (`me/messages` with `recipient.comment_id`) opens a Messenger chat; Meta
+   answers with the buyer's PSID, which is the chat's contact (G43). The comment, as
+   `(a comment on our post: "…") dam koto?`, and the private reply go into that chat
+   (`ConversationService.commented`), so their reply in Messenger carries on from it.
+
+It needs `pages_manage_engagement` and `pages_read_user_content` (App Review) on top of D119's.
 
 ### WhatsApp (D103)
 

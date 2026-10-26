@@ -537,7 +537,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ChannelService",
    "type": "service",
    "file": "src/heydesk/services/channels.py",
-   "purpose": "Connect Telegram/Messenger/WhatsApp; answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111).",
+   "purpose": "Connect Telegram/Messenger/WhatsApp; answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111). A Page post's comment: one public and one private reply, into the buyer's Messenger chat (answer_comment, D141).",
    "inputs": "webhook payloads",
    "outputs": "messages sent",
    "fn": "_answer"
@@ -1616,6 +1616,11 @@ tr.hl td { background: var(--accent-soft); }
    "source": "a-messenger",
    "target": "s-channels",
    "label": "answer_messenger"
+  },
+  {
+   "source": "a-messenger",
+   "target": "s-channels",
+   "label": "answer_comment (a post's comment, D141)"
   },
   {
    "source": "a-whatsapp",
@@ -6304,7 +6309,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "bg",
      "label": "200 OK now, turn in background",
      "shape": "step",
-     "code": "background.add_task(services.channels.answer_messenger, channel, event)\n# Messenger: mark_seen first (D117)"
+     "code": "background.add_task(services.channels.answer_messenger, channel, event)\n# Messenger: mark_seen first (D117)\n# a feed comment: answer_comment, one public + one private reply (D141)"
     },
     {
      "id": "owner1",

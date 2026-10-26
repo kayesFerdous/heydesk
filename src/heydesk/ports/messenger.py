@@ -59,6 +59,19 @@ class MessengerApi(Protocol):
         """Shows the visitor their messages as "Seen" (D117)."""
         ...
 
+    async def post_text(self, token: str, post_id: str) -> str:
+        """A Page post's words, to find its product (D141)."""
+        ...
+
+    async def reply_public(self, token: str, comment_id: str, text: str) -> None:
+        """A reply under the comment, for everyone to see (D141)."""
+        ...
+
+    async def reply_private(self, token: str, comment_id: str, text: str) -> str:
+        """Facebook's private reply to a comment: it opens a Messenger chat with its writer
+        (D141). Returns their id on this Page, the chat's contact."""
+        ...
+
     async def get_message(self, token: str, mid: str) -> dict[str, Any]:
         """A message of the Page's chats by its id, the visitor's or the Page's own, in the
         webhook's shape: `text`, and `attachments` with an image's `payload.url` (D117)."""

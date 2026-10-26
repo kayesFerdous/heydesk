@@ -18,17 +18,20 @@ from typing import Any
 from urllib.parse import quote
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.db import new_id
+from heydesk.desks.shop.values import ShopConfig, post_product
 from heydesk.errors import HeyDeskError, InvalidConfig, NotFound, VisitorSilenced
-from heydesk.models import Channel
+from heydesk.models import Channel, PostComment
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 from heydesk.runtime.events import Card
+from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
@@ -39,6 +42,8 @@ log = logging.getLogger(__name__)
 
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
+# Under a comment, for everyone (D141); the details go privately
+IN_INBOX = "Sent you the details in Messenger 📩"
 PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
 
 
@@ -349,6 +354,60 @@ class ChannelService:
         with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would (D117)
             await self.messenger.mark_seen(channel.token, psid)
         await self._answer(channel, psid, message)
+
+    async def answer_comment(self, channel: Channel, change: dict[str, Any]) -> None:
+        """A new comment on the Page's post (D141): one public reply under it and one private
+        reply that opens a Messenger chat, once per post and person. The Page's own comments
+        (our replies among them) are skipped. Runs after the webhook has said OK."""
+        commenter = str((change.get("from") or {}).get("id") or "")
+        post_id, comment_id = str(change.get("post_id") or ""), str(change.get("comment_id"))
+        if not commenter or commenter == channel.address or not post_id:
+            return
+        try:
+            async with self.sessions() as s, s.begin():
+                s.add(
+                    PostComment(
+                        workspace_id=channel.workspace_id,
+                        post_id=post_id,
+                        commenter=commenter,
+                        comment_id=comment_id,
+                        created_at=self.now(),
+                    )
+                )
+        except IntegrityError:  # answered on this post already: the chat has them now
+            return
+        try:
+            agent = await self.agents.by_id(channel.agent_id)
+            post = await self.messenger.post_text(channel.token, post_id)
+            answer = await self._about_post(channel.workspace_id, agent.config, post)
+            with contextlib.suppress(MessengerUnavailable):
+                await self.messenger.reply_public(channel.token, comment_id, IN_INBOX)
+            psid = await self.messenger.reply_private(channel.token, comment_id, answer)
+            post_words = " ".join(post.split())[:200]
+            said = f'(a comment on our post: "{post_words}") {change.get("message") or ""}'
+            name = (change.get("from") or {}).get("name")
+            await self.conversations.commented(agent, psid, said.strip(), answer, name)
+        except Exception:
+            log.exception("comment not answered", extra={"channel_id": channel.id})
+
+    async def _about_post(self, ws: str, config: Any, post: str) -> str:
+        """The private reply: a shop's post's product and price, from its list (rule 1)."""
+        if isinstance(config, ShopConfig):
+            store: Any = await self.agents.store(ws)
+            product = post_product(await store.products(), post)
+            if product and product.sold_out():
+                return (
+                    f"Thanks for your comment! {product.name} is sold out right now. "
+                    "Reply here and I'll suggest something similar."
+                )
+            if product:
+                sizes = f", sizes {'/'.join(product.sizes)}" if product.sizes else ""
+                price = money(product.price, config.currency)
+                return (
+                    f"Thanks for your comment! {product.name} is {price}{sizes}. "
+                    "Shall I take your order? Just reply here."
+                )
+        return "Thanks for your comment! Reply here and I'll help you."
 
     async def answer_whatsapp(
         self, channel: Channel, message: dict[str, Any], name: str | None = None

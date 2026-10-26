@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from heydesk.desks.shop.models import ShopOrder
+from heydesk.models import Conversation
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
 from tests.integration.test_shop import DETAILS, KURTI, kurti_with_photo, photo
@@ -343,3 +344,44 @@ async def test_a_dot_in_business_suite_takes_the_chat_over_and_gives_it_back(
     history = [m.get("content") for m in llm.requests[-1].messages]
     assert "It's ৳950, apni" in history and "price?" in str(history)
     assert history.count("(fake model) You said: hi") == 1  # the echo of ours wasn't added
+
+
+def comment(text: str, comment_id: str = "c1", sender: str = "5005") -> dict[str, Any]:
+    value = {
+        "item": "comment",
+        "verb": "add",
+        "post_id": f"{PAGE}_77",
+        "comment_id": comment_id,
+        "from": {"id": sender, "name": "Nila"},
+        "message": text,
+    }
+    return {
+        "object": "page",
+        "entry": [{"id": PAGE, "changes": [{"field": "feed", "value": value}]}],
+    }
+
+
+async def test_a_comment_gets_one_public_and_one_private_reply_and_joins_the_chat(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """ "dam koto?" under a post of the Cotton Kurti: a reply under it, and a private reply
+    with its price that starts their Messenger chat; a second comment gets neither, and the
+    Page's own comments are skipped (D141)."""
+    await services_shop(app)
+    await connect(client)
+    fake: Any = app.state.services.channels.messenger
+    fake.posts[f"{PAGE}_77"] = "New Cotton Kurti in 4 sizes! Comment for the price."
+    assert await post(client, comment("dam koto?")) == 200
+    await post(client, comment("size L ache?", "c2"))
+    await post(client, comment("Sent you the details in Messenger 📩", "c3", sender=PAGE))
+
+    assert fake.public == [("c1", "Sent you the details in Messenger 📩")]
+    [(comment_id, private)] = fake.private
+    assert comment_id == "c1" and "Cotton Kurti is ৳950, sizes S/M/L/XL" in private
+
+    services = app.state.services
+    async with services.conversations.sessions() as s:
+        [conv] = list(await s.scalars(select(Conversation)))
+    assert (conv.channel, conv.contact) == ("messenger", fake.commenter)
+    said = [m["content"] for m in conv.messages[:2]]
+    assert said[0].endswith("dam koto?") and said[1] == private

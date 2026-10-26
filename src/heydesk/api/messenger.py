@@ -123,4 +123,9 @@ async def messenger_webhook(
             continue
         for event in entry.get("messaging", []):
             background.add_task(services.channels.answer_messenger, channel, event)
+        for change in entry.get("changes", []):  # the Page's feed: a new comment (D141)
+            value = change.get("value") or {}
+            new = value.get("item") == "comment" and value.get("verb") == "add"
+            if change.get("field") == "feed" and new:
+                background.add_task(services.channels.answer_comment, channel, value)
     return {"ok": True}

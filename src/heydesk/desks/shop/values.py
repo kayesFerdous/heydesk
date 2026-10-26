@@ -417,6 +417,16 @@ def mobile(said: str) -> str:
     return digits
 
 
+def post_product(products: list[Product], post: str) -> Product | None:
+    """The product a post is about (D141): the one whose name, or code, its words have; the
+    longest name first, so "Silk Panjabi" wins over "Panjabi". None: no product named."""
+    words = post.lower()
+    for p in sorted(products, key=lambda p: -len(p.name)):
+        if p.name.lower() in words or re.search(rf"\b{re.escape(p.code)}\b", words):
+            return p
+    return None
+
+
 def cart_text(cart: dict[str, Any], currency: str) -> str:
     """The cart `update_cart` keeps in the state: "2 × Cotton Panjabi (L, White), …, subtotal
     ৳3,700", and its coupon: "coupon EID10 −৳370" or "coupon SHIPFREE: free delivery" (D133)."""
