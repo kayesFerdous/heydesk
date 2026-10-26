@@ -1274,6 +1274,17 @@ agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
 - The port gains `download(url) -> bytes` and `send_cards(token, psid, cards)`; `FakeMessenger`
   records both.
 
+### Voice notes (D147)
+
+A voice note on Telegram (`voice`, or `audio`), WhatsApp (`audio`) or Messenger (an `audio`
+attachment, `first_audio`) is downloaded like a photo and put in words by the `Transcriber`
+port: Groq's Whisper (`whisper-large-v3-turbo`, `adapters/transcriber/groq.py`), which takes the
+apps' ogg and mp4 as they are and finds the language itself. `build_transcriber` uses it when
+`GROQ_API_KEY` is set, the fake when `LLM_PROVIDER=fake`, and none otherwise. The turn reads
+`[Voice note] <words>` as if typed; the reply stays text. A note over `MAX_VOICE_BYTES` (2 MB,
+minutes long), one that can't be fetched or heard, or no transcriber, is skipped like a sticker:
+alone, it gets `NOT_TEXT`. Nothing is kept but the words in the transcript.
+
 ### Photos on Telegram (D63)
 
 The same as Messenger's, in Telegram's way:

@@ -36,6 +36,7 @@ from heydesk.models import Channel, PagePost, PostComment, Turn
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
+from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 from heydesk.runtime.events import Card
 from heydesk.runtime.speech import money
@@ -53,6 +54,7 @@ FAILED = "Sorry, something went wrong. Please try again."
 IN_INBOX = "Sent you the details in Messenger 📩"
 LOOK_IN_INBOX = "We sent you a message in Messenger: check your inbox 📩"  # the nudge (D142)
 NUDGE = timedelta(hours=2)  # no answer in the chat this long after a comment's reply
+MAX_VOICE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
 PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
 
 
@@ -62,6 +64,14 @@ def first_photo(message: dict[str, Any]) -> str | None:
         payload = attachment.get("payload") or {}
         if attachment.get("type") == "image" and "sticker_id" not in payload:
             return payload.get("url")
+    return None
+
+
+def first_audio(message: dict[str, Any]) -> str | None:
+    """The first voice clip's URL in a Messenger message (D147)."""
+    for attachment in message.get("attachments") or []:
+        if attachment.get("type") == "audio":
+            return (attachment.get("payload") or {}).get("url")
     return None
 
 
@@ -143,9 +153,11 @@ class ChannelService:
         whatsapp: WhatsAppApi,
         settings: Settings,
         now: Callable[[], datetime],
+        transcriber: Transcriber | None = None,
     ) -> None:
         self.sessions = sessions
         self.agents = agents
+        self.transcriber = transcriber  # voice notes in words (D147); None: "please type"
         self.conversations = conversations
         self.visitors = visitors
         self.photos = photos
@@ -556,6 +568,8 @@ class ChannelService:
             said = {"text": choice.get("id") or ""}
         elif kind == "image":
             said = {"image": message["image"], "caption": message["image"].get("caption") or ""}
+        elif kind == "audio":  # a voice note (D147)
+            said = {"audio": message["audio"]}
         said["reply_to"] = (message.get("context") or {}).get("id")
         self.whatsapp_said[message["id"]] = said
         if len(self.whatsapp_said) > 10_000:  # the oldest goes
@@ -619,7 +633,9 @@ class ChannelService:
             sent = await self._photo(channel, message) if takes_photos else None
             if sent is not None:  # its words, if any, are the caption
                 photo, text = sent, message.get("caption") or ""
-            if text is None:  # a sticker, a voice note, a file
+            if text is None:
+                text = await self._voice(channel, message)
+            if text is None:  # a sticker, a file, a voice note not understood
                 continue
             words, quoted = await self._quoted(channel, message, takes_photos)
             lines.append(f'(replying to: "{words}") {text}' if words else text)
@@ -683,6 +699,36 @@ class ChannelService:
         self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
         await self.team.send(channel, chat_id, text, choices)
+
+    async def _voice(self, channel: Channel, message: dict[str, Any]) -> str | None:
+        """A voice note's words, marked as heard (D147), or None: not a voice note, too long,
+        or nothing understood."""
+        if self.transcriber is None:
+            return None
+        try:
+            if channel.kind == TELEGRAM:
+                note = message.get("voice") or message.get("audio")
+                audio = (
+                    await self.telegram.download(channel.token, note["file_id"]) if note else b""
+                )
+                name = "voice.ogg"
+            elif channel.kind == WHATSAPP:
+                note = message.get("audio")
+                audio = await self.whatsapp.download(channel.token, note["id"]) if note else b""
+                name = "voice.ogg"
+            else:
+                url = first_audio(message)
+                audio = await self.messenger.download(url) if url else b""
+                name = "voice.mp4"
+            if not audio or len(audio) > MAX_VOICE_BYTES:
+                return None
+            words = await self.transcriber.transcribe(audio, name)
+        except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):
+            return None
+        except TranscriberUnavailable as error:
+            log.warning("voice note failed: %s", error, extra={"channel_id": channel.id})
+            return None
+        return f"[Voice note] {words}" if words else None
 
     async def _photo(self, channel: Channel, message: dict[str, Any]) -> bytes | None:
         """The photo a visitor sent, downloaded now (Facebook's URLs expire), or None."""

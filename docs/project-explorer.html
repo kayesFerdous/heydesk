@@ -1020,6 +1020,24 @@ tr.hl td { background: var(--accent-soft); }
    "outputs": "csv"
   },
   {
+   "id": "p-transcriber",
+   "label": "Transcriber",
+   "type": "port",
+   "file": "src/heydesk/ports/transcriber.py",
+   "purpose": "A visitor's voice note in words (D147); raises TranscriberUnavailable.",
+   "inputs": "audio bytes, filename",
+   "outputs": "words"
+  },
+  {
+   "id": "ad-groq-transcriber",
+   "label": "GroqTranscriber",
+   "type": "adapter",
+   "file": "src/heydesk/adapters/transcriber/groq.py",
+   "purpose": "Groq's whisper-large-v3-turbo: the chat apps' ogg and mp4 as they come, any language (D147). FakeTranscriber offline.",
+   "inputs": "audio, filename",
+   "outputs": "words"
+  },
+  {
    "id": "p-mailer",
    "label": "Mailer",
    "type": "port",

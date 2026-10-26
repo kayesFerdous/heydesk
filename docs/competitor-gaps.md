@@ -54,7 +54,7 @@ Keep these in the pitch.
     Messenger chat.
   - *Needs:* `pages_manage_engagement` and `pages_read_user_content` through App Review.
   - 26 Oct, D141: built (day R15); App Review and a real post are next.
-- [ ] **G2 Voice notes on Messenger and Telegram** · S–M
+- [x] **G2 Voice notes on Messenger and Telegram** · S–M *(built 26 Oct, D147, WhatsApp too)*
   - *Who has it:* LazyChat.
   - *Why:* many BD buyers send voice notes instead of typing. Today they get "I can only read
     text messages" ([channels.py](../src/heydesk/services/channels.py) `NOT_TEXT`).

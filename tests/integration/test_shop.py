@@ -1299,7 +1299,8 @@ async def coupon_order(world: World, agent: LiveAgent, code: str) -> ToolResult:
     ctx = make_ctx(store, agent=agent.config)
     cart_result = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon=code))
     ctx = make_ctx(store, agent=agent.config, state=cart_result.state)
-    return await said_yes(place_order, ctx, PlaceOrderInput(**DETAILS))
+    # the same kurti each time: on purpose, so not asked about (D146)
+    return await said_yes(place_order, ctx, PlaceOrderInput(**DETAILS, again=True))
 
 
 async def test_a_coupon_takes_its_discount_off_the_bill(world: World) -> None:
@@ -1515,13 +1516,16 @@ async def test_the_same_mobile_and_items_again_is_asked_about_first(world: World
     agent = await world.agent("shop")
     store = world.store(agent)
 
-    async def order_again(again: bool = False) -> ToolResult:
+    async def kurti_ctx() -> ToolContext[Any]:
         state = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
-        ctx = make_ctx(store, state=state, agent=agent.config)
-        return await said_yes(place_order, ctx, PlaceOrderInput(**DETAILS, again=again))
+        return make_ctx(store, state=state, agent=agent.config)
+
+    async def order_again(again: bool = False) -> ToolResult:
+        args = PlaceOrderInput(**DETAILS, again=again)
+        return await said_yes(place_order, await kurti_ctx(), args)
 
     assert (await order_again()).ok
-    asked = await order_again()
+    asked = await place_order(await kurti_ctx(), PlaceOrderInput(**DETAILS))
     assert not asked.ok and "already ordered the same items as O-101" in str(asked.data)
     assert len(await orders(world)) == 1
     assert (await order_again(again=True)).ok

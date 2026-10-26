@@ -264,3 +264,16 @@ async def test_more_cards_than_photos_are_one_message_to_tap(
         {"title": "🛒 Cotton Panjabi · ৳1,850", "choice": "Order [panjabi-cotton]"},
         {"title": "🛒 Kids Panjabi · ৳890", "choice": "Order [kids-panjabi]"},
     ]
+
+
+async def test_a_voice_note_is_answered_from_its_words(app: FastAPI, client: AsyncClient) -> None:
+    """D147: the note is downloaded, put in words, and the turn reads them as heard."""
+    path, secret = await connect(app, client)
+    app.state.services.channels.telegram.files["v1"] = b"OggS..."
+    update = message(None)
+    update["message"]["voice"] = {"file_id": "v1", "duration": 3}
+    await send(client, path, secret, update)
+
+    said = "(fake model) You said: [Voice note] Do you have the black kurti in M?"
+    assert sent(app) == [(str(CHAT), said)]
+    assert app.state.services.channels.transcriber.heard == ["voice.ogg"]

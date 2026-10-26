@@ -27,6 +27,8 @@ from heydesk.adapters.payments.fake import FakeBkash, FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
+from heydesk.adapters.transcriber.fake import FakeTranscriber
+from heydesk.adapters.transcriber.groq import GroqTranscriber
 from heydesk.adapters.whatsapp.cloud import WhatsAppCloud
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
@@ -41,6 +43,7 @@ from heydesk.ports.payments import Gateways
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.sheets import FetchCsv
 from heydesk.ports.telegram import TelegramApi
+from heydesk.ports.transcriber import Transcriber
 from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.ports.woo import WooApi
 from heydesk.runtime.loop import Runtime
@@ -162,6 +165,14 @@ def build_mailer(settings: Settings) -> Mailer:
     return ConsoleMailer()  # development and tests: the emails are printed, not sent
 
 
+def build_transcriber(settings: Settings) -> Transcriber | None:
+    """Voice notes in words (D147): Groq's Whisper with a Groq key, the fake offline, or none
+    (a voice note gets "please type")."""
+    if settings.GROQ_API_KEY:
+        return GroqTranscriber(settings.GROQ_API_KEY)
+    return FakeTranscriber() if settings.LLM_PROVIDER == "fake" else None
+
+
 def build_services(
     sessions: async_sessionmaker[AsyncSession],
     llm: LanguageModel,
@@ -230,6 +241,7 @@ def build_services(
             whatsapp,
             settings,
             now,
+            build_transcriber(settings),
         ),
         conversations=conversations,
         courier=CourierService(
