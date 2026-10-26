@@ -252,6 +252,17 @@ DISTRICT = (  # the model reads the district off the address; Python picks the a
 )
 
 
+class TeamOrder(BaseModel):
+    """An order the team types for a buyer who called (D131): `POST /api/shop/orders`."""
+
+    lines: list[CartLine] = Field(min_length=1)
+    name: str
+    phone: str
+    address: str
+    district: str
+    note: str = ""
+
+
 class PlaceOrderInput(BaseModel):
     address: str = Field(
         default="",
@@ -393,14 +404,17 @@ async def new_order(
     return order, read_back, how
 
 
-async def form_order(
-    store: ShopStore, config: ShopConfig, code: str, form: BuyForm
+async def checked_order(
+    store: ShopStore,
+    config: ShopConfig,
+    wanted: list[CartLine],
+    form: BuyForm | TeamOrder,
 ) -> tuple[NewOrder, str, str] | str:
-    """The form's order, its read-back and how it's paid, checked as the chat's are; or what
-    to fix, in the buyer's words."""
+    """An order typed into a form, a product page's (D130) or the team's (D131): the order,
+    its read-back and how it's paid, checked as the chat's are; or what to fix, in plain
+    words."""
     products = {p.code: p for p in await store.products()}
-    wanted = CartLine(code=code, quantity=form.quantity, size=form.size, colour=form.colour)
-    lines = _priced(products, [wanted])
+    lines = _priced(products, wanted)
     if isinstance(lines, ToolResult):
         return "Choose a size and colour that's in stock."
     if _short(products, lines):

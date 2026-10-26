@@ -5,12 +5,14 @@ its items or details and cancelling it; an exchange request once it's delivered;
 find a product, and the ones the agent shows (D57)."""
 
 import base64
+import csv
 import html
 import io
 import json
 import re
 from datetime import timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
@@ -1021,6 +1023,7 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
     assert steps and [(s["label"], s["done"], s["current"]) for s in steps["data"]["steps"]] == [
         ("Received", True, True),
         ("Confirmed", False, False),
+        ("Packed", False, False),
         ("With the courier", False, False),
         ("Delivered", False, False),
     ]
@@ -1143,3 +1146,95 @@ async def test_a_form_with_a_problem_comes_back_filled_in(
     form = {"size": "M", "colour": "Black", "name": "Kayes", "phone": "123"}
     again = await client.post("/p/dev-shop/kurti", data=form | {"address": "Mirpur 10"})
     assert "Please check your mobile number" in again.text and 'value="Kayes"' in again.text
+
+
+async def test_the_team_types_an_order_and_takes_it_to_money_in(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A buyer who called: the team's order is checked and added up as a chat's, saved
+    confirmed with no yes, and the owner hears of it. It goes on hold, then packed, and ends
+    delivered with the cash in, or returned with a reason; not before it ends (D131)."""
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    told: list[str] = []
+
+    async def notify(ws: str, text: str) -> None:
+        told.append(text)
+
+    monkeypatch.setattr(services.team, "notify", notify)
+    body = {
+        "lines": [{"code": "kurti", "quantity": 2, "size": "M", "colour": "Black"}],
+        "name": "Rahim",
+        "phone": "01812345678",
+        "address": "Road 3, Patenga",
+        "district": "Chattogram",
+    }
+    res = await client.post("/api/shop/orders", json=body)
+    assert res.status_code == 201
+    order = res.json()
+    assert (order["status"], order["total"], order["conversation_id"]) == (
+        "confirmed",
+        202000,  # 2 × ৳950 + ৳120 outside Dhaka, from Python
+        None,
+    )
+    assert told and "typed by the team" in told[0] and order["code"] in told[0]
+    wrong = await client.post("/api/shop/orders", json=body | {"phone": "123"})
+    assert wrong.status_code == 422
+
+    url = f"/api/shop/orders/{order['id']}"
+    assert (await client.patch(url, json={"paid_in": True})).status_code == 409  # not ended
+    for status in ("on_hold", "confirmed", "packed", "shipped"):
+        assert (await client.patch(url, json={"status": status})).json()["status"] == status
+    ended = await client.patch(url, json={"status": "delivered", "paid_in": True})
+    assert (ended.json()["status"], ended.json()["paid_in"]) == ("delivered", True)
+
+    second = (await client.post("/api/shop/orders", json=body)).json()
+    url = f"/api/shop/orders/{second['id']}"
+    await client.patch(url, json={"status": "shipped"})
+    back = await client.patch(url, json={"status": "returned", "reason": "  refused  "})
+    assert back.json()["reason"] == "refused"
+
+
+async def test_a_held_order_isnt_booked_with_the_courier(world: World) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    [order] = await orders(world)
+    await world.store(agent).move_order(order.id, "on_hold")
+    await world.services.courier.sync(DEV_WORKSPACE_ID)
+    assert (await orders(world))[0].parcel_id == ""
+    await world.store(agent).move_order(order.id, "confirmed")
+    await world.store(agent).move_order(order.id, "packed")
+    await world.services.courier.sync(DEV_WORKSPACE_ID)
+    assert (await orders(world))[0].status == "shipped"  # packed is booked (D131)
+
+
+async def test_orders_export_as_the_list_shows_them(app: FastAPI, client: AsyncClient) -> None:
+    """The filtered rows, money in taka, Dhaka time, a formula kept as words; and no other
+    business's (G6)."""
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    body = {
+        "lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}],
+        "name": "=HYPERLINK(1)",
+        "phone": "01812345678",
+        "address": "Mirpur 10",
+        "district": "Dhaka",
+    }
+    first = (await client.post("/api/shop/orders", json=body)).json()
+    second = (await client.post("/api/shop/orders", json=body | {"name": "Nila"})).json()
+    await client.patch(f"/api/shop/orders/{second['id']}", json={"status": "cancelled"})
+
+    res = await client.get("/api/shop/orders.csv", params={"status": "confirmed"})
+    assert res.headers["content-type"].startswith("text/csv")
+    rows = list(csv.reader(io.StringIO(res.text.removeprefix("﻿"))))
+    assert rows[0][:3] == ["Order", "Date", "Status"] and len(rows) == 2
+    row = dict(zip(rows[0], rows[1], strict=True))
+    assert (row["Order"], row["Name"], row["Total"]) == (first["code"], "'=HYPERLINK(1)", "1010")
+    assert row["Mobile"] == "01812-345678"  # not a number, so the 0 stays
+    assert row["Date"].startswith(FIXED_NOW.astimezone(ZoneInfo("Asia/Dhaka")).strftime("%Y-%m-%d"))
+
+    other = await new_business(app)
+    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    theirs = await other.get("/api/shop/orders.csv")
+    assert len(list(csv.reader(io.StringIO(theirs.text.removeprefix("﻿"))))) == 1
+    for path in ("/api/orders.csv", "/api/bookings.csv", "/api/appointments.csv"):
+        assert (await client.get(path)).status_code == 404  # a shop has none of these

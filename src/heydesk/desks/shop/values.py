@@ -358,7 +358,9 @@ def lines_text(lines: list[dict[str, Any]]) -> str:
 STATUS_WORDS = {  # what track_order says about each status
     "unpaid": "not placed yet: it's waiting for the delivery charge to be paid online",
     "new": "received: the shop will call to confirm it before sending it",
+    "on_hold": "on hold: the shop will be in touch about it",
     "confirmed": "confirmed, and being packed",
+    "packed": "packed, and waiting for the courier",
     "shipped": "handed to the courier, on its way",
     "delivered": "delivered",
     "returned": "returned to the shop",
@@ -368,15 +370,17 @@ STATUS_WORDS = {  # what track_order says about each status
 STEPS = [
     ("new", "Received"),
     ("confirmed", "Confirmed"),
+    ("packed", "Packed"),
     ("shipped", "With the courier"),
     ("delivered", "Delivered"),
 ]
-CANCELLABLE = {"unpaid", "new", "confirmed"}  # not once the courier has it
+CANCELLABLE = {"unpaid", "new", "on_hold", "confirmed", "packed"}  # not once the courier has it
 # The items, address, area, mobile or note can change until the courier has it. An unpaid
 # order isn't placed yet: cancel it and order again
-CHANGEABLE = {"new", "confirmed"}
+CHANGEABLE = {"new", "on_hold", "confirmed", "packed"}
 # Sold but still on the shelf: a count from a linked sheet includes them (D58)
-HOLDS = {"unpaid", "new", "confirmed"}
+HOLDS = {"unpaid", "new", "on_hold", "confirmed", "packed"}
+ENDED = {"delivered", "returned", "cancelled"}  # these take money in and a reason (D131)
 
 
 @dataclass(frozen=True)

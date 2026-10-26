@@ -40,7 +40,9 @@ log = logging.getLogger(__name__)
 WOO_STATUS = {  # ours → Woo's. Every one but returned holds or settles Woo's stock
     "unpaid": "on-hold",
     "new": "processing",
+    "on_hold": "on-hold",
     "confirmed": "processing",
+    "packed": "processing",
     "shipped": "processing",
     "delivered": "completed",
     "cancelled": "cancelled",

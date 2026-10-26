@@ -436,7 +436,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92); confirmed → shipped → delivered or returned; unpaid, new or confirmed → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, total, zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -484,7 +484,9 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/o/{order_id}` | An order's page for the buyer, HTML: status, steps, items, total; not their name, mobile or address (D130) |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
-| GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
+| GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105); once it ended, `paid_in` and `reason` (D131) |
+| POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
+| GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128) |
 | PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
@@ -1484,6 +1486,23 @@ Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
 A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
 needs `call_to_confirm` (a 422 otherwise).
 
+### Orders the team types, and the end of an order (D131)
+
+- **A buyer who called:** *New order* on the inbox posts `/api/shop/orders`. `checked_order`
+  (`desks/shop/tools.py`, the product page's too) prices it and checks the stock, the area and
+  the mobile; `ShopStore.add_team_order` saves it `confirmed`, in no chat. It takes a plain
+  `NewOrder`, not a `Confirmed`: the team member who typed it is the yes (rule 2's one
+  exception, and the only writing method without one). The owner's alert says "typed by the
+  team"; the audit log has who.
+- **More steps:** `on_hold` (waiting on the buyer or the shop: the courier doesn't book it;
+  the buyer hears nothing) and `packed` (ready for the courier, which books it as it does a
+  confirmed one). Both hold stock, can be changed and cancelled, and are on-hold and
+  processing in Woo. The buyer's tracking card has *Packed* between Confirmed and With the
+  courier.
+- **The end:** a delivered or returned order takes `paid_in` (the rider's cash reached the
+  shop), a returned or cancelled one a `reason` (the screen offers refused, damaged, wrong item,
+  no answer, changed their mind, or the owner's words). Before it ends, either is a 409.
+
 ### The courier (D112, D113)
 
 A confirmed order goes to the courier on its own. `CourierApi` (`ports/courier.py`) has
@@ -1494,7 +1513,7 @@ secrets encrypted), and `FakeCourier`, which moves a parcel one step every 2 min
 delivers it after 8. A shop with no link uses the fake one, except in production (by hand).
 `CourierService.run`, every `COURIER_SYNC_MINUTES`, for each shop with a parcel to book or follow:
 
-1. Each `confirmed` order with no `parcel_id` is booked (the cash still owed in whole taka,
+1. Each `confirmed` or `packed` order with no `parcel_id` is booked (one `on_hold` waits, D131) (the cash still owed in whole taka,
    the order code as the invoice): it's `shipped`, the buyer hears so, the owner is told to pack it.
 2. Each `shipped` order with a parcel is asked about: the words go in `courier_status`
    (`track_order` gives them), and `delivered` or `returned` moves the order; the buyer hears

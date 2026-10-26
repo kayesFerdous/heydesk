@@ -47,8 +47,10 @@ class ShopOrder(Taken, Payable, Base):
     PAID_STATUS: ClassVar[str] = "confirmed"
     FLOW: ClassVar[dict[str, set[str]]] = {
         "unpaid": {"confirmed", "cancelled"},  # paid online; or the owner took it another way
-        "new": {"confirmed", "cancelled"},  # the shop calls the buyer to confirm
-        "confirmed": {"shipped", "cancelled"},
+        "new": {"confirmed", "on_hold", "cancelled"},  # the shop calls the buyer to confirm
+        "on_hold": {"confirmed", "cancelled"},  # waiting on the buyer or the shop (D131)
+        "confirmed": {"packed", "on_hold", "shipped", "cancelled"},
+        "packed": {"shipped", "on_hold", "cancelled"},  # ready for the courier (D131)
         "shipped": {"delivered", "returned"},  # with the courier
         "delivered": set(),
         "returned": set(),
@@ -68,6 +70,10 @@ class ShopOrder(Taken, Payable, Base):
     # Booked with the courier (D112): its parcel id ("" not booked), and its last words
     parcel_id: Mapped[str] = mapped_column(String(50), default="")
     courier_status: Mapped[str] = mapped_column(String(100), default="")
+    # Once it ends (D131): the rider's cash reached the shop, and why it came back or was
+    # cancelled ("refused", "damaged")
+    paid_in: Mapped[bool] = mapped_column(default=False)
+    reason: Mapped[str] = mapped_column(String(200), default="")
 
     @property
     def due(self) -> int:

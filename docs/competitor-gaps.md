@@ -82,11 +82,12 @@ Keep these in the pitch.
     The owner sees "1,240 of 1,500 replies" and gets an email at 80%. They pay by bKash or card
     through *our* SSLCommerz store (the shop's own store code already exists), and the agent
     pauses after a 3-day grace period.
-- [ ] **G6 Export orders** · S
+- [x] **G6 Export orders** · S
   - *Who has it:* Sellzy (CSV and Google Sheets).
   - *Why:* owners copy orders into their courier's bulk upload and their accounts.
   - *Smallest build:* `GET /api/shop/orders.csv` (and the same for restaurant orders,
     bookings and appointments), using the list's current filter.
+  - 26 Oct, D131: built (day R4), with the inbox's *Export*; opened in LibreOffice.
 
 ### Should have: they help a shop sell more
 
@@ -227,18 +228,20 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 
 ### Then: orders the team runs
 
-- [ ] **G28 More order steps and money in** · M
+- [x] **G28 More order steps and money in** · M
   - Statuses today: new, confirmed, shipped, delivered, returned (+ cancelled). Add *on hold*,
     *packed* (ready to ship), and on delivered/returned a `paid_in` flag and a `reason`
     (returned, damaged, refused, cancelled because…). Resist the reel's eight steps: add one
     only when an owner asks.
+  - 26 Oct, D131: built (day R4): on hold, packed, money in, a reason.
 - [ ] **G29 A buyer's record before shipping** · M
   - By mobile: our own orders, returns and cancels for this shop, plus the courier's fraud
     record (Steadfast has a fraud-check endpoint; Pathao doesn't publicly). Shown on the order
     as "3 orders, 1 returned". Overlaps G17.
-- [ ] **G30 Orders typed by the team** · S
+- [x] **G30 Orders typed by the team** · S
   - The owner's screen can add an order for a buyer who called. It skips the yes (the team is
     the yes), so it needs its own writing method; say so in decisions.md.
+  - 26 Oct, D131: built (day R4): *New order* on the inbox, `add_team_order`.
 - [ ] **G31 Coupons** · M
   - A `coupons` table: code, % or fixed or free delivery, end date, max uses. `update_cart`
     takes `coupon`; Python checks it and puts the discount on the bill (rule 1).

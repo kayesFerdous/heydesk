@@ -3,14 +3,27 @@
 from datetime import datetime
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
+from heydesk.api.deps import (
+    EXPORT_ROWS,
+    ImportIn,
+    ImportOut,
+    Paged,
+    StatusIn,
+    SuggestIn,
+    Svc,
+    Workspace,
+    amount_cell,
+    csv_file,
+    phone_cell,
+)
 from heydesk.desks.clinic.models import Appointment
 from heydesk.desks.clinic.store import ClinicStore
 from heydesk.desks.clinic.values import DOCTOR_COLUMNS, Doctor, doctors_from_csv
 from heydesk.desks.csv_import import Suggestion, suggest
+from heydesk.runtime.speech import local_time
 
 router = APIRouter(tags=["clinic"])
 
@@ -65,6 +78,28 @@ async def appointments(
     the name or the phone."""
     found = await store.find(Appointment, status, q, limit=page.limit, before=page.before)
     return [AppointmentOut.model_validate(a) for a in found]
+
+
+@router.get("/api/appointments.csv", response_model=None)
+async def appointments_csv(
+    store: Clinic, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+) -> Response:
+    """The appointments the list shows, as a spreadsheet's file (G6)."""
+    tz = (await services.agents.by_workspace(ws)).config.timezone
+    rows = [
+        [
+            a.code,
+            local_time(a.at, tz),
+            a.doctor_name,
+            a.status,
+            a.name,
+            phone_cell(a.phone),
+            amount_cell(a.paid),
+        ]
+        for a in await store.find(Appointment, status, q, limit=EXPORT_ROWS)
+    ]
+    columns = ["Appointment", "At", "Doctor", "Status", "Name", "Mobile", "Paid online"]
+    return csv_file("appointments", columns, rows)
 
 
 @router.get("/api/appointments/{appointment_id}")

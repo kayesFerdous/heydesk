@@ -6,15 +6,26 @@ from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
+from heydesk.api.deps import (
+    EXPORT_ROWS,
+    ImportIn,
+    ImportOut,
+    Paged,
+    SuggestIn,
+    Svc,
+    Workspace,
+    amount_cell,
+    csv_file,
+    phone_cell,
+)
 from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.desks.shop import page
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import OutOfStock, ShopStore
-from heydesk.desks.shop.tools import form_order, order_alert
+from heydesk.desks.shop.tools import CartLine, TeamOrder, checked_order, order_alert
 from heydesk.desks.shop.values import (
     PRODUCT_COLUMNS,
     STATUS_WORDS,
@@ -24,10 +35,11 @@ from heydesk.desks.shop.values import (
     lines_text,
     products_from_csv,
 )
-from heydesk.errors import InvalidConfig, NotFound
+from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card
 from heydesk.runtime.guards import confirm
+from heydesk.runtime.speech import local_time
 from heydesk.services.agents import LiveAgent
 from heydesk.services.channels import card_text
 
@@ -64,12 +76,16 @@ class ShopOrderOut(BaseModel):
     note: str
     parcel_id: str  # booked with the courier (D112); "" not booked
     courier_status: str  # the courier's last words about it
+    paid_in: bool  # once it ended: the rider's cash reached the shop (D131)
+    reason: str  # why it came back or was cancelled: "refused", "damaged" (D131)
     created_at: datetime
     updated_at: datetime
 
 
 class OrderChange(BaseModel):
     status: str | None = None  # where it may go depends on where it is: see the 409 message
+    paid_in: bool | None = None  # once it's delivered, returned or cancelled (D131)
+    reason: str | None = Field(default=None, max_length=200)  # the same
 
 
 @router.get("/api/products")
@@ -201,7 +217,8 @@ async def buy(
             )
         )
 
-    checked = await form_order(shop, config, code, form)
+    wanted = CartLine(code=code, quantity=form.quantity, size=form.size, colour=form.colour)
+    checked = await checked_order(shop, config, [wanted], form)
     if form.change or isinstance(checked, str):
         return again("" if form.change else str(checked))
     order, read_back, how = checked
@@ -273,11 +290,89 @@ async def order(order_id: str, store: Shop) -> ShopOrderOut:
 async def change_order(
     order_id: str, body: OrderChange, store: Shop, services: Svc
 ) -> ShopOrderOut:
-    """Move it along (`{"status": "confirmed"}` after calling the buyer, `shipped` once the
-    owner has booked a courier by hand; D112 books it in development). Cancelling puts its items back in stock. The buyer hears
-    it in their chat when it's confirmed, shipped or cancelled, as the team's message (D66)."""
+    """Move it along (`{"status": "confirmed"}` after calling the buyer, `packed`, `on_hold`,
+    `shipped` once the owner has booked a courier by hand; D112 books it in development).
+    Cancelling puts its items back in stock. The buyer hears it in their chat when it's
+    confirmed, shipped or cancelled, as the team's message (D66). Once it ended, `paid_in` and
+    `reason` too (D131), in the same request or later."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status)
     if moved.status != found.status and moved.conversation_id and (line := moved.news()):
         await services.team.tell_visitor(moved.conversation_id, line)
+    if body.paid_in is not None or body.reason is not None:
+        moved = await store.settle(order_id, body.paid_in, body.reason)
     return ShopOrderOut.model_validate(moved)
+
+
+@router.post("/api/shop/orders", status_code=201)
+async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) -> ShopOrderOut:
+    """An order the team types for a buyer who called (D131): checked and added up as the
+    chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
+    The owner hears of it as of any new order."""
+    config = cast(ShopConfig, (await services.agents.by_workspace(ws)).config)
+    checked = await checked_order(store, config, body.lines, body)
+    if isinstance(checked, str):
+        raise InvalidConfig({"order": checked})
+    order, read_back, _ = checked
+    try:
+        saved = await store.add_team_order(order)
+    except OutOfStock as error:
+        raise Conflict(f"Not enough in stock: {error}.") from None
+    alert = await order_alert(store, saved.code, read_back, saved.phone, saved.lines)
+    await services.team.notify(ws, alert.replace("New order", "New order, typed by the team", 1))
+    services.woo.push_soon(ws)
+    return ShopOrderOut.model_validate(saved)
+
+
+@router.get("/api/shop/orders.csv", response_model=None)
+async def orders_csv(
+    store: Shop, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+) -> Response:
+    """The orders the list shows with this `status` and `q`, as a spreadsheet's file (G6):
+    money in taka, times in the business's own time."""
+    tz = (await services.agents.by_workspace(ws)).config.timezone
+    found = await store.find(ShopOrder, status, q, limit=EXPORT_ROWS)
+    rows = [
+        [
+            o.code,
+            local_time(o.created_at, tz),
+            o.status,
+            o.name,
+            phone_cell(o.phone),
+            o.address,
+            o.zone,
+            lines_text(o.lines),
+            amount_cell(o.subtotal),
+            amount_cell(o.delivery_charge),
+            amount_cell(o.total),
+            amount_cell(o.paid),
+            amount_cell(o.total - o.paid),
+            "yes" if o.paid_in else "",
+            o.reason,
+            o.parcel_id,
+            o.note,
+        ]
+        for o in found
+    ]
+    return csv_file("orders", ORDER_COLUMNS, rows)
+
+
+ORDER_COLUMNS = [
+    "Order",
+    "Date",
+    "Status",
+    "Name",
+    "Mobile",
+    "Address",
+    "Area",
+    "Items",
+    "Subtotal",
+    "Delivery",
+    "Total",
+    "Paid online",
+    "To collect",
+    "Money in",
+    "Reason",
+    "Parcel",
+    "Note",
+]

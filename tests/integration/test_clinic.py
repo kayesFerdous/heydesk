@@ -296,3 +296,9 @@ async def test_a_patient_back_from_the_same_browser_is_offered_their_details(
     assert "- A-101: Dr. Imran Hasan, for Kayes, phone 01712345678" in system
     await say(None, ["Hello!"], "web", "browser-2")
     assert "# Their past appointments" not in world.llm.requests[-1].system
+
+
+async def test_appointments_export_as_a_file(app: FastAPI, client: AsyncClient) -> None:
+    await app.state.services.agents.ensure_dev_agent("clinic", SEEDS / "clinic.yaml")
+    res = await client.get("/api/appointments.csv")
+    assert res.status_code == 200 and res.text.removeprefix("﻿").startswith("Appointment")

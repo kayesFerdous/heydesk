@@ -487,7 +487,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Restaurant routes",
    "type": "api",
    "file": "src/heydesk/desks/restaurant/api.py",
-   "purpose": "Menu (read/replace/import), orders and bookings; moving one tells the visitor.",
+   "purpose": "Menu (read/replace/import), orders and bookings; moving one tells the visitor. orders.csv and bookings.csv (G6).",
    "inputs": "MenuItem[], StatusIn",
    "outputs": "OrderOut, BookingOut",
    "fn": "set_status"
@@ -497,7 +497,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Clinic routes",
    "type": "api",
    "file": "src/heydesk/desks/clinic/api.py",
-   "purpose": "Doctors (read/replace/import) and appointment requests.",
+   "purpose": "Doctors (read/replace/import) and appointment requests. appointments.csv (G6).",
    "inputs": "Doctor[], StatusIn",
    "outputs": "AppointmentOut",
    "fn": "appointments"
@@ -507,8 +507,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks.",
-   "inputs": "Product[], status",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131).",
+   "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
    "fn": "change_order"
   },

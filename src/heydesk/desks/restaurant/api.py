@@ -3,14 +3,27 @@
 from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import ImportIn, ImportOut, Paged, StatusIn, SuggestIn, Svc, Workspace
+from heydesk.api.deps import (
+    EXPORT_ROWS,
+    ImportIn,
+    ImportOut,
+    Paged,
+    StatusIn,
+    SuggestIn,
+    Svc,
+    Workspace,
+    amount_cell,
+    csv_file,
+    phone_cell,
+)
 from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.desks.restaurant.models import Booking, Order
 from heydesk.desks.restaurant.store import RestaurantStore
 from heydesk.desks.restaurant.values import MENU_COLUMNS, MenuItem, menu_from_csv
+from heydesk.runtime.speech import local_time
 
 router = APIRouter(tags=["restaurant"])
 
@@ -69,6 +82,32 @@ async def orders(
     or the phone."""
     found = await store.find(Order, status, q, limit=page.limit, before=page.before)
     return [OrderOut.model_validate(o) for o in found]
+
+
+@router.get("/api/orders.csv", response_model=None)
+async def orders_csv(
+    store: Restaurant, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+) -> Response:
+    """The orders the list shows, as a spreadsheet's file (G6)."""
+    tz = (await services.agents.by_workspace(ws)).config.timezone
+    rows = [
+        [
+            o.code,
+            local_time(o.created_at, tz),
+            o.status,
+            o.name,
+            phone_cell(o.phone),
+            o.address or "pickup",
+            local_time(o.pickup_at, tz),
+            ", ".join(f"{li['quantity']} × {li['name']}" for li in o.lines),
+            amount_cell(o.total),
+            amount_cell(o.paid),
+            o.note,
+        ]
+        for o in await store.find(Order, status, q, limit=EXPORT_ROWS)
+    ]
+    columns = ["Order", "Date", "Status", "Name", "Mobile", "Address", "Ready at", "Items"]
+    return csv_file("orders", [*columns, "Total", "Paid online", "Note"], rows)
 
 
 @router.get("/api/orders/{order_id}")
@@ -134,6 +173,20 @@ async def bookings(
     the phone."""
     found = await store.find(Booking, status, q, limit=page.limit, before=page.before)
     return [BookingOut.model_validate(b) for b in found]
+
+
+@router.get("/api/bookings.csv", response_model=None)
+async def bookings_csv(
+    store: Restaurant, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+) -> Response:
+    """The bookings the list shows, as a spreadsheet's file (G6)."""
+    tz = (await services.agents.by_workspace(ws)).config.timezone
+    rows = [
+        [b.code, local_time(b.at, tz), b.people, b.status, b.name, phone_cell(b.phone), b.note]
+        for b in await store.find(Booking, status, q, limit=EXPORT_ROWS)
+    ]
+    columns = ["Booking", "At", "People", "Status", "Name", "Mobile", "Note"]
+    return csv_file("bookings", columns, rows)
 
 
 @router.get("/api/bookings/{booking_id}")

@@ -3,6 +3,7 @@
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
 them back, so two buyers can't get the last one."""
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +14,7 @@ from heydesk.desks.base import Store, TooLate
 from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import (
     CHANGEABLE,
+    ENDED,
     HOLDS,
     OWN,
     NewOrder,
@@ -27,8 +29,10 @@ from heydesk.desks.shop.values import (
     take_off,
 )
 from heydesk.domain.values import Confirmed
-from heydesk.errors import NotFound
+from heydesk.errors import InvalidTransition, NotFound
 from heydesk.models.taken import next_number
+
+TO_BOOK = ("confirmed", "packed")  # the courier books these (D112, D131); not one on hold
 
 
 class OutOfStock(ValueError):
@@ -145,15 +149,16 @@ class ShopStore(Store):
             order.woo_id, order.woo_sent = woo_id, status
 
     async def orders_for_courier(self, status: str) -> list[ShopOrder]:
-        """The orders the courier deals with (D112), oldest first: `confirmed` ones with no
-        parcel yet, to book; `shipped` ones with a parcel, to follow."""
+        """The orders the courier deals with (D112), oldest first: `confirmed` (or `packed`,
+        D131) ones with no parcel yet, to book; `shipped` ones with a parcel, to follow."""
         booked = ShopOrder.parcel_id == "" if status == "confirmed" else ShopOrder.parcel_id != ""
+        statuses = TO_BOOK if status == "confirmed" else (status,)
         async with self.sessions() as s:
             rows = await s.scalars(
                 select(ShopOrder)
                 .where(
                     ShopOrder.workspace_id == self.workspace_id,
-                    ShopOrder.status == status,
+                    ShopOrder.status.in_(statuses),
                     booked,
                 )
                 .order_by(ShopOrder.created_at)
@@ -165,7 +170,7 @@ class ShopStore(Store):
         async with self.sessions() as s, s.begin():
             order = await self._one(s, ShopOrder, order_id)
             order.parcel_id = parcel_id
-            if order.status == "confirmed":
+            if order.status in TO_BOOK:
                 self._move(order, "shipped")
         return order
 
@@ -182,7 +187,14 @@ class ShopStore(Store):
         """Takes the items out of stock and saves the order as its status says: `unpaid` when
         its delivery charge is paid first (D47), `new` for the shop's call, or `confirmed`
         (D92). Raises OutOfStock, and saves nothing, if there aren't enough left."""
-        o = order.value
+        return await self._save_order(order.value)
+
+    async def add_team_order(self, order: NewOrder) -> ShopOrder:
+        """An order the team typed for a buyer who called (D131): no read-back to a visitor
+        and no `Confirmed`, as the team member is the yes. Saved `confirmed`, in no chat."""
+        return await self._save_order(replace(order, status="confirmed"))
+
+    async def _save_order(self, o: NewOrder) -> ShopOrder:
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
             now = self.now()
@@ -288,6 +300,20 @@ class ShopStore(Store):
                 self._move(order, status)
                 if status == "cancelled":
                     await self._stock(s, order.lines, +1)
+        return order
+
+    async def settle(self, order_id: str, paid_in: bool | None, reason: str | None) -> ShopOrder:
+        """Once an order ended (D131): whether the rider's cash reached the shop, and why it
+        came back or was cancelled. Raises InvalidTransition before then."""
+        async with self.sessions() as s, s.begin():
+            order = await self._one(s, ShopOrder, order_id)
+            if order.status not in ENDED:
+                raise InvalidTransition("Money in and a reason are for an order that ended.")
+            if paid_in is not None:
+                order.paid_in = paid_in
+            if reason is not None:
+                order.reason = " ".join(reason.split())[:200]
+            order.updated_at = self.now()
         return order
 
     async def _stock(self, s: AsyncSession, lines: list[dict[str, Any]], sign: int) -> None:

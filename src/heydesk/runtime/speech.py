@@ -5,7 +5,8 @@ turns each sentence into words just before it's spoken, in English or in Bangla 
 """
 
 import re
-from datetime import time
+from datetime import UTC, datetime, time
+from zoneinfo import ZoneInfo
 
 from num2words import num2words  # type: ignore[import-untyped]
 
@@ -17,6 +18,15 @@ def money(minor: int, currency: str) -> str:
     major, cents = divmod(minor, 100)
     symbol = SYMBOLS.get(currency, currency + " ")
     return f"{symbol}{major:,}" + (f".{cents:02d}" if cents else "")
+
+
+def local_time(at: datetime, timezone: str) -> str:
+    """A stored time (UTC) in the business's own, for a file: "2026-09-29 14:00"."""
+    return (
+        (at if at.tzinfo else at.replace(tzinfo=UTC))
+        .astimezone(ZoneInfo(timezone))
+        .strftime("%Y-%m-%d %H:%M")
+    )
 
 
 def clock_time(t: time) -> str:

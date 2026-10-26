@@ -15,7 +15,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import ShopStore
+from heydesk.desks.shop.store import TO_BOOK, ShopStore
 from heydesk.desks.shop.values import lines_text
 from heydesk.errors import InvalidConfig, NotFound
 from heydesk.models import CourierLink
@@ -113,7 +113,7 @@ class CourierService:
                 await s.delete(link)
 
     async def sync(self, ws: str) -> None:
-        """Books the confirmed orders with no parcel, then asks about each shipped one, with
+        """Books the confirmed and packed orders with no parcel, then asks about each shipped one, with
         the shop's courier, or the fallback when none is linked."""
         try:
             link: CourierLink | None = await self.get(ws)
@@ -171,7 +171,7 @@ class CourierService:
                     select(ShopOrder.workspace_id)
                     .where(
                         or_(
-                            and_(ShopOrder.status == "confirmed", ShopOrder.parcel_id == ""),
+                            and_(ShopOrder.status.in_(TO_BOOK), ShopOrder.parcel_id == ""),
                             and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
                         )
                     )

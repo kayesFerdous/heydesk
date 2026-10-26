@@ -474,3 +474,10 @@ async def test_a_booking_shows_a_summary_then_a_receipt(world: World) -> None:
     saved = await said_yes(book_table, ctx, args)
     assert saved.card and saved.card["data"]["number"] == "T-101"
     assert saved.card["data"]["status"] == "Waiting for the restaurant to confirm it"
+
+
+async def test_orders_and_bookings_export_as_files(client: AsyncClient) -> None:
+    """The dev agent is a restaurant: its lists come as CSV files (G6)."""
+    for path, first in (("/api/orders.csv", "Order"), ("/api/bookings.csv", "Booking")):
+        res = await client.get(path, params={"status": "new"})
+        assert res.status_code == 200 and res.text.removeprefix("﻿").startswith(first)
