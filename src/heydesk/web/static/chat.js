@@ -64,6 +64,12 @@ const drawCard = (kind, d) => {
     pay.target = "_blank";
     box.append(pay);
   }
+  if (d.order_url) {  // the order's own page (D130)
+    const follow = el("a", "Follow your order");
+    follow.href = d.order_url;
+    follow.target = "_blank";
+    box.append(follow);
+  }
 };
 
 const busy = (on) => {
@@ -98,7 +104,8 @@ const handle = (event, data, reply) => {
       for (const item of data.items) {
         const card = el("div", "", "photo");
         const page = document.createElement("a");  // opens the product's page (D121)
-        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web`;
+        // `c`: this chat, where the page's Buy now sends the receipt (D130)
+        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web&c=${conversationId}`;
         page.target = "_blank";
         if (item.url) {  // a product with no photo is a card with no picture
           const img = document.createElement("img");

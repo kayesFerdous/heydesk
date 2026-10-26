@@ -36,6 +36,10 @@ class OutOfStock(ValueError):
 
 
 class ShopStore(Store):
+    def order_link(self, order_id: str) -> str:
+        """The order's page for the buyer, `/o/<id>` (D130); the id is long and random."""
+        return f"{self.public_url}/o/{order_id}"
+
     async def products(self) -> list[Product]:
         return await self.rows_of(ProductRow, Product)
 

@@ -5,8 +5,10 @@ its items or details and cancelling it; an exchange request once it's delivered;
 find a product, and the ones the agent shows (D57)."""
 
 import base64
+import html
 import io
 import json
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -1000,6 +1002,9 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
     }
 
     saved = await said_yes(place_order, ctx, args)
+    assert saved.card
+    [order] = await orders(world)
+    assert saved.card["data"].pop("order_url").endswith(f"/o/{order.id}")  # its page (D130)
     assert saved.card == {
         "kind": "receipt",
         "data": {
@@ -1019,7 +1024,6 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
         ("With the courier", False, False),
         ("Delivered", False, False),
     ]
-    [order] = await orders(world)
     await store.move_order(order.id, "cancelled")
     cancelled = (await track_order(ctx, where)).card
     assert cancelled and cancelled["data"]["steps"] == [  # shown plainly
@@ -1077,3 +1081,65 @@ async def test_a_card_and_the_product_page_link_its_video(
     )
     assert shown.photos and shown.photos[0]["video"] == "https://youtu.be/kurti"
     assert shown.data["video"] == ["Cotton Kurti"]
+
+
+async def test_buy_now_on_the_product_page_saves_once_at_place_order(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The form is read back first, and saved only at *Place order*, with Python's total; the
+    receipt goes into the chat the page was opened from and links the order's page, which
+    doesn't show the buyer's details (D130)."""
+    services = app.state.services
+    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    services.conversations.runtime.llm.script = ["Hello!"]
+    res = await client.post("/api/chat/dev-shop", json={"visitor_id": "a-buyer-1", "message": "hi"})
+    conv = res.text.split('"conversation_id": "')[1].split('"')[0]
+    url = f"/p/dev-shop/kurti?from=web&c={conv}"
+    assert "Buy now" in (await client.get(url)).text
+
+    async def saved() -> list[ShopOrder]:
+        async with services.conversations.sessions() as s:
+            return list(await s.scalars(select(ShopOrder)))
+
+    form = {
+        "size": "M",
+        "colour": "Black",
+        "quantity": "2",
+        "name": "Kayes",
+        "phone": "০১৭১২-৩৪৫৬৭৮",
+        "address": "House 12, Road 5, Mirpur 10",
+        "district": "Dhaka",
+    }
+    check = await client.post(url, data=form)
+    assert "Check your order" in check.text and "৳1,960" in check.text  # 2 × ৳950 + ৳60
+    assert await saved() == []
+    found = re.search(r'name="heard" value="([^"]*)"', check.text)
+    assert found
+    heard = html.unescape(found[1])
+
+    wrong = await client.post(url, data=form | {"heard": heard.replace("৳1,960", "৳10")})
+    assert "Something changed" in wrong.text and await saved() == []
+
+    placed = await client.post(url, data=form | {"heard": heard})
+    assert placed.status_code == 303
+    [order] = await saved()
+    assert (order.total, order.phone, order.conversation_id) == (196000, "01712345678", conv)
+    assert placed.headers["location"].endswith(f"/o/{order.id}")
+
+    page = await client.get(f"/o/{order.id}")
+    assert order.code in page.text and "৳1,960" in page.text
+    assert "Kayes" not in page.text and "01712345678" not in page.text
+    replies = (await client.get(f"/api/chat/dev-shop/{conv}/team")).json()["replies"]
+    assert order.code in replies[-1] and f"/o/{order.id}" in replies[-1]
+
+    assert (await client.get("/o/no-such-order")).status_code == 404
+    assert (await client.post("/p/dev-shop/no-such", data=form)).status_code == 404
+
+
+async def test_a_form_with_a_problem_comes_back_filled_in(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    form = {"size": "M", "colour": "Black", "name": "Kayes", "phone": "123"}
+    again = await client.post("/p/dev-shop/kurti", data=form | {"address": "Mirpur 10"})
+    assert "Please check your mobile number" in again.text and 'value="Kayes"' in again.text

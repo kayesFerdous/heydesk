@@ -269,6 +269,21 @@ class ShopConfig(AgentConfig):
         return zone.charge
 
 
+class BuyForm(BaseModel):
+    """A product page's *Buy now* form (D130): one product, and the buyer's details."""
+
+    size: str = ""
+    colour: str = ""
+    quantity: int = Field(default=1, ge=1, le=20)
+    name: str = ""
+    phone: str = ""
+    address: str = ""
+    district: str = ""
+    note: str = ""
+    heard: str = ""  # the read-back the buyer was shown, sent back with Place order
+    change: str = ""  # "1": the buyer tapped Change on the check page
+
+
 PHOTO_MATCHES = 3  # products named in a photo's line
 
 

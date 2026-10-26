@@ -5,7 +5,7 @@ form. A card is `{kind, data}`; there are four kinds:
 
 - summary: the read-back before the yes.
   `{title, lines: [{label, qty?, amount?}], rows: [{label, value, at?}], total?}`
-- receipt: what was just saved. `{title, number, status, rows, total?, pay_url?}`
+- receipt: what was just saved. `{title, number, status, rows, total?, pay_url?, order_url?}`
 - tracking: where an order is. `{number, steps: [{label, done, current}], note}`
 - doctors: who fits. `{doctors: [{name, speciality, days, hours, fee, book}]}`
 
@@ -66,12 +66,15 @@ def receipt(
     rows: list[dict[str, Any]],
     total: dict[str, Any] | None = None,
     pay_url: str = "",
+    order_url: str = "",
 ) -> Card:
     data: dict[str, Any] = {"title": title, "number": number, "status": status, "rows": rows}
     if total:
         data["total"] = total
     if pay_url:  # saved unpaid: the button to pay (D47)
         data["pay_url"] = pay_url
+    if order_url:  # the order's own page (D130)
+        data["order_url"] = order_url
     return {"kind": "receipt", "data": data}
 
 

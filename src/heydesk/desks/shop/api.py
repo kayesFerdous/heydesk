@@ -1,21 +1,37 @@
 """A shop's own routes: its products, and the orders the agent took; and a product's public
-page (D121)."""
+page (D121), its *Buy now* form and an order's page (D130)."""
 
+import logging
 from datetime import datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import ImportIn, ImportOut, Paged, SuggestIn, Svc, Workspace
 from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.desks.shop import page
 from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import ShopStore
-from heydesk.desks.shop.values import PRODUCT_COLUMNS, Product, products_from_csv
+from heydesk.desks.shop.store import OutOfStock, ShopStore
+from heydesk.desks.shop.tools import form_order, order_alert
+from heydesk.desks.shop.values import (
+    PRODUCT_COLUMNS,
+    STATUS_WORDS,
+    BuyForm,
+    Product,
+    ShopConfig,
+    lines_text,
+    products_from_csv,
+)
 from heydesk.errors import InvalidConfig, NotFound
+from heydesk.runtime import cards
+from heydesk.runtime.events import Card
+from heydesk.runtime.guards import confirm
+from heydesk.services.agents import LiveAgent
+from heydesk.services.channels import card_text
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])
 
 
@@ -118,6 +134,17 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
     )
 
 
+async def _product(services: Svc, public_key: str, code: str) -> tuple[LiveAgent, Product] | None:
+    """The shop's agent and the product; None for a wrong key or code."""
+    try:
+        agent = await services.agents.by_key(public_key)
+        store = cast(ShopStore, await services.agents.store(agent.workspace_id, "shop"))
+    except NotFound:
+        return None
+    found = next((p for p in await store.products() if p.code == code), None)
+    return (agent, found) if found else None
+
+
 @router.get("/p/{public_key}/{code}", response_model=None, include_in_schema=False)
 async def product(
     public_key: str,
@@ -126,18 +153,100 @@ async def product(
     via: Annotated[str, Query(alias="from")] = "web",
 ) -> HTMLResponse:
     """A product's public page (D121), linked from its card in a chat (`from`: the app it was
-    sent on). Only that shop's product, as HTML; anything else is the same 404."""
-    try:
-        agent = await services.agents.by_key(public_key)
-        store = cast(ShopStore, await services.agents.store(agent.workspace_id, "shop"))
-    except NotFound:
-        return html_page(page.not_found(), 404)
-    found = next((p for p in await store.products() if p.code == code), None)
+    sent on; `c`: the chat, which only the form's post reads). Only that shop's product, as
+    HTML; anything else is the same 404."""
+    found = await _product(services, public_key, code)
     if found is None:
         return html_page(page.not_found(), 404)
+    agent, item = found
+    config = cast(ShopConfig, agent.config)
     back = await services.channels.chat_link(agent.workspace_id, via)
-    config = agent.config
-    return html_page(page.product_page(found, config.business_name, config.currency, back))
+    return html_page(
+        page.product_page(item, config.business_name, config.currency, back, config.delivery)
+    )
+
+
+@router.post("/p/{public_key}/{code}", response_model=None, include_in_schema=False)
+async def buy(
+    public_key: str,
+    code: str,
+    form: Annotated[BuyForm, Form()],
+    services: Svc,
+    via: Annotated[str, Query(alias="from")] = "web",
+    chat: Annotated[str, Query(alias="c")] = "",
+) -> HTMLResponse | RedirectResponse:
+    """*Buy now* (D130). The first post shows the order read back; *Place order* posts it
+    again with `heard`, that read-back, and the order is saved only if Python's read-back of
+    these details is still the same (`confirm`): the buyer's yes. The owner hears of it as
+    of a chat's order; the chat it came from (`c`) gets the receipt."""
+    found = await _product(services, public_key, code)
+    if found is None:
+        return html_page(page.not_found(), 404)
+    agent, item = found
+    config = cast(ShopConfig, agent.config)
+    back = await services.channels.chat_link(agent.workspace_id, via)
+    store, conv = await services.conversations.store_for(agent, chat)
+    shop = cast(ShopStore, store)
+
+    def again(problem: str = "") -> HTMLResponse:  # the product page, the form filled in
+        return html_page(
+            page.product_page(
+                item,
+                config.business_name,
+                config.currency,
+                back,
+                config.delivery,
+                form,
+                problem or "Change what you need, then check it again.",
+            )
+        )
+
+    checked = await form_order(shop, config, code, form)
+    if form.change or isinstance(checked, str):
+        return again("" if form.change else str(checked))
+    order, read_back, how = checked
+    confirmed = confirm(form.heard, order, read_back)
+    if confirmed is None:
+        days = next((z.days for z in config.delivery if z.name == order.zone), "")
+        return html_page(
+            page.check_page(
+                item, config.business_name, order, how, read_back, form, days, bool(form.heard)
+            )
+        )
+    try:
+        saved = await shop.place_order(confirmed)
+    except OutOfStock:
+        return again("Sold out since you checked. Choose another size or colour.")
+    ws = agent.workspace_id
+    if conv:
+        receipt = cards.receipt(
+            "Order placed",
+            saved.code,
+            STATUS_WORDS[saved.status].capitalize(),
+            [cards.row("Items", lines_text(order.lines)), cards.row("Payment", how)],
+            cards.amount(saved.total, saved.currency),
+            order_url=shop.order_link(saved.id),
+        )
+        said = card_text(Card(receipt["kind"], receipt["data"]), "web")  # plain words
+        await services.team.tell_visitor(conv.id, said)
+    if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid (D47)
+        alert = await order_alert(shop, saved.code, read_back, order.phone, order.lines)
+        await (services.team.alert(conv, alert) if conv else services.team.notify(ws, alert))
+        services.woo.push_soon(ws)  # into a linked WooCommerce store now (D77)
+    log.info("page order", extra={"workspace_id": ws, "order_id": saved.id})
+    return RedirectResponse(f"/o/{saved.id}", status_code=303)  # on this same server
+
+
+@router.get("/o/{order_id}", response_model=None, include_in_schema=False)
+async def order_status(order_id: str, services: Svc) -> HTMLResponse:
+    """An order's page, linked from its receipt (D130): the id is long and random, as the
+    payment link's is (D47), so no one guesses another."""
+    found = await services.payments.find(order_id)
+    if not isinstance(found, ShopOrder):
+        return html_page(page.not_found(), 404)
+    agent = await services.agents.by_workspace(found.workspace_id)
+    pay = f"/pay/{found.id}"
+    return html_page(page.order_page(found, agent.config.business_name, pay))
 
 
 def html_page(text: str, status_code: int = 200) -> HTMLResponse:

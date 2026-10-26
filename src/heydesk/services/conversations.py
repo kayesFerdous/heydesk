@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
-from contextlib import aclosing
+from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.desks import tools_for
+from heydesk.desks.base import Store
 from heydesk.errors import (
     ConversationFull,
     Forbidden,
@@ -56,6 +57,7 @@ class Reply:
     photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool (D62)
     choices: list[str] = field(default_factory=list)  # buttons under the text (D99)
     card: Card | None = None  # the last card a tool showed (D110), sent its own way (D111)
+    conversation_id: str = ""  # a product card's page links back to it (D130)
 
 
 class ConversationService:
@@ -218,7 +220,7 @@ class ConversationService:
                     card = event
                 elif isinstance(event, TurnEnded):
                     choices = event.choices
-        return Reply("".join(parts).strip(), handoff, photos, choices, card)
+        return Reply("".join(parts).strip(), handoff, photos, choices, card, turn.conversation_id)
 
     async def restart(
         self, agent: LiveAgent, channel: str, contact: str, name: str | None = None
@@ -233,6 +235,25 @@ class ConversationService:
         async with self.sessions() as s:
             conv = await self._get(s, agent, conversation_id)
         return [m["content"] for m in conv.messages if m.get("by") == TEAM]
+
+    async def store_for(
+        self, agent: LiveAgent, conversation_id: str
+    ) -> tuple[Store, Conversation | None]:
+        """The agent's data for an order from a product's page (D130): linked to the chat the
+        page was opened from when `conversation_id` is one of this agent's, else to none."""
+        conv = None
+        if conversation_id:
+            async with self.sessions() as s:
+                with suppress(NotFound):
+                    conv = await self._get(s, agent, conversation_id)
+        store = agent.desk.store(
+            self.sessions,
+            agent.workspace_id,
+            self.now,
+            conversation_id=conv.id if conv else None,
+            public_url=self.settings.public_url,
+        )
+        return store, conv
 
     async def list(
         self,

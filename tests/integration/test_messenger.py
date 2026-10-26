@@ -134,7 +134,9 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
         "choice": "Order [kurti]",  # its button's tap (D99)
         "page": "https://heydesk.test/p/dev-shop/kurti?from=messenger",  # its page (D121)
     }
-    assert fake.cards == [(PSID, [card])]
+    [(to, [shown])] = fake.cards
+    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat (D130)
+    assert (to, shown) == (PSID, card)
     assert sent(app) == [(PSID, "Is it this one?")]
 
     await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up

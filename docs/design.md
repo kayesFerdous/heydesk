@@ -480,6 +480,8 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422, and so is a photo new to the list that isn't one of ours (one saved before is kept, D122). Its CSV import adds and updates instead (D120) |
 | GET | `/p/{public_key}/{code}` | A product's public page, HTML, no login (D121) |
+| POST | `/p/{public_key}/{code}?c=` | Its *Buy now* form: the check page, then with `heard` *Place order* saves it and goes to `/o/<id>`; the receipt goes to chat `c` (D130) |
+| GET | `/o/{order_id}` | An order's page for the buyer, HTML: status, steps, items, total; not their name, mobile or address (D130) |
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105) |
@@ -993,7 +995,26 @@ an unknown code is the same 404 page.
   *Details* URL button beside *Order this*; WhatsApp, a `Details: <link>` line in the caption.
 - **Order this** on the website chat sends "Order [code]", as Messenger's postback does (D123),
   so `# Right now` tells the web chat too that a tapped button arrives as its words (`TAPS`).
-- Day R3's *Buy now* form and `/o/<id>` order page come later; this page is their start.
+- **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
+  stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
+  area's charge and days. It posts back to the page. `form_order` (`desks/shop/tools.py`)
+  checks it as `place_order` does (`_priced`, `_short`, `match_zone`, `mobile`), and
+  `new_order` builds the order and its read-back for both. The first post shows **Check your
+  order**, the order read back, with the details and `heard` (that read-back) in hidden
+  fields; *Place order* posts them again, and `confirm(heard, order, read_back)` saves it only
+  if Python's read-back is still the same (a price or a charge changed: the check page again).
+  *Change* goes back to the filled form. The tap is the yes, as a tapped *Yes* is in a chat.
+- **Back to the chat:** each card's link carries `c=<conversation id>` (`Reply.conversation_id`,
+  the web chat's own). Only one of this agent's conversations counts. The order is linked to
+  it, the owner's alert is the chat's (with `Ref:`), and the receipt goes into it as the team's
+  message (`tell_visitor`): the web chat shows it, the apps send it, the agent sees it. With no
+  chat, the order still saves and the owner hears of it with `notify`.
+- **`/o/<id>`**: where the order is, from its long random id (as `/pay/<id>`, D47): status,
+  steps, the courier's last words, items, total and what the rider collects, and *Pay* when it
+  waits for the delivery charge. Not the name, mobile or address: a link can be passed on.
+  Every receipt links it (`order_url`): the web chat's *Follow your order*, a line in the apps.
+- Given up: two quick taps on *Place order* save two orders, and the form isn't under the chat's
+  daily limits (D52). Neither is worth code before a shop sees it happen.
 
 ### Remembering a visitor (D114, D123, D124)
 

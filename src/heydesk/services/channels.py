@@ -96,6 +96,8 @@ def card_text(card: Card, channel: str) -> str:
     said += [esc(f"{r['label']}: {r['value']}") for r in data["rows"]]
     if "total" in data:
         said.append(bold(esc(f"Total: {data['total']['text']}")))
+    if "order_url" in data:  # the apps make a link of it (D130)
+        said.append(esc(f"Follow your order: {data['order_url']}"))
     return "\n".join(said)
 
 
@@ -443,7 +445,9 @@ class ChannelService:
         finally:
             typing.cancel()
         if reply.photos:
-            await self._send_photos(channel, chat_id, reply.photos, agent.public_key)
+            await self._send_photos(
+                channel, chat_id, reply.photos, agent.public_key, reply.conversation_id
+            )
         # a summary's Yes and Change go under it, the last message (D111)
         summary = reply.card is not None and reply.card.kind == "summary"
         choices = buttons(reply.choices)
@@ -498,7 +502,12 @@ class ChannelService:
         return await self.messenger.download(url) if url else None
 
     async def _send_photos(
-        self, channel: Channel, chat_id: str, photos: list[dict[str, str]], key: str
+        self,
+        channel: Channel,
+        chat_id: str,
+        photos: list[dict[str, str]],
+        key: str,
+        conversation_id: str = "",
     ) -> None:
         """The products a tool showed, as cards side by side (D125). Messenger: one carousel of
         up to 10, whose photos Meta fetches from us, so their URLs are made whole (D62, D103).
@@ -510,7 +519,7 @@ class ChannelService:
             {
                 **p,
                 "choice": f"Order [{p['code']}]",
-                "page": self.product_page(key, p["code"], channel.kind),
+                "page": self.product_page(key, p["code"], channel.kind, conversation_id),
             }
             for p in photos
         ]
@@ -598,9 +607,11 @@ class ChannelService:
         except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable) as error:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
-    def product_page(self, key: str, code: str, kind: str) -> str:
-        """A product's public page (D121), on the app it was sent on."""
-        return f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}?from={kind}"
+    def product_page(self, key: str, code: str, kind: str, conversation_id: str = "") -> str:
+        """A product's public page (D121), on the app it was sent on; `c`, the chat its
+        *Buy now* sends the receipt back to (D130)."""
+        chat = f"&c={conversation_id}" if conversation_id else ""
+        return f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}?from={kind}{chat}"
 
     async def chat_link(self, ws: str, kind: str) -> str:
         """Back to the business's chat on Messenger or Telegram, from a product's page (D121);

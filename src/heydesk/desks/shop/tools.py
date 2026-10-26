@@ -22,12 +22,14 @@ from heydesk.desks.shop.values import (
     OWN,
     STATUS_WORDS,
     STEPS,
+    BuyForm,
     NewOrder,
     OrderCancel,
     OrderConfirm,
     OrderEdit,
     Product,
     ShopConfig,
+    Zone,
     cart_text,
     find_products,
     lines_text,
@@ -287,34 +289,8 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         missing = check.result().data
         return ToolResult(ok=False, data=(data | missing) if zone else missing)
 
-    order = NewOrder(
-        lines=cart["lines"],
-        subtotal=cart["subtotal"],
-        delivery_charge=charge,
-        currency=currency,
-        zone=zone.name,
-        address=address,
-        name=name,
-        phone=phone,
-        note=" ".join(args.note.split())[:500],
-        status=(  # one way to confirm it (D92): the advance, the shop's call, or none
-            "unpaid"
-            if charge and zone.pay_first and await ctx.store.pays_first(config)
-            else "new"
-            if config.call_to_confirm
-            else "confirmed"
-        ),
-    )
-    how = (
-        f"the delivery charge {data['delivery']} paid online first, then "
-        f"{money(cart['subtotal'], currency)} in cash on delivery"
-        if order.status == "unpaid"
-        else "paid in cash on delivery"
-    )
-    read_back = (
-        f"{cart_text(cart, currency)}; delivery {zone.name} {data['delivery']}; "
-        f"total {data['total']}, {how}; to {address}; "
-        f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
+    order, read_back, how = await new_order(
+        ctx.store, config, cart, zone, address, name, phone, args.note
     )
     rows = [  # the card's details (D110), the same as the read-back's
         cards.row("Payment", how),
@@ -339,7 +315,9 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     status = STATUS_WORDS[order.status].capitalize()
     if order.status == "unpaid":  # the owner hears about it once it's paid (D47)
         link = ctx.store.pay_link(saved.id)
-        card = cards.receipt("Order saved", code, status, [items, *rows], total, link)
+        card = cards.receipt(
+            "Order saved", code, status, [items, *rows], total, link, ctx.store.order_link(saved.id)
+        )
         return awaiting_payment(code, link, data["delivery"], saved.PAY_FOR, {"cart": {}}, card)
     takes = f" Delivery usually takes {zone.days}." if zone.days else ""
     sent = (
@@ -356,9 +334,86 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
             f"the delivery man, who calls before he comes.{takes}",
         },
         state={"cart": {}},
-        alert=await _order_alert(ctx.store, code, read_back, phone, cart["lines"]),
-        card=cards.receipt("Order placed", code, status, [items, *rows], total),
+        alert=await order_alert(ctx.store, code, read_back, phone, cart["lines"]),
+        card=cards.receipt(
+            "Order placed",
+            code,
+            status,
+            [items, *rows],
+            total,
+            order_url=ctx.store.order_link(saved.id),
+        ),
     )
+
+
+async def new_order(
+    store: ShopStore,
+    config: ShopConfig,
+    cart: dict[str, Any],
+    zone: Zone,
+    address: str,
+    name: str,
+    phone: str,
+    note: str,
+) -> tuple[NewOrder, str, str]:
+    """The order ready for a yes, its read-back, and how it's paid: the same from the chat and
+    from the product page's form (D130)."""
+    currency = config.currency
+    charge = config.delivery_charge(zone, cart["subtotal"])
+    order = NewOrder(
+        lines=cart["lines"],
+        subtotal=cart["subtotal"],
+        delivery_charge=charge,
+        currency=currency,
+        zone=zone.name,
+        address=address,
+        name=name,
+        phone=phone,
+        note=" ".join(note.split())[:500],
+        status=(  # one way to confirm it (D92): the advance, the shop's call, or none
+            "unpaid"
+            if charge and zone.pay_first and await store.pays_first(config)
+            else "new"
+            if config.call_to_confirm
+            else "confirmed"
+        ),
+    )
+    delivery = money(charge, currency) if charge else "free"
+    how = (
+        f"the delivery charge {delivery} paid online first, then "
+        f"{money(cart['subtotal'], currency)} in cash on delivery"
+        if order.status == "unpaid"
+        else "paid in cash on delivery"
+    )
+    read_back = (
+        f"{cart_text(cart, currency)}; delivery {zone.name} {delivery}; "
+        f"total {money(cart['subtotal'] + charge, currency)}, {how}; to {address}; "
+        f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
+    )
+    return order, read_back, how
+
+
+async def form_order(
+    store: ShopStore, config: ShopConfig, code: str, form: BuyForm
+) -> tuple[NewOrder, str, str] | str:
+    """The form's order, its read-back and how it's paid, checked as the chat's are; or what
+    to fix, in the buyer's words."""
+    products = {p.code: p for p in await store.products()}
+    wanted = CartLine(code=code, quantity=form.quantity, size=form.size, colour=form.colour)
+    lines = _priced(products, [wanted])
+    if isinstance(lines, ToolResult):
+        return "Choose a size and colour that's in stock."
+    if _short(products, lines):
+        return "There aren't that many left. Choose fewer, or another size or colour."
+    check = Checks()
+    address = check.take("address", form.address, lambda said: parse.text(said, limit=300))
+    zone = check.take("district", form.district, lambda d: match_zone(config.delivery, d))
+    name = check.take("name", form.name, parse.name)
+    phone = check.take("mobile number", form.phone, mobile)
+    if zone is None or address is None or name is None or phone is None:
+        return f"Please check your {', '.join([*check.problems, *check.missing])}."
+    cart = {"lines": lines, "subtotal": sum(li["price"] * li["quantity"] for li in lines)}
+    return await new_order(store, config, cart, zone, address, name, phone, form.note)
 
 
 def _card_lines(lines: list[dict[str, Any]], currency: str) -> list[dict[str, Any]]:
@@ -372,7 +427,7 @@ def _card_lines(lines: list[dict[str, Any]], currency: str) -> list[dict[str, An
     return found
 
 
-async def _order_alert(
+async def order_alert(
     store: ShopStore, code: str, read_back: str, phone: str, lines: list[dict[str, Any]]
 ) -> str:
     """The owner's new-order alert: the order, and a warning when this mobile's orders came

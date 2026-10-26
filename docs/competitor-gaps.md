@@ -218,6 +218,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     the receipt. Server-rendered, no SPA.
   - 25 Oct, D121: the product page, linked from every product card (Day R3a). *Buy now* and
     `/o/<id>` are next (Day R3).
+  - 26 Oct, D130: built (day R3): *Buy now*, the check page and *Place order* through
+    `confirm`, the receipt back in the chat, `/o/<id>`. The live check from Messenger is next.
 - [ ] **G27 Videos and more photos per product** · S
   - `videos` (links) on a product; `show_photos` can send them. A how-to video is just a link.
   - 25 Oct, D125: built (day R2); the live check on a real Page is next.

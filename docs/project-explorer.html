@@ -517,10 +517,10 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Product page",
    "type": "api",
    "file": "src/heydesk/desks/shop/page.py",
-   "purpose": "`/p/<public_key>/<code>`: a product's public HTML page (photos, price, sizes and colours in stock), linked from every product card; one 404 for anything else (D121).",
-   "inputs": "public_key, code, from",
-   "outputs": "HTML",
-   "fn": "product_page"
+   "purpose": "`/p/<public_key>/<code>`: a product's public HTML page (photos, price, sizes and colours in stock), linked from every product card; one 404 for anything else (D121). Its *Buy now* form posts back: a check page read back as the chat does, then *Place order* is the yes (`confirm`), the receipt goes to the chat in `c`; `/o/<id>` is the order's page (D130).",
+   "inputs": "public_key, code, from, c, BuyForm",
+   "outputs": "HTML, 303 to /o/<id>",
+   "fn": "product_page, check_page, order_page"
   },
   {
    "id": "s-conversations",
@@ -3733,7 +3733,8 @@ tr.hl td { background: var(--accent-soft); }
     "ShopOrder (unpaid / new / confirmed) + stock taken in the same transaction",
     "alert 🛍️ with ⚠️ past returns and 📦 low stock",
     "may queue a confirmation call",
-    "pushed to WooCommerce"
+    "pushed to WooCommerce",
+    "the receipt links the order's page /o/<id> (D130)"
    ],
    "label_web": "Checking your order…",
    "filler": "One moment.",

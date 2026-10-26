@@ -125,7 +125,9 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
         "choice": "Order [kurti]",
         "page": "https://heydesk.test/p/dev-shop/kurti?from=whatsapp",  # its page (D121)
     }
-    assert fake(app).cards == [(FROM, [card])]
+    [(to, [shown])] = fake(app).cards
+    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat (D130)
+    assert (to, shown) == (FROM, card)
 
     tapped = {
         "type": "button_reply",
