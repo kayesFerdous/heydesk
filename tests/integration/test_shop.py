@@ -51,6 +51,7 @@ from heydesk.desks.shop.values import (
     products_from_csv,
     stock_cell,
 )
+from heydesk.models import Conversation
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext, ToolResult
@@ -1350,3 +1351,34 @@ async def test_an_ended_or_used_up_coupon_keeps_the_order_without_it(world: Worl
     assert (await coupon_order(world, agent, "ONCE")).ok
     again = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon="ONCE"))
     assert not again.ok and "used up" in again.data["coupon_problem"]
+
+
+async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> None:
+    """1–3 hours after a read-back with no yes, the buyer gets one nudge with the read-back's
+    buttons; never a second, and none for a chat whose order was placed (D139)."""
+    agent = await world.agent("shop")
+    first = [ToolCall("c1", "update_cart", {"lines": [KURTI]})]
+    waiting = await world.say(
+        agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK]
+    )
+    nudge = world.services.conversations.nudge_unfinished
+    world.clock.advance(minutes=30)
+    await nudge()  # too soon
+    assert (await world.conversation(waiting)).messages[-1]["content"] == READ_BACK
+
+    world.clock.advance(hours=1)
+    await nudge()
+    await nudge()
+    conv = await world.conversation(waiting)
+    said = [m["content"] for m in conv.messages if m.get("by") == "team"]
+    assert said == ["Shall I confirm your order? Tap Yes, or tell me what to change."]
+    assert conv.nudged
+
+
+async def test_a_placed_order_is_not_nudged(world: World) -> None:
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    world.clock.advance(hours=2)
+    await world.services.conversations.nudge_unfinished()
+    async with world.sessions() as s:
+        assert [c.nudged for c in await s.scalars(select(Conversation))] == [False]

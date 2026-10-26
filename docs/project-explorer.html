@@ -2764,6 +2764,11 @@ tr.hl td { background: var(--accent-soft); }
      "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
     },
     {
+     "tool": "t-take_lead",
+     "when": "The visitor asks to be called back at a time (\"call me Friday 5pm\").",
+     "why": "Python reads the day and time; after a yes it saves a lead the team calls and taps sold, not now or lost: why (D139)."
+    },
+    {
      "tool": "t-off_topic",
      "when": "A message has nothing to do with the business (jokes, homework, timepass).",
      "why": "Platform rule: don't answer, call off_topic. Its reply ends the turn with no second model call; each is a strike (D51)."
@@ -2844,6 +2849,11 @@ tr.hl td { background: var(--accent-soft); }
      "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
     },
     {
+     "tool": "t-take_lead",
+     "when": "The visitor asks to be called back at a time (\"call me Friday 5pm\").",
+     "why": "Python reads the day and time; after a yes it saves a lead the team calls and taps sold, not now or lost: why (D139)."
+    },
+    {
      "tool": "t-off_topic",
      "when": "A message has nothing to do with the business (jokes, homework, timepass).",
      "why": "Platform rule: don't answer, call off_topic. Its reply ends the turn with no second model call; each is a strike (D51)."
@@ -2896,6 +2906,11 @@ tr.hl td { background: var(--accent-soft); }
      "tool": "t-flag_complaint",
      "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
      "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
+    },
+    {
+     "tool": "t-take_lead",
+     "when": "The visitor asks to be called back at a time (\"call me Friday 5pm\").",
+     "why": "Python reads the day and time; after a yes it saves a lead the team calls and taps sold, not now or lost: why (D139)."
     },
     {
      "tool": "t-off_topic",
@@ -3012,6 +3027,11 @@ tr.hl td { background: var(--accent-soft); }
      "tool": "t-flag_complaint",
      "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
      "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
+    },
+    {
+     "tool": "t-take_lead",
+     "when": "The visitor asks to be called back at a time (\"call me Friday 5pm\").",
+     "why": "Python reads the day and time; after a yes it saves a lead the team calls and taps sold, not now or lost: why (D139)."
     },
     {
      "tool": "t-off_topic",
@@ -3165,6 +3185,34 @@ tr.hl td { background: var(--accent-soft); }
    "filler": "I'm sorry about that. One moment.",
    "timeout": 5.0,
    "description": "The visitor is unhappy or complains: about an order, a delivery, a product, the staff or the service. Not for a plain question or a change to an order. Passes the chat to the team and opens a complaint for them. Say sorry once, then tell the visitor the message it returns."
+  },
+  {
+   "id": "t-take_lead",
+   "name": "take_lead",
+   "desk": "shared",
+   "file": "src/heydesk/desks/shared.py",
+   "fn": "take_lead",
+   "purpose": "A call back at a time: a lead for the team (D139).",
+   "writes": true,
+   "confirm": "read back, then a yes (rule 2)",
+   "inputs": [
+    ["when", "str; the day and clock time in their words, read by parse.day_and_time"],
+    ["phone", "str; the number to call"],
+    ["note", "str; optional, what they want"],
+    ["name", "str; optional, who to ask for"]
+   ],
+   "outputs": [
+    "{read_back, next} until the yes",
+    "{code, next} once saved"
+   ],
+   "effects": [
+    "Lead L-101 (open) with call_at in UTC",
+    "owner alert 📞 Call back L-101"
+   ],
+   "label_web": "Noting that down…",
+   "filler": "One moment.",
+   "timeout": 10.0,
+   "description": "The visitor asks to be called back at a time, or will decide later and wants a call (\"call me Friday 5pm\"). Needs the day and clock time and a phone number. It gives you what to read back; call it again with the same details after a clear yes. For a message with no time, use take_message."
   },
   {
    "id": "t-off_topic",

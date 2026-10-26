@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel
-from sqlalchemy import ScalarResult, String, and_, cast, delete, or_, select
+from sqlalchemy import ScalarResult, String, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks.csv_import import Column
@@ -20,6 +20,7 @@ from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
 from heydesk.models import (
     Conversation,
+    Lead,
     PaymentAccount,
     SheetLink,
     TeamMessage,
@@ -63,6 +64,16 @@ class NewMessage:
     name: str
     phone: str
     best_time: str = ""
+
+
+@dataclass(frozen=True)
+class NewLead:
+    """A call back the visitor asked for (D139), ready to save once they said yes to it."""
+
+    call_at: datetime  # UTC
+    note: str
+    name: str
+    phone: str
 
 
 class Store:
@@ -119,6 +130,14 @@ class Store:
         m = message.value
         saved = await self.add(
             TeamMessage, name=m.name, phone=m.phone, body=m.body, best_time=m.best_time
+        )
+        return saved.code
+
+    async def save_lead(self, lead: Confirmed[NewLead]) -> str:
+        """Saves the call back, open until the team taps how it went, and returns "L-101"."""
+        a = lead.value
+        saved = await self.add(
+            Lead, status="open", name=a.name, phone=a.phone, call_at=a.call_at, note=a.note
         )
         return saved.code
 
@@ -349,6 +368,25 @@ class Store:
             row = await self._one(s, table, row_id)
             self._move(row, status)
         return row
+
+    async def lead_outcome(self, lead_id: str, status: str, why: str) -> Lead:
+        """The team tapped how a call back went (D139); a lost one keeps its why."""
+        async with self.sessions() as s, s.begin():
+            lead = await self._one(s, Lead, lead_id)
+            self._move(lead, status)
+            lead.why = " ".join(why.split())[:200].lower() if status == "lost" else ""
+        return lead
+
+    async def lost_why(self) -> list[tuple[str, int]]:
+        """Why sales were lost (D139): each lost lead's why, with how many, most first."""
+        async with self.sessions() as s:
+            rows = await s.execute(
+                select(Lead.why, func.count())
+                .where(Lead.workspace_id == self.workspace_id, Lead.status == "lost")
+                .group_by(Lead.why)
+                .order_by(func.count().desc())
+            )
+            return [(why or "no reason given", n) for why, n in rows.all()]
 
     def _move(self, row: Taken, status: str) -> None:
         """`row.move`, with its problems as the errors the owner's routes return."""

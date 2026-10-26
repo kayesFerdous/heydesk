@@ -1,17 +1,19 @@
 """Messages for the team: every desk takes them, only after a yes; the receptionist is built on
 them alone; the owner sees them in /api/messages."""
 
+from datetime import UTC, datetime
+
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from heydesk.desks import DESKS, tools_for
 from heydesk.desks.receptionist import RECEPTIONIST
-from heydesk.desks.shared import ComplaintInput, flag_complaint
-from heydesk.models import Conversation, TeamMessage, Ticket
+from heydesk.desks.shared import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
+from heydesk.models import Conversation, Lead, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from tests.conftest import DEV_KEY, World, make_ctx
+from tests.conftest import DEV_KEY, World, make_ctx, said_yes
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
 
@@ -25,8 +27,9 @@ async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: 
     for desk in DESKS.values():
         config = (await world.agent(desk.kind)).config
         names = [t.name for t in tools_for(desk, config, has_documents=False)]
-        assert names[-5:] == [
+        assert names[-6:] == [
             "take_message",
+            "take_lead",
             "handoff_to_human",
             "flag_complaint",
             "off_topic",
@@ -78,6 +81,7 @@ async def test_the_receptionist_answers_from_its_own_fields(world: World) -> Non
     assert "Company registration, ৳40,000" in text
     assert [t.name for t in tools_for(agent.desk, agent.config, has_documents=False)] == [
         "take_message",
+        "take_lead",
         "handoff_to_human",
         "flag_complaint",
         "off_topic",
@@ -196,3 +200,36 @@ async def test_a_new_complaint_alerts_the_owner_once(world: World) -> None:
     again = await flag_complaint(ctx, ComplaintInput(reason="still cold"))
     assert first.handoff and first.alert == "😠 Complaint C-101: cold food"
     assert again.handoff and again.alert is None
+
+
+async def test_a_call_back_is_a_lead_at_the_time_python_read(
+    world: World, app: FastAPI, client: AsyncClient
+) -> None:
+    """ "call me Friday 5pm" on Tue 29 Sep → a lead for Fri 2 Oct, 17:00 in Dhaka, saved only
+    at the yes; the team taps the outcome, and a lost one's why is counted (D139)."""
+    agent = await world.agent()
+    conv = await world.say(agent, None, ["Hello!"], "hi")
+    ctx = make_ctx(world.store(agent, conv), agent=agent.config)
+    args = TakeLeadInput(when="friday 5pm", phone="01712345678", note="the family set")
+    asked = await take_lead(ctx, args)
+    assert asked.data["read_back"] == (
+        "We call you on Fri 2 Oct, 5:00 pm at 01712345678; about the family set"
+    )
+    placed = await said_yes(take_lead, ctx, args)
+    assert placed.data["code"] == "L-101" and placed.alert
+    async with world.sessions() as s:
+        [lead] = list(await s.scalars(select(Lead)))
+    assert lead.call_at.replace(tzinfo=UTC) == datetime(2026, 10, 2, 11, tzinfo=UTC)  # 17:00 Dhaka
+    no_time = await take_lead(ctx, TakeLeadInput(when="friday", phone="01712345678"))
+    assert not no_time.ok
+
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID)
+    await store.add(
+        Lead, status="open", name="", phone="01712345678", call_at=lead.call_at, note=""
+    )
+    [listed] = (await client.get("/api/leads", params={"status": "open"})).json()
+    lost = await client.patch(
+        f"/api/leads/{listed['id']}", json={"status": "lost", "why": "Price too high"}
+    )
+    assert (lost.json()["status"], lost.json()["why"]) == ("lost", "price too high")
+    assert (await client.get("/api/leads/why")).json() == [{"why": "price too high", "count": 1}]

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
-from heydesk.models import Conversation, TeamMessage, Ticket, Visitor
+from heydesk.models import Conversation, Lead, TeamMessage, Ticket, Visitor
 from heydesk.services import Services
 from heydesk.services.visitors import is_blocked, key_of
 
@@ -433,3 +433,55 @@ async def set_ticket_status(
     """`solved`, or `open` again. It stays open until someone marks it solved (D138)."""
     store = await services.agents.store(ws)
     return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))
+
+
+class LeadOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    code: str  # "L-101"
+    conversation_id: str | None
+    status: str  # open / sold / not_now / lost
+    name: str
+    phone: str
+    call_at: datetime  # when to call them
+    note: str  # what they want
+    why: str  # a lost one's reason
+    created_at: datetime
+
+
+class LeadIn(BaseModel):
+    status: Literal["open", "sold", "not_now", "lost"]
+    why: str = Field(default="", max_length=200)  # for lost: "price", "delivery charge"
+
+
+class WhyOut(BaseModel):
+    why: str
+    count: int
+
+
+@router.get("/api/leads")
+async def leads(
+    services: Svc,
+    ws: Workspace,
+    page: Paged,
+    status: Literal["open", "sold", "not_now", "lost"] | None = None,
+) -> list[LeadOut]:
+    """Call backs the agent took (D139), newest first; `status=open` for the ones to call."""
+    store = await services.agents.store(ws)
+    found = await store.find(Lead, status, limit=page.limit, before=page.before)
+    return [LeadOut.model_validate(lead) for lead in found]
+
+
+@router.get("/api/leads/why")
+async def lost_why(services: Svc, ws: Workspace) -> list[WhyOut]:
+    """Why we lose sales: the lost leads' whys, counted, most first (D139)."""
+    store = await services.agents.store(ws)
+    return [WhyOut(why=why, count=n) for why, n in await store.lost_why()]
+
+
+@router.patch("/api/leads/{lead_id}")
+async def lead_outcome(lead_id: str, body: LeadIn, services: Svc, ws: Workspace) -> LeadOut:
+    """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
+    store = await services.agents.store(ws)
+    return LeadOut.model_validate(await store.lead_outcome(lead_id, body.status, body.why))

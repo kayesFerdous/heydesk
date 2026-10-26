@@ -78,6 +78,11 @@ for a plain question or a change; say sorry once, then the message it returns. I
 `handoff_to_human` and opens the team's ticket. *Why:* an angry buyer left with the bot becomes a
 bad review; the model judges the mood, and Python keeps one ticket per chat.
 
+`take_lead` (D139), shared too, is told only in its description: when the visitor asks to be
+called back at a time, with the day and clock time and a phone; a message with no time is still
+`take_message`. It reads back like any writing tool. *Why:* Python reads the time, so the model
+passes their words as they are.
+
 ## 2. The desk's own sections
 
 Each kind of business writes its own (D41), in its folder's `__init__.py`. They all say who the

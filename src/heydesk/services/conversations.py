@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.desks.base import Store
+from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import (
     AssistUnavailable,
     ConversationFull,
@@ -24,7 +25,7 @@ from heydesk.errors import (
     NotFound,
     UnreadablePhoto,
 )
-from heydesk.models import Conversation, Note, Turn, User
+from heydesk.models import Agent, Conversation, Note, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -60,6 +61,9 @@ ASSIST = {
     ),
 }
 
+# A shop order read back and never said yes to gets one nudge this long after (D139)
+NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
+NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
 MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed (I3)
 OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs (I1)
 
@@ -422,14 +426,56 @@ class ConversationService:
         return conv
 
     async def run(self, every: float) -> None:
-        """Brings snoozed chats back when they're due, every `every` seconds, until cancelled
-        (the app's lifespan starts it)."""
+        """Brings snoozed chats back when they're due, and nudges unfinished orders (D139),
+        every `every` seconds, until cancelled (the app's lifespan starts it)."""
         while True:
             await asyncio.sleep(every)
             try:
                 await self.wake_snoozed()
+                await self.nudge_unfinished()
             except Exception:
-                log.exception("snoozed chats not woken")
+                log.exception("snooze and nudge round failed")
+
+    async def nudge_unfinished(self) -> None:
+        """A shop order read back and never said yes to, 1–3 hours on (D139): the chat's last
+        turn ran `place_order` and no order came of it. One nudge per chat, ever, with the
+        read-back's buttons, and only inside the app's window (`tell_in_window`)."""
+        now = self.now()
+        due = []
+        async with self.sessions() as s, s.begin():
+            quiet = await s.scalars(
+                select(Conversation)
+                .join(Agent, Agent.id == Conversation.agent_id)
+                .where(
+                    Agent.kind == "shop",
+                    Conversation.status == "active",
+                    Conversation.nudged.is_(False),
+                    Conversation.updated_at.between(now - NUDGE_BEFORE, now - NUDGE_AFTER),
+                )
+            )
+            for conv in quiet.all():
+                last = await s.scalar(
+                    select(Turn)
+                    .where(Turn.conversation_id == conv.id, Turn.channel != "assist")
+                    .order_by(Turn.at.desc())
+                    .limit(1)
+                )
+                # ponytail: a place_order that only asked for a missing detail counts too
+                if last is None or "place_order" not in last.tools:
+                    continue
+                placed = await s.scalar(
+                    select(ShopOrder.id).where(
+                        ShopOrder.workspace_id == conv.workspace_id,
+                        ShopOrder.conversation_id == conv.id,
+                        ShopOrder.created_at >= last.at,
+                    )
+                )
+                if placed is None:
+                    conv.nudged = True  # tried, sent or not: never twice
+                    due.append(conv.id)
+        for conversation_id in due:
+            await self.team.tell_in_window(conversation_id, NUDGE, ["Yes", "Change"])
+            log.info("nudged", extra={"conversation_id": conversation_id})
 
     async def wake_snoozed(self) -> None:
         """Each snoozed chat that's due is back in the list, and the owner hears about it."""

@@ -43,6 +43,8 @@ class Conversation(Base):
     # The team's own words for the chat (D136): "vip", "fake order". Never shown to the
     # visitor or the model
     labels: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # The one nudge for an order read back and never said yes to went (D139)
+    nudged: Mapped[bool] = mapped_column(default=False)
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
     )  # what a desk keeps between turns: the cart

@@ -2,11 +2,12 @@
 the business's documents (only when it has some, D35). And what a desk's writing tool and
 prompt say when the business takes payment first (D47)."""
 
+from datetime import UTC
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from heydesk.desks.base import NewMessage, Store
+from heydesk.desks.base import NewLead, NewMessage, Store
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult
@@ -182,6 +183,60 @@ TAKE_MESSAGE = Tool(
     label="Noting that down…",
     filler="One moment.",
     timeout_s=10.0,  # the commit check is a network call
+)
+
+
+class TakeLeadInput(BaseModel):
+    when: str = Field(
+        description='When to call, in their words with the clock time: "friday 5pm", '
+        '"tomorrow at 11 am", "5 Nov 6 pm"'
+    )
+    phone: str = Field(description="The number to call")
+    note: str = Field(default="", description="What they want, in a few words")
+    name: str = Field(default="", description="Optional: who to ask for")
+
+
+async def take_lead(ctx: ToolContext[Store], args: TakeLeadInput) -> ToolResult:
+    """A call back at a time (D139): Python reads the day and time (rule 1), then the read-back
+    and a yes, like a message."""
+    check = Checks()
+    when = check.take(
+        "when", args.when, lambda said: parse.day_and_time(said, ctx.local_now, ctx.agent.hours)
+    )
+    phone = check.take("phone", args.phone, parse.phone)
+    name = check.take("name", args.name, parse.name) if args.name.strip() else ""
+    if when is None or phone is None or name is None:
+        return check.result()
+    note = " ".join(args.note.split())[:300]
+
+    lead = NewLead(when.astimezone(UTC), note, name, phone)
+    read_back = f"We call you on {parse.day_time(when)} at {phone}" + "".join(
+        f"; {label} {value}" for label, value in (("about", note), ("for", name)) if value
+    )
+    confirmed = confirm(ctx.heard, lead, read_back)
+    if confirmed is None:
+        return ask_for_yes(read_back, "take_lead")
+    code = await ctx.store.save_lead(confirmed)
+    return ToolResult(
+        ok=True,
+        data={"code": code, "next": "Tell them the team will call them then."},
+        alert=f"📞 Call back {code}\n{read_back}",
+    )
+
+
+TAKE_LEAD = Tool(
+    name="take_lead",
+    description=(
+        "The visitor asks to be called back at a time, or will decide later and wants a call "
+        '("call me Friday 5pm"). Needs the day and clock time and a phone number. It gives '
+        "you what to read back; call it again with the same details after a clear yes. For a "
+        "message with no time, use take_message."
+    ),
+    input_model=TakeLeadInput,
+    run=take_lead,
+    label="Noting that down…",
+    filler="One moment.",
+    timeout_s=10.0,
 )
 
 

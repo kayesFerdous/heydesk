@@ -91,13 +91,14 @@ Keep these in the pitch.
 
 ### Should have: they help a shop sell more
 
-- [ ] **G7 A nudge for an order not finished** · S–M
+- [x] **G7 A nudge for an order not finished** · S–M
   - *Who has it:* Revora (abandoned cart), Sellzy ("recovers late-night orders").
   - *Why:* a buyer who got the read-back but never said yes is the warmest lead a shop has.
   - *Smallest build:* a timed round finds conversations whose last tool result was a read-back
     with no order, 1–3 hours later and still inside Messenger's 24-hour window. It sends one
     message ("Apnar order ta confirm korbo?"). Send only one, never twice. Telegram has no
     window.
+  - 26 Oct, D139: built (day R13), in the snooze round; the line is in English, like D134's.
 - [ ] **G8 Duplicate-order guard** · S
   - *Who has it:* Sellzy.
   - *Why:* the same buyer ordering twice in a few minutes is usually a mistake or a prank, and
@@ -295,11 +296,13 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 
 ### Then: follow-ups and leads
 
-- [ ] **G7** (nudge an unfinished order) comes first here.
-- [ ] **G39 Leads with a callback time** · M
+- [x] **G7** (nudge an unfinished order) comes first here. (26 Oct, D139)
+- [x] **G39 Leads with a callback time** · M
   - A `take_lead(when, note)` tool: "call me Friday 5pm" → a lead with that time (Python reads
     the date, rule 1). A leads list; the team taps the outcome (sold / not now / lost: why).
     The *why* counts become "why we lose sales".
+  - 26 Oct, D139: built (day R13): `take_lead` reads back before a yes; `/api/leads/why`
+    counts the whys. The dev chat check and the screen are next.
 - [ ] **G40 An offer to everyone who wrote today** · M · Meta
   - The owner writes "free delivery for the next 12 hours" and sends it to everyone who wrote
     in the last 24 h (inside Messenger's window, so it's free). The offer is saved with its

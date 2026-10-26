@@ -11,6 +11,7 @@ from heydesk.desks.shared import (
     OFF_TOPIC,
     REMEMBER,
     SEARCH_KNOWLEDGE,
+    TAKE_LEAD,
     TAKE_MESSAGE,
 )
 from heydesk.desks.shop import SHOP
@@ -22,8 +23,8 @@ DESKS: dict[str, Desk] = {desk.kind: desk for desk in (RESTAURANT, CLINIC, RECEP
 
 def tools_for(desk: Desk, config: AgentConfig, has_documents: bool) -> list[Tool]:
     """A desk's tools for this business (D64), then the shared ones: messages, hand-off,
-    a complaint (D138), off-topic (D51) and remember (D124) always, and the documents search when the business
-    has documents (D35)."""
-    shared = [TAKE_MESSAGE, HANDOFF, COMPLAINT, OFF_TOPIC, REMEMBER]
+    a call back (D139), a complaint (D138), off-topic (D51) and remember (D124) always, and
+    the documents search when the business has documents (D35)."""
+    shared = [TAKE_MESSAGE, TAKE_LEAD, HANDOFF, COMPLAINT, OFF_TOPIC, REMEMBER]
     shared += [SEARCH_KNOWLEDGE] if has_documents else []
     return [*desk.own_tools(config), *shared]
