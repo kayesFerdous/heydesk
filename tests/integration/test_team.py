@@ -139,6 +139,7 @@ async def test_a_moderators_chat_alerts_them_not_the_owner(
     path, secret = await link_owner(app, client)
     rafi_id = await invite(client)
     rafi = await join(app)
+    assert (await rafi.get("/api/agent/telegram")).json()["owner_link"] is None  # D151
     link = (await rafi.get("/api/auth/me")).json()["telegram_link"]
     code = link.split("?start=")[1]
     mod_chat = 888

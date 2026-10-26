@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, BackgroundTasks, Body, Header, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, User, Workspace
 from heydesk.models import Channel
 from heydesk.services.team import owner_link
 
@@ -24,7 +24,9 @@ class TelegramIn(BaseModel):
 class TelegramOut(BaseModel):
     username: str
     link: str  # share it with customers: it opens a chat with the bot
-    owner_link: str  # only for the owner: opening it sends them alerts there (D43)
+    # only for the owner: opening it sends them alerts there (D43); None for a moderator, whose
+    # own link is on /api/auth/me (D148, D151)
+    owner_link: str | None
     owner_linked: bool  # the owner has opened it
 
 
@@ -38,8 +40,11 @@ def telegram_out(channel: Channel) -> TelegramOut:
 
 
 @router.get("/api/agent/telegram")
-async def get_telegram(ws: Workspace, services: Svc) -> TelegramOut:
-    return telegram_out(await services.channels.telegram_of(ws))
+async def get_telegram(ws: Workspace, services: Svc, principal: User) -> TelegramOut:
+    out = telegram_out(await services.channels.telegram_of(ws))
+    if principal.role == "moderator":
+        out.owner_link = None
+    return out
 
 
 @router.put("/api/agent/telegram")

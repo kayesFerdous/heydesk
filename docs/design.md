@@ -561,9 +561,11 @@ Everything under `/api` except chat, desks, auth and the Telegram, Messenger, Wh
 **Three roles** (D23, D97). An **owner** belongs to one business: the token says which
 (rule 6), and they only ever see it. A **moderator** is someone the owner added to it:
 they run the inbox (conversations, messages, orders, bookings, appointments, calls, the
-lists) and can read the settings, but a change under `/api/agent`, the Telegram bot (its
-link makes you the one who gets the alerts) and `/api/team` are a 403 for them
-(`deps.owners_only`). The owner adds one by
+lists) and can read the settings, knowledge and channels, but a change under `/api/agent`,
+`/api/billing` and anything under `/api/team` are a 403 for them (`deps.owners_only`). The
+one exception is `PATCH /api/agent` with only `faq` and `saved_replies` (D151). The Telegram
+bot's `owner_link` comes back empty for them (it makes you the one who gets the owner's
+alerts); their own link is on `/api/auth/me` (D148). The owner adds one by
 email; the user is made with a password no one knows and the email has a reset code, so
 they join with `POST /api/auth/reset` (or, once it's expired, Forgot password), which
 verifies them. One account per email, so an email that has one can't be added. Removing a
