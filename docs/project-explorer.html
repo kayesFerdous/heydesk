@@ -3650,6 +3650,10 @@ tr.hl td { background: var(--accent-soft); }
     [
      "phone",
      "string; The number the clinic calls to confirm"
+    ],
+    [
+     "trx_id",
+     "string; The bKash or Nagad TrxID of a deposit sent by hand (needed with advance_number, D145)"
     ]
    ],
    "outputs": [
@@ -3816,6 +3820,10 @@ tr.hl td { background: var(--accent-soft); }
     "why": "Rule 2: nothing is saved until the agent read every detail back and the visitor clearly said yes. The store method only takes Confirmed[T]."
    },
    "inputs": [
+    [
+     "again",
+     "bool; true only after they said a repeat of the same items is on purpose (D146)"
+    ],
     [
      "address",
      "string; The full address: house and road, area or thana, district; a landmark if they gave one"

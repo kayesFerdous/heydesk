@@ -46,7 +46,17 @@ class ClinicStore(Store):
             at=a.at.astimezone(UTC),
             deposit=a.deposit,
             currency=a.currency,
+            trx_id=a.trx_id,
         )
+
+    async def trx_checked(self, appointment_id: str, checked: bool) -> Appointment:
+        """The clinic found the deposit's TrxID in its bKash or Nagad account, or unticks it
+        (D145)."""
+        async with self.sessions() as s, s.begin():
+            found = await self._one(s, Appointment, appointment_id)
+            found.trx_checked = checked
+            found.updated_at = self.now()
+        return found
 
     async def appointment(self, number: int) -> Appointment | None:
         return await self.by_number(Appointment, number)

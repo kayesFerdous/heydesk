@@ -455,9 +455,9 @@ Every table has `workspace_id` (except `workspaces`).
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
 | `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
 | `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Code `O-101` (D65); unpaid → new (the delivery charge was paid, D48) → ready → collected for a pickup, or ready → out_for_delivery → delivered for a delivery (D66); unpaid, new, ready or out_for_delivery → cancelled |
-| `bookings` | the shared columns, at (UTC), people, note. Code `T-101`; new → confirmed → seated → done; new or confirmed → cancelled; confirmed → no_show. New, confirmed and seated hold their seats (D64) |
+| `bookings` | the shared columns, at (UTC), people, note, reminded (the day-before line was tried, D145). Code `T-101`; new → confirmed → seated → done; new or confirmed → cancelled; confirmed → no_show. New, confirmed and seated hold their seats (D64) |
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
-| `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
+| `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked), trx_id and trx_checked (a deposit sent by hand: the bKash or Nagad TrxID the patient typed, and the clinic's tick, D145), reminded (D145). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
 | `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131), source (where it was placed: `chat`, `page` for *Buy now* or `team`, D144). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
@@ -502,7 +502,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status (the visitor hears ready, on its way or cancelled in their chat, D66) |
 | GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
 | GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
-| GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status |
+| GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status. `PUT …/{id}/trx {checked}` ticks a deposit's TrxID as found (D145) |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422, and so is a photo new to the list that isn't one of ours (one saved before is kept, D122). Its CSV import adds and updates instead (D120) |
 | GET | `/p/{public_key}/{code}` | A product's public page, HTML, no login (D121) |
 | POST | `/p/{public_key}/{code}?c=` | Its *Buy now* form: the check page, then with `heard` *Place order* saves it and goes to `/o/<id>`; the receipt goes to chat `c` (D130) |
@@ -1624,6 +1624,34 @@ or appointment has none). **Bought** counts the chats those sales belong to. A s
 `source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
 are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
 as the admin's overview is (D72).
+
+### Reminders the day before, and a deposit sent by hand (D145)
+
+- **The reminder.** The snooze round (`ConversationService.remind_tomorrow`, every
+  `SNOOZE_CHECK_SECONDS`) finds table bookings and appointments that are `new` or `confirmed`,
+  in a chat, and less than 24 hours away. Each gets one line in its chat ("⏰ A reminder: your
+  appointment A-104 with Dr. Hasan is on Wed 30 Sep, 7:00 pm."), the time in the business's
+  timezone, and `reminded` is set whether it went or not. One booked less than a day ahead is
+  marked and skipped. It goes through `tell_in_window`: always on Telegram and the web chat,
+  on Messenger and WhatsApp only within 24 hours of the visitor's last message. Meta lets a
+  Page send outside that window only with a message tag (`CONFIRMED_EVENT_UPDATE`) and
+  WhatsApp only with an approved template; neither is used yet.
+- **The TrxID.** A clinic sets `advance_number` (its bKash or Nagad number) and a `deposit`.
+  Unless it takes the deposit online first (D48, which wins), `# The clinic` tells the agent to
+  ask the patient to send the deposit there and give the TrxID. `request_appointment` then
+  needs `trx_id`: 8 to 12 letters and digits, in capitals (`trx_id()` in `clinic/values.py`),
+  read back with the rest and saved on the appointment, which stays `new`. The clinic finds it
+  in its own account and ticks `trx_checked` (`PUT /api/appointments/{id}/trx`). Python can't
+  check a TrxID: there's no API for a personal bKash or Nagad number.
+
+### The same order twice (D146)
+
+`place_order`, once every detail is valid and before the read-back, asks
+`ShopStore.same_order` for an order from the same mobile in the last `DUPLICATE_HOURS` (6),
+not cancelled, with the same items (code, size and colour; the quantity may differ). If there
+is one, the tool fails with a hint: ask whether it's a second order on purpose. A yes is
+`again=true` on the next call, which skips the check. The product page's *Buy now* and the
+team's orders aren't checked.
 
 ### Coupons (D133)
 

@@ -1507,3 +1507,22 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
     assert (stats["yesterday"]["conversations"], stats["yesterday"]["amount"]) == (1, 300)
     week = stats["period"]
     assert (week["conversations"], week["sales"], week["amount"], week["bought"]) == (3, 4, 3800, 2)
+
+
+async def test_the_same_mobile_and_items_again_is_asked_about_first(world: World) -> None:
+    """A second order of the same items from the same mobile within DUPLICATE_HOURS isn't
+    read back until they say it's on purpose (G8, D146)."""
+    agent = await world.agent("shop")
+    store = world.store(agent)
+
+    async def order_again(again: bool = False) -> ToolResult:
+        state = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
+        ctx = make_ctx(store, state=state, agent=agent.config)
+        return await said_yes(place_order, ctx, PlaceOrderInput(**DETAILS, again=again))
+
+    assert (await order_again()).ok
+    asked = await order_again()
+    assert not asked.ok and "already ordered the same items as O-101" in str(asked.data)
+    assert len(await orders(world)) == 1
+    assert (await order_again(again=True)).ok
+    assert len(await orders(world)) == 2

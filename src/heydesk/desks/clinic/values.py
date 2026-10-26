@@ -102,6 +102,19 @@ class NewAppointment:
     currency: str
     deposit: int = 0  # minor units
     pay_first: bool = False  # saved as unpaid until the deposit is paid online (D48)
+    trx_id: str = ""  # the deposit sent by hand: its bKash or Nagad TrxID (D145)
+
+
+def trx_id(said: str) -> str:
+    """A bKash or Nagad TrxID as typed ("9 f 3 k...", "trxid: 9F3K..."): 8 to 12 letters and
+    digits, in capitals. Raises ValueError for anything else."""
+    found = re.sub(r"(?i)^\s*trx\s*id\s*[:#-]?", "", said)
+    found = re.sub(r"[\s-]", "", found).upper()
+    if not re.fullmatch(r"[A-Z0-9]{8,12}", found):
+        raise ValueError(
+            "A TrxID is 8 to 12 letters and numbers, in the bKash or Nagad message. Ask again."
+        )
+    return found
 
 
 @dataclass(frozen=True)
@@ -210,9 +223,12 @@ class ClinicConfig(AgentConfig):
     # The patient pays the deposit online first (SSLCommerz or bKash). The request reaches the
     # clinic only when the payment comes in (D48)
     pay_first: bool = False
+    # Or the patient sends the deposit by hand to this bKash or Nagad number and types the
+    # TrxID; the clinic ticks it once it's found (D145). Online first wins when both are set
+    advance_number: str = ""
 
     @model_validator(mode="after")
     def _something_to_pay_first(self) -> "ClinicConfig":
-        if self.pay_first and not self.deposit:
+        if (self.pay_first or self.advance_number.strip()) and not self.deposit:
             raise ValueError("To take a deposit first, set how much it is.")
         return self

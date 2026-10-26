@@ -13,6 +13,7 @@ from heydesk.desks.clinic.values import (
     ClinicConfig,
     NewAppointment,
     match_doctor,
+    trx_id,
 )
 from heydesk.desks.shared import awaiting_payment
 from heydesk.domain.values import parse_code
@@ -84,6 +85,9 @@ class RequestAppointmentInput(BaseModel):
     time: str = Field(default="", description="The day and time, like tomorrow at 5 pm")
     name: str = Field(default="", description="The patient's name")
     phone: str = Field(default="", description="The number the clinic calls to confirm")
+    trx_id: str = Field(
+        default="", description="The bKash or Nagad TrxID of the deposit they sent, if asked for"
+    )
 
 
 async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolResult:
@@ -98,25 +102,31 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
         when = None
     name = check.take("name", args.name, parse.name)
     phone = check.take("phone", args.phone, parse.phone)
-    if doctor is None or when is None or name is None or phone is None:
+    config = cast(ClinicConfig, ctx.agent)
+    online = await ctx.store.pays_first(config)
+    by_hand = not online and bool(config.deposit and config.advance_number.strip())
+    trx = check.take("trx_id", args.trx_id, trx_id) if by_hand else ""  # D145
+    if doctor is None or when is None or name is None or phone is None or trx is None:
         return check.result()
 
-    config = cast(ClinicConfig, ctx.agent)
-    deposit = config.deposit if await ctx.store.pays_first(config) else 0
+    deposit = config.deposit if online or by_hand else 0
     appointment = NewAppointment(
-        doctor, when, name, phone, config.currency, deposit, pay_first=deposit > 0
+        doctor, when, name, phone, config.currency, deposit, pay_first=online, trx_id=trx
     )
     amount = money(deposit, config.currency)
-    read_back = f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}" + (
-        f"; a deposit of {amount} paid online now" if deposit else ""
+    read_back = (
+        f"{doctor.name} on {parse.day_time(when)}, for {name}, phone {phone}"
+        + (f"; a deposit of {amount} paid online now" if online else "")
+        + (f"; the deposit of {amount} sent, TrxID {trx}" if trx else "")
     )
     rows = [  # the card's details (D110), the same as the read-back's
         cards.row("Doctor", f"{doctor.name}, {doctor.speciality}"),
         cards.row("Time", parse.day_time(when), when),
         cards.row("Patient", name),
         cards.row("Phone", phone),
+        *([cards.row("TrxID", trx)] if trx else []),
     ]
-    total = cards.amount(deposit, config.currency) if deposit else None
+    total = cards.amount(deposit, config.currency) if online else None
     confirmed = confirm(ctx.heard, appointment, read_back)
     if confirmed is None:
         lines = [cards.line("Deposit, paid online now", cost=total)] if total else None
@@ -149,7 +159,8 @@ REQUEST_APPOINTMENT = Tool(
         "Call it as soon as you have the doctor and the time: it checks the doctor works then "
         "and says what's still needed. When it has everything it gives you what to read back; "
         "call it again with the same details after a clear yes. If the clinic takes a "
-        "deposit first, it returns a payment link."
+        "deposit first, it returns a payment link. If it takes the deposit by bKash or Nagad, "
+        "it needs the TrxID they got after sending it."
     ),
     input_model=RequestAppointmentInput,
     run=request_appointment,

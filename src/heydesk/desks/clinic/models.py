@@ -51,6 +51,11 @@ class Appointment(Taken, Payable, Base):
     doctor_name: Mapped[str] = mapped_column(String(200))  # as it was when booked
     at: Mapped[datetime]  # UTC
     deposit: Mapped[int] = mapped_column(default=0)  # minor units, the clinic's when booked
+    # A deposit sent by hand (D145): the bKash or Nagad TrxID the patient typed ("" none),
+    # and whether the clinic ticked it as found in its account
+    trx_id: Mapped[str] = mapped_column(String(30), default="", server_default="")
+    trx_checked: Mapped[bool] = mapped_column(default=False, server_default="0")
+    reminded: Mapped[bool] = mapped_column(default=False, server_default="0")  # the day before
 
     @property
     def due(self) -> int:

@@ -302,3 +302,37 @@ async def test_appointments_export_as_a_file(app: FastAPI, client: AsyncClient) 
     await app.state.services.agents.ensure_dev_agent("clinic", SEEDS / "clinic.yaml")
     res = await client.get("/api/appointments.csv")
     assert res.status_code == 200 and res.text.removeprefix("﻿").startswith("Appointment")
+
+
+async def test_a_deposit_sent_by_hand_is_saved_with_its_trx_id(world: World) -> None:
+    """With an advance number, the request needs the TrxID, read back and saved (D145)."""
+    agent = await world.agent("clinic")
+    by_hand = agent.config.model_copy(update={"deposit": 50000, "advance_number": "01711111111"})
+    ctx = make_ctx(world.store(agent), agent=by_hand)
+
+    asked = await request_appointment(ctx, RequestAppointmentInput.model_validate(DETAILS))
+    assert not asked.ok and "trx id" in str(asked.data)  # no TrxID yet: ask for it
+    args = RequestAppointmentInput.model_validate(DETAILS | {"trx_id": "TrxID: 9f3k 7abc12"})
+    saved = await said_yes(request_appointment, ctx, args)
+    assert saved.ok
+    [appointment] = await appointments(world)
+    assert (appointment.trx_id, appointment.trx_checked) == ("9F3K7ABC12", False)
+
+
+async def test_an_appointment_is_reminded_once_the_day_before(world: World) -> None:
+    agent = await world.agent("clinic")
+    saved = await book(world, agent)  # Wed 30 Sep 7 pm in Dhaka, booked Tue 2 pm
+    conversations = world.services.conversations
+
+    def reminders(conv: Any) -> int:
+        return sum("A reminder" in str(m) for m in conv.messages)
+
+    await conversations.remind_tomorrow()
+    assert saved.conversation_id
+    assert reminders(await world.conversation(saved.conversation_id)) == 0  # 29 hours ahead
+    world.clock.advance(hours=6)
+    await conversations.remind_tomorrow()
+    await conversations.remind_tomorrow()
+    conv = await world.conversation(saved.conversation_id)
+    assert reminders(conv) == 1
+    assert "A-101 with Dr. Imran Hasan is on Wed 30 Sep, 7:00 pm" in str(conv.messages[-1])

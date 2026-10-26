@@ -100,7 +100,7 @@ Keep these in the pitch.
     message ("Apnar order ta confirm korbo?"). Send only one, never twice. Telegram has no
     window.
   - 26 Oct, D139: built (day R13), in the snooze round; the line is in English, like D134's.
-- [ ] **G8 Duplicate-order guard** · S
+- [x] **G8 Duplicate-order guard** · S *(built 26 Oct, D146)*
   - *Who has it:* Sellzy.
   - *Why:* the same buyer ordering twice in a few minutes is usually a mistake or a prank, and
     it costs a delivery charge.
@@ -168,7 +168,7 @@ Keep these in the pitch.
   - *Smallest build:* a buyers list grouped by mobile, with their orders, channels and
     conversations, from the tables we already have.
   - 26 Oct, D132: a shop's buyers list (day R5); restaurants and clinics are next.
-- [ ] **G18 Appointment and booking reminders** · M
+- [x] **G18 Appointment and booking reminders** · M *(built 26 Oct, D145; Messenger and WhatsApp only inside the 24-hour window)*
   - *Who has it:* ARA (calendar sync and confirmations), Edesy (clinics).
   - *Why:* no-shows cost clinics and restaurants.
   - *Smallest build:* a timed round sends a reminder the day before on Telegram. On Messenger,
@@ -347,8 +347,9 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 
 ### Service businesses
 
-- [ ] **G18** (reminder the day before) and **G47 Advance payment's TrxID** · S: the booking
+- [x] **G18** (reminder the day before) and **G47 Advance payment's TrxID** · S: the booking
   takes the bKash/Nagad transaction id the buyer typed, and the owner ticks it as checked.
+  - 26 Oct, D145: built (day R20), the TrxID on a clinic's appointments.
 
 ### Not copying
 

@@ -108,6 +108,7 @@ class Booking(Taken, Base):
     at: Mapped[datetime]  # UTC: when they arrive
     people: Mapped[int]
     note: Mapped[str] = mapped_column(default="")  # "birthday", "a high chair"
+    reminded: Mapped[bool] = mapped_column(default=False, server_default="0")  # the day before
 
     def news(self) -> str:
         """What the visitor is told in their chat when the owner moves it here; "" for

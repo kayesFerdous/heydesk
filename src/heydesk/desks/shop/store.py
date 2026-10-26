@@ -268,6 +268,28 @@ class ShopStore(Store):
             s.add(saved)
         return saved
 
+    async def same_order(
+        self, phone: str, lines: list[dict[str, Any]], since: datetime
+    ) -> ShopOrder | None:
+        """The newest order from this mobile since then, not cancelled, with the same items
+        (G8, D146): a second one is usually a mistake or a prank, and costs a delivery."""
+
+        def items(of: list[dict[str, Any]]) -> set[tuple[str, str, str]]:
+            return {(line["code"], line.get("size", ""), line.get("colour", "")) for line in of}
+
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(ShopOrder)
+                .where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.phone == phone,
+                    ShopOrder.created_at >= since,
+                    ShopOrder.status != "cancelled",
+                )
+                .order_by(ShopOrder.created_at.desc())
+            )
+            return next((o for o in found if items(o.lines) == items(lines)), None)
+
     async def past_trouble(self, phone: str) -> dict[str, int]:
         """How many of this mobile's orders came back or were cancelled: {"returned": 2}. For
         the owner's new-order alert, since a fake order costs a shop two delivery charges."""

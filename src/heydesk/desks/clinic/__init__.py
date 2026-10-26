@@ -66,6 +66,14 @@ class ClinicDesk(Desk):
         if await store.pays_first(config):
             deposit = money(config.deposit, config.currency)
             about.append(pay_first_rule(f"a deposit of {deposit}", "request_appointment"))
+        elif config.deposit and config.advance_number.strip():  # by hand (D145)
+            deposit = money(config.deposit, config.currency)
+            about.append(
+                f"Deposit: each request needs a deposit of {deposit}, sent by bKash or Nagad "
+                f"(Send Money) to {config.advance_number.strip()}. Once you have the doctor and "
+                "the time, ask them to send it and to tell you the TrxID from the confirmation "
+                "message; request_appointment needs it. The clinic checks it before confirming."
+            )
 
         doctors = await store.doctors()
         listed = ["# Doctors"]

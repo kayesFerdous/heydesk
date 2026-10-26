@@ -6,6 +6,7 @@ On the web chat, it can show products' photos (D57).
 A shop can take the delivery charge online first (D47): then `place_order` saves the order
 `unpaid` and returns a payment link. No tool can mark it paid: only the payment check can."""
 
+from datetime import timedelta
 from typing import Any, cast
 
 from pydantic import BaseModel, Field
@@ -272,6 +273,7 @@ UPDATE_CART = Tool(
 )
 
 
+DUPLICATE_HOURS = 6  # the same mobile and items again within this is asked about (G8, D146)
 DISTRICT = (  # the model reads the district off the address; Python picks the area (D98)
     "The address's district, in English, even if they didn't write it: Mirpur or Uttara → "
     "Dhaka, Patenga → Chattogram, Savar → Dhaka"
@@ -299,6 +301,10 @@ class PlaceOrderInput(BaseModel):
     name: str = Field(default="", description="The name for the order")
     phone: str = Field(default="", description="The buyer's mobile number, for the rider")
     note: str = Field(default="", description="Optional: anything the shop should know")
+    again: bool = Field(
+        default=False,
+        description="True only after they said they want a second order of the same items",
+    )
 
 
 async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
@@ -325,6 +331,14 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if zone is None or address is None or name is None or phone is None:
         missing = check.result().data
         return ToolResult(ok=False, data=(data | missing) if zone else missing)
+    if not args.again:  # the same mobile and items a little while ago (G8, D146)
+        since = ctx.now - timedelta(hours=DUPLICATE_HOURS)
+        if earlier := await ctx.store.same_order(phone, cart["lines"], since):
+            return fail(
+                f"{phone} already ordered the same items as {earlier.code}. Ask whether this "
+                "is a second order on purpose. If yes, call place_order again with again=true; "
+                f"if not, tell them {earlier.code} is placed and nothing more is needed."
+            )
 
     order, read_back, how = await new_order(
         ctx.store, config, cart, zone, address, name, phone, args.note

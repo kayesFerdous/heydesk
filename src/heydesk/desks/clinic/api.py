@@ -52,6 +52,8 @@ class AppointmentOut(BaseModel):
     currency: str
     paid: int  # paid online first (D47)
     payment_ref: str  # the payment gateway's id for it
+    trx_id: str  # a deposit sent by hand: its bKash or Nagad TrxID; "" none (D145)
+    trx_checked: bool  # the clinic found it in its account
     created_at: datetime
     updated_at: datetime
 
@@ -111,6 +113,16 @@ async def appointment(appointment_id: str, store: Clinic) -> AppointmentOut:
 async def set_status(appointment_id: str, body: StatusIn, store: Clinic) -> AppointmentOut:
     found = await store.set_status(Appointment, appointment_id, body.status)
     return AppointmentOut.model_validate(found)
+
+
+class TrxIn(BaseModel):
+    checked: bool
+
+
+@router.put("/api/appointments/{appointment_id}/trx")
+async def trx_checked(appointment_id: str, body: TrxIn, store: Clinic) -> AppointmentOut:
+    """The clinic ticks the deposit's TrxID as found in its bKash or Nagad account (D145)."""
+    return AppointmentOut.model_validate(await store.trx_checked(appointment_id, body.checked))
 
 
 @router.post("/api/doctors/import/suggest")
