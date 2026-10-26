@@ -23,6 +23,7 @@ class Turn(Base):
     total_ms: Mapped[int]
     first_output_ms: Mapped[int | None]  # None: no words were streamed (a tool's own reply)
     input_tokens: Mapped[int]
+    cached_tokens: Mapped[int] = mapped_column(default=0)  # of the input; billed at half
     output_tokens: Mapped[int]
     cost_micros: Mapped[int]  # millionths of a dollar; 0 when the provider has no price
     tools: Mapped[list[str]] = mapped_column(JSON)  # their names, in order

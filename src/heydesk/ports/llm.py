@@ -32,6 +32,7 @@ class Usage:
     input: int = 0
     output: int = 0
     cost_micros: int = 0  # millionths of a dollar
+    cached: int = 0  # input tokens the provider had cached, part of `input`
 
 
 # What a stream yields

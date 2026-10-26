@@ -435,7 +435,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `users` | workspace_id (empty for an admin), role (`owner`/`moderator`/`admin`, D97), email, password_hash, email_verified_at (empty until the emailed code is typed, D93; for a moderator, until they join), telegram_chat_id (their own chat with the bot, for their alerts, D148), available (new hand-offs may go to them, D149) |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
-| `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
+| `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cached_tokens (D154), cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
 | `tickets` | the shared columns, reason (the agent's words for what's wrong). Code `C-101`; open ↔ solved; one open ticket per chat; who has it is the chat's `assigned_to` (D138) |
@@ -654,7 +654,7 @@ Suspending takes a reason (`PATCH /api/admin/businesses/{id}` `{status, reason}`
 422). It's kept on the business until it's reactivated, and is in the audit entry, for
 admins only: the owner's console says it's suspended, not why (D70).
 The admin's **Overview** (`GET /api/admin/overview?days=7`, 1 to 30, D72) adds up the saved
-turns (D71) for today and the last N days: turns, conversations started, tokens, cost (priced
+turns (D71) for today and the last N days: turns, conversations started, tokens (and how many were cached, D154), cost (priced
 providers only), failed turns, hand-offs, and the median and 95th-percentile first reply; one
 row a day, oldest first, empty days included; the 5 businesses with the most turns. A day is
 Dhaka's, as every business is there today. The rows are summed in Python, not SQL.

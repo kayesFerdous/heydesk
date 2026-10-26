@@ -22,6 +22,7 @@ from heydesk.ports.llm import (
 
 # Dollars per million tokens (input, output)
 PRICES = {"openai/gpt-oss-120b": (0.15, 0.75), "openai/gpt-oss-20b": (0.075, 0.30)}
+CACHED = 0.5  # cached input costs half (Groq's prompt caching)
 
 STOPS: dict[str, Any] = {
     "stop": "end",
@@ -122,5 +123,8 @@ def arguments(raw: str) -> dict[str, Any]:
 def to_usage(usage: CompletionUsage, model: str) -> Usage:
     per_input, per_output = PRICES.get(model, (0.0, 0.0))
     # $ per million tokens = millionths of a dollar per token
-    cost = usage.prompt_tokens * per_input + usage.completion_tokens * per_output
-    return Usage(usage.prompt_tokens, usage.completion_tokens, round(cost))
+    details = usage.prompt_tokens_details
+    cached = details.cached_tokens if details else 0
+    paid_input = usage.prompt_tokens - cached * CACHED
+    cost = paid_input * per_input + usage.completion_tokens * per_output
+    return Usage(usage.prompt_tokens, usage.completion_tokens, round(cost), cached)

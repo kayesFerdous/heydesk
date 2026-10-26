@@ -95,6 +95,7 @@ class Totals:
     turns: int
     conversations: int  # started in those days
     input_tokens: int
+    cached_tokens: int  # of the input: the share Groq's prompt cache served
     output_tokens: int
     cost_micros: int
     failed: int  # turns with an error: the visitor got the polite line
@@ -408,6 +409,7 @@ def totals(turns: Sequence[Turn], conversations: int) -> Totals:
         turns=len(turns),
         conversations=conversations,
         input_tokens=sum(t.input_tokens for t in turns),
+        cached_tokens=sum(t.cached_tokens for t in turns),
         output_tokens=sum(t.output_tokens for t in turns),
         cost_micros=sum(t.cost_micros for t in turns),
         failed=sum(1 for t in turns if t.error),

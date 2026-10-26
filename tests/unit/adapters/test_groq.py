@@ -51,6 +51,19 @@ async def test_text_streams_and_usage_is_counted() -> None:
     )
 
 
+async def test_cached_input_costs_half() -> None:
+    usage = {
+        "prompt_tokens": 1000,
+        "completion_tokens": 100,
+        "total_tokens": 1100,
+        "prompt_tokens_details": {"cached_tokens": 800},
+    }
+    got = await events(chunk({"content": "Hi"}), chunk({}, finish="stop", usage=usage))
+
+    # (200 × 0.15) + (800 × 0.075) + (100 × 0.75) = 30 + 60 + 75
+    assert isinstance(got[1], Finished) and got[1].usage == Usage(1000, 100, 165, 800)
+
+
 async def test_a_tool_call_split_over_chunks_is_joined() -> None:
     def part(**fields: Any) -> dict[str, Any]:
         return {"tool_calls": [{"index": 0, **fields}]}

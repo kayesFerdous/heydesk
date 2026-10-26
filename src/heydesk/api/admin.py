@@ -49,6 +49,7 @@ class TotalsOut(BaseModel):
     turns: int
     conversations: int  # started in those days
     input_tokens: int
+    cached_tokens: int  # of the input; cached / input is the cache's hit rate
     output_tokens: int
     cost_micros: int  # millionths of a dollar; priced providers only (Groq), D71
     failed: int  # turns that ended with the polite line

@@ -808,6 +808,7 @@ class ConversationService:
             total_ms=trace["total_ms"],
             first_output_ms=trace["first_output_ms"],
             input_tokens=sum(t["input"] for t in tokens),
+            cached_tokens=sum(t["cached"] for t in tokens),
             output_tokens=sum(t["output"] for t in tokens),
             cost_micros=trace["cost_micros"],
             tools=ended.tools,

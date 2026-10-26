@@ -40,7 +40,7 @@ class Trace:
             self.data["first_output_ms"] = self.ms()
 
     def add_usage(self, step: dict[str, Any], usage: Usage) -> None:
-        step["tokens"] = {"input": usage.input, "output": usage.output}
+        step["tokens"] = {"input": usage.input, "cached": usage.cached, "output": usage.output}
         self.data["cost_micros"] += usage.cost_micros
 
     def to_dict(self) -> dict[str, Any]:
