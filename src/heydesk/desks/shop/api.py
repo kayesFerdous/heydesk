@@ -64,6 +64,7 @@ class ShopOrderOut(BaseModel):
     id: str
     code: str  # what the buyer was told: "O-101"
     conversation_id: str | None
+    source: str  # where it was placed: chat, page or team (D144)
     status: str  # new → confirmed → shipped → delivered or returned; or cancelled
     name: str
     phone: str
@@ -237,7 +238,7 @@ async def buy(
             )
         )
     try:
-        saved = await shop.place_order(confirmed)
+        saved = await shop.place_order(confirmed, "page")
     except OutOfStock:
         return again("Sold out since you checked. Choose another size or colour.")
     ws = agent.workspace_id

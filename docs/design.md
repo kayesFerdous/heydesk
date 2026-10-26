@@ -460,7 +460,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
 | `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
-| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
+| `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131), source (where it was placed: `chat`, `page` for *Buy now* or `team`, D144). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
@@ -491,6 +491,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/POST/DELETE | `/api/team/members` | The owner's team (D97): everyone in the business (`active`, or `invited` until they join); add a moderator by `{email}` → 201, and an email with a code; `POST …/{id}/invite` sends it again; `DELETE …/{id}` removes one, out at once. A 409 for an email with an account, or past 10 moderators |
 | GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
+| GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders or bookings, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST | `/api/agent/logo` | The business's logo (multipart): saved as a 256 px JPEG (transparent is white) and set as `widget.logo` → `{url}` (D82) |
@@ -1610,6 +1611,19 @@ needs `call_to_confirm` (a 422 otherwise).
 - **The end:** a delivered or returned order takes `paid_in` (the rider's cash reached the
   shop), a returned or cancelled one a `reason` (the screen offers refused, damaged, wrong item,
   no answer, changed their mind, or the owner's words). Before it ends, either is a 409.
+
+### The owner's dashboard (D144)
+
+`GET /api/stats` adds up rows we already keep, in `Store.stats(start, end)`; the route asks for
+today, yesterday and the last `days` days in the agent's `timezone`. **Chats** are the
+conversations with a turn in the stretch, and **handed off** those with a turn that handed off;
+the rest the agent handled alone. **Sales** are the rows of the desk's `SALES` tables (a shop's
+orders; a restaurant's orders and bookings; a clinic's appointments; none for the receptionist)
+made in it and not `cancelled` or `unpaid`; their **amount** adds each row's `total` (a booking
+or appointment has none). **Bought** counts the chats those sales belong to. A shop order's
+`source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
+are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
+as the admin's overview is (D72).
 
 ### Coupons (D133)
 

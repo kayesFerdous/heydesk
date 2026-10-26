@@ -85,6 +85,8 @@ class ShopOrder(Taken, Payable, Base):
     zone: Mapped[str] = mapped_column(String(100))
     address: Mapped[str] = mapped_column(String(300))
     note: Mapped[str] = mapped_column(default="")
+    # Where it was placed (D144): "chat", "page" (*Buy now*, D130) or "team" (D131)
+    source: Mapped[str] = mapped_column(String(10), default="chat", server_default="chat")
     # In a linked WooCommerce store (D75): its id there, and our status as last written ("" never)
     woo_id: Mapped[int | None] = mapped_column(default=None)
     woo_sent: Mapped[str] = mapped_column(String(20), default="")

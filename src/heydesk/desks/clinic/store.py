@@ -19,6 +19,8 @@ from heydesk.models.taken import FIRST_STATUS, UNPAID
 
 
 class ClinicStore(Store):
+    SALES = (Appointment,)
+
     async def doctors(self) -> list[Doctor]:
         return await self.rows_of(DoctorRow, Doctor)
 

@@ -25,6 +25,8 @@ from heydesk.models.taken import FIRST_STATUS, UNPAID
 
 
 class RestaurantStore(Store):
+    SALES = (Order, Booking)
+
     async def menu(self) -> list[MenuItem]:
         return await self.rows_of(MenuItemRow, MenuItem)
 

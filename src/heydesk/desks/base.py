@@ -6,6 +6,7 @@ desk shares lives here (`Store`: messages for the team, the documents search) an
 `desks/shared.py` (the shared tools).
 """
 
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -26,10 +27,11 @@ from heydesk.models import (
     SheetLink,
     TeamMessage,
     Ticket,
+    Turn,
     Visitor,
     WooLink,
 )
-from heydesk.models.taken import Taken, next_number
+from heydesk.models.taken import UNPAID, Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.tool import Tool
@@ -41,6 +43,7 @@ if TYPE_CHECKING:  # only a type here: services import the desks
 PAGE = 100  # the most rows a list returns at once (newest first)
 BROWSER = ("web", "voice")  # one browser's token is the contact on both (D114)
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most (D124)
+NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales (D144)
 
 
 class SheetLinked(Conflict):
@@ -68,6 +71,19 @@ class NewMessage:
 
 
 @dataclass(frozen=True)
+class Stats:
+    """What a business's agent did in a stretch of time, for the owner's dashboard (D144)."""
+
+    conversations: int  # chats the agent answered in it
+    handed_off: int  # of those, handed to a person; the rest the agent handled alone
+    sales: int  # orders or bookings made in it, not cancelled or waiting for payment
+    amount: int  # their total, minor units (bookings and appointments add nothing)
+    bought: int  # chats that ended in one
+    sources: dict[str, int]  # where they came from: chat, page (D130) or team (D131)
+    leads: int  # call backs asked for in it and not sold (D139)
+
+
+@dataclass(frozen=True)
 class NewLead:
     """A call back the visitor asked for (D139), ready to save once they said yes to it."""
 
@@ -82,6 +98,8 @@ class Store:
     is scoped to `workspace_id`). A desk's store subclasses this and adds its own tables.
 
     Tools get one made for their conversation, so what they save is linked to it."""
+
+    SALES: ClassVar[tuple[type[Taken], ...]] = ()  # its tables the dashboard counts (D144)
 
     def __init__(
         self,
@@ -428,6 +446,46 @@ class Store:
                 .order_by(func.count().desc())
             )
             return [(why or "no reason given", n) for why, n in rows.all()]
+
+    async def stats(self, start: datetime, end: datetime) -> Stats:
+        """The dashboard's numbers from `start` up to `end` (D144), added up from the rows we
+        keep: the turns, the desk's `SALES` tables and the leads."""
+        ws = self.workspace_id
+        async with self.sessions() as s:
+            turns = (
+                await s.execute(
+                    select(Turn.conversation_id, Turn.handed_off).where(
+                        Turn.workspace_id == ws, Turn.at >= start, Turn.at < end
+                    )
+                )
+            ).all()
+            sales: list[Any] = []
+            for table in self.SALES:
+                sales += await s.scalars(
+                    select(table).where(
+                        table.workspace_id == ws,
+                        table.created_at >= start,
+                        table.created_at < end,
+                        table.status.not_in(NOT_SALES),
+                    )
+                )
+            leads = await s.scalar(
+                select(func.count()).where(
+                    Lead.workspace_id == ws,
+                    Lead.created_at >= start,
+                    Lead.created_at < end,
+                    Lead.status != "sold",
+                )
+            )
+        return Stats(
+            conversations=len({c for c, _ in turns}),
+            handed_off=len({c for c, handed in turns if handed}),
+            sales=len(sales),
+            amount=sum(getattr(row, "total", 0) for row in sales),
+            bought=len({row.conversation_id for row in sales if row.conversation_id}),
+            sources=dict(Counter(getattr(row, "source", "chat") for row in sales)),
+            leads=leads or 0,
+        )
 
     def _move(self, row: Taken, status: str) -> None:
         """`row.move`, with its problems as the errors the owner's routes return."""

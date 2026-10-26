@@ -1,7 +1,9 @@
 """Conversations, and the messages for the team that every desk takes (design §9)."""
 
-from datetime import datetime
+from dataclasses import asdict
+from datetime import datetime, time, timedelta
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -140,6 +142,48 @@ class CountsOut(BaseModel):
 async def counts(services: Svc, ws: Workspace, principal: User) -> CountsOut:
     """The inbox's numbers: how many chats wait for a person, the caller's and no one's (I1)."""
     return CountsOut(**await services.conversations.counts(ws, principal.user_id))
+
+
+class StatsOut(BaseModel):
+    conversations: int  # chats the agent answered
+    handed_off: int  # of those, handed to a person; the rest the agent handled alone
+    sales: int  # orders or bookings, not cancelled or waiting for payment
+    amount: int  # their total, minor units
+    bought: int  # chats that ended in one
+    sources: dict[str, int]  # chat, page or team
+    leads: int  # call backs asked for and not sold
+
+
+class DashboardOut(BaseModel):
+    days: int
+    currency: str
+    today: StatsOut
+    yesterday: StatsOut
+    period: StatsOut  # the last `days` days, today included
+
+
+@router.get("/api/stats")
+async def stats(
+    services: Svc, ws: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
+) -> DashboardOut:
+    """The owner's dashboard (D144): today, yesterday and the last `days` days, in the
+    business's own days."""
+    agent = await services.agents.by_workspace(ws)
+    store = await services.agents.store(ws)
+    zone = ZoneInfo(agent.config.timezone)
+    today = datetime.combine(store.now().astimezone(zone).date(), time(), zone)
+    day = timedelta(days=1)
+
+    async def between(start: datetime, end: datetime) -> StatsOut:
+        return StatsOut(**asdict(await store.stats(start, end)))
+
+    return DashboardOut(
+        days=days,
+        currency=agent.config.currency,
+        today=await between(today, today + day),
+        yesterday=await between(today - day, today),
+        period=await between(today - (days - 1) * day, today + day),
+    )
 
 
 @router.get("/api/conversations/{conversation_id}")

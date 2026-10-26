@@ -68,7 +68,7 @@ Keep these in the pitch.
     so it's a new `kind` in `channels` that reuses the Messenger adapter. Comments on Instagram
     come after G1 works.
   - *Needs:* `instagram_basic` and `instagram_manage_messages`.
-- [ ] **G4 Owner's dashboard** · S
+- [x] **G4 Owner's dashboard** · S *(built 26 Oct, D144)*
   - *Who has it:* LazyChat, ChatBD, Revora, ARA.
   - *Why:* an owner pays for results they can see. Today only the admin sees numbers (D72).
   - *Smallest build:* a `GET /api/stats?days=7` route that adds up rows we already have:
@@ -341,8 +341,9 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 - [x] **G46 Practice mode** · S
   - A new agent answers only the owner's own test accounts (listed ids) until they tap *Go live*.
   - 26 Oct, D143: built (day R17), on the messaging apps.
-- [ ] **G4** (owner's dashboard) goes here, plus: AI-handled vs handed-off, and where each order
+- [x] **G4** (owner's dashboard) goes here, plus: AI-handled vs handed-off, and where each order
   came from (chat, product page, team).
+  - 26 Oct, D144: built (day R19).
 
 ### Service businesses
 

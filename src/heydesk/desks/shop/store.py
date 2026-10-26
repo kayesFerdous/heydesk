@@ -48,6 +48,8 @@ class OutOfStock(ValueError):
 
 
 class ShopStore(Store):
+    SALES = (ShopOrder,)
+
     def order_link(self, order_id: str) -> str:
         """The order's page for the buyer, `/o/<id>` (D130); the id is long and random."""
         return f"{self.public_url}/o/{order_id}"
@@ -210,18 +212,20 @@ class ShopStore(Store):
                 self._move(order, ending)
         return order
 
-    async def place_order(self, order: Confirmed[NewOrder]) -> ShopOrder:
+    async def place_order(
+        self, order: Confirmed[NewOrder], source: Literal["chat", "page"] = "chat"
+    ) -> ShopOrder:
         """Takes the items out of stock and saves the order as its status says: `unpaid` when
         its delivery charge is paid first (D47), `new` for the shop's call, or `confirmed`
         (D92). Raises OutOfStock, and saves nothing, if there aren't enough left."""
-        return await self._save_order(order.value)
+        return await self._save_order(order.value, source)
 
     async def add_team_order(self, order: NewOrder) -> ShopOrder:
         """An order the team typed for a buyer who called (D131): no read-back to a visitor
         and no `Confirmed`, as the team member is the yes. Saved `confirmed`, in no chat."""
-        return await self._save_order(replace(order, status="confirmed"))
+        return await self._save_order(replace(order, status="confirmed"), "team")
 
-    async def _save_order(self, o: NewOrder) -> ShopOrder:
+    async def _save_order(self, o: NewOrder, source: str) -> ShopOrder:
         """Raises OutOfStock or CouponGone, and saves nothing."""
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
@@ -259,6 +263,7 @@ class ShopStore(Store):
                 zone=o.zone,
                 address=o.address,
                 note=o.note,
+                source=source,
             )
             s.add(saved)
         return saved

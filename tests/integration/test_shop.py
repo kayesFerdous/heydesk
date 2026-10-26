@@ -52,11 +52,11 @@ from heydesk.desks.shop.values import (
     products_from_csv,
     stock_cell,
 )
-from heydesk.models import Conversation
+from heydesk.models import Conversation, Lead, Turn
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext, ToolResult
-from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
+from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent, dev_workspace
 from heydesk.services.photos import to_jpeg
 from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business, said_yes
 
@@ -333,6 +333,7 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
 
     [order] = (await client.get("/api/shop/orders")).json()
     assert (order["code"], order["total"], order["address"][:8]) == ("O-101", 101000, "House 12")
+    assert order["source"] == "chat"
     assert (await client.get("/api/shop/orders", params={"q": "O-101"})).json()[0]["id"] == order[
         "id"
     ]
@@ -1176,6 +1177,7 @@ async def test_the_team_types_an_order_and_takes_it_to_money_in(
     res = await client.post("/api/shop/orders", json=body)
     assert res.status_code == 201
     order = res.json()
+    assert order["source"] == "team"
     assert (order["status"], order["total"], order["conversation_id"]) == (
         "confirmed",
         202000,  # 2 × ৳950 + ৳120 outside Dhaka, from Python
@@ -1410,3 +1412,98 @@ async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: Worl
 
     world.clock.advance(hours=13)
     assert "coupon" not in (await cart_in(today)).state["cart"]  # it has ended
+
+
+async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """Chats answered and handed off, sales and their total, chats that bought, where the
+    orders came from and open leads, in Dhaka's days; another business's rows aren't
+    counted (D144)."""
+    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    yesterday = FIXED_NOW - timedelta(days=1)  # FIXED_NOW is 14:00 in Dhaka
+    ws, other = DEV_WORKSPACE_ID, "other"
+
+    def order(n: int, total: int, conv: str | None, source: str, **kw: Any) -> ShopOrder:
+        fields: dict[str, Any] = {
+            "workspace_id": ws,
+            "number": n,
+            "name": "R",
+            "phone": "01812345678",
+            "lines": [],
+            "subtotal": total,
+            "delivery_charge": 0,
+            "total": total,
+            "currency": "BDT",
+            "zone": "Dhaka",
+            "address": "x",
+            "conversation_id": conv,
+            "source": source,
+            "created_at": FIXED_NOW,
+        }
+        return ShopOrder(**fields | kw)
+
+    def turn(conv: str, at: Any, handed_off: bool = False) -> Turn:
+        return Turn(
+            workspace_id=ws,
+            conversation_id=conv,
+            channel="web",
+            llm="fake",
+            at=at,
+            total_ms=1,
+            first_output_ms=None,
+            input_tokens=0,
+            output_tokens=0,
+            cost_micros=0,
+            tools=[],
+            handed_off=handed_off,
+            interrupted=False,
+        )
+
+    def lead(n: int, status: str) -> Lead:
+        return Lead(
+            workspace_id=ws,
+            number=n,
+            name="R",
+            phone="01812345678",
+            call_at=FIXED_NOW,
+            note="",
+            status=status,
+            created_at=FIXED_NOW,
+        )
+
+    async with app.state.sessions() as s, s.begin():
+        s.add(dev_workspace(other, FIXED_NOW))
+        for conv in ("a", "b", "c"):
+            s.add(Conversation(id=conv, workspace_id=ws, agent_id=agent.agent_id, channel="web"))
+        s.add_all(
+            [
+                turn("a", FIXED_NOW),
+                turn("b", FIXED_NOW, handed_off=True),
+                turn("b", FIXED_NOW),
+                turn("c", yesterday),
+                order(101, 1000, "a", "chat"),
+                order(102, 2000, None, "team"),
+                order(103, 500, "a", "page"),
+                order(104, 9999, "b", "chat", status="cancelled"),
+                order(105, 300, "c", "chat", created_at=yesterday),
+                order(101, 7777, None, "team", workspace_id=other),
+                lead(101, "open"),
+                lead(102, "sold"),
+            ]
+        )
+
+    stats = (await client.get("/api/stats", params={"days": 7})).json()
+    assert stats["currency"] == "BDT"
+    assert stats["today"] == {
+        "conversations": 2,
+        "handed_off": 1,
+        "sales": 3,
+        "amount": 3500,
+        "bought": 1,
+        "sources": {"chat": 1, "team": 1, "page": 1},
+        "leads": 1,
+    }
+    assert (stats["yesterday"]["conversations"], stats["yesterday"]["amount"]) == (1, 300)
+    week = stats["period"]
+    assert (week["conversations"], week["sales"], week["amount"], week["bought"]) == (3, 4, 3800, 2)
