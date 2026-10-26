@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from heydesk.desks.base import NewMessage, TooLate
 from heydesk.desks.shared import awaiting_payment
 from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import OutOfStock, ShopStore
+from heydesk.desks.shop.store import CouponGone, OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
     CANCELLABLE,
     CARDS,
@@ -108,6 +108,11 @@ class CartLine(BaseModel):
 
 
 class UpdateCartInput(BaseModel):
+    coupon: str = Field(
+        default="",
+        description="A coupon code the visitor gave, like EID10. Leave it out to keep the "
+        "one the order has.",
+    )
     lines: list[CartLine] = Field(
         description="Every product in the order, not just the change. An empty list clears it."
     )
@@ -205,11 +210,30 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     elif subtotal and config.free_delivery_over:
         # Said outright: with nothing said, Maira made up a nudge with no amount (13 Oct)
         data["delivery"] = "free"
-    state: dict[str, Any] = {"cart": {"lines": lines, "subtotal": subtotal}}
+    cart: dict[str, Any] = {"lines": lines, "subtotal": subtotal}
+    state: dict[str, Any] = {"cart": cart}
     offer = _goes_with(products, lines, ctx.state.get("offered") or [])
     if offer:  # each is offered once in a chat (D125)
         data["goes_with"] = [p.line(currency) for p in offer]
         state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
+    kept = ((ctx.state.get("cart") or {}).get("coupon") or {}).get("code", "")
+    code = "".join(args.coupon.split()).upper() or kept
+    if not code or not subtotal:
+        return ToolResult(ok=True, data=data, state=state)
+    coupon = await ctx.store.coupon(code)  # Python checks it and takes it off (D133)
+    problem = coupon.problem(ctx.now) if coupon else f"There's no coupon {code}."
+    if coupon is None or problem:  # the order is kept, without it
+        hint = f"{problem} Tell the visitor; the order is kept without a coupon."
+        return ToolResult(ok=False, data=data | {"coupon_problem": hint}, state=state)
+    cart["coupon"] = {"code": coupon.code, "kind": coupon.kind, "value": coupon.value}
+    cart["discount"] = coupon.discount(subtotal)
+    data["coupon"] = coupon.said(currency)
+    if cart["discount"]:
+        data["discount"] = money(-cart["discount"], currency)
+        data["subtotal_after_coupon"] = money(subtotal - cart["discount"], currency)
+    if coupon.kind == "free_delivery":
+        data["delivery"] = "free"
+        data.pop("free_delivery_if_you_add", None)
     return ToolResult(ok=True, data=data, state=state)
 
 
@@ -235,8 +259,9 @@ UPDATE_CART = Tool(
     name="update_cart",
     description=(
         "Set the visitor's whole order: every product with its quantity, and its size and "
-        "colour when it has them. Call it after every change. Checks the sizes, colours and "
-        "stock, and returns each line and the subtotal; tell the visitor them exactly as given. "
+        "colour when it has them, and a coupon code if they gave one. Call it after every "
+        "change. Checks the sizes, colours, stock and coupon, and returns each line, the "
+        "subtotal and any discount; tell the visitor them exactly as given. "
         "It may also say how much more would make the delivery free, or that it's free, and "
         "what goes with it (`goes_with`)."
     ),
@@ -291,10 +316,10 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     phone = check.take("phone", args.phone, mobile)
 
     currency = config.currency
-    charge = config.delivery_charge(zone, cart["subtotal"]) if zone else 0
+    charge = _charge(config, zone, cart) if zone else 0
     data = {  # the visitor hears the charge and total as soon as the area is known
         "delivery": money(charge, currency) if charge else "free",
-        "total": money(cart["subtotal"] + charge, currency),
+        "total": money(cart["subtotal"] - cart.get("discount", 0) + charge, currency),
     }
     if zone is None or address is None or name is None or phone is None:
         missing = check.result().data
@@ -309,11 +334,11 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         cards.row("Name", name),
         cards.row("Mobile", phone),
     ] + ([cards.row("Note", order.note)] if order.note else [])
-    total = cards.amount(order.subtotal + charge, currency)
+    total = cards.amount(order.total, currency)
     confirmed = confirm(ctx.heard, order, read_back)
     if confirmed is None:
         delivery = cards.line(f"Delivery ({zone.name})", cost=cards.amount(charge, currency))
-        lines = [*_card_lines(cart["lines"], currency), delivery]
+        lines = [*_card_lines(cart["lines"], currency), *_coupon_line(order), delivery]
         return ask_for_yes(
             read_back, "place_order", cards.summary("Your order", rows, lines, total)
         )
@@ -321,6 +346,8 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         saved = await ctx.store.place_order(confirmed)
     except OutOfStock as error:
         return fail(f"Sold out since the order was made: {error}. Tell the visitor.")
+    except CouponGone as error:  # used up or ended since update_cart checked it
+        return fail(f"{error} Call update_cart again without it, and tell the visitor.")
     code = saved.code
     items = cards.row("Items", lines_text(cart["lines"]))
     status = STATUS_WORDS[order.status].capitalize()
@@ -370,7 +397,7 @@ async def new_order(
     """The order ready for a yes, its read-back, and how it's paid: the same from the chat and
     from the product page's form (D130)."""
     currency = config.currency
-    charge = config.delivery_charge(zone, cart["subtotal"])
+    charge = _charge(config, zone, cart)
     order = NewOrder(
         lines=cart["lines"],
         subtotal=cart["subtotal"],
@@ -388,17 +415,19 @@ async def new_order(
             if config.call_to_confirm
             else "confirmed"
         ),
+        coupon=(cart.get("coupon") or {}).get("code", ""),
+        discount=cart.get("discount", 0),
     )
     delivery = money(charge, currency) if charge else "free"
     how = (
         f"the delivery charge {delivery} paid online first, then "
-        f"{money(cart['subtotal'], currency)} in cash on delivery"
+        f"{money(order.subtotal - order.discount, currency)} in cash on delivery"
         if order.status == "unpaid"
         else "paid in cash on delivery"
     )
-    read_back = (
+    read_back = (  # cart_text has the coupon (D133)
         f"{cart_text(cart, currency)}; delivery {zone.name} {delivery}; "
-        f"total {money(cart['subtotal'] + charge, currency)}, {how}; to {address}; "
+        f"total {money(order.total, currency)}, {how}; to {address}; "
         f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
     )
     return order, read_back, how
@@ -428,6 +457,22 @@ async def checked_order(
         return f"Please check your {', '.join([*check.problems, *check.missing])}."
     cart = {"lines": lines, "subtotal": sum(li["price"] * li["quantity"] for li in lines)}
     return await new_order(store, config, cart, zone, address, name, phone, form.note)
+
+
+def _charge(config: ShopConfig, zone: Zone, cart: dict[str, Any]) -> int:
+    """The delivery charge: free over the shop's amount, or with a free-delivery coupon (D133)."""
+    if (cart.get("coupon") or {}).get("kind") == "free_delivery":
+        return 0
+    return config.delivery_charge(zone, cart["subtotal"])
+
+
+def _coupon_line(order: NewOrder) -> list[dict[str, Any]]:
+    """The coupon on a card: "Coupon EID10", −৳370 (D133)."""
+    if not order.discount:
+        return []
+    return [
+        cards.line(f"Coupon {order.coupon}", cost=cards.amount(-order.discount, order.currency))
+    ]
 
 
 def _card_lines(lines: list[dict[str, Any]], currency: str) -> list[dict[str, Any]]:

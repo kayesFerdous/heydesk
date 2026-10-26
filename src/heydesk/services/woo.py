@@ -91,6 +91,12 @@ def woo_order(order: ShopOrder, ids: dict[str, Any]) -> dict[str, Any]:
         "shipping": buyer,
         "customer_note": order.note,
         "line_items": lines,
+        # A coupon's discount, as a negative fee: Woo's own coupons are its own codes (D133)
+        "fee_lines": (
+            [{"name": f"Coupon {order.coupon}", "total": f"-{amount(order.discount)}"}]
+            if order.discount
+            else []
+        ),
         "shipping_lines": [
             {
                 "method_id": "flat_rate",

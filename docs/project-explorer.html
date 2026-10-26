@@ -507,7 +507,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132).",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133).",
    "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
    "fn": "change_order"
@@ -3666,27 +3666,32 @@ tr.hl td { background: var(--accent-soft); }
    "desk": "shop",
    "file": "src/heydesk/desks/shop/tools.py",
    "fn": "update_cart",
-   "purpose": "Set the whole cart; checks size, colour, stock.",
+   "purpose": "Set the whole cart; checks size, colour, stock and a coupon (D133).",
    "writes": false,
    "confirm": null,
    "inputs": [
+    [
+     "coupon",
+     "str; A coupon code the visitor gave, like EID10. Leave it out to keep the one the order has."
+    ],
     [
      "lines",
      "list; Every product in the order, not just the change. An empty list clears it."
     ]
    ],
    "outputs": [
-    "{order lines, subtotal, free_delivery_if_you_add | delivery: free, goes_with?}",
-    "bad size → error + size buttons"
+    "{order lines, subtotal, free_delivery_if_you_add | delivery: free, goes_with?, coupon?, discount?, subtotal_after_coupon?}",
+    "bad size → error + size buttons",
+    "bad coupon → ok=False, coupon_problem, the cart kept without it"
    ],
    "effects": [
-    "state.cart = {lines, subtotal}",
+    "state.cart = {lines, subtotal, coupon?, discount?}",
     "state.offered += goes_with codes (each offered once, D125)"
    ],
    "label_web": "Updating your order…",
    "filler": "",
    "timeout": 5.0,
-   "description": "Set the visitor's whole order: every product with its quantity, and its size and colour when it has them. Call it after every change. Checks the sizes, colours and stock, and returns each line and the subtotal; tell the visitor them exactly as given. It may also say how much more would make the delivery free, or that it's free, and what goes with it (`goes_with`)."
+   "description": "Set the visitor's whole order: every product with its quantity, and its size and colour when it has them, and a coupon code if they gave one. Call it after every change. Checks the sizes, colours, stock and coupon, and returns each line, the subtotal and any discount; tell the visitor them exactly as given. It may also say how much more would make the delivery free, or that it's free, and what goes with it (`goes_with`)."
   },
   {
    "id": "t-shop-place_order",

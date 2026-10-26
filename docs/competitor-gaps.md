@@ -248,6 +248,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 - [ ] **G31 Coupons** · M
   - A `coupons` table: code, % or fixed or free delivery, end date, max uses. `update_cart`
     takes `coupon`; Python checks it and puts the discount on the bill (rule 1).
+  - 26 Oct, D133: built (day R6), with a Coupons page; the dev chat check with the real model
+    is next.
 - [ ] **G32 Delivery-day reminder and a review request** · S
   - Two more lines in the courier round: on "out for delivery", remind the buyer; a day after
     delivered, ask how it was (one button row: 👍 / 👎 / write). Only inside each app's window.

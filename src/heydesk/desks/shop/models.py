@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
@@ -33,6 +34,22 @@ class ProductRow(Base):
     position: Mapped[int] = mapped_column(default=0)  # the shop's order, for the prompt
 
 
+class CouponRow(Base):
+    """A shop's coupon code (`values.Coupon`, D133)."""
+
+    __tablename__ = "coupons"
+    __table_args__ = (UniqueConstraint("workspace_id", "code"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    code: Mapped[str] = mapped_column(String(30))
+    kind: Mapped[str] = mapped_column(String(20))  # percent, amount or free_delivery
+    value: Mapped[int] = mapped_column(default=0)
+    ends_at: Mapped[datetime | None] = mapped_column(default=None)
+    max_uses: Mapped[int | None] = mapped_column(default=None)
+    used: Mapped[int] = mapped_column(default=0)
+
+
 class ShopOrder(Taken, Payable, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
@@ -60,7 +77,9 @@ class ShopOrder(Taken, Payable, Base):
     lines: Mapped[list[Any]] = mapped_column(JSON)  # {code, name, size, colour, quantity, price}
     subtotal: Mapped[int]  # minor units
     delivery_charge: Mapped[int]
-    total: Mapped[int]  # the whole order; the rider collects `total - paid`
+    discount: Mapped[int] = mapped_column(default=0)  # a coupon took this off the items (D133)
+    coupon: Mapped[str] = mapped_column(String(30), default="")
+    total: Mapped[int]  # subtotal - discount + delivery_charge; the rider collects `total - paid`
     zone: Mapped[str] = mapped_column(String(100))
     address: Mapped[str] = mapped_column(String(300))
     note: Mapped[str] = mapped_column(default="")

@@ -32,6 +32,7 @@ from heydesk.desks.shop.values import (
     Buyer,
     BuyerRecord,
     BuyForm,
+    Coupon,
     Product,
     ShopConfig,
     lines_text,
@@ -69,6 +70,8 @@ class ShopOrderOut(BaseModel):
     lines: list[dict[str, Any]]  # {code, name, size, colour, quantity, price}
     subtotal: int  # minor units
     delivery_charge: int
+    discount: int  # a coupon took this off the items (D133)
+    coupon: str  # its code; "" none
     total: int  # the whole order
     paid: int  # paid online first (D47); the rider collects `total - paid`
     payment_ref: str  # the payment gateway's id for it
@@ -337,6 +340,24 @@ async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrd
         ShopOrderOut.model_validate(o).model_copy(update={"buyer": records[o.phone]})
         for o in orders
     ]
+
+
+@router.get("/api/shop/coupons")
+async def coupons(store: Shop) -> list[Coupon]:
+    """The shop's coupon codes, with how many orders used each (D133)."""
+    return await store.coupons()
+
+
+@router.post("/api/shop/coupons", status_code=201)
+async def add_coupon(body: Coupon, store: Shop) -> Coupon:
+    """A new code, live from the next message: the buyer says it, `update_cart` checks it."""
+    return await store.add_coupon(body)
+
+
+@router.delete("/api/shop/coupons/{code}", status_code=204)
+async def delete_coupon(code: str, store: Shop) -> None:
+    """The code stops working; orders placed with it keep their discount."""
+    await store.delete_coupon(code)
 
 
 @router.get("/api/shop/buyers")

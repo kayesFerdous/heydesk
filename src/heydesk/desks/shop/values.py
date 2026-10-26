@@ -4,8 +4,8 @@ them. Pure."""
 import html
 import re
 from dataclasses import dataclass
-from datetime import datetime, time
-from typing import Any, Self
+from datetime import UTC, datetime, time
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -284,6 +284,59 @@ class BuyForm(BaseModel):
     change: str = ""  # "1": the buyer tapped Change on the check page
 
 
+class Coupon(BaseModel):
+    """A code the owner gives out (D133): a percent or an amount off the items, or free
+    delivery; until `ends_at` and for `max_uses` orders, if set. Python works out the discount
+    (rule 1)."""
+
+    code: str = Field(min_length=2, max_length=30)  # kept in capitals: "EID10"
+    kind: Literal["percent", "amount", "free_delivery"]
+    value: int = Field(default=0, ge=0)  # a percent (1–100) or minor units; 0 for free delivery
+    ends_at: datetime | None = None  # UTC
+    max_uses: int | None = Field(default=None, ge=1)
+    used: int = 0  # orders placed with it; the owner doesn't set it
+
+    @field_validator("code")
+    @classmethod
+    def in_capitals(cls, code: str) -> str:
+        return "".join(code.split()).upper()
+
+    @model_validator(mode="after")
+    def a_value_that_fits(self) -> Self:
+        if self.kind == "percent" and not 1 <= self.value <= 100:
+            raise ValueError("A percent coupon takes off 1 to 100.")
+        if self.kind == "amount" and self.value < 1:
+            raise ValueError("An amount coupon takes off at least 1 paisa.")
+        return self
+
+    def problem(self, now: datetime) -> str:
+        """Why it can't be used now, for the visitor; "" when it can."""
+        ends = self.ends_at and (
+            self.ends_at if self.ends_at.tzinfo else self.ends_at.replace(tzinfo=UTC)
+        )
+        if ends and ends <= now:
+            return f"The coupon {self.code} has ended."
+        if self.max_uses is not None and self.used >= self.max_uses:
+            return f"The coupon {self.code} has been used up."
+        return ""
+
+    def discount(self, subtotal: int) -> int:
+        """What it takes off the items, in minor units (free delivery takes off the charge)."""
+        if self.kind == "percent":
+            return subtotal * self.value // 100
+        if self.kind == "amount":
+            return min(self.value, subtotal)
+        return 0
+
+    def said(self, currency: str) -> str:
+        """ "EID10: 10% off", "FLAT100: ৳100 off", "SHIPFREE: free delivery"."""
+        if self.kind == "percent":
+            return f"{self.code}: {self.value}% off"
+        if self.kind == "amount":
+            return f"{self.code}: {money(self.value, currency)} off"
+        return f"{self.code}: free delivery"
+
+
 class BuyerRecord(BaseModel):
     """A mobile's orders with this shop (D132): shown on each order before it's sent, since
     a buyer who refused parcels before costs the shop two delivery charges again."""
@@ -365,8 +418,15 @@ def mobile(said: str) -> str:
 
 
 def cart_text(cart: dict[str, Any], currency: str) -> str:
-    """The cart `update_cart` keeps in the state: "2 × Cotton Panjabi (L, White), …, subtotal ৳3,700"."""
-    return f"{lines_text(cart['lines'])}, subtotal {money(cart['subtotal'], currency)}"
+    """The cart `update_cart` keeps in the state: "2 × Cotton Panjabi (L, White), …, subtotal
+    ৳3,700", and its coupon: "coupon EID10 −৳370" or "coupon SHIPFREE: free delivery" (D133)."""
+    said = f"{lines_text(cart['lines'])}, subtotal {money(cart['subtotal'], currency)}"
+    coupon = cart.get("coupon")
+    if coupon and coupon["kind"] == "free_delivery":
+        said += f", coupon {coupon['code']}: free delivery"
+    elif coupon:
+        said += f", coupon {coupon['code']} {money(-cart['discount'], currency)}"
+    return said
 
 
 def lines_text(lines: list[dict[str, Any]]) -> str:
@@ -421,10 +481,12 @@ class NewOrder:
     # "unpaid" until its delivery charge is paid online (D47), "new" until the shop's call,
     # "confirmed" when the shop doesn't call (D92)
     status: str = "new"
+    coupon: str = ""  # its code (D133); counted as used when the order is saved
+    discount: int = 0  # what the coupon took off the items
 
     @property
     def total(self) -> int:
-        return self.subtotal + self.delivery_charge
+        return self.subtotal - self.discount + self.delivery_charge
 
 
 @dataclass(frozen=True)

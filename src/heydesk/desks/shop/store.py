@@ -11,7 +11,7 @@ from sqlalchemy import ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.desks.base import PAGE, Store, TooLate
-from heydesk.desks.shop.models import ProductRow, ShopOrder
+from heydesk.desks.shop.models import CouponRow, ProductRow, ShopOrder
 from heydesk.desks.shop.values import (
     CHANGEABLE,
     ENDED,
@@ -19,6 +19,7 @@ from heydesk.desks.shop.values import (
     OWN,
     Buyer,
     BuyerRecord,
+    Coupon,
     NewOrder,
     OrderCancel,
     OrderConfirm,
@@ -31,11 +32,15 @@ from heydesk.desks.shop.values import (
     take_off,
 )
 from heydesk.domain.values import Confirmed
-from heydesk.errors import InvalidTransition, NotFound
+from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation
 from heydesk.models.taken import next_number
 
 TO_BOOK = ("confirmed", "packed")  # the courier books these (D112, D131); not one on hold
+
+
+class CouponGone(ValueError):
+    """The coupon ended or was used up since the cart was made (D133)."""
 
 
 class OutOfStock(ValueError):
@@ -198,8 +203,23 @@ class ShopStore(Store):
         return await self._save_order(replace(order, status="confirmed"))
 
     async def _save_order(self, o: NewOrder) -> ShopOrder:
+        """Raises OutOfStock or CouponGone, and saves nothing."""
         async with self.sessions() as s, s.begin():
             await self._stock(s, o.lines, -1)
+            if o.coupon:  # one more use, checked again in this transaction (D133)
+                row = await s.scalar(
+                    select(CouponRow).where(
+                        CouponRow.workspace_id == self.workspace_id, CouponRow.code == o.coupon
+                    )
+                )
+                problem = (
+                    Coupon.model_validate(row, from_attributes=True).problem(self.now())
+                    if row
+                    else f"The coupon {o.coupon} is gone."
+                )
+                if row is None or problem:
+                    raise CouponGone(problem)
+                row.used += 1
             now = self.now()
             saved = ShopOrder(
                 workspace_id=self.workspace_id,
@@ -213,6 +233,8 @@ class ShopStore(Store):
                 lines=o.lines,
                 subtotal=o.subtotal,
                 delivery_charge=o.delivery_charge,
+                discount=o.discount,
+                coupon=o.coupon,
                 total=o.total,
                 currency=o.currency,
                 zone=o.zone,
@@ -236,6 +258,44 @@ class ShopStore(Store):
                 .group_by(ShopOrder.status)
             )
             return {status: count for status, count in rows}
+
+    async def coupon(self, code: str) -> Coupon | None:
+        async with self.sessions() as s:
+            row = await s.scalar(
+                select(CouponRow).where(
+                    CouponRow.workspace_id == self.workspace_id, CouponRow.code == code.upper()
+                )
+            )
+        return Coupon.model_validate(row, from_attributes=True) if row else None
+
+    async def coupons(self) -> list[Coupon]:
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(CouponRow)
+                .where(CouponRow.workspace_id == self.workspace_id)
+                .order_by(CouponRow.code)
+            )
+            return [Coupon.model_validate(r, from_attributes=True) for r in rows]
+
+    async def add_coupon(self, coupon: Coupon) -> Coupon:
+        """A new code, unused. Raises Conflict if the shop has it already."""
+        if await self.coupon(coupon.code):
+            raise Conflict(f"There's a coupon {coupon.code} already.")
+        async with self.sessions() as s, s.begin():
+            s.add(CouponRow(workspace_id=self.workspace_id, **coupon.model_dump(exclude={"used"})))
+        return coupon.model_copy(update={"used": 0})
+
+    async def delete_coupon(self, code: str) -> None:
+        """Orders placed with it keep their discount."""
+        async with self.sessions() as s, s.begin():
+            row = await s.scalar(
+                select(CouponRow).where(
+                    CouponRow.workspace_id == self.workspace_id, CouponRow.code == code.upper()
+                )
+            )
+            if row is None:
+                raise NotFound("There's no such coupon.")
+            await s.delete(row)
 
     async def records(self, phones: set[str]) -> dict[str, BuyerRecord]:
         """Each mobile's orders with this shop by how they ended (D132), in one query."""
@@ -343,7 +403,9 @@ class ShopStore(Store):
                 order.lines, order.subtotal = e.lines, e.subtotal
             order.address, order.zone, order.phone, order.note = e.address, e.zone, e.phone, e.note
             order.delivery_charge = e.delivery_charge
-            order.total = order.subtotal + e.delivery_charge
+            # ponytail: the coupon's amount stays as it was, at most the new items (D133)
+            order.discount = min(order.discount, order.subtotal)
+            order.total = order.subtotal - order.discount + e.delivery_charge
             order.updated_at = self.now()
         return order
 

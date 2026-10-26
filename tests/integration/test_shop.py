@@ -24,6 +24,7 @@ from heydesk.desks import csv_import
 from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
+    CartLine,
     ChangeOrderInput,
     ExchangeInput,
     FindOrderInput,
@@ -43,6 +44,7 @@ from heydesk.desks.shop.values import (
     LONG_LIST,
     PRODUCT_COLUMNS,
     STATUS_WORDS,
+    Coupon,
     Product,
     added,
     mobile,
@@ -51,7 +53,7 @@ from heydesk.desks.shop.values import (
 )
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
-from heydesk.runtime.tool import ToolContext
+from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.services.photos import to_jpeg
 from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business, said_yes
@@ -1285,3 +1287,66 @@ async def test_each_order_shows_its_buyers_record_and_buyers_are_listed(
         [],  # typed by the team: no chat
     )
     assert [b["name"] for b in (await client.get("/api/shop/buyers?q=nila")).json()] == ["Nila"]
+
+
+async def coupon_order(world: World, agent: LiveAgent, code: str) -> ToolResult:
+    """1 Cotton Kurti (৳950) to Mirpur (৳60) with `code`, said yes to."""
+    store = world.store(agent)
+    ctx = make_ctx(store, agent=agent.config)
+    cart_result = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon=code))
+    ctx = make_ctx(store, agent=agent.config, state=cart_result.state)
+    return await said_yes(place_order, ctx, PlaceOrderInput(**DETAILS))
+
+
+async def test_a_coupon_takes_its_discount_off_the_bill(world: World) -> None:
+    """Percent, amount and free delivery, each worked out by Python and read back; the order
+    keeps the discount and the code counts a use (D133)."""
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    await store.add_coupon(Coupon(code="eid10", kind="percent", value=10))
+    await store.add_coupon(Coupon(code="FLAT100", kind="amount", value=10000))
+    await store.add_coupon(Coupon(code="SHIPFREE", kind="free_delivery"))
+
+    ctx = make_ctx(store, agent=agent.config)
+    cart_result = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon="Eid10"))
+    assert cart_result.ok
+    assert (cart_result.data["coupon"], cart_result.data["discount"]) == ("EID10: 10% off", "−৳95")
+    ctx = make_ctx(store, agent=agent.config, state=cart_result.state)
+    asked = await place_order(ctx, PlaceOrderInput(**DETAILS))
+    assert "coupon EID10 −৳95" in asked.data["read_back"]
+    assert "total ৳915" in asked.data["read_back"]  # 950 − 95 + 60
+
+    for code in ("EID10", "FLAT100", "SHIPFREE"):
+        placed = await coupon_order(world, agent, code)
+        assert placed.ok, placed.data
+    saved = sorted(await orders(world), key=lambda o: o.number)
+    assert [(o.coupon, o.total) for o in saved] == [
+        ("EID10", 91500),
+        ("FLAT100", 91000),
+        ("SHIPFREE", 95000),
+    ]
+    assert (saved[0].discount, saved[2].delivery_charge) == (9500, 0)
+    assert {c.code: c.used for c in await store.coupons()} == {
+        "EID10": 1,
+        "FLAT100": 1,
+        "SHIPFREE": 1,
+    }
+
+
+async def test_an_ended_or_used_up_coupon_keeps_the_order_without_it(world: World) -> None:
+    agent = await world.agent("shop")
+    store = world.store(agent)
+    await store.add_coupon(
+        Coupon(code="OLD", kind="percent", value=10, ends_at=FIXED_NOW - timedelta(days=1))
+    )
+    await store.add_coupon(Coupon(code="ONCE", kind="amount", value=5000, max_uses=1))
+    ctx = make_ctx(store, agent=agent.config)
+
+    for code, why in (("OLD", "has ended"), ("NOPE", "no coupon NOPE")):
+        result = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon=code))
+        assert not result.ok and why in result.data["coupon_problem"]
+        assert result.state["cart"]["lines"] and "coupon" not in result.state["cart"]
+
+    assert (await coupon_order(world, agent, "ONCE")).ok
+    again = await update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon="ONCE"))
+    assert not again.ok and "used up" in again.data["coupon_problem"]

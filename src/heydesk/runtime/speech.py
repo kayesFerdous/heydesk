@@ -14,7 +14,10 @@ SYMBOLS = {"BDT": "৳", "USD": "$", "EUR": "€", "GBP": "£", "INR": "₹"}
 
 
 def money(minor: int, currency: str) -> str:
-    """45000 BDT → "৳450"; 104550 → "৳1,045.50". Amounts are always in minor units."""
+    """45000 BDT → "৳450"; 104550 → "৳1,045.50"; a discount, -9500 → "−৳95". Amounts are
+    always in minor units."""
+    if minor < 0:
+        return "−" + money(-minor, currency)
     major, cents = divmod(minor, 100)
     symbol = SYMBOLS.get(currency, currency + " ")
     return f"{symbol}{major:,}" + (f".{cents:02d}" if cents else "")
