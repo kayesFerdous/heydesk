@@ -48,6 +48,8 @@ class CouponRow(Base):
     ends_at: Mapped[datetime | None] = mapped_column(default=None)
     max_uses: Mapped[int | None] = mapped_column(default=None)
     used: Mapped[int] = mapped_column(default=0)
+    # An offer (D140): only these chats, the ones it was sent to, may use it. None: anyone
+    only_for: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True), default=None)
 
 
 class ShopOrder(Taken, Payable, Base):

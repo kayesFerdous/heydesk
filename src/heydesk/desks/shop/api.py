@@ -2,12 +2,12 @@
 page (D121), its *Buy now* form and an order's page (D130)."""
 
 import logging
-from datetime import datetime
-from typing import Annotated, Any, cast
+from datetime import datetime, timedelta
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import (
     EXPORT_ROWS,
@@ -358,6 +358,44 @@ async def add_coupon(body: Coupon, store: Shop) -> Coupon:
 async def delete_coupon(code: str, store: Shop) -> None:
     """The code stops working; orders placed with it keep their discount."""
     await store.delete_coupon(code)
+
+
+class OfferIn(BaseModel):
+    """An offer to everyone who wrote in the last 24 hours (D140)."""
+
+    text: str = Field(min_length=1, max_length=500)  # sent as it is: "Free delivery till 10 pm!"
+    kind: Literal["percent", "amount", "free_delivery"]
+    value: int = Field(default=0, ge=0)  # as a coupon's
+    ends_at: AwareDatetime
+
+
+class OfferOut(BaseModel):
+    code: str  # the coupon it rides on: "OFFER1"
+    sent_to: int  # how many chats got it
+
+
+@router.post("/api/shop/offers", status_code=201)
+async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
+    """Sends the offer to each chat where the buyer wrote in the last 24 hours, inside the
+    app's window (`tell_in_window`), and saves it as a coupon only those chats may use, until
+    `ends_at`; `update_cart` takes it off by itself (D140)."""
+    now = store.now()
+    if body.ends_at <= now:
+        raise InvalidConfig({"ends_at": "Pick an end time that's still to come."})
+    code = f"OFFER{await store.offers_made() + 1}"
+    try:
+        coupon = Coupon(code=code, kind=body.kind, value=body.value, ends_at=body.ends_at)
+    except ValueError as error:
+        raise InvalidConfig({"value": str(error)}) from None
+    text = " ".join(body.text.split())
+    sent = [
+        chat
+        for chat in await store.chats_since(now - timedelta(hours=24))
+        if await services.team.tell_in_window(chat, text)
+    ]
+    await store.add_offer(coupon, sent)
+    log.info("offer sent", extra={"workspace_id": store.workspace_id, "chats": len(sent)})
+    return OfferOut(code=code, sent_to=len(sent))
 
 
 @router.get("/api/shop/buyers")

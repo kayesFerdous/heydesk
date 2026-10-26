@@ -303,11 +303,12 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     The *why* counts become "why we lose sales".
   - 26 Oct, D139: built (day R13): `take_lead` reads back before a yes; `/api/leads/why`
     counts the whys. The dev chat check and the screen are next.
-- [ ] **G40 An offer to everyone who wrote today** · M · Meta
+- [x] **G40 An offer to everyone who wrote today** · M · Meta
   - The owner writes "free delivery for the next 12 hours" and sends it to everyone who wrote
     in the last 24 h (inside Messenger's window, so it's free). The offer is saved with its
     end time and who got it; `update_cart` applies it only to them, only until then. Shares
     G31's discount code path. This is the safe half of G13.
+  - 26 Oct, D140: built (day R14): a coupon with `only_for`; the dev chat check is next.
 
 ### Then: comments (all need G1 first)
 

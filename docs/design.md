@@ -441,7 +441,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
 | `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
-| `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133) |
+| `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
 
 The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
@@ -492,6 +492,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105); once it ended, `paid_in` and `reason` (D131) |
 | GET/POST/DELETE | `/api/shop/coupons…` | A shop's coupon codes with their uses; add one (`{code, kind, value, ends_at, max_uses}`, a 409 for a code it has); delete one by code (orders keep their discount) (D133) |
+| POST | `/api/shop/offers` | `{text, kind, value, ends_at}`: sent to every chat that wrote in the last 24 h, inside the window, and saved as a coupon only they may use until it ends; `{code, sent_to}` (D140) |
 | GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
 | GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
@@ -1578,6 +1579,16 @@ repeat it. A bad code is `ok=False` with `coupon_problem`, and the cart is kept 
 - **Elsewhere:** Woo gets the discount as a negative fee line; a changed order keeps the
   discount's amount (at most its new items). Team orders and the product page take none.
 - Given up: a cancelled order doesn't give its use back; no minimum order; one code an order.
+
+**An offer to everyone who wrote today (D140).** `POST /api/shop/offers {text, kind, value,
+ends_at}` sends the owner's words, as they are, to each shop chat with a turn in the last 24
+hours (not a call, not an `assist`), through `tell_in_window`, and saves it as a coupon
+`OFFER1`, `OFFER2`… whose `only_for` is the chats it reached. `ShopStore.coupon` gives such a
+code only to those chats, so said by anyone else it's "no coupon"; `update_cart` uses the
+newest offer still running for the chat when the buyer gave no code and the cart has none.
+From there it is a coupon: on the bill, checked again at the save, and gone at `ends_at`.
+- Given up: the buyer's own code replaces the offer (one code an order); no screen for past
+  offers beyond the coupons list.
 
 ### A buyer's record (D132)
 

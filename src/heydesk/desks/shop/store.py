@@ -33,7 +33,7 @@ from heydesk.desks.shop.values import (
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
-from heydesk.models import Conversation
+from heydesk.models import Conversation, Turn
 from heydesk.models.taken import next_number
 
 TO_BOOK = ("confirmed", "packed")  # the courier books these (D112, D131); not one on hold
@@ -233,7 +233,7 @@ class ShopStore(Store):
                 )
                 problem = (
                     Coupon.model_validate(row, from_attributes=True).problem(self.now())
-                    if row
+                    if row and self._may_use(row)
                     else f"The coupon {o.coupon} is gone."
                 )
                 if row is None or problem:
@@ -279,13 +279,65 @@ class ShopStore(Store):
             return {status: count for status, count in rows}
 
     async def coupon(self, code: str) -> Coupon | None:
+        """The code, if this chat may use it: an offer's only by the chats it went to (D140)."""
         async with self.sessions() as s:
             row = await s.scalar(
                 select(CouponRow).where(
                     CouponRow.workspace_id == self.workspace_id, CouponRow.code == code.upper()
                 )
             )
-        return Coupon.model_validate(row, from_attributes=True) if row else None
+        if row is None or not self._may_use(row):
+            return None
+        return Coupon.model_validate(row, from_attributes=True)
+
+    def _may_use(self, row: CouponRow) -> bool:
+        return row.only_for is None or self.conversation_id in row.only_for
+
+    async def offer_code(self) -> str:
+        """The newest offer sent to this chat that hasn't ended (D140), or ""."""
+        if self.conversation_id is None:
+            return ""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(CouponRow)
+                .where(
+                    CouponRow.workspace_id == self.workspace_id,
+                    CouponRow.only_for.is_not(None),
+                    CouponRow.ends_at > self.now(),
+                )
+                .order_by(CouponRow.ends_at.desc())
+            )
+            return next((r.code for r in rows if self._may_use(r)), "")
+
+    async def chats_since(self, since: datetime) -> list[str]:
+        """The shop's chats where the visitor wrote since then (an offer's audience, D140), not
+        calls and not the team's own asks."""
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(Turn.conversation_id)
+                .where(
+                    Turn.workspace_id == self.workspace_id,
+                    Turn.at >= since,
+                    Turn.channel.not_in(("voice", "assist")),
+                )
+                .distinct()
+            )
+            return list(found)
+
+    async def add_offer(self, coupon: Coupon, chats: list[str]) -> None:
+        """An offer as a coupon only `chats` may use (D140)."""
+        async with self.sessions() as s, s.begin():
+            fields = coupon.model_dump(exclude={"used"})
+            s.add(CouponRow(workspace_id=self.workspace_id, only_for=chats, **fields))
+
+    async def offers_made(self) -> int:
+        async with self.sessions() as s:
+            n = await s.scalar(
+                select(func.count()).where(
+                    CouponRow.workspace_id == self.workspace_id, CouponRow.only_for.is_not(None)
+                )
+            )
+            return n or 0
 
     async def coupons(self) -> list[Coupon]:
         async with self.sessions() as s:

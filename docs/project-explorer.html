@@ -507,7 +507,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133).",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133). Offers to the last 24 h's chats: /api/shop/offers, a coupon only they may use (D140).",
    "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
    "fn": "change_order"
@@ -3783,7 +3783,8 @@ tr.hl td { background: var(--accent-soft); }
    ],
    "effects": [
     "state.cart = {lines, subtotal, coupon?, discount?}",
-    "state.offered += goes_with codes (each offered once, D125)"
+    "state.offered += goes_with codes (each offered once, D125)",
+    "no code given: the chat's running offer (D140)"
    ],
    "label_web": "Updating your order…",
    "filler": "",

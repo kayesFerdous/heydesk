@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from heydesk.desks import csv_import
 from heydesk.desks.shop import SHOP
+from heydesk.desks.shop.api import OfferIn, send_offer
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
     CartLine,
@@ -1382,3 +1383,30 @@ async def test_a_placed_order_is_not_nudged(world: World) -> None:
     await world.services.conversations.nudge_unfinished()
     async with world.sessions() as s:
         assert [c.nudged for c in await s.scalars(select(Conversation))] == [False]
+
+
+async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: World) -> None:
+    """The offer reaches the chats from the last 24 hours, and `update_cart` takes it off for
+    them alone, until it ends (D140)."""
+    agent = await world.agent("shop")
+    yesterday = await world.say(agent, None, ["Hello!"], "hi")
+    world.clock.advance(hours=25)
+    today = await world.say(agent, None, ["Hello!"], "hi")
+    ends = world.clock.now + timedelta(hours=12)
+    offer = OfferIn(text="Free delivery till 10 pm!", kind="free_delivery", ends_at=ends)
+    sent = await send_offer(offer, world.store(agent), world.services)
+    assert (sent.code, sent.sent_to) == ("OFFER1", 1)
+    assert (await world.conversation(today)).messages[-1]["content"] == offer.text
+
+    def cart_in(conv: str, coupon: str = "") -> Any:
+        ctx = make_ctx(world.store(agent, conv), agent=agent.config, now=world.clock.now)
+        return update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon=coupon))
+
+    got = await cart_in(today)
+    assert got.state["cart"]["coupon"]["code"] == "OFFER1" and got.data["delivery"] == "free"
+    missed = await cart_in(yesterday)
+    assert "coupon" not in missed.state["cart"]
+    assert not (await cart_in(yesterday, "offer1")).ok  # its code is no use to them
+
+    world.clock.advance(hours=13)
+    assert "coupon" not in (await cart_in(today)).state["cart"]  # it has ended

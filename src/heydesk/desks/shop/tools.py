@@ -217,7 +217,8 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
         data["goes_with"] = [p.line(currency) for p in offer]
         state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
     kept = ((ctx.state.get("cart") or {}).get("coupon") or {}).get("code", "")
-    code = "".join(args.coupon.split()).upper() or kept
+    # the buyer's code, the cart's, or an offer sent to this chat (D140)
+    code = "".join(args.coupon.split()).upper() or kept or await ctx.store.offer_code()
     if not code or not subtotal:
         return ToolResult(ok=True, data=data, state=state)
     coupon = await ctx.store.coupon(code)  # Python checks it and takes it off (D133)
