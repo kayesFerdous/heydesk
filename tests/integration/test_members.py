@@ -79,11 +79,11 @@ async def test_a_moderator_runs_the_inbox_and_reads_but_doesnt_change_the_settin
         refused = await moderator.request(method, path, json={"email": "x@example.com"})
         assert refused.status_code == 403, (method, path)
 
-    # the Q&A and saved replies are theirs to change, nothing else on the agent (D151)
-    answers = {"faq": "Q: Parking? A: Yes.", "saved_replies": ["Thanks!"]}
-    assert (await moderator.patch("/api/agent", json=answers)).status_code == 200
-    with_notes = {**answers, "notes": "be rude"}
-    assert (await moderator.patch("/api/agent", json=with_notes)).status_code == 403
+    # the saved replies are theirs to change, nothing else on the agent (D151, D152)
+    replies = {"saved_replies": ["Thanks!"]}
+    assert (await moderator.patch("/api/agent", json=replies)).status_code == 200
+    with_faq = {**replies, "faq": "Q: Parking? A: Yes."}
+    assert (await moderator.patch("/api/agent", json=with_faq)).status_code == 403
 
 
 async def test_a_removed_moderator_is_out_at_once_and_their_changes_stay(
