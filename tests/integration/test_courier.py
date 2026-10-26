@@ -7,6 +7,7 @@ import pytest
 
 from heydesk.desks.shop.tools import FindOrderInput, track_order
 from heydesk.errors import InvalidConfig
+from heydesk.models import Conversation
 from heydesk.ports.courier import CourierAccount, CourierError, Parcel, Tracked
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import World, make_ctx
@@ -90,3 +91,52 @@ async def test_a_linked_courier_is_checked_books_and_is_tried_again(world: World
     assert parcel.code == "O-101" and parcel.cod * 100 == order.total - order.paid
     [order] = await orders(world)
     assert (order.status, order.parcel_id) == ("shipped", "1000")
+
+
+async def told(world: World, conversation_id: str, words: str) -> int:
+    messages = (await world.conversation(conversation_id)).messages
+    return sum(words in str(m.get("content")) for m in messages)
+
+
+async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world: World) -> None:
+    """The fake courier's "Out for delivery" brings one reminder with the cash to keep ready;
+    a day after delivery, one question with 👍 / 👎 (D134)."""
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    [order] = await orders(world)
+    await world.store(agent).move_order(order.id, "confirmed")
+    courier = world.services.courier
+    await courier.sync(DEV_WORKSPACE_ID)  # booked
+    world.clock.advance(minutes=6)  # the fake courier: out for delivery
+    await courier.sync(DEV_WORKSPACE_ID)
+    await courier.sync(DEV_WORKSPACE_ID)
+    conv = order.conversation_id
+    assert conv
+    assert await told(world, conv, "out for delivery today. Please keep ৳1,010 ready") == 1
+
+    world.clock.advance(minutes=2)
+    await courier.sync(DEV_WORKSPACE_ID)  # delivered
+    assert await told(world, conv, "How was your order") == 0  # not before a day
+    world.clock.advance(hours=24)
+    await courier.sync(DEV_WORKSPACE_ID)
+    await courier.sync(DEV_WORKSPACE_ID)
+    assert await told(world, conv, "How was your order O-101? Tap 👍 or 👎") == 1
+
+
+async def test_nothing_is_sent_outside_messengers_window(world: World) -> None:
+    """On Messenger the business writes first only within 24 hours of the buyer's last
+    message: past it the reminder isn't sent, and isn't tried again (D134)."""
+    agent = await world.agent("shop")
+    await buy(world, agent, KURTI)
+    [order] = await orders(world)
+    assert order.conversation_id
+    async with world.sessions() as s, s.begin():
+        (await s.get_one(Conversation, order.conversation_id)).channel = "messenger"
+    world.clock.advance(hours=25)
+    await world.store(agent).move_order(order.id, "confirmed")
+    courier = world.services.courier
+    await courier.sync(DEV_WORKSPACE_ID)
+    world.clock.advance(minutes=6)
+    await courier.sync(DEV_WORKSPACE_ID)
+    assert await told(world, order.conversation_id, "out for delivery today") == 0
+    assert (await orders(world))[0].reminded

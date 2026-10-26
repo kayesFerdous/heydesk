@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     MAX_MESSAGE_CHARS: int = 2000
     MAX_TURNS: int = 60  # visitor messages per conversation; each turn resends the transcript (D21)
     CONVERSATION_IDLE_HOURS: int = 12  # on a messaging app, a message after this starts afresh
+    TAKEOVER_QUIET_MINUTES: int = 30  # a chat the team took over is the agent's again (D135)
 
     # Limits on a public chat, so timepass can't spend the business's turns (D51). A day is the
     # business's local day.
@@ -99,6 +100,8 @@ class Settings(BaseSettings):
     WOO_SYNC_MINUTES: float = 2
     # how often confirmed orders are booked with the courier and parcels followed (D112)
     COURIER_SYNC_MINUTES: float = 1
+    # a day after delivery the buyer is asked how it was (D134); less to see it in development
+    REVIEW_AFTER_HOURS: float = 24
 
     # Where Telegram can reach this server, https://… (a Cloudflare tunnel to :8000 in
     # development). Needed to connect a business's Telegram bot (D42)

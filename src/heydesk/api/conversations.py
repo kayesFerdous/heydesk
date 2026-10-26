@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
 from heydesk.models import Conversation, TeamMessage, Visitor
@@ -25,6 +25,7 @@ class ConversationOut(BaseModel):
     assigned_email: str | None = None
     done_at: datetime | None  # Done: hidden until the visitor writes again (I3)
     snoozed_until: datetime | None  # hidden until then (I3)
+    labels: list[str]  # the team's own words for it (D136)
     created_at: datetime
     updated_at: datetime
 
@@ -108,6 +109,7 @@ async def conversations(
     assigned: Literal["me", "none"] | None = None,
     q: Annotated[str, Query(max_length=100)] = "",
     done: bool = False,
+    label: Annotated[str, Query(max_length=40)] = "",
 ) -> list[ConversationOut]:
     """Newest activity first, a page at a time (`limit`, `before` an `updated_at`),
     optionally from one channel, and only the caller's (`assigned=me`) or no one's (I1).
@@ -121,6 +123,7 @@ async def conversations(
         unassigned=assigned == "none",
         q=q,
         done=done,
+        label=label.strip().lower(),
         limit=page.limit,
         before=page.before,
     )
@@ -209,6 +212,84 @@ async def snooze(
         services, ws, [await services.conversations.snooze(ws, conversation_id, body.until)]
     )
     return snoozed
+
+
+class LabelsIn(BaseModel):
+    labels: list[Annotated[str, Field(max_length=40)]] = Field(max_length=20)
+
+
+@router.put("/api/conversations/{conversation_id}/labels")
+async def set_labels(
+    conversation_id: str, body: LabelsIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """The chat's labels, the whole list (D136); `?label=` on the list filters by one."""
+    conv = await services.conversations.set_labels(ws, conversation_id, body.labels)
+    [labelled] = await out(services, ws, [conv])
+    return labelled
+
+
+class NoteIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class NoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    author: str  # the team member's email
+    text: str
+    created_at: datetime
+
+
+@router.get("/api/conversations/{conversation_id}/notes")
+async def notes(conversation_id: str, services: Svc, ws: Workspace) -> list[NoteOut]:
+    """The team's notes on the chat, oldest first (D136). The visitor never sees them."""
+    found = await services.conversations.notes(ws, conversation_id)
+    return [NoteOut.model_validate(n) for n in found]
+
+
+@router.post("/api/conversations/{conversation_id}/notes", status_code=201)
+async def add_note(
+    conversation_id: str, body: NoteIn, services: Svc, ws: Workspace, principal: User
+) -> NoteOut:
+    """A note for the team (D136): added, never edited; not in the chat."""
+    author = next(
+        (m.email for m in await services.members.members(ws) if m.id == principal.user_id), ""
+    )
+    note = await services.conversations.add_note(ws, conversation_id, author, body.text)
+    return NoteOut.model_validate(note)
+
+
+class ReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/api/conversations/{conversation_id}/reply")
+async def reply(
+    conversation_id: str, body: ReplyIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """The team answers from the inbox (D136): the words reach the visitor and the chat, and
+    the chat is taken over (D135). On Messenger and WhatsApp only within 24 hours of the
+    visitor's last message: Meta refuses it after, and nothing reaches them."""
+    conv = await services.conversations.team_reply(ws, conversation_id, body.text)
+    [replied] = await out(services, ws, [conv])
+    return replied
+
+
+class TakeOverIn(BaseModel):
+    on: bool  # true: the team has the chat and the agent is quiet; false: the agent's again
+
+
+@router.put("/api/conversations/{conversation_id}/takeover")
+async def take_over(
+    conversation_id: str, body: TakeOverIn, services: Svc, ws: Workspace
+) -> ConversationOut:
+    """The inbox's *Take over* switch (D135), as "." in Business Suite or on Telegram: the
+    agent stays quiet in the chat until it's switched off, or the team is quiet for
+    TAKEOVER_QUIET_MINUTES."""
+    conv = await services.conversations.take_over(ws, conversation_id, body.on)
+    [taken] = await out(services, ws, [conv])
+    return taken
 
 
 class AssigneeIn(BaseModel):

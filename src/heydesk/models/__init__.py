@@ -8,6 +8,7 @@ from heydesk.models.channel import Channel
 from heydesk.models.conversation import Conversation
 from heydesk.models.courier_link import CourierLink
 from heydesk.models.document import Document
+from heydesk.models.note import Note
 from heydesk.models.payment_account import PaymentAccount
 from heydesk.models.sheet_link import SheetLink
 from heydesk.models.subscription_payment import SubscriptionPayment
@@ -27,6 +28,7 @@ __all__ = [
     "Conversation",
     "CourierLink",
     "Document",
+    "Note",
     "PaymentAccount",
     "SheetLink",
     "SubscriptionPayment",

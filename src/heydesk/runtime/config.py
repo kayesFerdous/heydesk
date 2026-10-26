@@ -54,6 +54,10 @@ class AgentConfig(BaseModel):
     faq: str = Field(default="", max_length=20000)
     handoff: Handoff = Handoff()
     widget: Widget = Widget()  # a desk sets its own starters
+    # The team's saved replies, picked from the inbox's reply box (D136); never the model's
+    saved_replies: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
+        default=[], max_length=50
+    )
 
     def fill(self, text: str) -> str:
         """Customer text with `{business_name}` and friends filled in."""

@@ -4,7 +4,7 @@ The only module that imports `heydesk.adapters`.
 """
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -239,6 +239,7 @@ def build_services(
             couriers or {"steadfast": Steadfast(), "pathao": Pathao(), "fake": FakeCourier(now)},
             # a shop with no courier linked: the fake one, except in production (by hand)
             fallback=None if settings.APP_ENV == "production" else "fake",
+            review_after=timedelta(hours=settings.REVIEW_AFTER_HOURS),
         ),
         knowledge=knowledge,
         members=MemberService(sessions, users, now),

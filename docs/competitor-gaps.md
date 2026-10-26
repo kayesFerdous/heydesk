@@ -105,7 +105,7 @@ Keep these in the pitch.
   - *Smallest build:* `place_order` checks for an order from the same mobile with the same items
     in the last `DUPLICATE_HOURS`. If it finds one, the tool returns `ok=False` with a hint,
     and the model asks whether it's a second order.
-- [ ] **G9 Inbox tools: labels, internal notes, saved replies** · M
+- [x] **G9 Inbox tools: labels, internal notes, saved replies** · M
   - *Who has it:* LazyChat (labels, filters), ARA (notes, canned replies, Open/Resolved).
   - *Why:* once moderators run the inbox (D97), they need to sort it and reply fast in the
     same words every time.
@@ -113,6 +113,7 @@ Keep these in the pitch.
     - `labels` as a JSON list on `conversations`, with a filter.
     - A `notes` table (insert-only, rule 5) that the visitor never sees.
     - A list of saved replies in the agent's config.
+  - 26 Oct, D136: built (day R10), with a reply box in the inbox.
 - [ ] **G10 Complaints flagged** · S
   - *Who has it:* LazyChat (a complaints section), ChatBD and ARA (sentiment).
   - *Why:* an angry buyer left with the bot becomes a bad review on the Page.
@@ -250,9 +251,11 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     takes `coupon`; Python checks it and puts the discount on the bill (rule 1).
   - 26 Oct, D133: built (day R6), with a Coupons page; the dev chat check with the real model
     is next.
-- [ ] **G32 Delivery-day reminder and a review request** · S
+- [x] **G32 Delivery-day reminder and a review request** · S
   - Two more lines in the courier round: on "out for delivery", remind the buyer; a day after
     delivered, ask how it was (one button row: 👍 / 👎 / write). Only inside each app's window.
+  - 26 Oct, D134: built (day R7); the reminder needs the courier's word for "out for
+    delivery", so only the fake courier gives it yet.
 - [ ] **G6** (export orders) stays here.
 
 ### Then: the inbox
@@ -262,14 +265,17 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     again, or 30 min of quiet, hands it back. Needs Messenger's `message_echoes` field (our own
     Page's messages arrive as echoes; ignore the ones we sent). The agent sees the owner's
     words in the history next turn (rule 5: they're added, not edited).
+  - 26 Oct, D135: built (day R8), with the inbox's *Take over* and "." on Telegram; the live
+    check on a real Page (connected again, for its echoes) is next.
 - [ ] **G34 Inbox: search, done, snooze, assign** · M (with G9)
   - Search names, phones, order codes and message text (`ILIKE` first; Postgres full text
     later). *Done* hides a chat until the buyer writes again. *Snooze until* brings it back with
     an alert. *Assign* to a moderator, who gets the alert. G9's notes and labels go with it.
   - 25 Oct, D126: *Assign* built (day I1), without the alert; D128: search, done and snooze
     built (day I3). Their browser checks are next.
-- [ ] **G35 The buyer beside the chat** · M (= G17)
+- [x] **G35 The buyer beside the chat** · M (= G17)
   - The chat screen's right side: their orders, bookings, notes. Built on G17's list.
+  - 26 Oct, D136: built (day R10): a shop's buyer record, what the chat took, labels, notes.
 - [ ] **G36 AI help for the moderator** · S–M (G14, bigger)
   - Three buttons on a chat: *Summary*, *Ask about this chat*, *Draft a reply*. The model with
     no tools; nothing is sent until the moderator sends it.

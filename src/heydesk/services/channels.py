@@ -25,7 +25,7 @@ from heydesk.db import new_id
 from heydesk.errors import HeyDeskError, InvalidConfig, NotFound, VisitorSilenced
 from heydesk.models import Channel
 from heydesk.ports.media import MediaUnavailable
-from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
+from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 from heydesk.runtime.events import Card
@@ -337,7 +337,13 @@ class ChannelService:
         message = event.get("message")
         if "postback" in event:  # a card's button (D99): its payload is what they chose
             message = {"text": event["postback"].get("payload") or ""}
-        if not message or message.get("is_echo"):  # the Page's own messages
+        if message and message.get("is_echo"):  # sent from the Page: by us, or by the owner
+            if message.get("metadata") != OURS and message.get("text"):  # (D135)
+                agent = await self.agents.by_id(channel.agent_id)
+                buyer = str(event["recipient"]["id"])
+                await self.conversations.page_wrote(agent, MESSENGER, buyer, message["text"])
+            return
+        if not message:
             return
         psid = str(event["sender"]["id"])
         with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would (D117)

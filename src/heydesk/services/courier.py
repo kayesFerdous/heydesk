@@ -9,6 +9,7 @@ problem stops that shop's round, is noted on the link, and the owner hears once.
 
 import asyncio
 import logging
+from datetime import UTC, timedelta
 from typing import cast
 
 from sqlalchemy import and_, or_, select
@@ -20,12 +21,21 @@ from heydesk.desks.shop.values import lines_text
 from heydesk.errors import InvalidConfig, NotFound
 from heydesk.models import CourierLink
 from heydesk.ports.courier import CourierAccount, CourierApi, CourierError, Parcel
+from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 
 log = logging.getLogger(__name__)
 
 NAMES = {"steadfast": "Steadfast", "pathao": "Pathao", "fake": "the test courier"}
+# ponytail: the words for "the rider has it today", matched in what the courier says. Only
+# the fake courier's are known; add Steadfast's or Pathao's once a live parcel shows them
+OUT_FOR_DELIVERY = ("out for delivery",)
+LATE = timedelta(days=2)  # a review asked later than this after it's due isn't sent
+
+
+def out_for_delivery(said: str) -> bool:
+    return any(words in said.lower() for words in OUT_FOR_DELIVERY)
 
 
 def parcel(order: ShopOrder) -> Parcel:
@@ -62,12 +72,14 @@ class CourierService:
         team: TeamService,
         apis: dict[str, CourierApi],  # by kind: "steadfast", "pathao", "fake"
         fallback: str | None,  # the kind a shop with no link uses; None: by hand
+        review_after: timedelta = timedelta(hours=24),  # after delivery, "how was it?" (D134)
     ) -> None:
         self.sessions = sessions
         self.agents = agents
         self.team = team
         self.apis = apis
         self.fallback = fallback
+        self.review_after = review_after
 
     async def link(self, ws: str, given: CourierAccount) -> CourierLink:
         """Checks the keys with the courier and links it, replacing one already there."""
@@ -113,8 +125,11 @@ class CourierService:
                 await s.delete(link)
 
     async def sync(self, ws: str) -> None:
-        """Books the confirmed and packed orders with no parcel, then asks about each shipped one, with
-        the shop's courier, or the fallback when none is linked."""
+        """Asks the buyers of yesterday's deliveries how it was (D134); then books the confirmed
+        and packed orders with no parcel, and asks about each shipped one, with the shop's
+        courier, or the fallback when none is linked."""
+        shop = cast(ShopStore, await self.agents.store(ws, "shop"))
+        await self._ask_reviews(shop)
         try:
             link: CourierLink | None = await self.get(ws)
         except NotFound:
@@ -123,7 +138,6 @@ class CourierService:
             return  # booked by hand
         acct = account(link) if link else CourierAccount(cast(str, self.fallback))
         api, name = self.apis[acct.kind], NAMES[acct.kind]
-        shop = cast(ShopStore, await self.agents.store(ws, "shop"))
         problem = ""
         try:
             for order in await shop.orders_for_courier("confirmed"):
@@ -142,6 +156,8 @@ class CourierService:
                 moved = await shop.courier_said(order.id, tracked.said, tracked.ending)
                 if moved.status != order.status:
                     await self._moved(moved)
+                elif not order.reminded and out_for_delivery(tracked.said):
+                    await self._remind(shop, moved)
                 if tracked.ending == "returned":
                     await self.team.notify(
                         ws, f"↩️ {order.code} is coming back. Put its items back in stock."
@@ -161,6 +177,37 @@ class CourierService:
         if order.conversation_id and (line := order.news()):
             await self.team.tell_visitor(order.conversation_id, line)
 
+    async def _remind(self, shop: ShopStore, order: ShopOrder) -> None:
+        """Out for delivery (D134): the buyer keeps the cash ready, once, inside the window."""
+        await shop.told(order.id, "reminded")
+        if order.conversation_id is None:
+            return
+        due = order.total - order.paid
+        pay = (
+            f"Please keep {money(due, order.currency)} ready for the rider."
+            if due
+            else "It's paid: there's nothing to pay the rider."
+        )
+        line = f"🛵 Your order {order.code} is out for delivery today. {pay}"
+        await self.team.tell_in_window(order.conversation_id, line)
+
+    async def _ask_reviews(self, shop: ShopStore) -> None:
+        """A day after delivery (D134): one question with two buttons, inside the window. An
+        order delivered long before (when this began, or the shop's round was down) isn't
+        asked, only marked."""
+        now = shop.now()
+        for order in await shop.to_review(now - self.review_after):
+            await shop.told(order.id, "review_asked")
+            delivered = (
+                order.updated_at
+                if order.updated_at.tzinfo
+                else order.updated_at.replace(tzinfo=UTC)
+            )
+            if order.conversation_id is None or now - delivered > self.review_after + LATE:
+                continue
+            line = f"How was your order {order.code}? Tap 👍 or 👎, or write to us."
+            await self.team.tell_in_window(order.conversation_id, line, ["👍", "👎"])
+
     async def run(self, every: float) -> None:
         """Every `every` seconds, until cancelled (the app's lifespan starts it), a round for
         each shop with a parcel to book or follow. One failing doesn't stop the others."""
@@ -173,6 +220,11 @@ class CourierService:
                         or_(
                             and_(ShopOrder.status.in_(TO_BOOK), ShopOrder.parcel_id == ""),
                             and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
+                            and_(  # its buyer is asked how it was (D134)
+                                ShopOrder.status == "delivered",
+                                ShopOrder.review_asked.is_(False),
+                                ShopOrder.conversation_id.is_not(None),
+                            ),
                         )
                     )
                     .distinct()

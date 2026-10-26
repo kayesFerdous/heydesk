@@ -5,6 +5,10 @@ Every call takes the Page's access token: each business connects its own Page.
 
 from typing import Any, Protocol
 
+# Every message we send carries it as `metadata`, and so does its echo: an echo without it is
+# the Page's own, written in Business Suite or Messenger by the owner (D135)
+OURS = "heydesk"
+
 
 class MessengerUnavailable(Exception):
     """Facebook said no (a wrong token, the 24-hour window closed) or couldn't be reached.

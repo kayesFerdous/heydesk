@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.messenger import MessengerUnavailable
+from heydesk.ports.messenger import OURS, MessengerUnavailable
 
 API = "https://graph.facebook.com/v23.0"
 
@@ -22,8 +22,8 @@ class MessengerGraph:
             "POST",
             f"{page_id}/subscribed_apps",
             token,
-            subscribed_fields="messages,messaging_postbacks",
-        )  # a card's button is a postback (D99); not echoes, reads or reactions
+            subscribed_fields="messages,messaging_postbacks,message_echoes",
+        )  # a card's button is a postback (D99); the Page's own messages are echoes (D135)
 
     async def unsubscribe(self, token: str, page_id: str) -> None:
         await self._call("DELETE", f"{page_id}/subscribed_apps", token)
@@ -116,6 +116,8 @@ class MessengerGraph:
         }
 
     async def _send(self, token: str, psid: str, **body: Any) -> None:
+        if "message" in body:  # its echo comes back with this, so it's known as ours (D135)
+            body["message"] = {**body["message"], "metadata": OURS}
         await self._call("POST", "me/messages", token, json={"recipient": {"id": psid}, **body})
 
     async def _call(

@@ -5,7 +5,7 @@ them back, so two buyers can't get the last one."""
 
 from dataclasses import replace
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,6 +172,25 @@ class ShopStore(Store):
                 .order_by(ShopOrder.created_at)
             )
             return list(rows)
+
+    async def to_review(self, delivered_before: datetime) -> list[ShopOrder]:
+        """Delivered orders from a chat whose buyer wasn't asked how it was yet (D134)."""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(ShopOrder).where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.status == "delivered",
+                    ShopOrder.review_asked.is_(False),
+                    ShopOrder.conversation_id.is_not(None),
+                    ShopOrder.updated_at <= delivered_before,
+                )
+            )
+            return list(rows)
+
+    async def told(self, order_id: str, what: Literal["reminded", "review_asked"]) -> None:
+        """The buyer was told this once (D134), so the next round doesn't tell them again."""
+        async with self.sessions() as s, s.begin():
+            setattr(await self._one(s, ShopOrder, order_id), what, True)
 
     async def parcel_booked(self, order_id: str, parcel_id: str) -> ShopOrder:
         """The courier has the order's parcel: it's `shipped`, unless it moved meanwhile."""

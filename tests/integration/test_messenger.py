@@ -315,3 +315,31 @@ async def test_a_page_the_login_doesnt_manage_or_a_bad_login_is_refused(
 
     res = await client.post("/api/agent/messenger/pages", json={"user_token": "x" * 30})
     assert res.status_code == 422 and "user_token" in res.json()["error"]["fields"]
+
+
+def echo(text: str, **extra: Any) -> dict[str, Any]:
+    """The Page's own message to the buyer, as Facebook echoes it (D135)."""
+    msg = {"mid": "e1", "is_echo": True, "text": text, **extra}
+    event = {"sender": {"id": PAGE}, "recipient": {"id": PSID}, "message": msg}
+    return {"object": "page", "entry": [{"id": PAGE, "messaging": [event]}]}
+
+
+async def test_a_dot_in_business_suite_takes_the_chat_over_and_gives_it_back(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """While the owner has it, the buyer's messages run no turn; the owner's words are in the
+    next turn's history; our own messages' echoes are left alone (D135)."""
+    await connect(client)
+    llm = app.state.services.conversations.runtime.llm
+    await post(client, message("hi"))
+    await post(client, echo("(fake model) You said: hi", metadata="heydesk"))  # ours
+    await post(client, echo("."))
+    await post(client, message("price?"))
+    assert len(sent(app)) == 1  # the agent was quiet
+    await post(client, echo("It's ৳950, apni"))
+    await post(client, echo("."))
+    await post(client, message("ok"))
+    assert sent(app)[-1] == (PSID, "(fake model) You said: ok")
+    history = [m.get("content") for m in llm.requests[-1].messages]
+    assert "It's ৳950, apni" in history and "price?" in str(history)
+    assert history.count("(fake model) You said: hi") == 1  # the echo of ours wasn't added

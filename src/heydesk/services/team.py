@@ -11,13 +11,13 @@ import hashlib
 import logging
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.models import Channel, Conversation
+from heydesk.models import Channel, Conversation, Turn
 from heydesk.ports.llm import LanguageModel, Message
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -29,6 +29,7 @@ TELEGRAM, MESSENGER, WHATSAPP = "telegram", "messenger", "whatsapp"  # as `chann
 HUMAN = "human"  # the conversation's status while the team answers
 TEAM = "team"  # the "by" mark on a message the team wrote
 REF = re.compile(r"Ref: ([0-9a-f]{32})")
+WINDOW = timedelta(hours=24)  # Messenger and WhatsApp: a business writes first only inside it
 
 HOW_TO_ANSWER = {
     "telegram": "Reply to this message to answer them.",
@@ -44,7 +45,10 @@ OLD_LINK = "That link is out of date. Open the newest one from your HeyDesk page
 PICK_A_CHAT = "To answer a customer, reply to an alert or to one of their messages."
 GONE = "I can't find that chat any more."
 NOT_A_CHAT = "That was a phone call, so I can't pass a message on. Call them back instead."
-TAKEN_OVER = "Sent. The agent stays quiet in this chat until you reply /done."
+TAKEN_OVER = (
+    "The agent stays quiet in this chat until you reply /done or ., or for 30 minutes after "
+    "your last reply."
+)
 GIVEN_BACK = "The agent is answering this chat again."
 
 
@@ -124,16 +128,40 @@ class TeamService:
         """A visitor wrote while the team is answering: pass it on, for the owner to reply to."""
         await self.alert(conv, f"💬 Customer: {text}")
 
-    async def tell_visitor(self, conversation_id: str, text: str) -> None:
+    async def tell_visitor(
+        self, conversation_id: str, text: str, choices: list[str] | None = None
+    ) -> None:
         """The business tells the visitor something the agent couldn't know (a payment came
         in). Added to the transcript like a team reply, so the web page shows it and the model
-        sees it; sent on Telegram, Messenger or WhatsApp. The conversation stays with the agent."""
+        sees it; sent on Telegram, Messenger or WhatsApp, with buttons for `choices` there.
+        The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
             conv = await s.get_one(Conversation, conversation_id)
             said = {**self.llm.assistant_message(text), "by": TEAM}
             conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
             conv.updated_at = self.now()
-        await self._to_visitor(conv, text)
+        await self.to_visitor(conv, text, choices)
+
+    async def tell_in_window(
+        self, conversation_id: str, text: str, choices: list[str] | None = None
+    ) -> bool:
+        """`tell_visitor` for a message the visitor didn't ask for (D134): only inside the app's
+        window, 24 hours since their last message on Messenger and WhatsApp (Meta refuses a
+        message after it). Telegram and the web chat have none; a call can't take one. Says
+        whether it was sent."""
+        async with self.sessions() as s:
+            conv = await s.get_one(Conversation, conversation_id)
+            last = await s.scalar(
+                select(func.max(Turn.at)).where(Turn.conversation_id == conversation_id)
+            )
+        if conv.channel == "voice":
+            return False
+        if conv.channel in (MESSENGER, WHATSAPP):
+            last = last and (last if last.tzinfo else last.replace(tzinfo=UTC))
+            if last is None or self.now() - last > WINDOW:
+                return False
+        await self.tell_visitor(conversation_id, text, choices)
+        return True
 
     async def link_owner(self, channel: Channel, chat_id: str, code: str) -> None:
         if code != owner_code(channel):
@@ -147,7 +175,8 @@ class TeamService:
 
     async def owner_wrote(self, channel: Channel, message: dict[str, Any]) -> None:
         """The owner replied to an alert: send their words to that visitor, or with `/done`
-        give the chat back to the agent. Their words go in the transcript as the agent's."""
+        give the chat back to the agent; "." takes it over, or gives it back (D135). Their
+        words go in the transcript as the agent's."""
         owner = str(channel.owner_chat_id)
         text = (message.get("text") or "").strip()
         quoted = (message.get("reply_to_message") or {}).get("text") or ""
@@ -165,8 +194,10 @@ class TeamService:
             if conv is None:
                 await self.send(channel, owner, GONE)
                 return
-            if text == "/done":
-                conv.status, answer = "active", GIVEN_BACK
+            if text == "/done" or (text == "." and conv.status == HUMAN):  # "." (D135)
+                conv.status, conv.taken_over_at, answer = "active", None, GIVEN_BACK
+            elif text == ".":  # taken over, with nothing said to them
+                conv.status, conv.taken_over_at, answer = HUMAN, self.now(), TAKEN_OVER
             elif conv.channel == "voice":
                 answer = NOT_A_CHAT
             else:
@@ -174,21 +205,24 @@ class TeamService:
                 conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
                 answer = "" if conv.status == HUMAN else TAKEN_OVER
                 conv.status, to_visitor = HUMAN, True
+                conv.taken_over_at = self.now()  # quiet for 30 minutes, it's given back (D135)
             conv.updated_at = self.now()
         if to_visitor:
-            await self._to_visitor(conv, text)
+            await self.to_visitor(conv, text)
         if answer:
             await self.send(channel, owner, f"{answer}\nRef: {conv.id}")
         log.info("team answered", extra={"conversation_id": conv.id})
 
-    async def _to_visitor(self, conv: Conversation, text: str) -> None:
+    async def to_visitor(
+        self, conv: Conversation, text: str, choices: list[str] | None = None
+    ) -> None:
         """Sends the team's words to a messaging app's visitor; a web visitor's page fetches
         them (/team), and a call can't get them."""
         if conv.channel not in (TELEGRAM, MESSENGER, WHATSAPP):
             return
         channel = await self._channel(conv.workspace_id, conv.channel)
         if channel is not None:
-            await self.send(channel, str(conv.contact), text)
+            await self.send(channel, str(conv.contact), text, choices)
 
     async def _channel(self, ws: str, kind: str = TELEGRAM) -> Channel | None:
         """Alerts always go to Telegram; a visitor's channel can be any app."""

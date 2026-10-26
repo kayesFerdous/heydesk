@@ -527,7 +527,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ConversationService",
    "type": "service",
    "file": "src/heydesk/services/conversations.py",
-   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert.",
+   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136).",
    "inputs": "LiveAgent, text, channel, visitor, photo",
    "outputs": "RunningTurn (events) / Reply",
    "fn": "start_turn"
@@ -667,8 +667,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "CourierService",
    "type": "service",
    "file": "src/heydesk/services/courier.py",
-   "purpose": "Books every confirmed shop order with its linked Steadfast or Pathao, or the fake courier when none is linked outside production (it's shipped then), and follows each parcel until delivered or returned; the buyer hears each move (D112, D113).",
-   "inputs": "confirmed / shipped orders",
+   "purpose": "Books every confirmed shop order with its linked Steadfast or Pathao, or the fake courier when none is linked outside production (it's shipped then), and follows each parcel until delivered or returned; the buyer hears each move (D112, D113). On delivery day a reminder, a day after a 👍 / 👎 question, once each and inside the app's window (`TeamService.tell_in_window`, D134).",
+   "inputs": "confirmed / packed / shipped / delivered orders",
    "outputs": "parcel_id, courier_status, status",
    "fn": "sync"
   },

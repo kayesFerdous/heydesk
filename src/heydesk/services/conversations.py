@@ -1,11 +1,12 @@
 """Conversations: the one entry point for web and voice (design §6)."""
 
 import asyncio
+import json
 import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import ColumnElement, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,7 +23,7 @@ from heydesk.errors import (
     NotFound,
     UnreadablePhoto,
 )
-from heydesk.models import Conversation, Turn, User
+from heydesk.models import Conversation, Note, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -115,7 +116,8 @@ class ConversationService:
                 conv = await self._get(s, agent, conversation_id)
             if self._is_full(conv):
                 raise ConversationFull("This conversation is very long. Please start a new one.")
-            if conv.status == HUMAN:  # the team is answering: the agent stays quiet (D43)
+            # the team is answering: the agent stays quiet (D43), until it's quiet (D135)
+            if conv.status == HUMAN and not await self._given_back(conv):
                 return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
         if not runs_ai:  # the AI is off for them (I2): the team has the chat, no turn is paid
             conv = await self._for_team(agent, conv, channel, contact, name)
@@ -265,13 +267,15 @@ class ConversationService:
         unassigned: bool = False,
         q: str = "",
         done: bool = False,
+        label: str = "",
         limit: int = 100,
         before: datetime | None = None,
     ) -> list[Conversation]:
         """Newest activity first, a page at a time: the next page is `before=` the last
         one's `updated_at`. `assigned_to` a team member, or `unassigned` (I1). Chats that are
         done or snoozed are left out, or only the done ones with `done`; a search (`q`: the
-        name, or anything said, such as a phone or an order code) looks through all (I3)."""
+        name, or anything said, such as a phone or an order code) looks through all (I3).
+        `label`: only the chats with it (D136)."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
@@ -286,6 +290,8 @@ class ConversationService:
             query = query.where(Conversation.assigned_to == assigned_to)
         if unassigned:
             query = query.where(Conversation.assigned_to.is_(None))
+        if label:  # the list as JSON holds it in quotes: ["vip", "cod"]
+            query = query.where(cast(Conversation.labels, String).contains(json.dumps(label)))
         if q.strip():
             like = (
                 "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
@@ -424,9 +430,114 @@ class ConversationService:
             conv = await self._get_by_id(s, ws, conversation_id)
             if conv.status == "active":
                 raise InvalidTransition("This conversation isn't waiting for a person.")
-            conv.status = "active"
+            conv.status, conv.taken_over_at = "active", None
         log.info("hand-off handled", extra={"conversation_id": conv.id})
         return conv
+
+    async def set_labels(
+        self, ws: str, conversation_id: str, labels: Sequence[str]
+    ) -> Conversation:
+        """The team's own words for a chat (D136): "vip", "fake order". Kept in order, once
+        each; the visitor and the model never see them."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            kept = dict.fromkeys(" ".join(lb.split()).lower() for lb in labels if lb.strip())
+            conv.labels = [*kept]
+        return conv
+
+    async def notes(self, ws: str, conversation_id: str) -> Sequence[Note]:
+        """The team's notes on a chat, oldest first (D136)."""
+        async with self.sessions() as s:
+            await self._get_by_id(s, ws, conversation_id)  # 404 for another business's
+            rows = await s.scalars(
+                select(Note)
+                .where(Note.workspace_id == ws, Note.conversation_id == conversation_id)
+                .order_by(Note.created_at)
+            )
+            return rows.all()
+
+    async def add_note(self, ws: str, conversation_id: str, author: str, text: str) -> Note:
+        """A note for the team (D136): its own table, added and never edited (rule 5), and
+        never in the transcript, so the visitor and the model don't see it."""
+        async with self.sessions() as s, s.begin():
+            await self._get_by_id(s, ws, conversation_id)
+            note = Note(
+                workspace_id=ws,
+                conversation_id=conversation_id,
+                author=author,
+                text=text.strip(),
+                created_at=self.now(),
+            )
+            s.add(note)
+        return note
+
+    async def team_reply(self, ws: str, conversation_id: str, text: str) -> Conversation:
+        """The team answers from the inbox (D136), as from a Telegram alert: the words go to
+        the visitor and into the transcript as the team's, and the chat is taken over, until
+        given back or 30 quiet minutes (D135). A call can't take one."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            if conv.channel == "voice":
+                raise InvalidTransition("That was a phone call: call them back instead.")
+            said = {**self.runtime.llm.assistant_message(text.strip()), "by": TEAM}
+            conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
+            conv.status, conv.taken_over_at, conv.updated_at = HUMAN, self.now(), self.now()
+        await self.team.to_visitor(conv, text.strip())
+        log.info("team replied", extra={"conversation_id": conv.id})
+        return conv
+
+    async def take_over(self, ws: str, conversation_id: str, on: bool) -> Conversation:
+        """The team takes the chat, and the agent stays quiet in it, or gives it back (D135):
+        the inbox's switch, "." in Business Suite or on Telegram. Quiet for
+        TAKEOVER_QUIET_MINUTES, it's the agent's again."""
+        async with self.sessions() as s, s.begin():
+            conv = await self._get_by_id(s, ws, conversation_id)
+            conv.status = HUMAN if on else "active"
+            conv.taken_over_at = self.now() if on else None
+        log.info("taken over" if on else "given back", extra={"conversation_id": conv.id})
+        return conv
+
+    async def page_wrote(self, agent: LiveAgent, channel: str, contact: str, text: str) -> None:
+        """The business wrote to a buyer from its own app, not through us (D135): Business
+        Suite or Messenger. "." takes the chat over or gives it back; other words are added to
+        the chat as the team's (rule 5), so the agent reads them next turn, and keep a chat
+        that's taken over from going quiet."""
+        async with self.sessions() as s:
+            conv = await s.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.workspace_id == agent.workspace_id,
+                    Conversation.agent_id == agent.agent_id,
+                    Conversation.channel == channel,
+                    Conversation.contact == contact,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+        if conv is None:  # they wrote first: there's nothing to add it to yet
+            return
+        if text.strip() == ".":
+            await self.take_over(agent.workspace_id, conv.id, conv.status != HUMAN)
+            return
+        async with self.sessions() as s, s.begin():
+            saved = await self._get_by_id(s, agent.workspace_id, conv.id)
+            said = {**self.runtime.llm.assistant_message(text), "by": TEAM}
+            saved.messages = [*saved.messages, said]  # a new list, so SQLAlchemy sees it
+            saved.updated_at = self.now()
+            if saved.taken_over_at is not None:
+                saved.taken_over_at = self.now()
+
+    async def _given_back(self, conv: Conversation) -> bool:
+        """A chat the team took over and then left quiet is the agent's again (D135)."""
+        at = conv.taken_over_at
+        if at is None:
+            return False
+        quiet = timedelta(minutes=self.settings.TAKEOVER_QUIET_MINUTES)
+        if self.now() - (at if at.tzinfo else at.replace(tzinfo=UTC)) < quiet:
+            return False
+        await self.take_over(conv.workspace_id, conv.id, False)
+        conv.status, conv.taken_over_at = "active", None
+        return True
 
     async def _run(
         self, turn: TurnInput, conv: Conversation, agent: LiveAgent, visitor: str

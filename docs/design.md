@@ -420,7 +420,8 @@ Every table has `workspace_id` (except `workspaces`).
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), state JSON, messages JSON |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), state JSON, messages JSON |
+| `notes` | conversation_id, author (the team member's email), text, created_at: the team's notes on a chat, insert only, never in the transcript (D136) |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
 | `sheet_links` | agent_id (unique), url, mapping JSON (our field → their column), seen JSON (each product code's stock cell as last read), checked (SHA-256 of the last text fetched), synced_at, problem (empty: fine). One per agent (D58) |
@@ -491,7 +492,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
 | GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128); `PUT …/{id}/takeover {on}` takes the chat over or gives it back (D135); `PUT …/{id}/labels {labels}`, `?label=` filters; `GET/POST …/{id}/notes {text}` the team's notes; `POST …/{id}/reply {text}` answers from the inbox and takes the chat over (D136) |
 | PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
 | GET | `/api/visitors/blocked` | Who is blocked now, with why, by whom, until when and their latest chat (D127) |
 | GET/PUT/DELETE | `/api/agent/telegram` | The business's Telegram bot: its username, `t.me` link and the owner's alerts link; connect it with its token; disconnect it (D42, D43) |
@@ -1343,8 +1344,45 @@ owner replies to an alert ─► Ref found in the quoted text ─► their words
     transcript as the agent's, marked "by": "team"; the conversation becomes `human`
     ─► a Telegram visitor gets it from the bot; a web visitor's page fetches it (/team)
 visitor writes while `human` ─► saved, forwarded to the owner with its Ref; no model call
-owner replies /done ─► `active` again: the agent answers, and sees what the team said
+owner replies /done or "." ─► `active` again: the agent answers, and sees what the team said
+owner replies "." to a chat the agent has ─► `human`, with nothing sent to the visitor
 ```
+
+### The team's side of a chat (D136)
+
+- **Labels:** a list on the conversation in lower case, once each (`set_labels`); the list
+  filters by one (`?label=`, matched as `"vip"` in the JSON). Pressing a label in a chat's
+  side shows the chats with it.
+- **Notes:** their own table, added and never edited (rule 5), with the author's email. They're
+  not in `messages`, so the prompt and the visitor never get them.
+- **Replying from the inbox:** `POST …/reply` adds the words as the team's, sends them (as a
+  Telegram reply would), and takes the chat over (D135). Outside Messenger's or WhatsApp's 24
+  hours Meta refuses it; it's logged and stays in the transcript. A call can't take one.
+- **Saved replies:** `saved_replies` in every agent's config (up to 50), edited with the owner's
+  answers and picked from the reply box. Only the team uses them; the prompt doesn't have them.
+- **Beside the chat:** a shop's buyer record (D132) from its orders, then what it took, the
+  labels and the notes.
+
+### Taking a chat over (D135)
+
+The team takes a chat, and the agent stays quiet in it, three ways: "." from the Page itself
+(Business Suite or Messenger), "." in reply to an alert on Telegram, or the inbox's *Take
+over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conversation
+`human` and `taken_over_at`; "." again, the switch, or `/done` gives it back.
+
+- **Quiet:** `taken_over_at` is the team's last word (a Business Suite message or a Telegram
+  reply moves it on). A visitor's message `TAKEOVER_QUIET_MINUTES` (30) after it gives the
+  chat back first, then is answered (`ConversationService._given_back`): checked when they
+  write, so no round runs for it. The AI off for a visitor (D127) sets `human` with no
+  `taken_over_at`, so it never goes back by itself.
+- **Business Suite's messages:** the Page subscribes `message_echoes`. Every message we send
+  carries `metadata: "heydesk"` (`ports/messenger.py`, `OURS`), and so does its echo, so an
+  echo without it is the owner's own. Its words are added to the chat as the team's
+  (`page_wrote`, rule 5: added, not edited), so the agent reads them next turn; an echo
+  before there's a chat, or with no text, is left. A Page connected before this needs
+  connecting again for its echoes.
+- Given up: WhatsApp's own app (the Cloud API number has none to type in; the inbox switch
+  covers it). The buyer sees the "." itself.
 
 - **Telling a restaurant's visitor (D66):** when the owner moves an order or a booking with
   `PATCH /api/orders/{id}` or `/api/bookings/{id}`, the row's `news()` gives a line, and
@@ -1553,6 +1591,19 @@ delivers it after 8. A shop with no link uses the fake one, except in production
 2. Each `shipped` order with a parcel is asked about: the words go in `courier_status`
    (`track_order` gives them), and `delivered` or `returned` moves the order; the buyer hears
    a delivery, the owner a return.
+
+3. On the way (D134): when a shipped parcel's words say it's out for delivery (only the fake
+   courier's "Out for delivery" is known yet), the buyer hears once that it comes today and the
+   cash to keep ready (`reminded`).
+4. A review (D134), at the start of every round, also for a shop that books by hand:
+   `REVIEW_AFTER_HOURS` (24) after an order from a chat was delivered, its buyer is asked "How
+   was your order O-101? Tap 👍 or 👎, or write to us." with those two buttons, once
+   (`review_asked`); one due more than two days ago is only marked. A tap is the buyer's next
+   message, answered by the agent.
+
+Both go through `TeamService.tell_in_window`: on Messenger and WhatsApp only within 24 hours
+of the buyer's last turn (Meta refuses a business's message after it), on Telegram and the web
+chat always, on a call never. Outside it nothing is sent, and it isn't tried again.
 
 A `CourierError` stops that shop's round: it's noted on the link (`problem`), the owner hears
 it once, and it's tried again next time. In production a shop with no courier linked moves its

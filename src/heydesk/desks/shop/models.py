@@ -93,6 +93,10 @@ class ShopOrder(Taken, Payable, Base):
     # cancelled ("refused", "damaged")
     paid_in: Mapped[bool] = mapped_column(default=False)
     reason: Mapped[str] = mapped_column(String(200), default="")
+    # Told once each (D134), sent or not (outside the app's window it isn't): out for
+    # delivery, and a day after it was delivered, how was it
+    reminded: Mapped[bool] = mapped_column(default=False)
+    review_asked: Mapped[bool] = mapped_column(default=False)
 
     @property
     def due(self) -> int:

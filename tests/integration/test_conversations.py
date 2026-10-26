@@ -145,3 +145,17 @@ async def test_a_message_to_the_team_is_not_a_turn(world: World) -> None:
     await say(world, "are you there?", conv_id)
 
     assert len(await turns(world)) == 1
+
+
+async def test_a_chat_taken_over_and_left_quiet_is_the_agents_again(world: World) -> None:
+    """The inbox's switch, or ".": the agent is quiet; 30 minutes after the team last wrote,
+    the next message is answered (D135)."""
+    agent = await world.agent()
+    conv = await world.say(agent, None, ["Hello!"], "hi")
+    await world.services.conversations.take_over(agent.workspace_id, conv, True)
+    await world.say(agent, conv, ["Should not be said."], "anyone?")
+    assert "Should not be said." not in str((await world.conversation(conv)).messages)
+    world.clock.advance(minutes=31)
+    await world.say(agent, conv, ["Back again."], "hello?")
+    saved = await world.conversation(conv)
+    assert "Back again." in str(saved.messages) and saved.status == "active"

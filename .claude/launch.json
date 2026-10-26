@@ -75,6 +75,23 @@
       "port": 8000
     },
     {
+      "name": "heydesk-fake-shop-review",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LLM_PROVIDER=fake",
+        "DEV_AGENT_KIND=shop",
+        "DEV_AGENT_SEED=examples/agents/shop.yaml",
+        "REVIEW_AFTER_HOURS=0.02",
+        "uv",
+        "run",
+        "uvicorn",
+        "heydesk.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "heydesk-bangla-shop",
       "runtimeExecutable": "env",
       "runtimeArgs": [

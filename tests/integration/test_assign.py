@@ -101,3 +101,45 @@ async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
 
     await client.put(f"/api/conversations/{waiting}/done", json={"done": True})
     assert (await rafi.get("/api/conversations/counts")).json()["mine"] == 0  # out of sight
+
+
+async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: AsyncClient) -> None:
+    """A label filters the list; a note stays the team's, out of the prompt and the chat; a
+    reply from the inbox reaches the chat and takes it over (D136)."""
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = ["Hello!"]
+    conv = await chat(app, client)
+    other = await chat(app, client, visitor="another-visitor")
+    res = await client.put(
+        f"/api/conversations/{conv}/labels", json={"labels": ["VIP", " vip", "COD"]}
+    )
+    assert res.json()["labels"] == ["vip", "cod"]
+    listed = (await client.get("/api/conversations", params={"label": "vip"})).json()
+    assert [c["id"] for c in listed] == [conv] and other not in str(listed)
+
+    note = await client.post(
+        f"/api/conversations/{conv}/notes", json={"text": "Asked for a refund before"}
+    )
+    assert note.status_code == 201 and note.json()["author"]
+    assert [n["text"] for n in (await client.get(f"/api/conversations/{conv}/notes")).json()] == [
+        "Asked for a refund before"
+    ]
+
+    reply = await client.post(
+        f"/api/conversations/{conv}/reply", json={"text": "Ji, we'll call you"}
+    )
+    assert reply.json()["status"] == "human"
+    team = (await client.get(f"/api/chat/{DEV_KEY}/{conv}/team")).json()["replies"]
+    assert team == ["Ji, we'll call you"]
+
+    await client.put(f"/api/conversations/{conv}/takeover", json={"on": False})
+    llm.script = ["Sure."]
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "thanks", "conversation_id": conv},
+    )
+    prompt = str(llm.requests[-1].messages)
+    assert "Ji, we'll call you" in prompt  # the team's words are in the history
+    assert "refund before" not in prompt and "vip" not in prompt  # never a note or a label
+    other_business = await new_business(app)
+    assert (await other_business.get(f"/api/conversations/{conv}/notes")).status_code == 404

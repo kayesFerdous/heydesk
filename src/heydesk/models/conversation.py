@@ -36,6 +36,13 @@ class Conversation(Base):
     done_at: Mapped[datetime | None] = mapped_column(default=None)
     # Snoozed (I3): hidden until then; at that time it comes back with an alert to the owner
     snoozed_until: Mapped[datetime | None] = mapped_column(default=None, index=True)
+    # Taken over (D135): when the team last wrote while it has the chat ("." in Business Suite
+    # or on Telegram, or the inbox's switch). Quiet for TAKEOVER_QUIET_MINUTES, the agent's
+    # again. None: not taken over, or taken over with no end (the AI is off for the visitor)
+    taken_over_at: Mapped[datetime | None] = mapped_column(default=None)
+    # The team's own words for the chat (D136): "vip", "fake order". Never shown to the
+    # visitor or the model
+    labels: Mapped[list[str]] = mapped_column(JSON, default=list)
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
     )  # what a desk keeps between turns: the cart
