@@ -346,11 +346,16 @@ async def test_a_dot_in_business_suite_takes_the_chat_over_and_gives_it_back(
     assert history.count("(fake model) You said: hi") == 1  # the echo of ours wasn't added
 
 
-def comment(text: str, comment_id: str = "c1", sender: str = "5005") -> dict[str, Any]:
+POST = f"{PAGE}_77"
+
+
+def comment(
+    text: str, comment_id: str = "c1", sender: str = "5005", post_id: str = POST
+) -> dict[str, Any]:
     value = {
         "item": "comment",
         "verb": "add",
-        "post_id": f"{PAGE}_77",
+        "post_id": post_id,
         "comment_id": comment_id,
         "from": {"id": sender, "name": "Nila"},
         "message": text,
@@ -364,24 +369,87 @@ def comment(text: str, comment_id: str = "c1", sender: str = "5005") -> dict[str
 async def test_a_comment_gets_one_public_and_one_private_reply_and_joins_the_chat(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """ "dam koto?" under a post of the Cotton Kurti: a reply under it, and a private reply
-    with its price that starts their Messenger chat; a second comment gets neither, and the
-    Page's own comments are skipped (D141)."""
+    """ "dam koto?" under a post of the Cotton Kurti: its price under it, and a private reply
+    with its price and sizes that starts their Messenger chat; a second comment from them gets
+    neither, and the Page's own comments are skipped (D141)."""
     await services_shop(app)
     await connect(client)
     fake: Any = app.state.services.channels.messenger
-    fake.posts[f"{PAGE}_77"] = "New Cotton Kurti in 4 sizes! Comment for the price."
+    fake.posts[POST] = {
+        "text": "New Cotton Kurti in 4 sizes! Comment for the price.",
+        "picture": "",
+    }
     assert await post(client, comment("dam koto?")) == 200
     await post(client, comment("size L ache?", "c2"))
-    await post(client, comment("Sent you the details in Messenger 📩", "c3", sender=PAGE))
+    await post(client, comment("৳950. Sent you the details in Messenger 📩", "c3", sender=PAGE))
 
-    assert fake.public == [("c1", "Sent you the details in Messenger 📩")]
+    assert fake.public == [("c1", "৳950. Sent you the details in Messenger 📩")]
     [(comment_id, private)] = fake.private
     assert comment_id == "c1" and "Cotton Kurti is ৳950, sizes S/M/L/XL" in private
 
-    services = app.state.services
-    async with services.conversations.sessions() as s:
+    async with app.state.services.conversations.sessions() as s:
         [conv] = list(await s.scalars(select(Conversation)))
     assert (conv.channel, conv.contact) == ("messenger", fake.commenter)
     said = [m["content"] for m in conv.messages[:2]]
     assert said[0].endswith("dam koto?") and said[1] == private
+
+
+async def test_a_post_is_looked_at_once_and_later_commenters_reuse_it(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The first comment fetches the post and finds its products; the next person's comment
+    uses what was kept, with the list's price of today (D142)."""
+    await services_shop(app)
+    await connect(client)
+    fake: Any = app.state.services.channels.messenger
+    fake.posts[POST] = {"text": "Cotton Kurti, only today!", "picture": ""}
+    await post(client, comment("price?"))
+    fake.commenter = "7002"
+    await post(client, comment("dam?", "c2", sender="5006"))
+    assert fake.fetched == [POST]  # once, for both
+    assert [c for c, _ in fake.private] == ["c1", "c2"]
+    async with app.state.services.conversations.sessions() as s:
+        contacts = {c.contact for c in await s.scalars(select(Conversation))}
+    assert contacts == {"7001", "7002"}  # each commenter has their own chat
+
+
+async def test_a_post_with_many_products_gets_the_range_and_cards(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The comment gets the price range from the list; the private reply is the products'
+    cards side by side. The owner can tag a post's products instead (D142)."""
+    await services_shop(app)
+    await connect(client)
+    fake: Any = app.state.services.channels.messenger
+    fake.posts[POST] = {"text": "Eid collection: Cotton Kurti and Kids Panjabi", "picture": ""}
+    await post(client, comment("dam koto?"))
+    assert fake.public == [("c1", "৳890–৳950. Sent you the details in Messenger 📩")]
+    [(_, cards)] = fake.private_cards
+    assert [c["choice"] for c in cards] == ["Order [kurti]", "Order [kids-panjabi]"]
+
+    tagged = await client.put("/api/shop/posts/1001_88", json={"products": ["kids-panjabi"]})
+    assert tagged.json()["tagged"] is True
+    assert (
+        await client.put("/api/shop/posts/1001_88", json={"products": ["nope"]})
+    ).status_code == 404
+    await post(client, comment("price?", "c9", post_id="1001_88"))
+    assert fake.public[-1] == ("c9", "৳890. Sent you the details in Messenger 📩")
+    assert "1001_88" not in fake.fetched  # tagged: nothing to look at
+
+
+async def test_a_comment_left_unanswered_gets_one_more_reply(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """Two hours with no answer in the chat: one more reply under the comment, never two."""
+    await services_shop(app)
+    await connect(client)
+    fake: Any = app.state.services.channels.messenger
+    await post(client, comment("dam koto?"))
+    channels = app.state.services.channels
+    channels.now.advance(hours=1)
+    await channels.nudge_comments()
+    assert len(fake.public) == 1  # too soon
+    channels.now.advance(hours=2)
+    await channels.nudge_comments()
+    await channels.nudge_comments()
+    assert fake.public[1:] == [("c1", "We sent you a message in Messenger: check your inbox 📩")]

@@ -398,6 +398,32 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     return OfferOut(code=code, sent_to=len(sent))
 
 
+class PostOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    post_id: str
+    text: str  # its words, as found at its first comment
+    products: list[str]  # product codes
+    tagged: bool  # the owner set them; else they were found in its words or photo
+    created_at: datetime
+
+
+class PostTagIn(BaseModel):
+    products: list[str] = Field(max_length=10)  # codes, at most a carousel's 10
+
+
+@router.get("/api/shop/posts")
+async def posts(store: Shop) -> list[PostOut]:
+    """The Page's posts the agent knows (D142): what each is about, for its comments."""
+    return [PostOut.model_validate(p) for p in await store.posts()]
+
+
+@router.put("/api/shop/posts/{post_id}")
+async def tag_post(post_id: str, body: PostTagIn, store: Shop) -> PostOut:
+    """The owner says which products a post has; its next comments use them (D142)."""
+    return PostOut.model_validate(await store.tag_post(post_id, body.products))
+
+
 @router.get("/api/shop/buyers")
 async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
     """The shop's buyers by mobile, the latest to order first, with how their orders ended,

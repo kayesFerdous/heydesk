@@ -425,7 +425,8 @@ Every table has `workspace_id` (except `workspaces`).
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
 | `tickets` | the shared columns, reason (the agent's words for what's wrong). Code `C-101`; open ↔ solved; one open ticket per chat; who has it is the chat's `assigned_to` (D138) |
 | `leads` | the shared columns, call_at (UTC), note (what they want), why (a lost one's reason, lower case). Code `L-101`; open → sold / not_now / lost, and back to open (D139) |
-| `post_comments` | post_id, commenter (their id in the comment), comment_id (the one answered); unique per business, post and commenter: one public and one private reply each (D141) |
+| `post_comments` | post_id, commenter (their id in the comment), comment_id (the one answered), conversation_id (the chat it opened), nudged (the one more reply went, D142); unique per business, post and commenter: one public and one private reply each (D141) |
+| `page_posts` | post_id (unique per business), text, products JSON (codes, in order), tagged (the owner set them): what a post is about, found at its first comment and used by every later one (D142) |
 | `notes` | conversation_id, author (the team member's email), text, created_at: the team's notes on a chat, insert only, never in the transcript (D136) |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |
@@ -493,6 +494,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105); once it ended, `paid_in` and `reason` (D131) |
 | GET/POST/DELETE | `/api/shop/coupons…` | A shop's coupon codes with their uses; add one (`{code, kind, value, ends_at, max_uses}`, a 409 for a code it has); delete one by code (orders keep their discount) (D133) |
+| GET/PUT | `/api/shop/posts…` | The Page's posts the agent knows, with their products; `PUT …/{post_id} {products}` tags one (codes, at most 10; a 404 for one not in the list) (D142) |
 | POST | `/api/shop/offers` | `{text, kind, value, ends_at}`: sent to every chat that wrote in the last 24 h, inside the window, and saved as a coupon only they may use until it ends; `{code, sent_to}` (D140) |
 | GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
@@ -1107,15 +1109,27 @@ Facebook ─► POST /api/messenger (signature checked, else 404) ─► 200 at 
 1. The Page's own comments (`from.id` is the Page, our public replies among them) are skipped.
 2. A `post_comments` row per post and person (unique), so a second comment from them gets
    nothing: the chat is open by then.
-3. The post's words (`MessengerApi.post_text`) name its product: on a shop, `post_product`
-   finds the product whose name (longest first) or code they have. The private reply says its
-   name, price and sizes from the list (rule 1), or that it's sold out; with no product, a
-   plain thanks. One public reply goes under the comment: "Sent you the details in Messenger
-   📩".
-4. The private reply (`me/messages` with `recipient.comment_id`) opens a Messenger chat; Meta
+3. What the post is about is found **once**, at its first comment, and kept as a
+   `page_posts` row (D142): its words (`MessengerApi.get_post`) and, on a shop, the codes of
+   the products they name (`post_products`: longest name first, each found name taken out, in
+   the post's order), or, naming none, the one product whose photo is most like the post's
+   picture (D57). Every later comment, from anyone, uses the row: no second fetch or photo
+   search. The owner can set a post's products (`PUT /api/shop/posts/{id}`, `tagged`). The
+   products' price and stock are read from the list each time (rule 1).
+4. The replies, from Python: one product, the private reply says its name, price and sizes,
+   or that it's sold out; several, it is their cards side by side (R2's carousel, each with
+   *Order this*), falling back to their names and prices if Meta refuses the carousel; none, a
+   plain thanks. The public reply is the price or the range, "৳890–৳950. Sent you the details
+   in Messenger 📩" (no price when there's no product or it's sold out).
+5. The private reply (`me/messages` with `recipient.comment_id`) opens a Messenger chat; Meta
    answers with the buyer's PSID, which is the chat's contact (G43). The comment, as
    `(a comment on our post: "…") dam koto?`, and the private reply go into that chat
    (`ConversationService.commented`), so their reply in Messenger carries on from it.
+
+6. **One more reply under the comment (D142):** `ChannelService.run` checks every
+   `SNOOZE_CHECK_SECONDS`; a comment answered 2 hours ago (and less than a day) whose chat has
+   had no turn since gets "We sent you a message in Messenger: check your inbox 📩", once
+   (`post_comments.nudged`, set when tried).
 
 It needs `pages_manage_engagement` and `pages_read_user_content` (App Review) on top of D119's.
 

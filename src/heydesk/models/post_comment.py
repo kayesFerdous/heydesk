@@ -18,4 +18,8 @@ class PostComment(Base):
     post_id: Mapped[str] = mapped_column(String(64))
     commenter: Mapped[str] = mapped_column(String(64))  # their id in the comment's `from`
     comment_id: Mapped[str] = mapped_column(String(64))  # the first one, the one answered
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id"), default=None
+    )  # the Messenger chat the private reply opened
+    nudged: Mapped[bool] = mapped_column(default=False)  # the one more reply went (D142)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

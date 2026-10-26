@@ -314,11 +314,13 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 ### Then: comments (all need G1 first)
 
 - [x] **G1** first: one product's post → reply in the comment and in the inbox.
-- [ ] **G41 Many products in one post** · S after G1
+- [x] **G41 Many products in one post** · S after G1
   - The comment gets the price range; the inbox gets the post's products as G25's cards.
   - Needs a post → products map: the owner tags it, or we match the post's photos (D57).
-- [ ] **G42 One more nudge under the comment** · S after G1
+  - 26 Oct, D142: built (day R16): found once from the post's words or photo and kept.
+- [x] **G42 One more nudge under the comment** · S after G1
   - If they don't answer the inbox in ~2 h, one more comment reply. Once.
+  - 26 Oct, D142: built (day R16).
 - [x] **G43 One buyer across comments and inbox** · S after G1
   - A comment's sender id is the same Page-scoped id as their Messenger chat, so the comment
     goes into that conversation's history. Mostly free once G1 stores it there.

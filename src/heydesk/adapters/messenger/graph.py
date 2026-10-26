@@ -13,6 +13,33 @@ from heydesk.ports.messenger import OURS, MessengerUnavailable
 API = "https://graph.facebook.com/v23.0"
 
 
+def carousel(cards: list[dict[str, str]]) -> dict[str, Any]:
+    """Cards side by side as one message (D62, D99, D121, D125): up to 10."""
+    elements = []
+    for c in cards:
+        element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
+        if c.get("url"):  # a doctor has no photo
+            element["image_url"] = c["url"]
+        buttons = []
+        if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
+            title = c.get("button") or "Order this"
+            buttons.append({"type": "postback", "title": title, "payload": c["choice"]})
+        if c.get("page"):  # a product's page (D121): the card's tap, and a button
+            element["default_action"] = {"type": "web_url", "url": c["page"]}
+            buttons.append({"type": "web_url", "title": "Details", "url": c["page"]})
+        if c.get("video"):  # its first video (D125)
+            buttons.append({"type": "web_url", "title": "▶ Video", "url": c["video"]})
+        if buttons:
+            element["buttons"] = buttons
+        elements.append(element)
+    payload = {
+        "template_type": "generic",
+        "image_aspect_ratio": "square",
+        "elements": elements[:10],
+    }
+    return {"attachment": {"type": "template", "payload": payload}}
+
+
 class MessengerGraph:
     def __init__(self, timeout: float = 10.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
@@ -40,30 +67,7 @@ class MessengerGraph:
         await self._send(token, psid, message=message, messaging_type="RESPONSE")
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
-        elements = []
-        for c in cards:
-            element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
-            if c.get("url"):  # a doctor has no photo
-                element["image_url"] = c["url"]
-            buttons = []
-            if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
-                title = c.get("button") or "Order this"
-                buttons.append({"type": "postback", "title": title, "payload": c["choice"]})
-            if c.get("page"):  # a product's page (D121): the card's tap, and a button
-                element["default_action"] = {"type": "web_url", "url": c["page"]}
-                buttons.append({"type": "web_url", "title": "Details", "url": c["page"]})
-            if c.get("video"):  # its first video (D125)
-                buttons.append({"type": "web_url", "title": "▶ Video", "url": c["video"]})
-            if buttons:
-                element["buttons"] = buttons
-            elements.append(element)
-        payload = {
-            "template_type": "generic",
-            "image_aspect_ratio": "square",
-            "elements": elements[:10],
-        }
-        message = {"attachment": {"type": "template", "payload": payload}}
-        await self._send(token, psid, message=message, messaging_type="RESPONSE")
+        await self._send(token, psid, message=carousel(cards), messaging_type="RESPONSE")
 
     async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
         payload = {
@@ -106,18 +110,19 @@ class MessengerGraph:
     async def mark_seen(self, token: str, psid: str) -> None:
         await self._send(token, psid, sender_action="mark_seen")
 
-    async def post_text(self, token: str, post_id: str) -> str:
-        body = await self._call("GET", post_id, token, fields="message")
-        return str(body.get("message") or "")
+    async def get_post(self, token: str, post_id: str) -> dict[str, str]:
+        body = await self._call("GET", post_id, token, fields="message,full_picture")
+        return {"text": body.get("message") or "", "picture": body.get("full_picture") or ""}
 
     async def reply_public(self, token: str, comment_id: str, text: str) -> None:
         await self._call("POST", f"{comment_id}/comments", token, json={"message": text})
 
-    async def reply_private(self, token: str, comment_id: str, text: str) -> str:
-        body = {
-            "recipient": {"comment_id": comment_id},
-            "message": {"text": text, "metadata": OURS},
-        }
+    async def reply_private(
+        self, token: str, comment_id: str, text: str, cards: list[dict[str, str]] | None = None
+    ) -> str:
+        # ponytail: a carousel as the private reply isn't tried on a real Page yet (D142)
+        message = carousel(cards) if cards else {"text": text}
+        body = {"recipient": {"comment_id": comment_id}, "message": {**message, "metadata": OURS}}
         sent = await self._call("POST", "me/messages", token, json=body)
         return str(sent["recipient_id"])
 

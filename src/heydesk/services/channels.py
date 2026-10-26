@@ -13,7 +13,7 @@ import html
 import logging
 import secrets
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -23,9 +23,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.db import new_id
-from heydesk.desks.shop.values import ShopConfig, post_product
-from heydesk.errors import HeyDeskError, InvalidConfig, NotFound, VisitorSilenced
-from heydesk.models import Channel, PostComment
+from heydesk.desks.shop.tools import product_cards
+from heydesk.desks.shop.values import ShopConfig, post_products, price_range
+from heydesk.errors import (
+    HeyDeskError,
+    InvalidConfig,
+    NotFound,
+    UnreadablePhoto,
+    VisitorSilenced,
+)
+from heydesk.models import Channel, PagePost, PostComment, Turn
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -34,7 +41,7 @@ from heydesk.runtime.events import Card
 from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.conversations import ConversationService
-from heydesk.services.photos import PhotoService
+from heydesk.services.photos import PhotoService, to_jpeg
 from heydesk.services.team import MESSENGER, TELEGRAM, WHATSAPP, TeamService
 from heydesk.services.visitors import VisitorService
 
@@ -44,6 +51,8 @@ NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
 # Under a comment, for everyone (D141); the details go privately
 IN_INBOX = "Sent you the details in Messenger 📩"
+LOOK_IN_INBOX = "We sent you a message in Messenger: check your inbox 📩"  # the nudge (D142)
+NUDGE = timedelta(hours=2)  # no answer in the chat this long after a comment's reply
 PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
 
 
@@ -365,49 +374,169 @@ class ChannelService:
             return
         try:
             async with self.sessions() as s, s.begin():
-                s.add(
-                    PostComment(
-                        workspace_id=channel.workspace_id,
-                        post_id=post_id,
-                        commenter=commenter,
-                        comment_id=comment_id,
-                        created_at=self.now(),
-                    )
+                first = PostComment(
+                    workspace_id=channel.workspace_id,
+                    post_id=post_id,
+                    commenter=commenter,
+                    comment_id=comment_id,
+                    created_at=self.now(),
                 )
+                s.add(first)
         except IntegrityError:  # answered on this post already: the chat has them now
             return
         try:
             agent = await self.agents.by_id(channel.agent_id)
-            post = await self.messenger.post_text(channel.token, post_id)
-            answer = await self._about_post(channel.workspace_id, agent.config, post)
+            post = await self.page_post(channel, post_id)
+            products = await self._post_products(channel.workspace_id, agent.config, post)
+            answer, cards, public = self._about_post(agent, products)
             with contextlib.suppress(MessengerUnavailable):
-                await self.messenger.reply_public(channel.token, comment_id, IN_INBOX)
-            psid = await self.messenger.reply_private(channel.token, comment_id, answer)
-            post_words = " ".join(post.split())[:200]
+                await self.messenger.reply_public(channel.token, comment_id, public)
+            try:
+                psid = await self.messenger.reply_private(channel.token, comment_id, answer, cards)
+            except MessengerUnavailable:
+                if not cards:
+                    raise
+                psid = await self.messenger.reply_private(channel.token, comment_id, answer)
+            post_words = " ".join(post.text.split())[:200]
             said = f'(a comment on our post: "{post_words}") {change.get("message") or ""}'
             name = (change.get("from") or {}).get("name")
-            await self.conversations.commented(agent, psid, said.strip(), answer, name)
+            conv = await self.conversations.commented(agent, psid, said.strip(), answer, name)
+            async with self.sessions() as s, s.begin():
+                saved = await s.get_one(PostComment, first.id)
+                saved.conversation_id = conv
         except Exception:
             log.exception("comment not answered", extra={"channel_id": channel.id})
 
-    async def _about_post(self, ws: str, config: Any, post: str) -> str:
-        """The private reply: a shop's post's product and price, from its list (rule 1)."""
-        if isinstance(config, ShopConfig):
-            store: Any = await self.agents.store(ws)
-            product = post_product(await store.products(), post)
-            if product and product.sold_out():
-                return (
-                    f"Thanks for your comment! {product.name} is sold out right now. "
-                    "Reply here and I'll suggest something similar."
+    async def page_post(self, channel: Channel, post_id: str) -> PagePost:
+        """What the post is about, found at its first comment and kept (D142): every later
+        comment uses it again, so the post is fetched, and its photo searched, once."""
+        async with self.sessions() as s:
+            kept = await s.scalar(
+                select(PagePost).where(
+                    PagePost.workspace_id == channel.workspace_id, PagePost.post_id == post_id
                 )
-            if product:
-                sizes = f", sizes {'/'.join(product.sizes)}" if product.sizes else ""
-                price = money(product.price, config.currency)
-                return (
-                    f"Thanks for your comment! {product.name} is {price}{sizes}. "
-                    "Shall I take your order? Just reply here."
+            )
+        if kept is not None:
+            return kept
+        fetched = await self.messenger.get_post(channel.token, post_id)
+        agent = await self.agents.by_id(channel.agent_id)
+        codes: list[str] = []
+        if isinstance(agent.config, ShopConfig):
+            store: Any = await self.agents.store(channel.workspace_id)
+            listed = await store.products()
+            codes = post_products(listed, fetched["text"])
+            if not codes and fetched["picture"]:  # no product named: its photo's closest one
+                codes = await self._photo_product(channel, listed, fetched["picture"])
+        post = PagePost(
+            workspace_id=channel.workspace_id,
+            post_id=post_id,
+            text=fetched["text"][:2000],
+            products=codes,
+            created_at=self.now(),
+        )
+        try:
+            async with self.sessions() as s, s.begin():
+                s.add(post)
+        except IntegrityError:  # two first comments at once: the other one kept it
+            pass
+        return post
+
+    async def _photo_product(self, channel: Channel, listed: list[Any], url: str) -> list[str]:
+        """The one product whose photo is most like the post's (D57), or none."""
+        try:
+            jpeg = to_jpeg(await self.messenger.download(url))
+        except (MessengerUnavailable, UnreadablePhoto):
+            return []
+        matches = await self.photos.nearest(channel.workspace_id, jpeg) or []
+        by_url = {photo: p.code for p in listed for photo in p.photos}
+        return next(([by_url[u]] for u, _ in matches if u in by_url), [])
+
+    async def _post_products(self, ws: str, config: Any, post: PagePost) -> list[Any]:
+        """The post's products as the list has them now: today's price and stock."""
+        if not post.products or not isinstance(config, ShopConfig):
+            return []
+        store: Any = await self.agents.store(ws)
+        listed = {p.code: p for p in await store.products()}
+        return [listed[code] for code in post.products if code in listed]
+
+    def _about_post(
+        self, agent: Any, products: list[Any]
+    ) -> tuple[str, list[dict[str, str]] | None, str]:
+        """The private reply's words, its cards when the post has many products (D142), and
+        the public reply: the price, or the range, from the list (rule 1)."""
+        currency = getattr(agent.config, "currency", "BDT")
+        if not products:
+            return "Thanks for your comment! Reply here and I'll help you.", None, IN_INBOX
+        public = f"{price_range(products, currency)}. {IN_INBOX}"
+        if len(products) > 1:
+            cards = [
+                {
+                    **card,
+                    "choice": f"Order [{card['code']}]",
+                    "page": self.product_page(agent.public_key, card["code"], MESSENGER),
+                    "url": self.whole(card["url"]) if card["url"] else "",
+                }
+                for card in product_cards(products, currency)
+            ]
+            names = ", ".join(f"{c['name']} {c['price']}" for c in cards)
+            return f"Thanks for your comment! This post has: {names}.", cards, public
+        product = products[0]
+        if product.sold_out():
+            answer = (
+                f"Thanks for your comment! {product.name} is sold out right now. "
+                "Reply here and I'll suggest something similar."
+            )
+            return answer, None, IN_INBOX
+        sizes = f", sizes {'/'.join(product.sizes)}" if product.sizes else ""
+        price = money(product.price, currency)
+        answer = (
+            f"Thanks for your comment! {product.name} is {price}{sizes}. "
+            "Shall I take your order? Just reply here."
+        )
+        return answer, None, public
+
+    async def nudge_comments(self) -> None:
+        """No answer in the chat ~2 hours after a comment's private reply (D142): one more
+        reply under the comment, once. A day on, it's left alone."""
+        now = self.now()
+        async with self.sessions() as s, s.begin():
+            due = list(
+                await s.scalars(
+                    select(PostComment).where(
+                        PostComment.nudged.is_(False),
+                        PostComment.conversation_id.is_not(None),
+                        PostComment.created_at.between(now - timedelta(days=1), now - NUDGE),
+                    )
                 )
-        return "Thanks for your comment! Reply here and I'll help you."
+            )
+            quiet = []
+            for comment in due:
+                comment.nudged = True  # tried, sent or not: once
+                answered = await s.scalar(
+                    select(Turn.id).where(
+                        Turn.conversation_id == comment.conversation_id,
+                        Turn.at >= comment.created_at,
+                    )
+                )
+                if answered is None:
+                    quiet.append(comment)
+        for comment in quiet:
+            async with self.sessions() as s:
+                channel = await self._find(s, comment.workspace_id, MESSENGER)
+            if channel is not None:
+                with contextlib.suppress(MessengerUnavailable):
+                    await self.messenger.reply_public(
+                        channel.token, comment.comment_id, LOOK_IN_INBOX
+                    )
+
+    async def run(self, every: float) -> None:
+        """The comment nudge round (D142), every `every` seconds, until cancelled."""
+        while True:
+            await asyncio.sleep(every)
+            try:
+                await self.nudge_comments()
+            except Exception:
+                log.exception("comment nudges failed")
 
     async def answer_whatsapp(
         self, channel: Channel, message: dict[str, Any], name: str | None = None
