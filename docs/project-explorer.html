@@ -277,7 +277,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "deps: auth & scope",
    "type": "api",
    "file": "src/heydesk/api/deps.py",
-   "purpose": "Bearer token → Principal; scopes every owner route to one workspace; moderators read the settings and channels and change only the saved replies (D151, D152); admin audit; team activity.",
+   "purpose": "Bearer token → Principal; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
    "inputs": "Authorization, X-Business",
    "outputs": "workspace_id",
    "fn": "current_workspace"
@@ -6989,9 +6989,9 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "own",
-     "label": "Owners-only path? (/api/team, /api/billing, non-GET /api/agent… but PATCH /api/agent checks its fields, D151)",
+     "label": "Owners-only path? (/api/team, /api/billing, non-GET /api/agent…, D153)",
      "shape": "decision",
-     "code": "if path.startswith(('/api/team', '/api/billing')): return True\nif (method, path) == ('PATCH', '/api/agent'): return False  # saved_replies only (D152)\nreturn path.startswith('/api/agent') and method != 'GET'",
+     "code": "if path.startswith(('/api/team', '/api/billing')): return True\nreturn path.startswith('/api/agent') and method != 'GET'",
      "fn": "owners_only"
     },
     {
@@ -8392,7 +8392,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-agents",
      "to": "a-deps",
-     "data": "owner (moderators get 403 on non-GET /api/agent, except PATCH of saved_replies, D151, D152)",
+     "data": "owner (moderators get 403 on non-GET /api/agent, D153)",
      "file": "src/heydesk/api/deps.py",
      "fn": "owners_only"
     },

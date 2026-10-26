@@ -562,8 +562,8 @@ Everything under `/api` except chat, desks, auth and the Telegram, Messenger, Wh
 (rule 6), and they only ever see it. A **moderator** is someone the owner added to it:
 they run the inbox (conversations, messages, orders, bookings, appointments, calls, the
 lists) and can read the settings, knowledge and channels, but a change under `/api/agent`,
-`/api/billing` and anything under `/api/team` are a 403 for them (`deps.owners_only`). The
-one exception is `PATCH /api/agent` with only `saved_replies` (D151, D152). The Telegram
+`/api/billing` and anything under `/api/team` are a 403 for them (`deps.owners_only`), the
+saved replies included (D151, D153). The Telegram
 bot's `owner_link` comes back empty for them (it makes you the one who gets the owner's
 alerts); their own link is on `/api/auth/me` (D148). The owner adds one by
 email; the user is made with a password no one knows and the email has a reset code, so

@@ -8,9 +8,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, UploadFile, status
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, User, Workspace
+from heydesk.api.deps import Svc, Workspace
 from heydesk.desks import DESKS
-from heydesk.errors import Forbidden
 from heydesk.services.agents import AgentInfo
 
 router = APIRouter(tags=["agents"])
@@ -92,15 +91,8 @@ async def add_logo(
     return LogoOut(url=photo.url)
 
 
-# What a moderator may change on the agent (D151, D152): the rest is the owner's
-MODERATORS_MAY = {"saved_replies"}
-
-
 @router.patch("/api/agent")
-async def edit(patch: dict[str, Any], services: Svc, ws: Workspace, principal: User) -> AgentOut:
-    """Top-level fields replace the config's: send the whole `hours`, not a part. A moderator
-    may send only the saved replies (D152)."""
-    if principal.role == "moderator" and not patch.keys() <= MODERATORS_MAY:
-        raise Forbidden("Only the business's owner can change this.")
+async def edit(patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
+    """Top-level fields replace the config's: send the whole `hours`, not a part."""
     await services.agents.update(ws, patch)
     return out(await services.agents.get(ws))

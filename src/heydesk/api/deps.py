@@ -79,12 +79,9 @@ async def current_workspace(
 def owners_only(method: str, path: str) -> bool:
     """The team, billing (D106) and any change to the agent's settings or channels are the
     owner's. A moderator gets the rest: the inbox, the records, the lists, and reading the
-    settings and channels (D97, D151). `PATCH /api/agent` checks its own fields: a moderator may
-    change the saved replies (`agents.MODERATORS_MAY`, D152)."""
+    settings and channels, but change none of them (D97, D151, D153)."""
     if path.startswith(("/api/team", "/api/billing")):
         return True
-    if (method, path) == ("PATCH", "/api/agent"):
-        return False
     return path.startswith("/api/agent") and method != "GET"
 
 
