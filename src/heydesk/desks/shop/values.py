@@ -4,7 +4,7 @@ them. Pure."""
 import html
 import re
 from dataclasses import dataclass
-from datetime import time
+from datetime import datetime, time
 from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -282,6 +282,28 @@ class BuyForm(BaseModel):
     note: str = ""
     heard: str = ""  # the read-back the buyer was shown, sent back with Place order
     change: str = ""  # "1": the buyer tapped Change on the check page
+
+
+class BuyerRecord(BaseModel):
+    """A mobile's orders with this shop (D132): shown on each order before it's sent, since
+    a buyer who refused parcels before costs the shop two delivery charges again."""
+
+    orders: int = 0
+    delivered: int = 0
+    returned: int = 0
+    cancelled: int = 0
+
+
+class Buyer(BuyerRecord):
+    """One line of the buyers list: a mobile, and what it did with this shop (D132)."""
+
+    phone: str
+    name: str  # on their latest order
+    spent: int  # minor units, on delivered orders
+    last_order_at: datetime
+    # Where they ordered from (web, messenger…); an order the team typed has none
+    channels: list[str]
+    conversations: int
 
 
 PHOTO_MATCHES = 3  # products named in a photo's line

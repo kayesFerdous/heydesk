@@ -1238,3 +1238,50 @@ async def test_orders_export_as_the_list_shows_them(app: FastAPI, client: AsyncC
     assert len(list(csv.reader(io.StringIO(theirs.text.removeprefix("﻿"))))) == 1
     for path in ("/api/orders.csv", "/api/bookings.csv", "/api/appointments.csv"):
         assert (await client.get(path)).status_code == 404  # a shop has none of these
+
+
+async def test_each_order_shows_its_buyers_record_and_buyers_are_listed(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """By mobile: how many orders, and how they ended; another business's orders with the same
+    mobile never count (D132)."""
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    body = {
+        "lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}],
+        "name": "Rahim",
+        "phone": "01812345678",
+        "address": "Mirpur 10",
+        "district": "Dhaka",
+    }
+    ids = [(await client.post("/api/shop/orders", json=body)).json()["id"] for _ in range(3)]
+    await client.patch(f"/api/shop/orders/{ids[0]}", json={"status": "shipped"})
+    await client.patch(f"/api/shop/orders/{ids[0]}", json={"status": "returned"})
+    await client.patch(f"/api/shop/orders/{ids[1]}", json={"status": "cancelled"})
+    await client.post("/api/shop/orders", json=body | {"phone": "01712345678", "name": "Nila"})
+
+    other = await new_business(app)
+    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    await other.put("/api/products", json=[{"code": "kurti", "name": "Kurti", "price": 50000}])
+    theirs = body | {"lines": [{"code": "kurti", "quantity": 1}]}
+    everywhere = {"delivery": [{"name": "Everywhere", "charge": 5000}]}
+    assert (await other.patch("/api/agent", json=everywhere)).status_code == 200
+    assert (await other.post("/api/shop/orders", json=theirs)).status_code == 201
+
+    order = (await client.get(f"/api/shop/orders/{ids[2]}")).json()
+    assert order["buyer"] == {"orders": 3, "delivered": 0, "returned": 1, "cancelled": 1}
+    listed = (await client.get("/api/shop/orders")).json()
+    assert {o["phone"]: o["buyer"]["orders"] for o in listed} == {
+        "01812345678": 3,
+        "01712345678": 1,
+    }
+
+    buyers = (await client.get("/api/shop/buyers")).json()
+    assert [b["phone"] for b in buyers] == ["01712345678", "01812345678"]  # latest first
+    rahim = buyers[1]
+    assert (rahim["name"], rahim["orders"], rahim["returned"], rahim["channels"]) == (
+        "Rahim",
+        3,
+        1,
+        [],  # typed by the team: no chat
+    )
+    assert [b["name"] for b in (await client.get("/api/shop/buyers?q=nila")).json()] == ["Nila"]

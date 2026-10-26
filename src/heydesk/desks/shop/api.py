@@ -29,6 +29,8 @@ from heydesk.desks.shop.tools import CartLine, TeamOrder, checked_order, order_a
 from heydesk.desks.shop.values import (
     PRODUCT_COLUMNS,
     STATUS_WORDS,
+    Buyer,
+    BuyerRecord,
     BuyForm,
     Product,
     ShopConfig,
@@ -78,6 +80,7 @@ class ShopOrderOut(BaseModel):
     courier_status: str  # the courier's last words about it
     paid_in: bool  # once it ended: the rider's cash reached the shop (D131)
     reason: str  # why it came back or was cancelled: "refused", "damaged" (D131)
+    buyer: BuyerRecord = BuyerRecord()  # this mobile's orders with the shop, this one too (D132)
     created_at: datetime
     updated_at: datetime
 
@@ -278,12 +281,13 @@ async def orders(
     """Newest first, a page at a time (`limit`, `before`). `q` matches the code or number,
     the name or the phone."""
     found = await store.find(ShopOrder, status, q, limit=page.limit, before=page.before)
-    return [ShopOrderOut.model_validate(o) for o in found]
+    return await with_buyers(store, found)
 
 
 @router.get("/api/shop/orders/{order_id}")
 async def order(order_id: str, store: Shop) -> ShopOrderOut:
-    return ShopOrderOut.model_validate(await store.get(ShopOrder, order_id))
+    [found] = await with_buyers(store, [await store.get(ShopOrder, order_id)])
+    return found
 
 
 @router.patch("/api/shop/orders/{order_id}")
@@ -301,7 +305,8 @@ async def change_order(
         await services.team.tell_visitor(moved.conversation_id, line)
     if body.paid_in is not None or body.reason is not None:
         moved = await store.settle(order_id, body.paid_in, body.reason)
-    return ShopOrderOut.model_validate(moved)
+    [out] = await with_buyers(store, [moved])
+    return out
 
 
 @router.post("/api/shop/orders", status_code=201)
@@ -321,7 +326,24 @@ async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) 
     alert = await order_alert(store, saved.code, read_back, saved.phone, saved.lines)
     await services.team.notify(ws, alert.replace("New order", "New order, typed by the team", 1))
     services.woo.push_soon(ws)
-    return ShopOrderOut.model_validate(saved)
+    [out] = await with_buyers(store, [saved])
+    return out
+
+
+async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrderOut]:
+    """Each order with its buyer's record (D132), counted for all of them at once."""
+    records = await store.records({o.phone for o in orders})
+    return [
+        ShopOrderOut.model_validate(o).model_copy(update={"buyer": records[o.phone]})
+        for o in orders
+    ]
+
+
+@router.get("/api/shop/buyers")
+async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
+    """The shop's buyers by mobile, the latest to order first, with how their orders ended,
+    what they spent and where they wrote from (D132). `q`: a mobile or a name."""
+    return await store.buyers(q, limit=page.limit)
 
 
 @router.get("/api/shop/orders.csv", response_model=None)

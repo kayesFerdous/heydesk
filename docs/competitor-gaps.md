@@ -162,6 +162,7 @@ Keep these in the pitch.
   - *Who has it:* ARA (Customer 360), ChatBD (contacts and tags).
   - *Smallest build:* a buyers list grouped by mobile, with their orders, channels and
     conversations, from the tables we already have.
+  - 26 Oct, D132: a shop's buyers list (day R5); restaurants and clinics are next.
 - [ ] **G18 Appointment and booking reminders** · M
   - *Who has it:* ARA (calendar sync and confirmations), Edesy (clinics).
   - *Why:* no-shows cost clinics and restaurants.
@@ -238,6 +239,8 @@ courier booking with status news to the buyer (D112, D113); remembering a return
   - By mobile: our own orders, returns and cancels for this shop, plus the courier's fraud
     record (Steadfast has a fraud-check endpoint; Pathao doesn't publicly). Shown on the order
     as "3 orders, 1 returned". Overlaps G17.
+  - 26 Oct, D132: built (day R5) from our own orders; the courier's fraud check is left out
+    (Steadfast has no public endpoint for it).
 - [x] **G30 Orders typed by the team** · S
   - The owner's screen can add an order for a buyer who called. It skips the yes (the team is
     the yes), so it needs its own writing method; say so in decisions.md.

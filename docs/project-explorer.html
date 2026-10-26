@@ -507,7 +507,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131).",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132).",
    "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
    "fn": "change_order"

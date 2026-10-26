@@ -485,6 +485,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/products/photos` | A product photo (multipart): saved as a JPEG and embedded → `{url}`; the product keeps it once its `photos` are saved with that URL (D57) |
 | GET | `/media/…` | When the photos are on this server's disk, not in R2 (D101). A photo: a product's (`<workspace_id>/products/<id>.jpg`) one a visitor sent (`<workspace_id>/chat/<id>.jpg`) (D57), or the business's logo (`<workspace_id>/logo/<id>.jpg`, D82) |
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105); once it ended, `paid_in` and `reason` (D131) |
+| GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
 | GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
@@ -1502,6 +1503,20 @@ needs `call_to_confirm` (a 422 otherwise).
 - **The end:** a delivered or returned order takes `paid_in` (the rider's cash reached the
   shop), a returned or cancelled one a `reason` (the screen offers refused, damaged, wrong item,
   no answer, changed their mind, or the owner's words). Before it ends, either is a 409.
+
+### A buyer's record (D132)
+
+Before an order is sent, the team sees what its mobile did with this shop: `ShopStore.records`
+counts each mobile's orders by how they ended, in one grouped query for a whole page, and
+every order out of the API carries it as `buyer` ("3 orders · 1 returned", the trouble in red;
+"First order from this mobile"). `/api/shop/buyers` lists the shop's mobiles, the latest to
+order first (by order number), with the name on their latest order, what their delivered
+orders came to, and the chats they ordered from. Only this shop's orders count (rule 6).
+
+- Given up: the courier's own fraud record. Steadfast's public API has no fraud check; the
+  packages that offer one log in to its merchant website with the owner's password and read
+  the page, which breaks when the page changes. Pathao has none either. The buyers list is
+  the shop's only; a restaurant's or clinic's customers wait for G17's second half.
 
 ### The courier (D112, D113)
 

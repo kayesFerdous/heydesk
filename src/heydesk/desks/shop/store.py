@@ -7,16 +7,18 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ScalarResult, func, select
+from sqlalchemy import ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from heydesk.desks.base import Store, TooLate
+from heydesk.desks.base import PAGE, Store, TooLate
 from heydesk.desks.shop.models import ProductRow, ShopOrder
 from heydesk.desks.shop.values import (
     CHANGEABLE,
     ENDED,
     HOLDS,
     OWN,
+    Buyer,
+    BuyerRecord,
     NewOrder,
     OrderCancel,
     OrderConfirm,
@@ -30,6 +32,7 @@ from heydesk.desks.shop.values import (
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import InvalidTransition, NotFound
+from heydesk.models import Conversation
 from heydesk.models.taken import next_number
 
 TO_BOOK = ("confirmed", "packed")  # the courier books these (D112, D131); not one on hold
@@ -233,6 +236,76 @@ class ShopStore(Store):
                 .group_by(ShopOrder.status)
             )
             return {status: count for status, count in rows}
+
+    async def records(self, phones: set[str]) -> dict[str, BuyerRecord]:
+        """Each mobile's orders with this shop by how they ended (D132), in one query."""
+        found: dict[str, BuyerRecord] = {phone: BuyerRecord() for phone in phones}
+        if not phones:
+            return found
+        async with self.sessions() as s:
+            rows = await s.execute(
+                select(ShopOrder.phone, ShopOrder.status, func.count())
+                .where(ShopOrder.workspace_id == self.workspace_id, ShopOrder.phone.in_(phones))
+                .group_by(ShopOrder.phone, ShopOrder.status)
+            )
+            for phone, status, count in rows:
+                record = found[phone]
+                record.orders += count
+                if status in ("delivered", "returned", "cancelled"):
+                    setattr(record, status, getattr(record, status) + count)
+        return found
+
+    async def buyers(self, q: str | None = None, limit: int = PAGE) -> list[Buyer]:
+        """The shop's buyers by mobile, the latest to order first (D132). `q` matches the
+        mobile or a name they ordered under."""
+        ws = self.workspace_id
+        query = (
+            select(
+                ShopOrder.phone,
+                func.max(ShopOrder.created_at),
+                func.sum(case((ShopOrder.status == "delivered", ShopOrder.total), else_=0)),
+            )
+            .where(ShopOrder.workspace_id == ws)
+            .group_by(ShopOrder.phone)
+        )
+        if q := (q or "").strip():
+            like = f"%{q}%"
+            query = query.where(or_(ShopOrder.phone.like(like), ShopOrder.name.ilike(like)))
+        async with self.sessions() as s:
+            top = (
+                await s.execute(query.order_by(func.max(ShopOrder.number).desc()).limit(limit))
+            ).all()
+            phones = {phone for phone, _, _ in top}
+            names = dict(
+                (
+                    await s.execute(
+                        select(ShopOrder.phone, ShopOrder.name)
+                        .where(ShopOrder.workspace_id == ws, ShopOrder.phone.in_(phones))
+                        .order_by(ShopOrder.number)  # the latest wins in the dict
+                    )
+                ).all()
+            )
+            chats = (
+                await s.execute(
+                    select(ShopOrder.phone, Conversation.channel, Conversation.id)
+                    .join(Conversation, Conversation.id == ShopOrder.conversation_id)
+                    .where(ShopOrder.workspace_id == ws, ShopOrder.phone.in_(phones))
+                    .distinct()
+                )
+            ).all()
+        records = await self.records(phones)
+        return [
+            Buyer(
+                **records[phone].model_dump(),
+                phone=phone,
+                name=names[phone],
+                spent=spent or 0,
+                last_order_at=last,
+                channels=sorted({channel for p, channel, _ in chats if p == phone}),
+                conversations=len({c for p, _, c in chats if p == phone}),
+            )
+            for phone, last, spent in top
+        ]
 
     async def orders_here(self) -> list[ShopOrder]:
         """The orders placed in this conversation, newest first (D55)."""
