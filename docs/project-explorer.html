@@ -527,7 +527,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ConversationService",
    "type": "service",
    "file": "src/heydesk/services/conversations.py",
-   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136).",
+   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137).",
    "inputs": "LiveAgent, text, channel, visitor, photo",
    "outputs": "RunningTurn (events) / Reply",
    "fn": "start_turn"

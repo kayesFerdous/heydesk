@@ -145,6 +145,25 @@ before the history is sent. The same goes for the lines Python adds for the busi
 came in (D47), and a restaurant's order is ready, on its way or cancelled, or a booking is
 confirmed or cancelled (D66). The model reads them as its own earlier replies.
 
+The same holds for the inbox's reply box (D136) and the owner's own messages from Business Suite
+(D135): added as the team's, read as the agent's earlier replies. A team member's notes and a
+chat's labels (D136) and the saved replies are never in the prompt or the history.
+
+## 6c. Helping the team (D137)
+
+*Summary*, *Ask about this chat* and *Draft a reply* run the chat's own prompt and history with
+**no tools**, and add one last user message that starts `[For the team, not the customer]`
+(`ASSIST` in `services/conversations.py`):
+
+| Kind | The line | Why |
+|---|---|---|
+| summary | 2 to 4 short lines: what the customer wants, what was agreed, ordered or booked, what's still open; no greeting | a moderator picking up a chat reads it in seconds |
+| draft | the next message the team could send, in the customer's language and letters and the business's tone; only the message; never promise what the chat and the business's details don't say | it goes in the reply box, and the team checks it; the same no-guessing as the agent's own rules |
+| ask | the team member's question (put in with `str.replace`), answered in one or two lines from the chat and the business's details, or "it doesn't say" | a question about the chat, not a new task |
+
+Nothing it writes is added to the chat or sent; the turn is traced and billed on the channel
+`assist`.
+
 ## 7. The desk's note
 
 The restaurant's: `# The order so far`, the cart with its total as Python added it up, so the

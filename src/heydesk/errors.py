@@ -162,3 +162,13 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_exception_handler(HTTPException, _http_error)
     app.add_exception_handler(Exception, _unexpected)
+
+
+class AssistUnavailable(HeyDeskError):
+    """The model didn't answer the team's request about a chat (D137): try again."""
+
+    status_code = 503
+    code = "assist_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("The AI couldn't answer just now. Please try again.")

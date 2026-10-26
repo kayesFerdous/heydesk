@@ -276,6 +276,25 @@ async def reply(
     return replied
 
 
+class AssistIn(BaseModel):
+    kind: Literal["summary", "ask", "draft"]
+    question: str = Field(default="", max_length=500)  # for `ask`
+
+
+class AssistOut(BaseModel):
+    text: str  # for the team; a draft goes in the reply box, and nothing is sent
+
+
+@router.post("/api/conversations/{conversation_id}/assist")
+async def assist(conversation_id: str, body: AssistIn, services: Svc, ws: Workspace) -> AssistOut:
+    """The model's help on a chat (D137): `summary`, `ask` (with `question`), or `draft` (the
+    next reply, for the team to check and send). No tools, nothing added or sent; traced and
+    billed as a turn. A 503 when the model didn't answer."""
+    agent = await services.agents.by_workspace(ws)
+    text = await services.conversations.assist(agent, conversation_id, body.kind, body.question)
+    return AssistOut(text=text)
+
+
 class TakeOverIn(BaseModel):
     on: bool  # true: the team has the chat and the agent is quiet; false: the agent's again
 

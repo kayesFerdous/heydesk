@@ -3,7 +3,9 @@ one and gives back their own; a hand-off can go to the least busy moderator."""
 
 from fastapi import FastAPI
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from heydesk.models import Turn
 from heydesk.ports.llm import ToolCall
 from tests.conftest import DEV_KEY, new_business
 from tests.integration.test_members import MOD, invite, join
@@ -143,3 +145,33 @@ async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: Asy
     assert "refund before" not in prompt and "vip" not in prompt  # never a note or a label
     other_business = await new_business(app)
     assert (await other_business.get(f"/api/conversations/{conv}/notes")).status_code == 404
+
+
+async def test_a_draft_is_shown_to_the_team_and_not_sent(app: FastAPI, client: AsyncClient) -> None:
+    """Summary, ask and draft: the model with no tools on the chat's history; the words come
+    back, nothing is added to the chat or sent, and each is a traced turn (D137)."""
+    services = app.state.services
+    llm = services.conversations.runtime.llm
+    llm.script = ["Hello!"]
+    conv = await chat(app, client)
+    before = len((await client.get(f"/api/conversations/{conv}")).json()["messages"])
+
+    llm.script = ["Ji, your table is booked for 8 pm."]
+    res = await client.post(f"/api/conversations/{conv}/assist", json={"kind": "draft"})
+    assert res.json() == {"text": "Ji, your table is booked for 8 pm."}
+    asked = llm.requests[-1]
+    assert asked.tools == [] and "Write the next message" in str(asked.messages[-1])
+
+    llm.script = ["They asked about a table."]
+    question = {"kind": "ask", "question": "What did {they} want?"}
+    assert (
+        await client.post(f"/api/conversations/{conv}/assist", json=question)
+    ).status_code == 200
+    assert "What did {they} want?" in str(llm.requests[-1].messages[-1])  # never str.format
+
+    after = (await client.get(f"/api/conversations/{conv}")).json()["messages"]
+    assert len(after) == before
+    assert (await client.get(f"/api/chat/{DEV_KEY}/{conv}/team")).json()["replies"] == []
+    async with services.conversations.sessions() as s:
+        channels = list(await s.scalars(select(Turn.channel).where(Turn.conversation_id == conv)))
+    assert channels.count("assist") == 2

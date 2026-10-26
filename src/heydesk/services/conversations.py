@@ -15,6 +15,7 @@ from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.desks.base import Store
 from heydesk.errors import (
+    AssistUnavailable,
     ConversationFull,
     Forbidden,
     HeyDeskError,
@@ -37,6 +38,27 @@ from heydesk.services.visitors import VisitorService
 from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
+
+# What the team asks the model about a chat (D137): the last message of a turn with no tools.
+# A question is the team's words, put in with str.replace, never str.format
+ASSIST = {
+    "summary": (
+        "[For the team, not the customer] Sum up this chat in 2 to 4 short lines: what the "
+        "customer wants, what was agreed, ordered or booked, and what is still open. No "
+        "greeting."
+    ),
+    "draft": (
+        "[For the team, not the customer] Write the next message the team could send this "
+        "customer, in the customer's language and letters and the business's tone. Only the "
+        "message: the team checks it before sending. Never promise what the chat and the "
+        "business's details don't say."
+    ),
+    "ask": (
+        "[For the team, not the customer] A team member asks about this chat: {question}\n"
+        "Answer in one or two lines from the chat and the business's details; if they don't "
+        "say, say so."
+    ),
+}
 
 MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed (I3)
 OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs (I1)
@@ -485,6 +507,55 @@ class ConversationService:
         await self.team.to_visitor(conv, text.strip())
         log.info("team replied", extra={"conversation_id": conv.id})
         return conv
+
+    async def assist(
+        self, agent: LiveAgent, conversation_id: str, kind: str, question: str = ""
+    ) -> str:
+        """The model's help for the team on a chat (D137): a summary, an answer about it, or a
+        draft of the next reply. The chat's own prompt and history, no tools, and one line of
+        what's wanted; the words come back to the team and nothing is added to the chat or
+        sent. Traced and billed as a turn, on the channel "assist"."""
+        ws = agent.workspace_id
+        async with self.sessions() as s:
+            conv = await self._get_by_id(s, ws, conversation_id)
+        desk, config = agent.desk, agent.config
+        store = desk.store(self.sessions, ws, self.now, conversation_id=conv.id)
+        asked = ASSIST[kind].replace("{question}", " ".join(question.split())[:500])
+        turn = TurnInput(
+            system=build_system_prompt(
+                config,
+                await desk.prompt(config, store),
+                conv.channel,
+                self.now(),
+                agent.documents,
+                self.settings.VOICE_LANGUAGE,
+            ),
+            tools=[],  # it only writes words: nothing is looked up, saved or sent
+            model=self.settings.MODEL,
+            history=conv.messages,
+            user_text=asked,
+            channel="assist",
+            agent=config,
+            store=store,
+            now=self.now(),
+            state=conv.state,
+        )
+        parts: list[str] = []
+        ended = None
+        async with aclosing(run_turn(turn, self.runtime)) as events:
+            async for event in events:
+                if isinstance(event, Token):
+                    parts.append(event.text)
+                elif isinstance(event, TurnEnded):
+                    ended = event
+        if ended is not None:
+            async with self.sessions() as s, s.begin():
+                s.add(self._turn(conv, ended))
+        text = "".join(parts).strip()
+        if ended is None or ended.handed_off or not text:
+            raise AssistUnavailable()
+        log.info("assist", extra={"conversation_id": conv.id, "kind": kind})
+        return text
 
     async def take_over(self, ws: str, conversation_id: str, on: bool) -> Conversation:
         """The team takes the chat, and the agent stays quiet in it, or gives it back (D135):

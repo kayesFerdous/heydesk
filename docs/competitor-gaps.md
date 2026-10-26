@@ -143,11 +143,12 @@ Keep these in the pitch.
   - *Catch:* Messenger allows almost nothing outside the 24-hour window without Meta's paid
     marketing messages, and WhatsApp needs paid templates. Telegram is free. Build it for
     Telegram first, or skip it.
-- [ ] **G14 AI draft replies for moderators** · S–M
+- [x] **G14 AI draft replies for moderators** · S–M
   - *Who has it:* ARA.
   - *Why:* when a moderator takes a chat over, a suggested reply saves typing.
   - *Smallest build:* a button in the conversation that runs the model with no tools and shows
     the text. Nothing is sent until the moderator sends it.
+  - 26 Oct, D137: built with G36 (day R11).
 - [ ] **G15 Typing indicator and answering hours** · S
   - *Who has it:* Sellzy (typing indicator, natural delays, always-on or set hours).
   - *Smallest build:*
@@ -276,9 +277,10 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 - [x] **G35 The buyer beside the chat** · M (= G17)
   - The chat screen's right side: their orders, bookings, notes. Built on G17's list.
   - 26 Oct, D136: built (day R10): a shop's buyer record, what the chat took, labels, notes.
-- [ ] **G36 AI help for the moderator** · S–M (G14, bigger)
+- [x] **G36 AI help for the moderator** · S–M (G14, bigger)
   - Three buttons on a chat: *Summary*, *Ask about this chat*, *Draft a reply*. The model with
     no tools; nothing is sent until the moderator sends it.
+  - 26 Oct, D137: built (day R11).
 - [ ] **G37 Complaints become tickets** · M (G10, bigger)
   - `flag_complaint(reason)` hands off and opens a ticket: who has it, open/solved, how old.
     One table, one list screen.
