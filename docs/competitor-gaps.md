@@ -328,17 +328,19 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 
 ### Then: teaching the agent
 
-- [ ] **G44 Questions it couldn't answer** · S
+- [x] **G44 Questions it couldn't answer** · S
   - When `search_knowledge` finds nothing or the turn hands off for "don't know", save the
     question. A list grouped by likeness with a count, and a *Teach it* box that adds a
     knowledge entry.
+  - 26 Oct, D143: built (day R17); grouped by word likeness, no model.
 - [ ] **G45 Change it in plain words, try it, then save** · M
   - The owner writes "say the delivery price before the total". The model rewrites the agent's
     editable prompt section; the owner sees a test chat with the new version, then *Save* or
     *Undo*. Keep the last few versions on the agent (this bends D15's "no versions", so it needs
     a decision).
-- [ ] **G46 Practice mode** · S
+- [x] **G46 Practice mode** · S
   - A new agent answers only the owner's own test accounts (listed ids) until they tap *Go live*.
+  - 26 Oct, D143: built (day R17), on the messaging apps.
 - [ ] **G4** (owner's dashboard) goes here, plus: AI-handled vs handed-off, and where each order
   came from (chat, product page, team).
 

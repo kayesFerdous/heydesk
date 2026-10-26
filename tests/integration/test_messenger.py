@@ -453,3 +453,24 @@ async def test_a_comment_left_unanswered_gets_one_more_reply(
     await channels.nudge_comments()
     await channels.nudge_comments()
     assert fake.public[1:] == [("c1", "We sent you a message in Messenger: check your inbox 📩")]
+
+
+async def test_practice_mode_answers_only_the_owners_test_accounts(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """A new agent starts in practice mode; on Messenger a stranger gets no answer (their
+    message waits for the team) until the chat is marked as a tester, or the owner goes live
+    (D143)."""
+    other = await new_business(app)
+    made = await other.post("/api/agent", json={"kind": "shop"})
+    assert made.json()["config"]["practice"] is True
+
+    await client.patch("/api/agent", json={"practice": True})
+    await connect(client)
+    await post(client, message("hi"))
+    assert sent(app) == []  # practising: a stranger isn't answered
+    [conv] = (await client.get("/api/conversations")).json()
+    testers = await client.post(f"/api/conversations/{conv['id']}/tester")
+    assert testers.json() == {"testers": [f"messenger:{PSID}"]}
+    await post(client, message("again"))
+    assert sent(app) == [(PSID, "(fake model) You said: again")]

@@ -3148,19 +3148,25 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Pass the conversation to a person.",
    "writes": false,
    "confirm": null,
-   "inputs": [],
+   "inputs": [
+    [
+     "unanswered",
+     "str; optional, their question when it's handed off for not knowing (D143)"
+    ]
+   ],
    "outputs": [
     "{message, phone, email}",
     "handoff=True → HandOff card"
    ],
    "effects": [
     "conversation → needs_human",
-    "owner alert 🙋 with the last 4 lines"
+    "owner alert 🙋 with the last 4 lines",
+    "unanswered → a missed question for Teach it (D143)"
    ],
    "label_web": "Getting someone from the team…",
    "filler": "Sure, one moment.",
    "timeout": 5.0,
-   "description": "Pass the conversation to a person on the team: when the visitor asks for a person, or you can't help. Takes no arguments. Then tell the visitor the message it returns."
+   "description": "Pass the conversation to a person on the team: when the visitor asks for a person, or you can't help. If it's because you don't know the answer, pass their question as `unanswered`. Then tell the visitor the message it returns."
   },
   {
    "id": "t-flag_complaint",
@@ -3295,7 +3301,8 @@ tr.hl td { background: var(--accent-soft); }
     "nothing → say you're not sure"
    ],
    "effects": [
-    "none (Gemini + Qdrant reads)"
+    "none (Gemini + Qdrant reads)",
+    "nothing found → a missed question for Teach it (D143)"
    ],
    "label_web": "Checking our documents…",
    "filler": "Let me check that.",

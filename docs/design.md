@@ -252,7 +252,7 @@ merged into the conversation's `state`, saved with the turn.
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `change_order` (the mobile alone isn't enough: the code, or the order from this chat, or this buyer's last); only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
 | `show_photos` | shop | no | `products`: up to 10 codes. Sends a `photos` event with each one's card (name, price, first photo or none, first video or none), and says which were shown; a product with no photo is named in `no_photo` so the model describes it, and one with a video in `video`. Not on a call: there it says photos can't be shown here. Each channel shows the cards its way (D125), each with an Order button (D99) (D57) |
-| `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone |
+| `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone. Optional `unanswered`: their question, when it hands off for not knowing; saved as a missed question (D143) |
 | `flag_complaint` | every desk | no | `reason`. A hand-off (D43) that opens a ticket for the team, one per chat while open, and alerts "😠 Complaint C-101: reason" once; no yes is asked, as it's the team's to-do (D138) |
 | `take_lead` | every desk | **yes** | `when` (their words with the clock time, read by `parse.day_and_time`: the next 14 days, inside the hours), `phone`, optional `note` and `name`. Read back "We call you on Fri 2 Oct, 5:00 pm at …"; after the yes a lead `L-101` with `call_at` in UTC, and an alert "📞 Call back L-101". The team taps how it went (D139) |
 | `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
@@ -297,6 +297,21 @@ ask: the agent calls search_knowledge(question) ─► Gemini embeds the questio
 - **Limits.** 30 documents per business, 300,000 characters (about 100 pages) each, files up to 10 MB.
   Scanned PDFs have no text layer: they're refused with a reason.
 - `uv run heydesk reindex-knowledge` rebuilds every chunk from the saved text (a new collection or model).
+- **What it couldn't answer (D143).** `search_knowledge` finding nothing, or `handoff_to_human`
+  with `unanswered`, saves the question (`missed_questions`). `GET /api/agent/missed` groups the
+  untaught ones by likeness (`group_alike`: their words, compared with `difflib`, 0.75 alike;
+  no model, so no cost), the most asked first. *Teach it* (`POST /api/agent/missed/teach {ids,
+  question, answer}`) adds "question, then answer" as a knowledge entry and takes the group off
+  the list, so the next time `search_knowledge` finds it (a business with no documents gets the
+  tool from its first).
+
+**Practice mode (D143).** `practice` and `testers` on the config. A business's new agent
+(`POST /api/agent`) starts practising: on Telegram, Messenger and WhatsApp it answers only the
+visitors in `testers` (`messenger:<psid>`), and a stranger's message waits for the team, as
+with AI off (I2); comments on posts are skipped too. The web chat and calls answer everyone, as
+that's where the owner tries it. `POST /api/conversations/{id}/tester` (*This is me*) adds a
+chat's visitor and gives it back to the agent; *Go live* is `PATCH /api/agent {practice:
+false}`. The dev agents and agents made before don't practise.
 
 ### Photos (D57)
 
@@ -427,6 +442,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `leads` | the shared columns, call_at (UTC), note (what they want), why (a lost one's reason, lower case). Code `L-101`; open → sold / not_now / lost, and back to open (D139) |
 | `post_comments` | post_id, commenter (their id in the comment), comment_id (the one answered), conversation_id (the chat it opened), nudged (the one more reply went, D142); unique per business, post and commenter: one public and one private reply each (D141) |
 | `page_posts` | post_id (unique per business), text, products JSON (codes, in order), tagged (the owner set them): what a post is about, found at its first comment and used by every later one (D142) |
+| `missed_questions` | conversation_id, question (the model's few words), created_at, taught_at (empty until *Teach it*) (D143) |
 | `notes` | conversation_id, author (the team member's email), text, created_at: the team's notes on a chat, insert only, never in the transcript (D136) |
 | `visitors` | key (`web:<the page's token>`, `telegram:<chat id>`; unique per business), day (the business's local day), turns (on that day), strikes (off-topic turns in a row), blocked_why (`team`, `flooding` or `off_topic`; empty: not blocked), blocked_until (empty while blocked: until someone unblocks them), blocked_by (the email of who pressed Block), told_blocked (the one notice went), ai_off (the team answers them by hand) (D51, D127), notes (`{about: note}`: what the agent remembers about them, D124) |
 | `channels` | agent_id, kind (`telegram`/`messenger`/`whatsapp`), token (a bot's, a Page access token, or a system user's token; encrypted, D74), secret (Telegram's; empty on Messenger and WhatsApp), address (the bot's username, the Page's id, or the number's id), owner_chat_id (where alerts go, D43; Telegram only). One per agent and kind (D42, D60, D103) |

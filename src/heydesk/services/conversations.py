@@ -134,6 +134,8 @@ class ConversationService:
         if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
         runs_ai = await self.visitors.let_in(agent, visitor)  # a 429 when they're blocked (I2)
+        # practice mode (D143): a stranger's message waits for the team, like AI off
+        runs_ai = runs_ai and not agent.config.practicing(channel, visitor)
         # Read before anything is saved, so a file that isn't a photo changes nothing
         saved = await self.photos.save(agent.workspace_id, "chat", photo) if photo else None
         conv = None

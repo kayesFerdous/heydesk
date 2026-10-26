@@ -59,6 +59,17 @@ class AgentConfig(BaseModel):
         default=[], max_length=50
     )
 
+    # Practice mode (D143): on Telegram, Messenger and WhatsApp the agent answers only these
+    # visitors ("messenger:<psid>") until the owner goes live; the web chat answers everyone.
+    # A new business's agent starts in it
+    practice: bool = False
+    testers: list[Annotated[str, Field(max_length=100)]] = Field(default=[], max_length=20)
+
+    def practicing(self, channel: str, visitor: str) -> bool:
+        """Whether this visitor gets no answer: practice mode, a messaging app, not a tester."""
+        apps = ("telegram", "messenger", "whatsapp")
+        return self.practice and channel in apps and visitor not in self.testers
+
     def fill(self, text: str) -> str:
         """Customer text with `{business_name}` and friends filled in."""
         for name in PLACEHOLDERS:

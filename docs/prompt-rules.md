@@ -78,6 +78,9 @@ for a plain question or a change; say sorry once, then the message it returns. I
 `handoff_to_human` and opens the team's ticket. *Why:* an angry buyer left with the bot becomes a
 bad review; the model judges the mood, and Python keeps one ticket per chat.
 
+`handoff_to_human` takes an optional `unanswered` (D143): their question, when it hands off for
+not knowing the answer, told only in its description. *Why:* the owner teaches what was missed.
+
 `take_lead` (D139), shared too, is told only in its description: when the visitor asks to be
 called back at a time, with the day and clock time and a phone; a message with no time is still
 `take_message`. It reads back like any writing tool. *Why:* Python reads the time, so the model

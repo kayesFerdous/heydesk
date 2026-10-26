@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Svc, Workspace
 from heydesk.models import Document
+from heydesk.runtime.text import group_alike
 from heydesk.services.extract import extract_text, kind_of
 
 router = APIRouter(tags=["knowledge"])
@@ -77,3 +78,44 @@ async def read_document(document_id: str, services: Svc, ws: Workspace) -> Docum
 @router.delete("/api/agent/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(document_id: str, services: Svc, ws: Workspace) -> None:
     await services.knowledge.delete(ws, document_id)
+
+
+class MissedOut(BaseModel):
+    question: str  # the first one asked of the group
+    count: int  # how many times it was asked alike
+    ids: list[str]  # all of them, for Teach it
+    last_asked: datetime
+
+
+class TeachIn(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)  # the group's
+    question: str = Field(min_length=1, max_length=200)
+    answer: str = Field(min_length=1, max_length=5000)
+
+
+@router.get("/api/agent/missed")
+async def missed(services: Svc, ws: Workspace) -> list[MissedOut]:
+    """What the agent couldn't answer, grouped by likeness, the most asked first (D143)."""
+    store = await services.agents.store(ws)
+    rows = await store.missed_list()
+    return [
+        MissedOut(
+            question=rows[group[0]].question,
+            count=len(group),
+            ids=[rows[i].id for i in group],
+            last_asked=max(rows[i].created_at for i in group),
+        )
+        for group in group_alike([r.question for r in rows])
+    ]
+
+
+@router.post("/api/agent/missed/teach", status_code=status.HTTP_201_CREATED)
+async def teach(body: TeachIn, services: Svc, ws: Workspace) -> DocumentOut:
+    """*Teach it*: the answer becomes a knowledge entry, so `search_knowledge` finds it next
+    time, and the group leaves the list (D143)."""
+    agent = await services.agents.get(ws)
+    text = f"{body.question}\n\n{body.answer}"
+    document = await services.knowledge.add(ws, agent.id, body.question, text)
+    store = await services.agents.store(ws)
+    await store.taught(body.ids)
+    return DocumentOut.model_validate(document)

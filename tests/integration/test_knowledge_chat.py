@@ -80,3 +80,30 @@ async def test_deleting_the_last_document_takes_the_tool_away(
     await client.delete(f"/api/agent/documents/{doc['id']}")
 
     assert (await app.state.services.agents.by_key(DEV_KEY)).documents == []
+
+
+async def test_a_missed_question_is_listed_taught_and_found_next_time(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """A hand-off for a question it didn't know is saved; two asked alike are one row with a
+    count; *Teach it* makes a knowledge entry that the search finds (D143)."""
+    llm = app.state.services.conversations.runtime.llm
+    for asked in ("Do you cater weddings?", "do you cater a wedding"):
+        llm.script = [
+            ToolCall("c1", "handoff_to_human", {"unanswered": asked}),
+            "Let me pass you to the team.",
+        ]
+        await chat(app, client, DEV_KEY, asked)
+        app.state.services.conversations.now.advance(minutes=1)
+    [group] = (await client.get("/api/agent/missed")).json()
+    assert (group["question"], group["count"]) == ("Do you cater weddings?", 2)
+
+    taught = await client.post(
+        "/api/agent/missed/teach",
+        json={"ids": group["ids"], "question": group["question"], "answer": "Yes, up to 200."},
+    )
+    assert taught.status_code == 201
+    assert (await client.get("/api/agent/missed")).json() == []
+    llm.script = [ToolCall("c1", "search_knowledge", {"question": "cater weddings"}), "Yes!"]
+    await chat(app, client, DEV_KEY, "weddings?")
+    assert "up to 200" in llm.requests[-1].messages[-1]["content"]

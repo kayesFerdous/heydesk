@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 LETTERS = {"L", "M", "N"}  # letters, combining marks (Bengali vowel signs), numbers
 
@@ -89,3 +90,23 @@ def _tail(text: str, overlap: int) -> str:
         return ""
     tail = text[-overlap:]
     return tail[tail.find(" ") + 1 :] if " " in tail else ""
+
+
+ALIKE = 0.75  # how close two questions' words are to count as one (D143)
+
+
+def group_alike(questions: list[str]) -> list[list[int]]:
+    """The questions in groups of ones asked alike (D143), each a list of their indexes, the
+    biggest group first. Each joins the first group whose first question is close enough.
+    ponytail: word likeness, not meaning; an embedding would group "delivery charge?" with
+    "how much to send?", if the owner needs it."""
+    groups: list[tuple[str, list[int]]] = []
+    for i, question in enumerate(questions):
+        said = " ".join(words(question))
+        for first, members in groups:
+            if SequenceMatcher(None, first, said).ratio() >= ALIKE:
+                members.append(i)
+                break
+        else:
+            groups.append((said, [i]))
+    return sorted((members for _, members in groups), key=len, reverse=True)

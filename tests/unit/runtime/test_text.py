@@ -1,4 +1,4 @@
-from heydesk.runtime.text import chunk_text, words
+from heydesk.runtime.text import chunk_text, group_alike, words
 
 
 def test_words_are_lowercase_in_any_script_and_marks_stay_with_their_letters() -> None:
@@ -71,3 +71,8 @@ def test_each_heading_starts_its_own_chunk_even_when_both_would_fit_in_one() -> 
     assert chunk_text("#1 priority is you.\n\nSecond line.") == [
         "#1 priority is you.\n\nSecond line."
     ]
+
+
+def test_questions_asked_alike_are_one_group_the_biggest_first() -> None:
+    asked = ["Do you deliver to Sylhet?", "parking?", "do you deliver to sylhet", "Parking ache?"]
+    assert group_alike(asked) == [[0, 2], [1], [3]]

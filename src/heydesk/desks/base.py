@@ -21,6 +21,7 @@ from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
 from heydesk.models import (
     Conversation,
     Lead,
+    MissedQuestion,
     PaymentAccount,
     SheetLink,
     TeamMessage,
@@ -132,6 +133,46 @@ class Store:
             TeamMessage, name=m.name, phone=m.phone, body=m.body, best_time=m.best_time
         )
         return saved.code
+
+    async def missed(self, question: str) -> None:
+        """A question it couldn't answer (D143), for the owner to teach."""
+        question = " ".join(question.split())[:300]
+        if not question:
+            return
+        async with self.sessions() as s, s.begin():
+            s.add(
+                MissedQuestion(
+                    workspace_id=self.workspace_id,
+                    conversation_id=self.conversation_id,
+                    question=question,
+                    created_at=self.now(),
+                )
+            )
+
+    async def missed_list(self) -> list[MissedQuestion]:
+        """The questions not taught yet, oldest first, the latest 500."""
+        async with self.sessions() as s:
+            rows = await s.scalars(
+                select(MissedQuestion)
+                .where(
+                    MissedQuestion.workspace_id == self.workspace_id,
+                    MissedQuestion.taught_at.is_(None),
+                )
+                .order_by(MissedQuestion.created_at.desc())
+                .limit(500)
+            )
+            return list(reversed(rows.all()))
+
+    async def taught(self, ids: list[str]) -> None:
+        """These questions have an answer now: off the list (D143)."""
+        async with self.sessions() as s, s.begin():
+            rows = await s.scalars(
+                select(MissedQuestion).where(
+                    MissedQuestion.workspace_id == self.workspace_id, MissedQuestion.id.in_(ids)
+                )
+            )
+            for row in rows:
+                row.taught_at = self.now()
 
     async def save_lead(self, lead: Confirmed[NewLead]) -> str:
         """Saves the call back, open until the team taps how it went, and returns "L-101"."""

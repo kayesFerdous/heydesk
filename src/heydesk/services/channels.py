@@ -372,6 +372,9 @@ class ChannelService:
         post_id, comment_id = str(change.get("post_id") or ""), str(change.get("comment_id"))
         if not commenter or commenter == channel.address or not post_id:
             return
+        agent = await self.agents.by_id(channel.agent_id)
+        if agent.config.practicing(MESSENGER, f"{MESSENGER}:{commenter}"):  # (D143)
+            return
         try:
             async with self.sessions() as s, s.begin():
                 first = PostComment(
@@ -385,7 +388,6 @@ class ChannelService:
         except IntegrityError:  # answered on this post already: the chat has them now
             return
         try:
-            agent = await self.agents.by_id(channel.agent_id)
             post = await self.page_post(channel, post_id)
             products = await self._post_products(channel.workspace_id, agent.config, post)
             answer, cards, public = self._about_post(agent, products)

@@ -68,10 +68,16 @@ def awaiting_payment(
 
 
 class HandoffInput(BaseModel):
-    """No arguments."""
+    unanswered: str = Field(
+        default="",
+        description="Only if you're passing it on because you don't know the answer: their "
+        "question, in a few words",
+    )
 
 
 async def handoff_to_human(ctx: ToolContext[Store], args: HandoffInput) -> ToolResult:
+    if args.unanswered.strip():  # for the owner to teach (D143)
+        await ctx.store.missed(args.unanswered)
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
     # The page shows these on a card after the reply; the conversation is marked needs_human
@@ -82,7 +88,8 @@ HANDOFF = Tool(
     name="handoff_to_human",
     description=(
         "Pass the conversation to a person on the team: when the visitor asks for a person, "
-        "or you can't help. Takes no arguments. Then tell the visitor the message it returns."
+        "or you can't help. If it's because you don't know the answer, pass their question as "
+        "`unanswered`. Then tell the visitor the message it returns."
     ),
     input_model=HandoffInput,
     run=handoff_to_human,
@@ -251,6 +258,7 @@ class SearchKnowledgeInput(BaseModel):
 async def search_knowledge(ctx: ToolContext[Store], args: SearchKnowledgeInput) -> ToolResult:
     found = await ctx.store.search_knowledge(args.question)
     if not found:
+        await ctx.store.missed(args.question)  # for the owner to teach (D143)
         return ToolResult(
             ok=True,
             data={
