@@ -37,7 +37,7 @@
 set -uo pipefail # not -e: the menu and the clean-up handle failures themselves
 cd "$(dirname "$0")/.."
 
-FRONTEND=${HEYDESK_FRONTEND:-../heydesk-frontend}
+FRONTEND=${HEYDESK_FRONTEND:-../heydesk-web}
 API_PORT=8000 # fixed: the frontend's dev server passes /api on to :8000
 WEB_PORT=8080
 LOGS=.logs
