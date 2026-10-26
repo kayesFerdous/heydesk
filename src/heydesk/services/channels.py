@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -32,7 +32,7 @@ from heydesk.errors import (
     UnreadablePhoto,
     VisitorSilenced,
 )
-from heydesk.models import Channel, PagePost, PostComment, Turn
+from heydesk.models import Channel, PagePost, PostComment, Turn, User
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -585,8 +585,13 @@ class ChannelService:
             if channel.kind == TELEGRAM and text and text.startswith("/start owner_"):  # D43
                 await self.team.link_owner(channel, chat_id, text.removeprefix("/start owner_"))
                 return
-            if chat_id == channel.owner_chat_id:  # the owner answering a visitor
-                await self.team.owner_wrote(channel, message)
+            if channel.kind == TELEGRAM and text and text.startswith("/start member_"):  # D148
+                await self.team.link_member(channel, chat_id, text.removeprefix("/start member_"))
+                return
+            if chat_id == channel.owner_chat_id or (
+                channel.kind == TELEGRAM and await self.team.is_team(channel, chat_id)
+            ):  # the owner or a moderator answering a visitor
+                await self.team.team_wrote(channel, chat_id, message)
                 return
             if text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 agent = await self.agents.by_id(channel.agent_id)
@@ -906,6 +911,10 @@ class ChannelService:
                 s.add(channel)
             channel.token, channel.secret, channel.address = token, secret, address
             channel.owner_chat_id = None  # a new bot: the owner links their chat with it again
+            if kind == TELEGRAM:  # and so does each moderator (D148)
+                await s.execute(
+                    update(User).where(User.workspace_id == ws).values(telegram_chat_id=None)
+                )
         return channel
 
     async def _of(self, ws: str, kind: str, missing: str) -> Channel:

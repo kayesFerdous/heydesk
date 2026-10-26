@@ -1,7 +1,8 @@
 """The team on Telegram (D43): alerts for the owner, and the owner answering visitors.
 
-The owner links their own chat with the business's bot once, through `owner_link`. Every
-alert ends with a `Ref:` line naming the conversation; the owner answers a visitor by
+The owner links their own chat with the business's bot once, through `owner_link`; a moderator
+links theirs through `member_link`, and then a chat they have alerts them, not the owner (D148).
+Every alert ends with a `Ref:` line naming the conversation; whoever got it answers a visitor by
 replying to it, and the agent stays quiet in that chat until they reply `/done`. Their words
 reach a Telegram, Messenger or WhatsApp visitor from the business's bot, Page or number (D60,
 D103).
@@ -17,7 +18,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.models import Channel, Conversation, Turn
+from heydesk.models import Channel, Conversation, TeamEvent, Turn, User
 from heydesk.ports.llm import LanguageModel, Message
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -50,6 +51,7 @@ TAKEN_OVER = (
     "your last reply."
 )
 GIVEN_BACK = "The agent is answering this chat again."
+TELEGRAM_REPLY = "Telegram reply"  # a team event's action: a reply to an alert (D150)
 
 
 def owner_code(channel: Channel) -> str:
@@ -62,8 +64,18 @@ def owner_link(channel: Channel) -> str:
     return f"https://t.me/{channel.address}?start=owner_{owner_code(channel)}"
 
 
-def handoff_alert(messages: list[Message]) -> str:
-    """ "Someone wants a person", with the last few lines so the owner knows what it's about."""
+def member_code(channel: Channel, user_id: str) -> str:
+    """For a moderator's link (D148): theirs alone, and connecting the bot again changes it."""
+    return hashlib.sha256(f"member:{channel.secret}:{user_id}".encode()).hexdigest()[:16]
+
+
+def member_link(channel: Channel, user_id: str) -> str:
+    """Opens the bot and sends `/start member_<user id><code>`, which links the member's chat."""
+    return f"https://t.me/{channel.address}?start=member_{user_id}{member_code(channel, user_id)}"
+
+
+def handoff_alert(messages: list[Message], title: str = "🙋 Someone wants a person") -> str:
+    """The title, with the last few lines so whoever gets it knows what it's about."""
     said = [
         m
         for m in messages
@@ -72,7 +84,7 @@ def handoff_alert(messages: list[Message]) -> str:
     lines = [
         f"{'Customer' if m['role'] == 'user' else 'Agent'}: {m['content'][:300]}" for m in said[-4:]
     ]
-    return "🙋 Someone wants a person\n\n" + "\n".join(lines)
+    return f"{title}\n\n" + "\n".join(lines)
 
 
 class TeamService:
@@ -93,12 +105,22 @@ class TeamService:
         self.now = now
 
     async def alert(self, conv: Conversation, text: str) -> None:
-        """Sends the owner an alert about `conv`, if they've linked their chat."""
+        """Sends an alert about `conv` to the team member who has it, if they've linked their
+        chat (D148); otherwise to the owner, if they have."""
         channel = await self._channel(conv.workspace_id)
-        if channel is None or channel.owner_chat_id is None:
+        if channel is None:
+            return
+        async with self.sessions() as s:
+            theirs = await s.scalar(
+                select(User.telegram_chat_id)
+                .join(Conversation, Conversation.assigned_to == User.id)
+                .where(Conversation.id == conv.id)
+            )
+        chat_id = theirs or channel.owner_chat_id
+        if chat_id is None:
             return
         how = HOW_TO_ANSWER.get(conv.channel, "")
-        await self.send(channel, channel.owner_chat_id, f"{text}\n\n{how}\nRef: {conv.id}")
+        await self.send(channel, chat_id, f"{text}\n\n{how}\nRef: {conv.id}")
 
     async def notify(self, ws: str, text: str) -> None:
         """Tells the owner something about the business, not a chat (a sheet that can't be
@@ -173,11 +195,33 @@ class TeamService:
         log.info("telegram owner linked", extra={"channel_id": channel.id})
         await self.send(channel, chat_id, LINKED)
 
-    async def owner_wrote(self, channel: Channel, message: dict[str, Any]) -> None:
-        """The owner replied to an alert: send their words to that visitor, or with `/done`
-        give the chat back to the agent; "." takes it over, or gives it back (D135). Their
-        words go in the transcript as the agent's."""
-        owner = str(channel.owner_chat_id)
+    async def link_member(self, channel: Channel, chat_id: str, payload: str) -> None:
+        """A moderator opened their link (D148): alerts about their chats come to this chat."""
+        user_id, code = payload[:32], payload[32:]
+        async with self.sessions() as s, s.begin():
+            user = await s.scalar(
+                select(User).where(User.id == user_id, User.workspace_id == channel.workspace_id)
+            )
+            if user is None or code != member_code(channel, user_id):
+                await self.send(channel, chat_id, OLD_LINK)
+                return
+            user.telegram_chat_id = chat_id
+        log.info("telegram member linked", extra={"channel_id": channel.id})
+        await self.send(channel, chat_id, LINKED)
+
+    async def is_team(self, channel: Channel, chat_id: str) -> bool:
+        """The owner's chat, or a moderator's linked one (D148)."""
+        if chat_id == channel.owner_chat_id:
+            return True
+        async with self.sessions() as s:
+            return await s.scalar(self._member(channel, chat_id)) is not None
+
+    async def team_wrote(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
+        """Someone on the team replied to an alert: send their words to that visitor, or with
+        `/done` give the chat back to the agent; "." takes it over, or gives it back (D135).
+        Their words go in the transcript as the agent's, and a reply is in the team's activity
+        under their name (D150)."""
+        owner = chat_id  # who answers: the owner, or a moderator (D148)
         text = (message.get("text") or "").strip()
         quoted = (message.get("reply_to_message") or {}).get("text") or ""
         found = REF.search(quoted)
@@ -206,6 +250,24 @@ class TeamService:
                 answer = "" if conv.status == HUMAN else TAKEN_OVER
                 conv.status, to_visitor = HUMAN, True
                 conv.taken_over_at = self.now()  # quiet for 30 minutes, it's given back (D135)
+                who = await s.scalar(
+                    self._member(channel, chat_id)
+                    if chat_id != channel.owner_chat_id
+                    else select(User).where(
+                        User.workspace_id == channel.workspace_id, User.role == "owner"
+                    )
+                )
+                if who is not None:
+                    s.add(
+                        TeamEvent(
+                            workspace_id=channel.workspace_id,
+                            actor_id=who.id,
+                            actor_email=who.email,
+                            action=TELEGRAM_REPLY,
+                            target=f"conversation_id={conv.id}",
+                            at=self.now(),
+                        )
+                    )
             conv.updated_at = self.now()
         if to_visitor:
             await self.to_visitor(conv, text)
@@ -223,6 +285,23 @@ class TeamService:
         channel = await self._channel(conv.workspace_id, conv.channel)
         if channel is not None:
             await self.send(channel, str(conv.contact), text, choices)
+
+    async def link_of(self, ws: str, user_id: str) -> tuple[str | None, bool]:
+        """A team member's own alerts link and whether they've opened it (D148); no link without
+        a Telegram bot."""
+        channel = await self._channel(ws)
+        async with self.sessions() as s:
+            user = await s.get_one(User, user_id)
+        if channel is None:
+            return None, False
+        if user.role == "owner":  # the owner's alerts are the bot's own link (D43)
+            return owner_link(channel), channel.owner_chat_id is not None
+        return member_link(channel, user_id), user.telegram_chat_id is not None
+
+    def _member(self, channel: Channel, chat_id: str) -> Any:
+        return select(User).where(
+            User.workspace_id == channel.workspace_id, User.telegram_chat_id == chat_id
+        )
 
     async def _channel(self, ws: str, kind: str = TELEGRAM) -> Channel | None:
         """Alerts always go to Telegram; a visitor's channel can be any app."""

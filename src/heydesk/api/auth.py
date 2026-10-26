@@ -7,6 +7,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from heydesk.api.deps import ClientIp, Svc, User
+from heydesk.errors import NotFound
 
 router = APIRouter(tags=["auth"])
 
@@ -63,6 +64,14 @@ class MeOut(BaseModel):
     email: str
     role: Role  # a moderator runs the inbox, not settings
     business: BusinessOut | None  # an owner's or moderator's business; None for an admin
+    available: bool  # new hand-offs may go to them (D149)
+    # opening it sends them alerts about their chats on Telegram; None without a bot (D148)
+    telegram_link: str | None = None
+    telegram_linked: bool = False
+
+
+class AvailableIn(BaseModel):
+    available: bool
 
 
 @router.post("/api/auth/signup", status_code=status.HTTP_204_NO_CONTENT)
@@ -123,7 +132,13 @@ async def change_password(body: PasswordIn, principal: User, services: Svc, ip: 
 @router.get("/api/auth/me")
 async def me(principal: User, services: Svc) -> MeOut:
     user, business = await services.users.me(principal)
+    link, linked = (None, False)
+    if user.workspace_id:
+        link, linked = await services.team.link_of(user.workspace_id, user.id)
     return MeOut(
+        available=user.available,
+        telegram_link=link,
+        telegram_linked=linked,
         id=user.id,
         email=user.email,
         role=ROLES[user.role],
@@ -135,3 +150,11 @@ async def me(principal: User, services: Svc) -> MeOut:
         if business
         else None,
     )
+
+
+@router.put("/api/auth/me/available", status_code=status.HTTP_204_NO_CONTENT)
+async def set_available(body: AvailableIn, principal: User, services: Svc) -> None:
+    """Switches yourself on or off for new hand-offs (D149)."""
+    if principal.workspace_id is None:
+        raise NotFound("Only a business's team takes hand-offs.")
+    await services.members.set_available(principal.workspace_id, principal.user_id, body.available)

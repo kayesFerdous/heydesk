@@ -1,10 +1,10 @@
 """The business's team (D97): the owner adds and removes moderators, and sees what the team
 did. Owners only: a moderator gets a 403 here (`deps.owners_only`)."""
 
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timedelta
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from pydantic import BaseModel
 
 from heydesk.api.auth import EMAIL
@@ -26,6 +26,24 @@ class MemberOut(BaseModel):
     invited_at: datetime
     joined_at: datetime | None
     open_chats: int = 0  # waiting for a person, or with them: what a hand-off goes by (I1)
+    available: bool = True  # new hand-offs may go to them (D149)
+    telegram_linked: bool = False  # a moderator's alerts reach their own Telegram (D148)
+
+
+class AvailableIn(BaseModel):
+    available: bool
+
+
+class MemberStatsOut(BaseModel):
+    """What one member did in the last `days` (D150)."""
+
+    id: str
+    email: str
+    open_chats: int  # now
+    replies: int  # to visitors, from the inbox or Telegram
+    chats: int  # the chats they replied in
+    tickets_solved: int  # they marked solved, and still are
+    leads_sold: int  # they marked sold, and still are
 
 
 class EventOut(BaseModel):
@@ -44,6 +62,8 @@ def member(user: UserRow, open_chats: int = 0) -> MemberOut:
         invited_at=user.created_at,
         joined_at=user.email_verified_at,
         open_chats=open_chats,
+        available=user.available,
+        telegram_linked=user.telegram_chat_id is not None,
     )
 
 
@@ -77,6 +97,30 @@ async def resend_invite(
 async def remove(user_id: str, ws: Workspace, services: Svc) -> None:
     """Out at once: their login stops working on the next request. An owner can't be removed."""
     await services.members.remove(ws, user_id)
+
+
+@router.put("/members/{user_id}/available", status_code=status.HTTP_204_NO_CONTENT)
+async def set_available(user_id: str, body: AvailableIn, ws: Workspace, services: Svc) -> None:
+    """The owner switches anyone on or off for new hand-offs (D149); a moderator switches
+    themself at `/api/auth/me/available`."""
+    await services.members.set_available(ws, user_id, body.available)
+
+
+@router.get("/stats")
+async def stats(
+    ws: Workspace, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
+) -> list[MemberStatsOut]:
+    """Each member's work in the last `days` (D150), the owners first."""
+    since = services.members.now() - timedelta(days=days)
+    done = await services.members.stats(ws, since)
+    open_chats = await services.conversations.open_chats(ws)
+    none = {"replies": 0, "chats": 0, "tickets_solved": 0, "leads_sold": 0}
+    return [
+        MemberStatsOut(
+            id=u.id, email=u.email, open_chats=open_chats.get(u.id, 0), **done.get(u.id, none)
+        )
+        for u in await services.members.members(ws)
+    ]
 
 
 @router.get("/activity")

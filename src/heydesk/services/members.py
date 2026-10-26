@@ -13,14 +13,19 @@ who, the route and the ids in its path. Never anyone's words.
 import secrets
 from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import distinct, func, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, NotFound
-from heydesk.models import Conversation, TeamEvent, User, Workspace
+from heydesk.models import Conversation, Lead, TeamEvent, Ticket, User, Workspace
 from heydesk.services.billing import PLANS, count_moderators
+from heydesk.services.team import TELEGRAM_REPLY
 from heydesk.services.users import Principal, UserService
+
+# a reply to a visitor, from the inbox or Telegram (D150)
+REPLIES = ("POST /api/conversations/{conversation_id}/reply", TELEGRAM_REPLY)
 
 
 class MemberService:
@@ -84,6 +89,58 @@ class MemberService:
                 .where(Conversation.workspace_id == ws, Conversation.assigned_to == user_id)
                 .values(assigned_to=None)
             )
+
+    async def set_available(self, ws: str, user_id: str, available: bool) -> None:
+        """Whether new hand-offs may go to them (D149)."""
+        async with self.sessions() as s, s.begin():
+            user = await s.scalar(select(User).where(User.id == user_id, User.workspace_id == ws))
+            if user is None:
+                raise NotFound("There's no such member on your team.")
+            user.available = available
+
+    async def stats(self, ws: str, since: datetime) -> dict[str, dict[str, int]]:
+        """Each member's work since `since`, from the activity (D150): replies to visitors, the
+        chats they replied in, and the tickets they marked solved and leads they marked sold
+        (still so). `{user_id: {...}}`; a member who did nothing isn't in it."""
+
+        def tapped(model: type[Ticket] | type[Lead], key: str, status: str) -> Any:
+            return (
+                select(TeamEvent.actor_id, func.count(distinct(model.id)))
+                .join(model, TeamEvent.target == literal(f"{key}=") + model.id)
+                .where(
+                    TeamEvent.workspace_id == ws,
+                    TeamEvent.at >= since,
+                    TeamEvent.action.startswith("PATCH "),
+                    model.workspace_id == ws,
+                    model.status == status,
+                )
+                .group_by(TeamEvent.actor_id)
+            )
+
+        replies = (
+            select(TeamEvent.actor_id, func.count(), func.count(distinct(TeamEvent.target)))
+            .where(
+                TeamEvent.workspace_id == ws,
+                TeamEvent.at >= since,
+                TeamEvent.action.in_(REPLIES),
+            )
+            .group_by(TeamEvent.actor_id)
+        )
+        out: dict[str, dict[str, int]] = {}
+
+        def add(user_id: str, **counts: int) -> None:
+            out.setdefault(
+                user_id, {"replies": 0, "chats": 0, "tickets_solved": 0, "leads_sold": 0}
+            ).update(counts)
+
+        async with self.sessions() as s:
+            for user_id, n, chats in (await s.execute(replies)).all():
+                add(user_id, replies=n, chats=chats)
+            for user_id, n in (await s.execute(tapped(Ticket, "ticket_id", "solved"))).all():
+                add(user_id, tickets_solved=n)
+            for user_id, n in (await s.execute(tapped(Lead, "lead_id", "sold"))).all():
+                add(user_id, leads_sold=n)
+        return out
 
     async def record(self, principal: Principal, action: str, target: str) -> None:
         assert principal.workspace_id is not None

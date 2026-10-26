@@ -26,4 +26,7 @@ class User(Base):
     # Set when they type the code we emailed them (D93): an owner's signup code, or the code
     # an invited moderator sets their password with (D97). Until then they can't log in
     email_verified_at: Mapped[datetime | None]
+    # their own chat with the business's Telegram bot: alerts about their chats go there (D148)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(40), default=None)
+    available: Mapped[bool] = mapped_column(default=True)  # new hand-offs may go to them (D149)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

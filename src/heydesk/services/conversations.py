@@ -410,6 +410,8 @@ class ConversationService:
                     raise NotFound("There's no such member on your team.")
             conv.assigned_to = user_id
         log.info("assigned", extra={"conversation_id": conv.id})
+        if user_id is not None and user_id != by.user_id:  # given to them: tell them (D148)
+            await self.team.alert(conv, handoff_alert(conv.messages, "👉 This chat is yours now"))
         return conv
 
     async def mark_done(self, ws: str, conversation_id: str, done: bool) -> Conversation:
@@ -870,8 +872,8 @@ class ConversationService:
 
 
 async def least_busy(s: AsyncSession, ws: str) -> str | None:
-    """The joined moderator with the fewest open chats (waiting for a person, or with the team),
-    the longest on the team first when it's even; None with no moderator (I1)."""
+    """The joined, available moderator with the fewest open chats (waiting for a person, or with
+    the team), the longest on the team first when it's even; None with no one (I1, D149)."""
     open_chats = (
         select(func.count())
         .select_from(Conversation)
@@ -884,6 +886,9 @@ async def least_busy(s: AsyncSession, ws: str) -> str | None:
         .scalar_subquery()
     )
     moderators = select(User.id).where(
-        User.workspace_id == ws, User.role == "moderator", User.email_verified_at.is_not(None)
+        User.workspace_id == ws,
+        User.role == "moderator",
+        User.email_verified_at.is_not(None),
+        User.available,
     )
     return await s.scalar(moderators.order_by(open_chats, User.created_at).limit(1))

@@ -427,9 +427,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Team API",
    "type": "api",
    "file": "src/heydesk/api/members.py",
-   "purpose": "Owner invites/removes moderators, each with their open chats (D129); the team's activity log.",
-   "inputs": "email",
-   "outputs": "MemberOut, EventOut",
+   "purpose": "Owner invites/removes moderators, each with their open chats (D129), available and Telegram linked; switches anyone on or off (D149); each member's numbers at /stats (D150); the team's activity log.",
+   "inputs": "email, available, days",
+   "outputs": "MemberOut, MemberStatsOut, EventOut",
    "fn": "invite"
   },
   {
@@ -547,7 +547,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "TeamService",
    "type": "service",
    "file": "src/heydesk/services/team.py",
-   "purpose": "Owner alerts on Telegram (with Ref:), the owner answering a visitor, lines to a visitor.",
+   "purpose": "Alerts on Telegram (with Ref:) to whoever has the chat, else the owner (D148); moderators link their own chat; the team answering a visitor; lines to a visitor.",
    "inputs": "alerts, owner replies",
    "outputs": "messages; status human",
    "fn": "alert"
@@ -687,8 +687,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "MemberService",
    "type": "service",
    "file": "src/heydesk/services/members.py",
-   "purpose": "Moderators (invite by emailed code, up to 10) and the team activity log.",
-   "inputs": "email",
+   "purpose": "Moderators (invite by emailed code, up to 10), who's available (D149), each member's numbers from the activity (D150), and the team activity log.",
+   "inputs": "email, available, since",
    "outputs": "User, TeamEvent",
    "fn": "invite"
   },
@@ -1943,7 +1943,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-channels",
    "target": "s-team",
-   "label": "send / owner_wrote"
+   "label": "send / team_wrote"
   },
   {
    "source": "s-channels",
@@ -6365,10 +6365,10 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "ow",
-     "label": "owner_wrote: /done → active; else → human + send",
+     "label": "team_wrote: /done → active; else → human + send",
      "shape": "end",
      "file": "src/heydesk/services/team.py",
-     "fn": "owner_wrote"
+     "fn": "team_wrote"
     },
     {
      "id": "start",
@@ -7670,7 +7670,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-team",
      "to": "x-telegram",
-     "data": "to owner_chat_id, ending 'Ref: <conversation id>'",
+     "data": "to the assignee's telegram_chat_id, else owner_chat_id, ending 'Ref: <conversation id>' (D148)",
      "file": "src/heydesk/services/team.py",
      "fn": "alert"
     },
@@ -7684,23 +7684,23 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-telegram",
      "to": "s-channels",
-     "data": "chat_id == owner_chat_id",
+     "data": "chat_id is the owner's or a linked moderator's (is_team)",
      "file": "src/heydesk/services/channels.py",
      "fn": "_answer"
     },
     {
      "from": "s-channels",
      "to": "s-team",
-     "data": "owner_wrote(message with reply_to_message)",
+     "data": "team_wrote(message with reply_to_message)",
      "file": "src/heydesk/services/team.py",
-     "fn": "owner_wrote"
+     "fn": "team_wrote"
     },
     {
      "from": "s-team",
      "to": "st-sql",
-     "data": "Ref → conversation; append {by: team}; status = human",
+     "data": "Ref → conversation; append {by: team}; status = human; TeamEvent 'Telegram reply' (D150)",
      "file": "src/heydesk/services/team.py",
-     "fn": "owner_wrote"
+     "fn": "team_wrote"
     },
     {
      "from": "s-team",
@@ -7722,7 +7722,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "st-sql",
      "data": "owner replies '/done' → status active",
      "file": "src/heydesk/services/team.py",
-     "fn": "owner_wrote"
+     "fn": "team_wrote"
     }
    ]
   },
@@ -8448,7 +8448,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Transcript",
    "file": "src/heydesk/models/conversation.py",
    "where": "`conversations.messages` (JSON, provider-native messages)",
-   "written": "`_save`, `tell_visitor`, `owner_wrote`, `CallService.answer`",
+   "written": "`_save`, `tell_visitor`, `team_wrote`, `CallService.answer`",
    "sync": "Only appended (rule 5). Re-read inside a transaction, then `[*old, *new]`. The whole transcript is resent to the model each turn.",
    "failure": "A tab closed mid-reply loses that turn (D3). A new list is assigned so SQLAlchemy sees it.",
    "timeline": "turn"
@@ -8466,7 +8466,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Conversation status",
    "file": "src/heydesk/services/team.py",
    "where": "`conversations.status`: active / needs_human / human",
-   "written": "`_save` (hand-off), `owner_wrote`, `hand_back`",
+   "written": "`_save` (hand-off), `team_wrote`, `hand_back`",
    "sync": "Checked at the start of every turn.",
    "failure": "—",
    "timeline": "owner"

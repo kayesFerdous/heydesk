@@ -175,3 +175,44 @@ async def test_a_draft_is_shown_to_the_team_and_not_sent(app: FastAPI, client: A
     async with services.conversations.sessions() as s:
         channels = list(await s.scalars(select(Turn.channel).where(Turn.conversation_id == conv)))
     assert channels.count("assist") == 2
+
+
+async def test_a_hand_off_skips_a_moderator_who_isnt_available(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """D149: a moderator switches themself off; the owner can switch anyone."""
+    rafi_id, nila_id = await invite(client), await invite(client, OTHER)
+    rafi, nila = await join(app), await join(app, OTHER)
+    await client.patch("/api/agent", json={"handoff": {"auto_assign": True}})
+    llm = app.state.services.conversations.runtime.llm
+    handoff = [ToolCall("c1", "handoff_to_human", {}), "Someone will help you."]
+
+    assert (await rafi.put("/api/auth/me/available", json={"available": False})).status_code == 204
+    assert (await rafi.get("/api/auth/me")).json()["available"] is False
+    llm.script = list(handoff)
+    first = await chat(app, client, "visitor-one")
+    assert (await client.get(f"/api/conversations/{first}")).json()["assigned_to"] == nila_id
+
+    off = {"available": False}
+    assert (await nila.put(f"/api/team/members/{rafi_id}/available", json=off)).status_code == 403
+    assert (await client.put(f"/api/team/members/{nila_id}/available", json=off)).status_code == 204
+    team = {m["id"]: m["available"] for m in (await client.get("/api/team/members")).json()}
+    assert (team[rafi_id], team[nila_id]) == (False, False)
+    llm.script = list(handoff)
+    second = await chat(app, client, "visitor-two")
+    assert (await client.get(f"/api/conversations/{second}")).json()["assigned_to"] is None
+
+
+async def test_a_solved_ticket_counts_for_who_marked_it(app: FastAPI, client: AsyncClient) -> None:
+    """D150: the team's numbers come from what each member did."""
+    rafi_id = await invite(client)
+    rafi = await join(app)
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "flag_complaint", {"reason": "cold food"}), "Sorry!"]
+    await chat(app, client)
+    [ticket] = (await rafi.get("/api/tickets")).json()
+    await rafi.patch(f"/api/tickets/{ticket['id']}", json={"status": "solved"})
+
+    stats = {m["id"]: m for m in (await client.get("/api/team/stats?days=1")).json()}
+    assert stats[rafi_id]["tickets_solved"] == 1
+    assert (await rafi.get("/api/team/stats")).status_code == 403  # the owner's

@@ -432,7 +432,7 @@ Every table has `workspace_id` (except `workspaces`).
 | Table | Columns |
 |---|---|
 | `workspaces` | id, name, status (`active`/`suspended`), suspended_reason (admins only, D70), plan (`trial`/`starter`/`growth`/`pro`) and paid_until (D106) |
-| `users` | workspace_id (empty for an admin), role (`owner`/`moderator`/`admin`, D97), email, password_hash, email_verified_at (empty until the emailed code is typed, D93; for a moderator, until they join) |
+| `users` | workspace_id (empty for an admin), role (`owner`/`moderator`/`admin`, D97), email, password_hash, email_verified_at (empty until the emailed code is typed, D93; for a moderator, until they join), telegram_chat_id (their own chat with the bot, for their alerts, D148), available (new hand-offs may go to them, D149) |
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
@@ -486,9 +486,12 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/auth/verify/resend` | `{email}` → 204, always: another email with the code if the account exists and isn't verified |
 | POST | `/api/auth/forgot` | `{email}` → 204, always: an email with a reset code if the account exists (D93) |
 | POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}`; a 403 if the code is wrong, expired or used |
-| GET | `/api/auth/me` | Who you are: email, role (`owner`, `moderator` or `admin`), your business |
+| GET | `/api/auth/me` | Who you are: email, role (`owner`, `moderator` or `admin`), your business, `available`, and your Telegram alerts link (`telegram_link`, `telegram_linked`, D148) |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
 | GET/POST/DELETE | `/api/team/members` | The owner's team (D97): everyone in the business (`active`, or `invited` until they join); add a moderator by `{email}` → 201, and an email with a code; `POST …/{id}/invite` sends it again; `DELETE …/{id}` removes one, out at once. A 409 for an email with an account, or past 10 moderators |
+| PUT | `/api/team/members/{id}/available` | `{available}`: the owner switches a member on or off for new hand-offs (D149) |
+| GET | `/api/team/stats?days=7` | Each member's open chats, replies, chats replied in, tickets solved and leads sold (D150) |
+| PUT | `/api/auth/me/available` | `{available}`: switch yourself on or off for new hand-offs (D149) |
 | GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders or bookings, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
@@ -582,6 +585,25 @@ doesn't stop the agent: taking over is still a reply from the team (D43). Each m
 `GET /api/conversations/counts` gives the inbox's tabs their numbers: how many shown chats wait
 for a person (`needs_human`), and of those the caller's (`mine`) and no one's (`unassigned`)
 (D129).
+
+**Alerts for whoever has the chat (D148).** A moderator links their own Telegram with the
+business's bot from the link on `/api/auth/me` (`telegram_link`: `/start member_<user id><code>`,
+the code from the bot's secret and their id, so connecting a new bot changes it and unlinks
+everyone). From then on an alert about a chat they have goes to them, not the owner; a chat no
+one has, or whose member hasn't linked, alerts the owner as before. The owner giving someone a
+chat tells them ("👉 This chat is yours now", with its last lines). A moderator answers an alert
+the same way the owner does: a reply, ".", or `/done`; a reply is a `team_events` row
+(`Telegram reply`) under their name.
+
+**Who's available (D149).** Each member is on or off for new hand-offs (`users.available`).
+Auto-assign picks only an available moderator; with none, the chat stays unassigned and the
+owner is alerted. A moderator switches themself at `PUT /api/auth/me/available`, the owner
+anyone at `PUT /api/team/members/{id}/available`. A chat someone already has stays theirs.
+
+**The team's numbers (D150).** `GET /api/team/stats?days=7` (the owner's) lists each member:
+open chats now, and in those days their replies to visitors (from the inbox or Telegram), the
+chats they replied in, the tickets they marked solved and the leads they marked sold, counted
+from `team_events`. A ticket or lead counts for whoever tapped it, and only while it stays so.
 
 **Finding a chat (D128).** The list leaves out a chat that is *Done* (`done_at`) or snoozed
 (`snoozed_until` still to come). *Done* lasts until the visitor writes again: saving their next

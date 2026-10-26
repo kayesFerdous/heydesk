@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from heydesk.ports.llm import ToolCall
 from heydesk.services.team import GIVEN_BACK, LINKED, OLD_LINK, PICK_A_CHAT, TAKEN_OVER
 from tests.conftest import DEV_KEY
+from tests.integration.test_members import invite, join
 from tests.integration.test_restaurant import place_an_order
 from tests.integration.test_telegram import CHAT, connect, message, send, sent
 
@@ -128,3 +129,50 @@ async def test_the_owner_must_reply_to_an_alert(app: FastAPI, client: AsyncClien
     path, secret = await link_owner(app, client)
     await send(client, path, secret, from_owner("hello?"))
     assert to(app, OWNER)[-1] == PICK_A_CHAT
+
+
+async def test_a_moderators_chat_alerts_them_not_the_owner(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """D148: a moderator links their own chat; a chat they have alerts them, they answer it,
+    and the reply counts as theirs (D150)."""
+    path, secret = await link_owner(app, client)
+    rafi_id = await invite(client)
+    rafi = await join(app)
+    link = (await rafi.get("/api/auth/me")).json()["telegram_link"]
+    code = link.split("?start=")[1]
+    mod_chat = 888
+
+    def from_mod(text: str, replying_to: str | None = None) -> dict[str, Any]:
+        update = from_owner(text, replying_to)
+        update["message"]["chat"]["id"] = mod_chat
+        return update
+
+    await send(client, path, secret, from_mod(f"/start {code}x"))  # a wrong code
+    assert to(app, mod_chat) == [OLD_LINK]
+    await send(client, path, secret, from_mod(f"/start {code}"))
+    assert to(app, mod_chat)[-1] == LINKED
+    assert (await rafi.get("/api/auth/me")).json()["telegram_linked"] is True
+
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hello"}
+    )
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
+    owner_had = len(to(app, OWNER))
+    await client.put(f"/api/conversations/{conv_id}/assignee", json={"user_id": rafi_id})
+    given = to(app, mod_chat)[-1]
+    assert given.startswith("👉 This chat is yours now") and given.endswith(f"Ref: {conv_id}")
+
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone will help."]
+    body = {"visitor_id": "test-visitor", "message": "a person please", "conversation_id": conv_id}
+    await client.post(f"/api/chat/{DEV_KEY}", json=body)
+    assert to(app, mod_chat)[-1].startswith("🙋 Someone wants a person")
+    assert len(to(app, OWNER)) == owner_had  # the owner isn't told about Rafi's chat
+
+    await send(client, path, secret, from_mod("Hi, Rafi here.", f"…\nRef: {conv_id}"))
+    team = f"/api/chat/{DEV_KEY}/{conv_id}/team"
+    assert (await client.get(team)).json() == {"replies": ["Hi, Rafi here."]}
+    assert to(app, mod_chat)[-1].startswith(TAKEN_OVER)
+    [rafis] = [m for m in (await client.get("/api/team/stats")).json() if m["id"] == rafi_id]
+    assert (rafis["replies"], rafis["chats"], rafis["open_chats"]) == (1, 1, 1)
