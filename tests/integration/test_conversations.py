@@ -93,6 +93,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "cancel_booking",
         "take_message",
         "handoff_to_human",
+        "flag_complaint",
         "off_topic",
         "remember",
     ]

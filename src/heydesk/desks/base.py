@@ -23,6 +23,7 @@ from heydesk.models import (
     PaymentAccount,
     SheetLink,
     TeamMessage,
+    Ticket,
     Visitor,
     WooLink,
 )
@@ -120,6 +121,23 @@ class Store:
             TeamMessage, name=m.name, phone=m.phone, body=m.body, best_time=m.best_time
         )
         return saved.code
+
+    async def open_ticket(self, reason: str) -> tuple[Ticket, bool]:
+        """A complaint in this chat (D138): its open ticket, or a new one. No yes is asked:
+        it's the team's to-do, like a hand-off, not something the visitor is promised. Says
+        whether it's new."""
+        async with self.sessions() as s:
+            found = await s.scalar(
+                select(Ticket).where(
+                    Ticket.workspace_id == self.workspace_id,
+                    Ticket.conversation_id == self.conversation_id,
+                    Ticket.status == "open",
+                )
+            )
+        if found is not None:
+            return found, False
+        reason = " ".join(reason.split())[:300] or "complaint"
+        return await self.add(Ticket, status="open", name="", phone="", reason=reason), True
 
     async def messages(
         self,

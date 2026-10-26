@@ -730,6 +730,18 @@ class ConversationService:
             raise NotFound("There's no such conversation. Start a new one.")
         return conv
 
+    async def by_ids(self, ws: str, ids: set[str]) -> Sequence[Conversation]:
+        """These of the business's conversations (the tickets' chats, D138), in no order."""
+        if not ids:
+            return []
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(Conversation).where(
+                    Conversation.workspace_id == ws, Conversation.id.in_(ids)
+                )
+            )
+            return found.all()
+
     async def _get_by_id(self, s: AsyncSession, ws: str, conversation_id: str) -> Conversation:
         conv = await s.scalar(
             select(Conversation).where(

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
-from heydesk.models import Conversation, TeamMessage, Visitor
+from heydesk.models import Conversation, TeamMessage, Ticket, Visitor
 from heydesk.services import Services
 from heydesk.services.visitors import is_blocked, key_of
 
@@ -384,3 +384,52 @@ async def message(message_id: str, services: Svc, ws: Workspace) -> MessageOut:
 async def set_status(message_id: str, body: StatusIn, services: Svc, ws: Workspace) -> MessageOut:
     store = await services.agents.store(ws)
     return MessageOut.model_validate(await store.set_status(TeamMessage, message_id, body.status))
+
+
+class TicketOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    code: str  # "C-101"
+    conversation_id: str | None
+    status: str  # open / solved
+    reason: str  # the agent's words for what's wrong
+    assigned_email: str | None = None  # who has its chat (I1)
+    created_at: datetime  # how old it is
+    updated_at: datetime
+
+
+@router.get("/api/tickets")
+async def tickets(
+    services: Svc, ws: Workspace, page: Paged, status: Literal["open", "solved"] | None = None
+) -> list[TicketOut]:
+    """Complaints the agent flagged (D138), newest first, a page at a time; `status=open`
+    for the ones still to deal with. Each with who has its chat."""
+    store = await services.agents.store(ws)
+    found = await store.find(Ticket, status, limit=page.limit, before=page.before)
+    chats = {
+        c.id: c
+        for c in await services.conversations.by_ids(
+            ws, {t.conversation_id for t in found if t.conversation_id}
+        )
+    }
+    emails = {u.id: u.email for u in await services.members.members(ws)}
+    return [
+        TicketOut.model_validate(t).model_copy(
+            update={
+                "assigned_email": emails.get(
+                    getattr(chats.get(t.conversation_id or ""), "assigned_to", None) or ""
+                )
+            }
+        )
+        for t in found
+    ]
+
+
+@router.patch("/api/tickets/{ticket_id}")
+async def set_ticket_status(
+    ticket_id: str, body: StatusIn, services: Svc, ws: Workspace
+) -> TicketOut:
+    """`solved`, or `open` again. It stays open until someone marks it solved (D138)."""
+    store = await services.agents.store(ws)
+    return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))

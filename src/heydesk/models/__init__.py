@@ -14,6 +14,7 @@ from heydesk.models.sheet_link import SheetLink
 from heydesk.models.subscription_payment import SubscriptionPayment
 from heydesk.models.team_event import TeamEvent
 from heydesk.models.team_message import TeamMessage
+from heydesk.models.ticket import Ticket
 from heydesk.models.turn import Turn
 from heydesk.models.user import User
 from heydesk.models.visitor import Visitor
@@ -34,6 +35,7 @@ __all__ = [
     "SubscriptionPayment",
     "TeamEvent",
     "TeamMessage",
+    "Ticket",
     "Turn",
     "User",
     "Visitor",

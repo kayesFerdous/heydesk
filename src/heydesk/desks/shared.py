@@ -90,6 +90,41 @@ HANDOFF = Tool(
 )
 
 
+class ComplaintInput(BaseModel):
+    reason: str = Field(
+        description='What they\'re unhappy about, in a few words: "parcel came damaged", '
+        '"rude rider", "order late 5 days"'
+    )
+
+
+async def flag_complaint(ctx: ToolContext[Store], args: ComplaintInput) -> ToolResult:
+    """A complaint (D138): a hand-off (D43) that opens a ticket for the team, once a chat."""
+    ticket, new = await ctx.store.open_ticket(args.reason)
+    contact = ctx.agent.handoff
+    data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
+    return ToolResult(
+        ok=True,
+        data={k: v for k, v in data.items() if v},
+        handoff=True,
+        alert=f"😠 Complaint {ticket.code}: {ticket.reason}" if new else None,
+    )
+
+
+COMPLAINT = Tool(
+    name="flag_complaint",
+    description=(
+        "The visitor is unhappy or complains: about an order, a delivery, a product, the staff "
+        "or the service. Not for a plain question or a change to an order. Passes the chat to "
+        "the team and opens a complaint for them. Say sorry once, then tell the visitor the "
+        "message it returns."
+    ),
+    input_model=ComplaintInput,
+    run=flag_complaint,
+    label="Getting someone from the team…",
+    filler="I'm sorry about that. One moment.",
+)
+
+
 class TakeMessageInput(BaseModel):
     message: str = Field(default="", description="What to pass on, in the visitor's words")
     name: str = Field(default="", description="Optional: who it's from")

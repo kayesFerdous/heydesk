@@ -2759,6 +2759,11 @@ tr.hl td { background: var(--accent-soft); }
      "why": "Marks the conversation needs_human; the owner gets an alert and the visitor a contact card."
     },
     {
+     "tool": "t-flag_complaint",
+     "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
+     "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
+    },
+    {
      "tool": "t-off_topic",
      "when": "A message has nothing to do with the business (jokes, homework, timepass).",
      "why": "Platform rule: don't answer, call off_topic. Its reply ends the turn with no second model call; each is a strike (D51)."
@@ -2834,6 +2839,11 @@ tr.hl td { background: var(--accent-soft); }
      "why": "Marks the conversation needs_human; the owner gets an alert and the visitor a contact card."
     },
     {
+     "tool": "t-flag_complaint",
+     "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
+     "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
+    },
+    {
      "tool": "t-off_topic",
      "when": "A message has nothing to do with the business (jokes, homework, timepass).",
      "why": "Platform rule: don't answer, call off_topic. Its reply ends the turn with no second model call; each is a strike (D51)."
@@ -2881,6 +2891,11 @@ tr.hl td { background: var(--accent-soft); }
      "tool": "t-handoff_to_human",
      "when": "The visitor asks for a person, or the agent can't help (emergency on a clinic).",
      "why": "Marks the conversation needs_human; the owner gets an alert and the visitor a contact card."
+    },
+    {
+     "tool": "t-flag_complaint",
+     "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
+     "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
     },
     {
      "tool": "t-off_topic",
@@ -2992,6 +3007,11 @@ tr.hl td { background: var(--accent-soft); }
      "tool": "t-handoff_to_human",
      "when": "The visitor asks for a person, or the agent can't help (emergency on a clinic).",
      "why": "Marks the conversation needs_human; the owner gets an alert and the visitor a contact card."
+    },
+    {
+     "tool": "t-flag_complaint",
+     "when": "The visitor is unhappy or complains (an order, a delivery, a product, the staff).",
+     "why": "A hand-off that opens a ticket for the team, once a chat, with an alert (D138)."
     },
     {
      "tool": "t-off_topic",
@@ -3116,6 +3136,35 @@ tr.hl td { background: var(--accent-soft); }
    "filler": "Sure, one moment.",
    "timeout": 5.0,
    "description": "Pass the conversation to a person on the team: when the visitor asks for a person, or you can't help. Takes no arguments. Then tell the visitor the message it returns."
+  },
+  {
+   "id": "t-flag_complaint",
+   "name": "flag_complaint",
+   "desk": "shared",
+   "file": "src/heydesk/desks/shared.py",
+   "fn": "flag_complaint",
+   "purpose": "A complaint: hand off and open a ticket for the team (D138).",
+   "writes": true,
+   "confirm": null,
+   "inputs": [
+    [
+     "reason",
+     "str; What they're unhappy about, in a few words"
+    ]
+   ],
+   "outputs": [
+    "{message, phone, email}",
+    "handoff=True → HandOff card"
+   ],
+   "effects": [
+    "Ticket C-101 (open), one per chat while open",
+    "owner alert 😠 Complaint C-101: reason, once",
+    "conversation → needs_human"
+   ],
+   "label_web": "Getting someone from the team…",
+   "filler": "I'm sorry about that. One moment.",
+   "timeout": 5.0,
+   "description": "The visitor is unhappy or complains: about an order, a delivery, a product, the staff or the service. Not for a plain question or a change to an order. Passes the chat to the team and opens a complaint for them. Say sorry once, then tell the visitor the message it returns."
   },
   {
    "id": "t-off_topic",

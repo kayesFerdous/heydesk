@@ -120,6 +120,7 @@ Keep these in the pitch.
   - *Smallest build:* a shared tool `flag_complaint(reason)` that the prompt tells the model to
     call. It hands off like today (D43) with the reason "complaint", and the inbox filters by it.
     No sentiment model.
+  - 26 Oct, D138: built with G37 (day R12).
 - [ ] **G11 Owner alerts besides Telegram** · S
   - *Who has it:* LazyChat (mobile app), ARA (email).
   - *Why:* many owners don't use Telegram (product-gaps §6).
@@ -284,6 +285,7 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 - [ ] **G37 Complaints become tickets** · M (G10, bigger)
   - `flag_complaint(reason)` hands off and opens a ticket: who has it, open/solved, how old.
     One table, one list screen.
+  - 26 Oct, D138: built (day R12); the dev chat check with the real model is next.
 - [ ] **G38 AI off for one buyer** · S
   - A spammer is handed off by `off_topic`; the owner taps *Turn AI off for them* and their
     messages are stored but never run (and never billed). Same switch as "Later: blocked

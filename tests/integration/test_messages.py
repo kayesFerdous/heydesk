@@ -7,10 +7,11 @@ from sqlalchemy import select
 
 from heydesk.desks import DESKS, tools_for
 from heydesk.desks.receptionist import RECEPTIONIST
-from heydesk.models import Conversation, TeamMessage
+from heydesk.desks.shared import ComplaintInput, flag_complaint
+from heydesk.models import Conversation, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from tests.conftest import DEV_KEY, World
+from tests.conftest import DEV_KEY, World, make_ctx
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
 
@@ -24,9 +25,13 @@ async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: 
     for desk in DESKS.values():
         config = (await world.agent(desk.kind)).config
         names = [t.name for t in tools_for(desk, config, has_documents=False)]
-        assert names[-4:] == ["take_message", "handoff_to_human", "off_topic", "remember"], (
-            desk.kind
-        )
+        assert names[-5:] == [
+            "take_message",
+            "handoff_to_human",
+            "flag_complaint",
+            "off_topic",
+            "remember",
+        ], desk.kind
         assert "search_knowledge" in [t.name for t in tools_for(desk, config, True)]
 
 
@@ -74,6 +79,7 @@ async def test_the_receptionist_answers_from_its_own_fields(world: World) -> Non
     assert [t.name for t in tools_for(agent.desk, agent.config, has_documents=False)] == [
         "take_message",
         "handoff_to_human",
+        "flag_complaint",
         "off_topic",
         "remember",
     ]
@@ -152,3 +158,41 @@ async def test_the_inbox_lists_the_chats_the_team_is_answering(
 
     [taken] = (await client.get("/api/conversations", params={"status": "human"})).json()
     assert taken["id"] == conv_id
+
+
+async def test_a_complaint_hands_off_and_opens_one_ticket(
+    world: World, app: FastAPI, client: AsyncClient
+) -> None:
+    """flag_complaint hands the chat to the team and opens a ticket, with an alert; a second
+    complaint in the same chat keeps the one ticket, which stays open until solved (D138)."""
+    agent = await world.agent()
+    complaint = ToolCall("c1", "flag_complaint", {"reason": "parcel came damaged"})
+    conv = await world.say(agent, None, [complaint, "I'm sorry. Someone will call you."], "!!!")
+    assert (await world.conversation(conv)).status == "needs_human"
+    result = await world.store(agent, conv).open_ticket("still angry")
+    assert result[1] is False  # the same open ticket
+    async with world.sessions() as s:
+        [ticket] = list(await s.scalars(select(Ticket)))
+    assert (ticket.code, ticket.status, ticket.reason) == ("C-101", "open", "parcel came damaged")
+
+    services = app.state.services
+    services.conversations.runtime.llm.script = [
+        ToolCall("c1", "flag_complaint", {"reason": "rude rider"}),
+        "Sorry about that.",
+    ]
+    await client.post(f"/api/chat/{DEV_KEY}", json={"visitor_id": "angry-visitor", "message": "!!"})
+    [listed] = (await client.get("/api/tickets", params={"status": "open"})).json()
+    assert (listed["code"], listed["reason"]) == ("C-101", "rude rider")
+    solved = await client.patch(f"/api/tickets/{listed['id']}", json={"status": "solved"})
+    assert solved.json()["status"] == "solved"
+    assert (await client.get("/api/tickets", params={"status": "open"})).json() == []
+
+
+async def test_a_new_complaint_alerts_the_owner_once(world: World) -> None:
+    agent = await world.agent()
+    conv = await world.say(agent, None, ["Hello!"], "hi")
+    ctx = make_ctx(world.store(agent, conv), agent=agent.config)
+    first = await flag_complaint(ctx, ComplaintInput(reason="cold food"))
+    again = await flag_complaint(ctx, ComplaintInput(reason="still cold"))
+    assert first.handoff and first.alert == "😠 Complaint C-101: cold food"
+    assert again.handoff and again.alert is None
