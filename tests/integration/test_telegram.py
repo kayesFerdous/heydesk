@@ -242,6 +242,18 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
     ]
 
 
+async def test_a_reply_to_a_product_photo_names_it(app: FastAPI, client: AsyncClient) -> None:
+    """D156: a product photo's caption comes with the reply, so it names the product."""
+    path, secret = await connect(app, client)
+    update = message("I want this")
+    update["message"]["reply_to_message"] = {"message_id": 5, "caption": "Cotton Kurti · ৳950"}
+    await send(client, path, secret, update)
+
+    assert sent(app) == [
+        (str(CHAT), '(fake model) You said: (replying to: "Cotton Kurti · ৳950") I want this')
+    ]
+
+
 async def test_more_cards_than_photos_are_one_message_to_tap(
     app: FastAPI, client: AsyncClient
 ) -> None:

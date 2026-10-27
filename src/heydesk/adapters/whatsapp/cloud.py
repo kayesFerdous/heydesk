@@ -21,6 +21,15 @@ class WhatsAppCloud:
         await self._call("GET", phone_id, token)  # the number is this token's
         await self._call("POST", f"{account_id}/subscribed_apps", token)
 
+    async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
+        params = {"client_id": app_id, "client_secret": app_secret, "code": code}
+        body = await self._call("GET", "oauth/access_token", "", params=params)
+        return str(body["access_token"])
+
+    async def register(self, token: str, phone_id: str, pin: str) -> None:
+        body = {"messaging_product": "whatsapp", "pin": pin}
+        await self._call("POST", f"{phone_id}/register", token, json=body)
+
     async def send_message(
         self, token: str, phone_id: str, to: str, text: str, choices: list[str] | None = None
     ) -> None:
@@ -55,7 +64,8 @@ class WhatsAppCloud:
 
     async def send_cards(
         self, token: str, phone_id: str, to: str, cards: list[dict[str, str]]
-    ) -> None:
+    ) -> list[str]:
+        ids = []
         for c in cards:
             caption = f"{c['name']} · {c['price']}"
             if c.get("page"):  # a product's page (D121): WhatsApp opens a link in a message
@@ -64,7 +74,7 @@ class WhatsAppCloud:
                 caption += f"\nVideo: {c['video']}"
             if not c.get("choice"):
                 image = {"link": c["url"], "caption": caption}
-                await self._send(token, phone_id, to, type="image", image=image)
+                ids.append(await self._send(token, phone_id, to, type="image", image=image))
                 continue
             # its tap is a button reply with the choice as its id (D99)
             button = {"type": "reply", "reply": {"id": c["choice"], "title": "Order this"}}
@@ -74,7 +84,10 @@ class WhatsAppCloud:
                 "body": {"text": caption},
                 "action": {"buttons": [button]},
             }
-            await self._send(token, phone_id, to, type="interactive", interactive=interactive)
+            ids.append(
+                await self._send(token, phone_id, to, type="interactive", interactive=interactive)
+            )
+        return ids
 
     async def download(self, token: str, media_id: str) -> bytes:
         media = await self._call("GET", media_id, token)
@@ -94,14 +107,18 @@ class WhatsAppCloud:
         }
         await self._call("POST", f"{phone_id}/messages", token, json=body)
 
-    async def _send(self, token: str, phone_id: str, to: str, **message: Any) -> None:
+    async def _send(self, token: str, phone_id: str, to: str, **message: Any) -> str:
+        """Sends one message; its id (wamid), or "" if Meta didn't say."""
         body = {"messaging_product": "whatsapp", "to": to, **message}
-        await self._call("POST", f"{phone_id}/messages", token, json=body)
+        sent = await self._call("POST", f"{phone_id}/messages", token, json=body)
+        return str((sent.get("messages") or [{}])[0].get("id", ""))
 
-    async def _call(self, method: str, path: str, token: str, json: Any = None) -> Any:
+    async def _call(
+        self, method: str, path: str, token: str, json: Any = None, params: Any = None
+    ) -> Any:
         try:
             res = await self.client.request(
-                method, f"{API}/{path}", headers=self._auth(token), json=json
+                method, f"{API}/{path}", headers=self._auth(token), json=json, params=params
             )
             body = res.json()
         except (httpx.HTTPError, ValueError):

@@ -143,6 +143,11 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
     await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up
     assert sent(app)[-1] == (PSID, NOT_TEXT)
 
+    # D156: a reply to the carousel names its products, without asking Facebook
+    await post(client, message("I want this", mid="m2", reply_to={"mid": "m-cards-1"}))
+    said = llm.requests[-1].messages[-1]["content"]
+    assert said == '(replying to: "Cotton Kurti · ৳950") I want this'
+
 
 async def test_a_products_card_opens_its_public_page(app: FastAPI, client: AsyncClient) -> None:
     """The page shows what a buyer may see, as HTML, with the way back to the chat; anything

@@ -139,6 +139,11 @@ def about(doctor: dict[str, Any]) -> str:
     )
 
 
+def card_words(card: dict[str, str]) -> str:
+    """A product card as the buyer sees it: "Cotton Shirt · ৳950"."""
+    return f"{card['name']} · {card['price']}"
+
+
 class ChannelService:
     def __init__(
         self,
@@ -173,6 +178,9 @@ class ChannelService:
         # WhatsApp's webhook quotes only a message's id, so the buyers' recent messages are
         # kept here, by id, for their replies (D117)
         self.whatsapp_said: dict[str, dict[str, Any]] = {}
+        # the product cards the agent sent on Messenger and WhatsApp, by message id, as
+        # "Cotton Shirt · ৳950": a buyer's reply to one names the product (D156)
+        self.cards_sent: dict[str, str] = {}
 
     async def connect_telegram(self, ws: str, token: str) -> Channel:
         """Checks the token with Telegram and points the bot's messages at us. Connecting
@@ -316,6 +324,41 @@ class ChannelService:
         channel = await self._save(ws, agent.id, WHATSAPP, channel_id, token, "", phone_id)
         log.info("whatsapp connected", extra={"channel_id": channel_id})
         return channel
+
+    def whatsapp_login(self) -> dict[str, str]:
+        """What the owner's Connect with WhatsApp button needs (D155): our app's id, and the
+        Embedded Signup configuration."""
+        s = self.settings
+        if not (s.META_APP_ID and s.META_APP_SECRET and s.META_WA_CONFIG_ID):
+            raise HeyDeskError(
+                "The server has no META_APP_ID or META_WA_CONFIG_ID, so WhatsApp signup is off."
+            )
+        return {"app_id": s.META_APP_ID, "config_id": s.META_WA_CONFIG_ID}
+
+    async def connect_whatsapp_signup(
+        self, ws: str, code: str, account_id: str, phone_id: str
+    ) -> Channel:
+        """Embedded Signup's code becomes the business's token, the number is registered on
+        the Cloud API, then it's connected as if typed in (D155)."""
+        self.whatsapp_login()  # the app's id, secret and configuration are set
+        taken = await self.whatsapp_number(phone_id)
+        if taken is not None and taken.workspace_id != ws:
+            raise InvalidConfig({"phone_id": "This number is connected to another business."})
+        try:
+            token = await self.whatsapp.exchange(
+                self.settings.META_APP_ID, self.settings.META_APP_SECRET, code
+            )
+        except WhatsAppUnavailable:
+            raise InvalidConfig(
+                {"code": "Meta didn't accept this signup. Try connecting again."}
+            ) from None
+        try:  # the PIN isn't kept: the owner can reset it in WhatsApp Manager
+            await self.whatsapp.register(token, phone_id, f"{secrets.randbelow(10**6):06d}")
+        except WhatsAppUnavailable:
+            raise InvalidConfig(
+                {"phone_id": "Meta couldn't put this number on WhatsApp's Cloud API. Try again."}
+            ) from None
+        return await self.connect_whatsapp(ws, token, account_id, phone_id)
 
     async def whatsapp_of(self, ws: str) -> Channel:
         return await self._of(ws, WHATSAPP, "This business hasn't connected a WhatsApp number.")
@@ -705,20 +748,33 @@ class ChannelService:
                 channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
             )
 
+    def _remember_cards(self, ids: list[str], words: list[str]) -> None:
+        for message_id, said in zip(ids, words, strict=False):
+            if message_id:
+                self.cards_sent[message_id] = said
+        while len(self.cards_sent) > 10_000:  # the oldest go
+            del self.cards_sent[next(iter(self.cards_sent))]
+
     async def _quoted(
         self, channel: Channel, message: dict[str, Any], takes_photos: bool
     ) -> tuple[str, bytes | None]:
         """The earlier message this one replies to (D117): its words, and its photo if the desk
         takes photos. Telegram sends the whole message; Messenger its id, so it's fetched;
-        WhatsApp its id, so only a buyer's own message this server kept is known."""
+        WhatsApp its id, so only a message this server kept is known: the buyer's own, or a
+        product card the agent sent (D156)."""
         try:
-            if channel.kind == TELEGRAM:
+            if channel.kind == TELEGRAM:  # a product photo's caption names it
                 quoted = message.get("reply_to_message")
             elif channel.kind == MESSENGER:
                 mid = (message.get("reply_to") or {}).get("mid")
+                if mid in self.cards_sent:
+                    return self.cards_sent[mid][:300], None
                 quoted = await self.messenger.get_message(channel.token, mid) if mid else None
             else:
-                quoted = self.whatsapp_said.get(message.get("reply_to") or "")
+                reply_to = message.get("reply_to") or ""
+                if reply_to in self.cards_sent:
+                    return self.cards_sent[reply_to][:300], None
+                quoted = self.whatsapp_said.get(reply_to)
             if not quoted:
                 return "", None
             words = (quoted.get("text") or quoted.get("caption") or "")[:300]
@@ -805,11 +861,15 @@ class ChannelService:
         sent = [c for c in cards if c["url"]][:PHOTOS_SENT]
         rest = [c for c in cards if c not in sent and c["choice"]]
         try:
-            if channel.kind == MESSENGER:
-                await self.messenger.send_cards(channel.token, chat_id, cards)
+            if channel.kind == MESSENGER:  # one carousel: a reply to it is to all of them
+                mid = await self.messenger.send_cards(channel.token, chat_id, cards)
+                self._remember_cards([mid], ["; ".join(card_words(c) for c in cards)])
             elif channel.kind == WHATSAPP:
                 if sent:
-                    await self.whatsapp.send_cards(channel.token, channel.address, chat_id, sent)
+                    ids = await self.whatsapp.send_cards(
+                        channel.token, channel.address, chat_id, sent
+                    )
+                    self._remember_cards(ids, [card_words(c) for c in sent])
                 if rest:  # a tapped row's id is its words
                     rows = [
                         {"id": c["choice"], "title": c["name"][:24], "description": c["price"]}
@@ -821,7 +881,7 @@ class ChannelService:
             else:
                 for c in sent:
                     jpeg = await self.photos.read(c["url"])
-                    caption = f"{c['name']} · {c['price']}"
+                    caption = card_words(c)
                     await self.telegram.send_photo(
                         channel.token, chat_id, jpeg, caption, c["choice"], c["page"], c["video"]
                     )

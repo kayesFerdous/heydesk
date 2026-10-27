@@ -27,6 +27,19 @@ class WhatsAppIn(BaseModel):
     phone_id: str = Digits  # the number's id (not the number itself)
 
 
+class WhatsAppSignupIn(BaseModel):
+    code: str = Field(
+        min_length=10, max_length=1000, description="The code Embedded Signup gave the browser"
+    )
+    account_id: str = Digits  # from the popup's FINISH message: waba_id
+    phone_id: str = Digits  # and phone_number_id
+
+
+class WhatsAppLoginOut(BaseModel):
+    app_id: str
+    config_id: str  # the WhatsApp Embedded Signup configuration (D155)
+
+
 class WhatsAppOut(BaseModel):
     phone_id: str
 
@@ -41,6 +54,21 @@ async def connect_whatsapp(body: WhatsAppIn, ws: Workspace, services: Svc) -> Wh
     """Connects the business's WhatsApp number: the agent answers its messages."""
     channel = await services.channels.connect_whatsapp(
         ws, body.token.strip(), body.account_id, body.phone_id
+    )
+    return WhatsAppOut(phone_id=channel.address)
+
+
+@router.get("/api/agent/whatsapp/login")
+async def whatsapp_login(ws: Workspace, services: Svc) -> WhatsAppLoginOut:
+    """What the Connect with WhatsApp button needs (D155). 400 if the server has no app id."""
+    return WhatsAppLoginOut(**services.channels.whatsapp_login())
+
+
+@router.post("/api/agent/whatsapp/signup")
+async def whatsapp_signup(body: WhatsAppSignupIn, ws: Workspace, services: Svc) -> WhatsAppOut:
+    """Connects the number the owner added in Meta's Embedded Signup window: nothing to copy."""
+    channel = await services.channels.connect_whatsapp_signup(
+        ws, body.code, body.account_id, body.phone_id
     )
     return WhatsAppOut(phone_id=channel.address)
 

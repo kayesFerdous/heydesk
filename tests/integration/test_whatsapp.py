@@ -136,6 +136,16 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
     await post(client, message(type="interactive", interactive=tapped))
     assert llm.requests[-1].messages[-1]["content"] == "Order [kurti]"
 
+    # D156: a reply to the card names its product, though Meta sends only the card's id
+    reply = message("I want this")
+    reply["entry"][0]["changes"][0]["value"]["messages"][0] |= {
+        "id": "wamid.3",
+        "context": {"id": "wamid.card-1-0"},
+    }
+    await post(client, reply)
+    said = llm.requests[-1].messages[-1]["content"]
+    assert said == '(replying to: "Cotton Kurti · ৳950") I want this'
+
 
 async def test_a_number_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
@@ -143,6 +153,38 @@ async def test_a_number_belongs_to_one_business(app: FastAPI, client: AsyncClien
     assert (await other.post("/api/agent", json={"kind": "restaurant"})).status_code == 201
     body = {"token": TOKEN, "account_id": ACCOUNT, "phone_id": PHONE}
     assert (await other.put("/api/agent/whatsapp", json=body)).status_code == 422
+
+
+async def test_connect_with_whatsapp_turns_the_signup_into_a_connected_number(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """D155: Meta's Embedded Signup window gives a code and two ids; nothing to copy."""
+    fake(app).codes["a-signup-code"] = TOKEN
+    res = await client.get("/api/agent/whatsapp/login")
+    assert res.json() == {"app_id": "4242", "config_id": "888"}
+
+    signup = {"code": "a-signup-code", "account_id": ACCOUNT, "phone_id": PHONE}
+    res = await client.post("/api/agent/whatsapp/signup", json=signup)
+    assert res.status_code == 200 and res.json() == {"phone_id": PHONE}
+    assert TOKEN not in res.text  # the token never leaves the server
+    assert PHONE in fake(app).registered and PHONE in fake(app).subscribed
+    assert await post(client, message("hi")) == 200
+    assert fake(app).sent  # the agent answers on the number
+
+
+async def test_a_bad_signup_code_or_a_taken_number_is_refused(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    signup = {"code": "a-used-up-code", "account_id": ACCOUNT, "phone_id": PHONE}
+    res = await client.post("/api/agent/whatsapp/signup", json=signup)
+    assert res.status_code == 422 and "code" in res.json()["error"]["fields"]
+
+    await connect(client)
+    other = await new_business(app)
+    assert (await other.post("/api/agent", json={"kind": "restaurant"})).status_code == 201
+    fake(app).codes["their-code"] = "EAAB-their-system-user-token"
+    res = await other.post("/api/agent/whatsapp/signup", json=signup | {"code": "their-code"})
+    assert res.status_code == 422 and "phone_id" in res.json()["error"]["fields"]
 
 
 async def test_disconnecting_stops_the_number(app: FastAPI, client: AsyncClient) -> None:

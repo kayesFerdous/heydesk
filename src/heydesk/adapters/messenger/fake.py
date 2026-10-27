@@ -39,8 +39,9 @@ class FakeMessenger:
         if choices:
             self.choices.append((psid, choices))
 
-    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
+    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
         self.cards.append((psid, cards))
+        return f"m-cards-{len(self.cards)}"
 
     async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
         self.links.append((psid, text, title, url))

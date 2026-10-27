@@ -66,8 +66,9 @@ class MessengerGraph:
             ]
         await self._send(token, psid, message=message, messaging_type="RESPONSE")
 
-    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> None:
-        await self._send(token, psid, message=carousel(cards), messaging_type="RESPONSE")
+    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
+        body = await self._send(token, psid, message=carousel(cards), messaging_type="RESPONSE")
+        return str(body.get("message_id", ""))
 
     async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
         payload = {
@@ -136,10 +137,12 @@ class MessengerGraph:
             ],
         }
 
-    async def _send(self, token: str, psid: str, **body: Any) -> None:
+    async def _send(self, token: str, psid: str, **body: Any) -> Any:
         if "message" in body:  # its echo comes back with this, so it's known as ours (D135)
             body["message"] = {**body["message"], "metadata": OURS}
-        await self._call("POST", "me/messages", token, json={"recipient": {"id": psid}, **body})
+        return await self._call(
+            "POST", "me/messages", token, json={"recipient": {"id": psid}, **body}
+        )
 
     async def _call(
         self, method: str, path: str, token: str, json: Any = None, **params: str

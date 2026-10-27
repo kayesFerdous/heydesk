@@ -535,6 +535,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/messenger` | Facebook's webhook check: echoes `hub.challenge` when `hub.verify_token` is `MESSENGER_VERIFY_TOKEN` |
 | POST | `/api/messenger` | Messenger's webhook, one for every Page: checked by `X-Hub-Signature-256` with `META_APP_SECRET`, each message routed by its Page id, answered after the response |
 | GET/PUT/DELETE | `/api/agent/whatsapp` | The business's WhatsApp number: its id; connect it with its business account's id, the number's id and a system user's token; disconnect it (D103) |
+| GET, POST | `/api/agent/whatsapp/login`, `/api/agent/whatsapp/signup` | Connect with WhatsApp: our app's id and the Embedded Signup configuration; connect the number from the popup's code and ids (D155) |
 | GET/POST | `/api/whatsapp` | WhatsApp's webhook, one for every number: checked as Messenger's (the same verify token and app secret), each message routed by its `phone_number_id`, answered after the response (D103) |
 | GET | `/pay/{id}` | The visitor's payment link: off to the gateway to pay for an unpaid order or appointment (D47, D48); with both connected, a button for each, then `?via=sslcommerz` or `?via=bkash` (D109) |
 | GET | `/pay/{id}/bkash` | bKash sends the visitor back here with `paymentID` and `status`; only a `success`, executed with the business's bKash account, counts (D109) |
@@ -1230,8 +1231,15 @@ a message ─► (Messenger: "Seen" at once) ─► _gather: waits CHAT_WAIT_SEC
   Telegram sends the quoted message whole (`reply_to_message`); Messenger only its id
   (`reply_to.mid`), so `MessengerApi.get_message` fetches it, the buyer's or the Page's own;
   WhatsApp only its id (`context.id`), and Meta has no way to fetch it, so the server keeps the
-  buyers' last 10,000 messages by id (`whatsapp_said`). A quote of the agent's own WhatsApp
-  message, or from before a restart, isn't known: the reply is read on its own.
+  buyers' last 10,000 messages by id (`whatsapp_said`). A quote from before a restart isn't
+  known: the reply is read on its own.
+- **A reply to a product photo (D156)** names the product: "I want this" is read as
+  `(replying to: "Cotton Shirt · ৳950") I want this`. Telegram's photo carries its caption.
+  On Messenger and WhatsApp the server keeps the product cards the agent sent, by message id
+  (`cards_sent`, the last 10,000; `send_cards` returns the ids): WhatsApp's are one message a
+  product, so the reply names one; Messenger's carousel is one message, so it names them all
+  ("Cotton Shirt · ৳950; Polo · ৳800") and the agent asks which. Looked up before asking
+  Facebook, so a reply to a card costs no call. In memory, like `whatsapp_said`.
 - **Sir or Ma'am:** a platform rule (docs/prompt-rules.md) has the agent address the visitor as
   the business does, without guessing which, and keep it once known.
 
@@ -1265,6 +1273,36 @@ owner's page ─► GET /api/agent/messenger/login ─► {app_id: META_APP_ID, 
 - **Who can use it.** While our Meta app is in development mode, only people with a role on it
   (admin, developer, tester) can log in, which is enough for the demo. For every business, Meta
   wants Business Verification and App Review of these permissions.
+
+### Connect with WhatsApp (D155)
+
+H1's form (a system user's token and two ids) is as hard as the Page's token was, so the
+WhatsApp row gets the same kind of button: Meta's **Embedded Signup**, in a popup.
+
+```
+owner's page ─► GET /api/agent/whatsapp/login ─► {app_id: META_APP_ID, config_id: META_WA_CONFIG_ID}
+            ─► FB.login({config_id, response_type: "code", extras: {version: "v4", setup: {}}})
+            ─► Meta's window: log in, pick or make the business, add the number, verify it by SMS
+            ─► the browser gets a `code`, and a WA_EMBEDDED_SIGNUP FINISH message with
+               {waba_id, phone_number_id}
+            ─► POST /api/agent/whatsapp/signup {code, account_id, phone_id}
+                 a number another business has: refused first
+                 WhatsAppApi.exchange: oauth/access_token (the app's id and secret, the code)
+                   ─► the business's token (a system user's, which doesn't expire)
+                 WhatsAppApi.register: {phone_id}/register with a random 6-digit PIN
+                 ─► connect_whatsapp, as if typed in (it subscribes our app to the account)
+```
+
+- **Its own configuration.** Only a configuration of the *WhatsApp Embedded Signup* kind shows
+  the number's screens and sends the ids; the Pages one (`META_LOGIN_CONFIG_ID`, D119) stays as
+  it is. This one asks for `whatsapp_business_management` and `whatsapp_business_messaging`.
+- **The PIN isn't kept.** Registering sets the number's two-step PIN; the owner can reset it in
+  WhatsApp Manager if they ever need it.
+- **A number on the WhatsApp Business app** can't be added this way (it would leave the app).
+  Meta's coexistence (`featureType: whatsapp_business_app_onboarding`) is for later.
+- **Nothing kept from the login** but the token, encrypted, as before. The code works once.
+- **Who can use it.** In development mode only people with a role on our Meta app. For every
+  business we must be a WhatsApp Tech Provider: Business Verification and App Review.
 
 ### Photos on Messenger (D62)
 

@@ -18,6 +18,15 @@ class WhatsAppApi(Protocol):
         the token isn't for that account and number, so it is also the check on them."""
         ...
 
+    async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
+        """The business's token for the code Embedded Signup gave the browser (D155). A code
+        works once."""
+        ...
+
+    async def register(self, token: str, phone_id: str, pin: str) -> None:
+        """Puts the number on the Cloud API, with `pin` as its two-step PIN (D155)."""
+        ...
+
     async def send_message(
         self, token: str, phone_id: str, to: str, text: str, choices: list[str] | None = None
     ) -> None:
@@ -27,10 +36,11 @@ class WhatsAppApi(Protocol):
 
     async def send_cards(
         self, token: str, phone_id: str, to: str, cards: list[dict[str, str]]
-    ) -> None:
+    ) -> list[str]:
         """Products, one message each: `{name, price, url}`, the photo's full URL, and maybe
         `choice`: an Order button whose tap comes back with it (D99). Its `page` and `video`
-        are links in the caption (D121, D125)."""
+        are links in the caption (D121, D125). Returns each card's message id, in order,
+        so a reply to one is known (D156)."""
         ...
 
     async def send_link(

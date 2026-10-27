@@ -337,7 +337,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "WhatsApp API",
    "type": "api",
    "file": "src/heydesk/api/whatsapp.py",
-   "purpose": "Owner connects a number; one signed webhook for every number.",
+   "purpose": "Owner connects a number, with Connect with WhatsApp (login → app id and Embedded Signup config id, signup with the popup's code and ids: D155) or an id and token; one signed webhook for every number.",
    "inputs": "signed post",
    "outputs": "{ok:true}",
    "fn": "whatsapp_webhook"
@@ -970,7 +970,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "MessengerApi",
    "type": "port",
    "file": "src/heydesk/ports/messenger.py",
-   "purpose": "The few Graph API calls for a Page; send_link: a Pay button template; send_cards also takes doctors without a photo (D111); mark_seen and get_message for a quoted message (D117); pages: a Facebook login's Pages with their tokens (D118).",
+   "purpose": "The few Graph API calls for a Page; send_link: a Pay button template; send_cards also takes doctors without a photo (D111) and returns the carousel's id (D156); mark_seen and get_message for a quoted message (D117); pages: a Facebook login's Pages with their tokens (D118).",
    "inputs": "",
    "outputs": ""
   },
@@ -979,7 +979,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "WhatsAppApi",
    "type": "port",
    "file": "src/heydesk/ports/whatsapp.py",
-   "purpose": "The few Cloud API calls for a number; send_link (cta_url Pay) and send_list (doctors) (D111).",
+   "purpose": "The few Cloud API calls for a number; send_link (cta_url Pay) and send_list (doctors) (D111); send_cards returns each card's id (D156); exchange and register for Embedded Signup (D155).",
    "inputs": "",
    "outputs": ""
   },
@@ -1147,7 +1147,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "WhatsAppCloud",
    "type": "adapter",
    "file": "src/heydesk/adapters/whatsapp/cloud.py",
-   "purpose": "Cloud API; ≤3 reply buttons else a list; image cards; cta_url Pay button and a doctors list (D111); typing indicator.",
+   "purpose": "Cloud API; ≤3 reply buttons else a list; image cards; cta_url Pay button and a doctors list (D111); typing indicator; exchange swaps a signup code for the token, register puts the number on the Cloud API (D155).",
    "inputs": "",
    "outputs": ""
   },
@@ -8439,9 +8439,9 @@ tr.hl td { background: var(--accent-soft); }
   {
    "what": "A chat's waiting messages, and WhatsApp's recent ones",
    "file": "src/heydesk/services/channels.py",
-   "where": "`ChannelService.waiting` (chat → messages not answered yet) and `whatsapp_said` (message id → what the buyer sent, the last 10,000), in memory",
+   "where": "`ChannelService.waiting` (chat → messages not answered yet), `whatsapp_said` (message id → what the buyer sent, the last 10,000) and `cards_sent` (message id → the product card's words the agent sent on Messenger and WhatsApp, the last 10,000, D156), in memory",
    "written": "`_gather` (each message waits `CHAT_WAIT_SECONDS`; the last one takes them all), `answer_whatsapp`",
-   "sync": "One server process only. Telegram sends a quoted message whole; Messenger's is fetched by id (D117).",
+   "sync": "One server process only. Telegram sends a quoted message whole; Messenger's is fetched by id (D117); a reply to a product card is looked up in `cards_sent` first (D156).",
    "failure": "A restart loses the few seconds' waiting messages and WhatsApp's quotes: the reply is read on its own."
   },
   {

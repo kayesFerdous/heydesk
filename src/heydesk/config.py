@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     # Facebook Login for Business > Configurations: the one listing the Pages permissions
     # (pages_show_list, pages_messaging, pages_manage_metadata, business_management; D119)
     META_LOGIN_CONFIG_ID: str = ""
+    # The WhatsApp Embedded Signup configuration, for "Connect with WhatsApp" (D155): the same
+    # page, of the WhatsApp Embedded Signup kind (whatsapp_business_management and _messaging)
+    META_WA_CONFIG_ID: str = ""
     MESSENGER_VERIFY_TOKEN: str = ""
     # On Telegram, Messenger and WhatsApp the agent waits this long after a visitor's message
     # for another, then answers all of them at once (D117)
