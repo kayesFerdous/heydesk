@@ -16,6 +16,7 @@ from heydesk.desks.shared import awaiting_payment
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import CouponGone, OutOfStock, ShopStore
 from heydesk.desks.shop.values import (
+    ADDRESS_LIMIT,
     CANCELLABLE,
     CARDS,
     CHANGEABLE,
@@ -36,6 +37,7 @@ from heydesk.desks.shop.values import (
     lines_text,
     match_zone,
     mobile,
+    with_district,
 )
 from heydesk.domain.values import parse_code
 from heydesk.runtime import cards, parse
@@ -313,7 +315,9 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         return fail("There's no order yet. Take it with update_cart first.")
     config = cast(ShopConfig, ctx.agent)
     check = Checks(together=ctx.channel != "voice")  # a chat asks for it all at once (D92)
-    address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
+    address = check.take(
+        "address", args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
+    )
     zone = (  # Python finds the area from the district (D98)
         check.take("district", args.district, lambda d: match_zone(config.delivery, d))
         if args.district.strip() or args.address.strip()
@@ -331,6 +335,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if zone is None or address is None or name is None or phone is None:
         missing = check.result().data
         return ToolResult(ok=False, data=(data | missing) if zone else missing)
+    address = with_district(address, args.district)
     if not args.again:  # the same mobile and items a little while ago (G8, D146)
         since = ctx.now - timedelta(hours=DUPLICATE_HOURS)
         if earlier := await ctx.store.same_order(phone, cart["lines"], since):
@@ -464,12 +469,15 @@ async def checked_order(
     if _short(products, lines):
         return "There aren't that many left. Choose fewer, or another size or colour."
     check = Checks()
-    address = check.take("address", form.address, lambda said: parse.text(said, limit=300))
+    address = check.take(
+        "address", form.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
+    )
     zone = check.take("district", form.district, lambda d: match_zone(config.delivery, d))
     name = check.take("name", form.name, parse.name)
     phone = check.take("mobile number", form.phone, mobile)
     if zone is None or address is None or name is None or phone is None:
         return f"Please check your {', '.join([*check.problems, *check.missing])}."
+    address = with_district(address, form.district)
     cart = {"lines": lines, "subtotal": sum(li["price"] * li["quantity"] for li in lines)}
     return await new_order(store, config, cart, zone, address, name, phone, form.note)
 
@@ -778,11 +786,15 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         lines, subtotal = priced, sum(line["price"] * line["quantity"] for line in priced)
     check = Checks()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
-    address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
+    address = check.take(
+        "address", args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
+    )
     zone = check.take("district", args.district, lambda d: match_zone(config.delivery, d))
     phone = check.take("new_phone", args.new_phone, mobile)
     if check.problems:
         return fail(" ".join(check.problems.values()))
+    if address:  # its district is required above
+        address = with_district(address, args.district)
     if zone and zone.name != found.zone and found.paid:
         return fail(
             f"The delivery charge for {found.zone} was paid online, so the area can't change "

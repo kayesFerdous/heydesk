@@ -10,7 +10,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heydesk.desks import csv_import
-from heydesk.desks.shop.districts import district
+from heydesk.desks.shop.districts import DISTRICTS, district
 from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.speech import money
 
@@ -196,6 +196,20 @@ def match_zone(zones: list[Zone], said_district: str) -> Zone:
     if found:
         return found
     raise ValueError(f"The shop doesn't deliver to {name}. Say so, kindly.")
+
+
+ADDRESS_LIMIT = 270  # leaves room for `with_district` in the column's 300
+
+
+def with_district(address: str, said_district: str) -> str:
+    """The address as saved, with its district in it. The district picks the delivery area and
+    isn't kept apart, and the order page asks for it in its own box, so without this the
+    address the shop and the agent read back later has no district. Raises ValueError."""
+    name = district(said_district)
+    text = address.lower()
+    if name.lower() in text or DISTRICTS[name] in address:
+        return address
+    return f"{address}, {name}"
 
 
 class CallSettings(BaseModel):

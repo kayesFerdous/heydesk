@@ -51,6 +51,7 @@ from heydesk.desks.shop.values import (
     mobile,
     products_from_csv,
     stock_cell,
+    with_district,
 )
 from heydesk.models import Conversation, Lead, Turn
 from heydesk.ports.llm import ToolCall
@@ -1133,6 +1134,7 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     [order] = await saved()
     assert (order.total, order.phone, order.conversation_id) == (196000, "01712345678", conv)
     assert placed.headers["location"].endswith(f"/o/{order.id}")
+    assert order.address == "House 12, Road 5, Mirpur 10, Dhaka"  # the district box is kept
 
     page = await client.get(f"/o/{order.id}")
     assert order.code in page.text and "৳1,960" in page.text
@@ -1530,3 +1532,9 @@ async def test_the_same_mobile_and_items_again_is_asked_about_first(world: World
     assert len(await orders(world)) == 1
     assert (await order_again(again=True)).ok
     assert len(await orders(world)) == 2
+
+
+def test_the_district_is_in_the_saved_address_once() -> None:
+    assert with_district("House 12, Mirpur 10", "dhaka district") == "House 12, Mirpur 10, Dhaka"
+    assert with_district("Zindabazar, Sylhet", "Sylhet") == "Zindabazar, Sylhet"
+    assert with_district("জিন্দাবাজার, সিলেট", "Sylhet") == "জিন্দাবাজার, সিলেট"
