@@ -527,7 +527,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ConversationService",
    "type": "service",
    "file": "src/heydesk/services/conversations.py",
-   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137).",
+   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135); one the AI was off for is given back once the AI is on again (`_given_back`, D127). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137).",
    "inputs": "LiveAgent, text, channel, visitor, photo",
    "outputs": "RunningTurn (events) / Reply",
    "fn": "start_turn"
@@ -6404,7 +6404,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "reply",
-     "label": "conversations.reply on all lines (typing… every 4 s)",
+     "label": "conversations.reply on all lines (typing… every 4 s, only if conversations.answers: not AI off, blocked, practice or taken over)",
      "shape": "step",
      "code": "reply = await self.conversations.reply(agent, channel.kind, chat_id, '\\n'.join(lines), photo, name)"
     },

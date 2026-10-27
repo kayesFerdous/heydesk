@@ -715,6 +715,8 @@ any message ─► visitors.let_in (first, before the photo, the conversation or
                                  still gets the 429, as the page shows the error itself
                  ai_off ─► the conversation becomes `human`, the message is saved and forwarded
                            to the owner (D43's path): no turn, nothing paid
+                 AI on again ─► their next message gives the chat back (`_given_back`) and
+                           is answered
 a messaging app's message ─► visitors.arrived: FLOOD_MESSAGES (20) in a minute ─► blocked
                              `flooding` for BLOCK_HOURS (counted per message, before D117's
                              batching; in memory, like D52)
@@ -1190,7 +1192,7 @@ to the account's messages. The number's id is the `address`.
 ```
 Meta ─► POST /api/whatsapp (signature checked, else 404) ─► 200 at once
        then, for each message (statuses are skipped): its number's id ─► the channel
-       ─► answer_whatsapp: marks it read with "typing…", puts it in _answer's shape
+       ─► answer_whatsapp: puts it in _answer's shape
           (text's body; a tapped button's id; an image's media id and caption)
        ─► the same turn as Messenger's; the sender's number (`from`) is the contact
 ```
@@ -1221,6 +1223,11 @@ a message ─► (Messenger: "Seen" at once) ─► _gather: waits CHAT_WAIT_SEC
              put before the words that reply to it ─► one ConversationService.reply
              (typing… while it runs) ─► one reply
 ```
+
+- **"typing…" only when the agent answers** (`ConversationService.answers`): not for a visitor
+  who is blocked or has the AI off (I2), a stranger in practice mode (D143), or a chat the team
+  has taken over (D135), since no reply is coming from us. WhatsApp's "typing…" also marks
+  their last message read, and lasts until the reply, so it's sent once.
 
 - **The wait is in memory** (`ChannelService.waiting`, chat → messages not answered yet), so it
   needs one server process. `/start`, the owner's chat and `/start owner_` don't wait. Tests set
@@ -1515,7 +1522,8 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
   reply moves it on). A visitor's message `TAKEOVER_QUIET_MINUTES` (30) after it gives the
   chat back first, then is answered (`ConversationService._given_back`): checked when they
   write, so no round runs for it. The AI off for a visitor (D127) sets `human` with no
-  `taken_over_at`, so it never goes back by itself.
+  `taken_over_at`, so it never goes back by itself: it goes back when the AI is on for them
+  again and they write.
 - **Business Suite's messages:** the Page subscribes `message_echoes`. Every message we send
   carries `metadata: "heydesk"` (`ports/messenger.py`, `OURS`), and so does its echo, so an
   echo without it is the owner's own. Its words are added to the chat as the team's

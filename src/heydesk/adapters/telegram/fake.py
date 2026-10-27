@@ -14,6 +14,7 @@ class FakeTelegram:
         self.cards: list[tuple[str, str, list[dict[str, str]]]] = []  # (chat_id, html, buttons)
         self.answered: list[str] = []  # the callback queries answered
         self.files: dict[str, bytes] = {}  # what a visitor's photo's file_id downloads as
+        self.typing: list[str] = []  # the chats "typing…" was shown in
 
     async def get_me(self, token: str) -> str:
         if token == "bad":
@@ -67,4 +68,4 @@ class FakeTelegram:
         return self.files[file_id]
 
     async def send_typing(self, token: str, chat_id: str) -> None:
-        pass
+        self.typing.append(chat_id)

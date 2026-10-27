@@ -79,13 +79,32 @@ async def test_ai_off_sends_their_messages_to_the_team(app: FastAPI, client: Asy
     [conv] = (await client.get("/api/conversations")).json()
     assert (await change(client, conv["id"], ai_off=True))["ai_off"] is True
 
-    asked = len(llm.requests)
+    asked, typed = len(llm.requests), len(app.state.services.channels.telegram.typing)
     await send(client, path, secret, message("where is my parcel?"))
     assert len(llm.requests) == asked  # no turn, nothing paid
+    assert len(app.state.services.channels.telegram.typing) == typed  # and no "typing…"
     opened = (await client.get(f"/api/conversations/{conv['id']}")).json()
     assert opened["status"] == "human"
     assert "where is my parcel?" in [line["text"] for line in opened["messages"]]
     assert any("where is my parcel?" in text for text in to(app, OWNER))  # the owner hears it
+
+
+async def test_ai_on_again_answers_them_again(app: FastAPI, client: AsyncClient) -> None:
+    path, secret = await link_owner(app, client)
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = ["Hello!", "It's on its way."]
+    await send(client, path, secret, message("hi"))
+    [conv] = (await client.get("/api/conversations")).json()
+    await change(client, conv["id"], ai_off=True)
+    await send(client, path, secret, message("anyone there?"))  # to the team
+
+    assert (await change(client, conv["id"], ai_off=False))["ai_off"] is False
+    asked = len(llm.requests)
+    await send(client, path, secret, message("where is my parcel?"))
+    assert len(llm.requests) == asked + 1  # the agent answers again
+    opened = (await client.get(f"/api/conversations/{conv['id']}")).json()
+    assert opened["status"] == "active"
+    assert "It's on its way." in [line["text"] for line in opened["messages"]]
 
 
 async def test_a_flood_on_a_messaging_app_blocks_for_a_day(

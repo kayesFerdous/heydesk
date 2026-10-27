@@ -210,6 +210,19 @@ async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
     assert fake(app).sent[-1] == (FROM, "Hi, this is Rahim.")
 
 
+async def test_typing_shows_only_when_the_agent_answers(app: FastAPI, client: AsyncClient) -> None:
+    await connect(client)
+    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    await post(client, message("hi"))
+    assert fake(app).typing == ["wamid.1"]
+
+    [conv] = (await client.get("/api/conversations")).json()
+    visitor = (await client.get(f"/api/conversations/{conv['id']}")).json()["visitor"]
+    await client.patch(f"/api/visitors/{visitor['id']}", json={"ai_off": True})
+    await post(client, message("where is my parcel?"))
+    assert fake(app).typing == ["wamid.1"]  # the team answers: no "typing…"
+
+
 async def test_the_list_filters_by_channel(client: AsyncClient) -> None:
     await connect(client)
     assert await post(client, message("hi")) == 200

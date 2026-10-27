@@ -14,6 +14,7 @@ class FakeWhatsApp:
         self.files: dict[str, bytes] = {}  # what a visitor's media id downloads as
         self.codes: dict[str, str] = {}  # Embedded Signup's code → the business's token
         self.registered: set[str] = set()  # phone ids
+        self.typing: list[str] = []  # the message ids "typing…" was shown for
 
     async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
         if code not in self.codes:
@@ -59,4 +60,4 @@ class FakeWhatsApp:
         return self.files[media_id]
 
     async def send_typing(self, token: str, phone_id: str, message_id: str) -> None:
-        pass
+        self.typing.append(message_id)

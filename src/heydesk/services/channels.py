@@ -641,11 +641,10 @@ class ChannelService:
         elif kind == "audio":  # a voice note (D147)
             said = {"audio": message["audio"]}
         said["reply_to"] = (message.get("context") or {}).get("id")
+        said["id"] = message["id"]  # "typing…" goes with it (`_keep_typing`)
         self.whatsapp_said[message["id"]] = said
         if len(self.whatsapp_said) > 10_000:  # the oldest goes
             del self.whatsapp_said[next(iter(self.whatsapp_said))]
-        with contextlib.suppress(WhatsAppUnavailable):  # "typing…" until the reply
-            await self.whatsapp.send_typing(channel.token, channel.address, message["id"])
         await self._answer(channel, str(message["from"]), said | {"name": name})
 
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
@@ -719,7 +718,11 @@ class ChannelService:
         if not lines:
             await self._send(channel, chat_id, NOT_TEXT)
             return
-        typing = asyncio.create_task(self._keep_typing(channel, chat_id))
+        typing = None  # "typing…" only when the agent will answer, not the team (I2)
+        if await self.conversations.answers(agent, channel.kind, chat_id):
+            typing = asyncio.create_task(
+                self._keep_typing(channel, chat_id, messages[-1].get("id", ""))
+            )
         try:
             reply = await self.conversations.reply(
                 agent,
@@ -730,7 +733,8 @@ class ChannelService:
                 messages[-1].get("name"),
             )
         finally:
-            typing.cancel()
+            if typing is not None:
+                typing.cancel()
         if reply.photos:
             await self._send_photos(
                 channel, chat_id, reply.photos, agent.public_key, reply.conversation_id
@@ -962,16 +966,19 @@ class ChannelService:
         """A photo on this server's disk is "/media/…"; one in R2 is whole already (D101)."""
         return url if url.startswith("https://") else self.settings.public_url + url
 
-    async def _keep_typing(self, channel: Channel, chat_id: str) -> None:
-        """ "typing…" lasts five seconds on Telegram; a reply can take longer. WhatsApp's was
-        sent once with the message's id (`answer_whatsapp`)."""
-        while channel.kind != WHATSAPP:
+    async def _keep_typing(self, channel: Channel, chat_id: str, message_id: str) -> None:
+        """ "typing…" lasts five seconds on Telegram; a reply can take longer. WhatsApp's lasts
+        until the reply, so it's sent once, with their last message's id."""
+        while True:
             try:
+                if channel.kind == WHATSAPP:
+                    await self.whatsapp.send_typing(channel.token, channel.address, message_id)
+                    return
                 if channel.kind == MESSENGER:
                     await self.messenger.send_typing(channel.token, chat_id)
                 else:
                     await self.telegram.send_typing(channel.token, chat_id)
-            except (TelegramUnavailable, MessengerUnavailable):
+            except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):
                 return
             await asyncio.sleep(4)
 

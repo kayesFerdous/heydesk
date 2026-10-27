@@ -142,7 +142,8 @@ async def test_a_message_to_the_team_is_not_a_turn(world: World) -> None:
     world.llm.script = ["Hello!"]
     conv_id = await say(world, "hi")
     async with world.sessions() as s, s.begin():
-        (await s.get(Conversation, conv_id)).status = HUMAN  # the owner took the chat over
+        conv = await s.get(Conversation, conv_id)
+        conv.status, conv.taken_over_at = HUMAN, world.clock()  # the owner took the chat over
 
     await say(world, "are you there?", conv_id)
 

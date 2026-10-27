@@ -39,7 +39,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
 from heydesk.services.users import Principal
-from heydesk.services.visitors import VisitorService
+from heydesk.services.visitors import VisitorService, is_blocked
 from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
@@ -150,11 +150,11 @@ class ConversationService:
                 conv = await self._get(s, agent, conversation_id)
             if self._is_full(conv):
                 raise ConversationFull("This conversation is very long. Please start a new one.")
-            # the team is answering: the agent stays quiet (D43), until it's quiet (D135)
-            if conv.status == HUMAN and not await self._given_back(conv):
-                return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
         if not runs_ai:  # the AI is off for them (I2): the team has the chat, no turn is paid
             conv = await self._for_team(agent, conv, channel, contact, name)
+            return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
+        # the team is answering: the agent stays quiet (D43), until it's quiet (D135)
+        if conv is not None and conv.status == HUMAN and not await self._given_back(conv):
             return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
         await self.visitors.admit(agent, visitor)  # counts the turn, or refuses it (D51)
         if conv is None:
@@ -212,23 +212,8 @@ class ConversationService:
         name: str | None = None,
     ) -> Reply:
         """For a messaging app (D42): continues the contact's conversation, or starts one, and
-        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62). A conversation that is full, or quiet for
-        CONVERSATION_IDLE_HOURS, is left behind: yesterday's half-order shouldn't come back."""
-        async with self.sessions() as s:
-            latest = await s.scalar(
-                select(Conversation)
-                .where(
-                    Conversation.workspace_id == agent.workspace_id,
-                    Conversation.agent_id == agent.agent_id,
-                    Conversation.channel == channel,
-                    Conversation.contact == contact,
-                )
-                .order_by(Conversation.updated_at.desc())
-                .limit(1)
-            )
-        idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
-        if latest and (self._is_full(latest) or self.now() - latest.updated_at > idle):
-            latest = None
+        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62)."""
+        latest = await self._latest(agent, channel, contact)
         turn = await self.start_turn(
             agent,
             latest.id if latest else None,
@@ -257,6 +242,39 @@ class ConversationService:
                 elif isinstance(event, TurnEnded):
                     choices = event.choices
         return Reply("".join(parts).strip(), handoff, photos, choices, card, turn.conversation_id)
+
+    async def answers(self, agent: LiveAgent, channel: str, contact: str) -> bool:
+        """Whether the agent will answer the contact's next message on a messaging app, so the
+        app shows "typing…" only then: not blocked, the AI on for them, not practice mode, and
+        not a chat the team has (I2, D143, D135)."""
+        visitor = f"{channel}:{contact}"
+        found = await self.visitors.find(agent.workspace_id, visitor)
+        if found is not None and (found.ai_off or is_blocked(found, self.now())):
+            return False
+        if agent.config.practicing(channel, visitor):
+            return False
+        latest = await self._latest(agent, channel, contact)
+        return latest is None or not self._team_has(latest)
+
+    async def _latest(self, agent: LiveAgent, channel: str, contact: str) -> Conversation | None:
+        """The contact's conversation on a messaging app, or None. One that is full, or quiet
+        for CONVERSATION_IDLE_HOURS, is left behind: yesterday's half-order shouldn't come back."""
+        async with self.sessions() as s:
+            latest = await s.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.workspace_id == agent.workspace_id,
+                    Conversation.agent_id == agent.agent_id,
+                    Conversation.channel == channel,
+                    Conversation.contact == contact,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+        idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
+        if latest and (self._is_full(latest) or self.now() - latest.updated_at > idle):
+            return None
+        return latest
 
     async def restart(
         self, agent: LiveAgent, channel: str, contact: str, name: str | None = None
@@ -717,16 +735,23 @@ class ConversationService:
         return conv.id
 
     async def _given_back(self, conv: Conversation) -> bool:
-        """A chat the team took over and then left quiet is the agent's again (D135)."""
-        at = conv.taken_over_at
-        if at is None:
-            return False
-        quiet = timedelta(minutes=self.settings.TAKEOVER_QUIET_MINUTES)
-        if self.now() - (at if at.tzinfo else at.replace(tzinfo=UTC)) < quiet:
+        """A chat the team took over and then left quiet is the agent's again (D135), and so is
+        one that was the team's while the AI was off for the visitor (I2)."""
+        if self._team_has(conv):
             return False
         await self.take_over(conv.workspace_id, conv.id, False)
         conv.status, conv.taken_over_at = "active", None
         return True
+
+    def _team_has(self, conv: Conversation) -> bool:
+        """The team took the chat over and wrote in it less than TAKEOVER_QUIET_MINUTES ago
+        (D135). One with no time was the team's because the AI was off for the visitor: once
+        it's on again, the chat is the agent's again too (I2)."""
+        at = conv.taken_over_at
+        if conv.status != HUMAN or at is None:
+            return False
+        quiet = timedelta(minutes=self.settings.TAKEOVER_QUIET_MINUTES)
+        return self.now() - (at if at.tzinfo else at.replace(tzinfo=UTC)) < quiet
 
     async def _run(
         self, turn: TurnInput, conv: Conversation, agent: LiveAgent, visitor: str
