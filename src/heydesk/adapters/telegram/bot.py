@@ -22,13 +22,16 @@ class TelegramBot:
         me = await self._call(token, "getMe")
         return str(me["username"])
 
-    async def set_webhook(self, token: str, url: str, secret: str) -> None:
+    async def set_webhook(
+        self, token: str, url: str, secret: str, drop_pending: bool = True
+    ) -> None:
         params = {
             "url": url,
             "secret_token": secret,
             # a button's tap is a callback query (D99); not edits, reactions or group events
             "allowed_updates": ["message", "callback_query"],
-            "drop_pending_updates": True,  # what was sent before it was connected isn't answered
+            # what was sent before it was connected isn't answered
+            "drop_pending_updates": drop_pending,
         }
         await self._call(token, "setWebhook", json=params)
 

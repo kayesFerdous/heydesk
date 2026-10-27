@@ -20,7 +20,9 @@ class FakeTelegram:
             raise TelegramUnavailable("getMe: Unauthorized")
         return "spice_garden_bot"
 
-    async def set_webhook(self, token: str, url: str, secret: str) -> None:
+    async def set_webhook(
+        self, token: str, url: str, secret: str, drop_pending: bool = True
+    ) -> None:
         self.webhooks[token] = (url, secret)
 
     async def delete_webhook(self, token: str) -> None:

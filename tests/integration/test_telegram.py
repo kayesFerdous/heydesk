@@ -277,3 +277,16 @@ async def test_a_voice_note_is_answered_from_its_words(app: FastAPI, client: Asy
     said = "(fake model) You said: [Voice note] Do you have the black kurti in M?"
     assert sent(app) == [(str(CHAT), said)]
     assert app.state.services.channels.transcriber.heard == ["voice.ogg"]
+
+
+async def test_starting_again_points_the_bot_back_at_us(app: FastAPI, client: AsyncClient) -> None:
+    """A bot connected before button taps, or on another tunnel, is set up again at start."""
+    path, secret = await connect(app, client)
+    services = app.state.services
+    fake = services.channels.telegram
+    fake.webhooks.clear()  # what Telegram had was old
+
+    await services.channels.refresh_telegram()
+
+    url, again = fake.webhooks[TOKEN]
+    assert url.removeprefix("https://heydesk.test") == path and again == secret

@@ -537,7 +537,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ChannelService",
    "type": "service",
    "file": "src/heydesk/services/channels.py",
-   "purpose": "Connect Telegram/Messenger/WhatsApp; answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111). A Page post's comment: one public and one private reply, into the buyer's Messenger chat (answer_comment, D141). What the post is about is found once and kept (page_post, page_posts table): later commenters reuse it; many products get the range and a carousel; one more reply after 2 h quiet (nudge_comments, run) (D142).",
+   "purpose": "Connect Telegram/Messenger/WhatsApp (Telegram webhooks are set again a minute after start, refresh_telegram, so button taps and a new tunnel address reach us); answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111). A Page post's comment: one public and one private reply, into the buyer's Messenger chat (answer_comment, D141). What the post is about is found once and kept (page_post, page_posts table): later commenters reuse it; many products get the range and a carousel; one more reply after 2 h quiet (nudge_comments, run) (D142).",
    "inputs": "webhook payloads",
    "outputs": "messages sent",
    "fn": "_answer"

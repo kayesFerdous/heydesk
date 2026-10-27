@@ -16,7 +16,9 @@ class TelegramApi(Protocol):
         """The bot's username, without the @. Fails for a wrong token."""
         ...
 
-    async def set_webhook(self, token: str, url: str, secret: str) -> None:
+    async def set_webhook(
+        self, token: str, url: str, secret: str, drop_pending: bool = True
+    ) -> None:
         """Telegram posts each new message to `url`, with `secret` in a header."""
         ...
 

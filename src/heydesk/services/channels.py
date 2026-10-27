@@ -196,6 +196,25 @@ class ChannelService:
         log.info("telegram connected", extra={"channel_id": channel_id})
         return channel
 
+    async def refresh_telegram(self) -> None:
+        """Points every bot's webhook at this server again, as the app starts. Telegram keeps
+        the `allowed_updates` it was given when connected, so a bot connected before button
+        taps (D99) never got them; and a tunnel's address changes on every run. Oldest first:
+        a bot connected twice answers for the newest. Messages waiting for us are kept."""
+        if not self.settings.PUBLIC_URL:
+            return
+        async with self.sessions() as s:
+            found = await s.scalars(
+                select(Channel).where(Channel.kind == TELEGRAM).order_by(Channel.created_at)
+            )
+            channels = list(found)
+        for channel in channels:
+            url = f"{self.settings.PUBLIC_URL.rstrip('/')}/api/telegram/{channel.id}"
+            try:
+                await self.telegram.set_webhook(channel.token, url, channel.secret, False)
+            except TelegramUnavailable as error:  # a revoked token: the rest still go
+                log.warning("webhook not set: %s", error, extra={"channel_id": channel.id})
+
     async def telegram_of(self, ws: str) -> Channel:
         return await self._of(ws, TELEGRAM, "This business hasn't connected a Telegram bot.")
 
@@ -544,9 +563,17 @@ class ChannelService:
                     )
 
     async def run(self, every: float) -> None:
-        """The comment nudge round (D142), every `every` seconds, until cancelled."""
+        """The comment nudge round (D142) every `every` seconds, until cancelled. The first
+        time round it also sets the Telegram bots up again."""
+        refreshed = False
         while True:
             await asyncio.sleep(every)
+            if not refreshed:
+                refreshed = True
+                try:
+                    await self.refresh_telegram()
+                except Exception:
+                    log.exception("telegram webhooks not refreshed")
             try:
                 await self.nudge_comments()
             except Exception:
