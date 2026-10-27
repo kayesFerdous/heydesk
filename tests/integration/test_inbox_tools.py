@@ -43,12 +43,14 @@ async def test_a_snoozed_chat_comes_back_at_its_time_with_an_alert(
 ) -> None:
     await link_owner(app, client)
     services = app.state.services
-    services.conversations.runtime.llm.script = ["Hello!"]
+    services.conversations.runtime.llm.script = ["Hello!", "Yes, I'm here."]
     conv = await web(client, "hi")
     later = (FIXED_NOW + timedelta(hours=2)).isoformat()
     assert (await put(client, conv, "snooze", {"until": later})).status_code == 200
     assert await listed(client) == []
 
+    await web(client, "are you there?", conv)  # they write: still snoozed, unlike Done
+    assert await listed(client) == []
     await services.conversations.wake_snoozed()  # not yet
     assert not any("snoozed" in text for text in to(app, OWNER))
     services.conversations.now.advance(hours=2)

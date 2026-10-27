@@ -610,7 +610,7 @@ from `team_events`. A ticket or lead counts for whoever tapped it, and only whil
 
 **Finding a chat (D128).** The list leaves out a chat that is *Done* (`done_at`) or snoozed
 (`snoozed_until` still to come). *Done* lasts until the visitor writes again: saving their next
-turn clears `done_at` and `snoozed_until`. *Snooze* takes a time in the next 30 days
+turn clears `done_at`. *Snooze* lasts until its time, even if they write meanwhile (D157); it takes a time in the next 30 days
 (`MAX_SNOOZE_DAYS`); `ConversationService.run` checks every `SNOOZE_CHECK_SECONDS` (60), clears
 the ones that are due and alerts the owner ("⏰ A chat you snoozed is back", with its `Ref:`).
 The same round nudges an unfinished order (D139): a shop chat, `active`, last touched 1 to 3

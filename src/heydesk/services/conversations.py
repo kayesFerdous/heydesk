@@ -810,7 +810,7 @@ class ConversationService:
             saved = await self._get_by_id(s, conv.workspace_id, conv.id)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
-            saved.done_at = saved.snoozed_until = None  # they wrote again: it's back (I3)
+            saved.done_at = None  # they wrote again: back from Done, not Snooze (D157)
             if ended.handed_off:
                 saved.status = "needs_human"
                 if auto_assign and saved.assigned_to is None:
