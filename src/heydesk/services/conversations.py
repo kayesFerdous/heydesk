@@ -188,7 +188,7 @@ class ConversationService:
             ),
             tools=tools_for(desk, config, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
-            history=conv.messages,
+            history=conv.messages[conv.history_from :],  # what the agent remembers (D157)
             user_text=text,
             channel=channel,
             agent=config,
@@ -196,7 +196,7 @@ class ConversationService:
             now=now,
             state=conv.state,
             note=lambda state: desk.note(config, state),
-            is_first=not conv.messages,
+            is_first=len(conv.messages) == conv.history_from,
             photo_url=saved.url if saved else "",
             photo_line=photo_line,
         )
@@ -212,8 +212,11 @@ class ConversationService:
         name: str | None = None,
     ) -> Reply:
         """For a messaging app (D42): continues the contact's conversation, or starts one, and
-        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62)."""
+        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62). One
+        that's full or quiet starts afresh in the same chat (D157)."""
         latest = await self._latest(agent, channel, contact)
+        if latest is not None and self._stale(latest):
+            await self._start_afresh(latest)
         turn = await self.start_turn(
             agent,
             latest.id if latest else None,
@@ -257,10 +260,10 @@ class ConversationService:
         return latest is None or not self._team_has(latest)
 
     async def _latest(self, agent: LiveAgent, channel: str, contact: str) -> Conversation | None:
-        """The contact's conversation on a messaging app, or None. One that is full, or quiet
-        for CONVERSATION_IDLE_HOURS, is left behind: yesterday's half-order shouldn't come back."""
+        """The contact's conversation on a messaging app, or None. They keep one (D157): the
+        newest, for chats split before that."""
         async with self.sessions() as s:
-            latest = await s.scalar(
+            return await s.scalar(
                 select(Conversation)
                 .where(
                     Conversation.workspace_id == agent.workspace_id,
@@ -271,16 +274,34 @@ class ConversationService:
                 .order_by(Conversation.updated_at.desc())
                 .limit(1)
             )
+
+    def _stale(self, conv: Conversation) -> bool:
+        """Full, or quiet for CONVERSATION_IDLE_HOURS: yesterday's half-order shouldn't come
+        back, so the agent starts afresh (D157)."""
         idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
-        if latest and (self._is_full(latest) or self.now() - latest.updated_at > idle):
-            return None
-        return latest
+        at = conv.updated_at if conv.updated_at.tzinfo else conv.updated_at.replace(tzinfo=UTC)
+        return self._is_full(conv) or self.now() - at > idle
+
+    async def _start_afresh(self, conv: Conversation) -> None:
+        """The agent forgets what came before, in the same chat (D157): its memory starts after
+        the last message, the cart is emptied and an unfinished order may be nudged again. The
+        team still sees the whole chat, and its labels stay."""
+        async with self.sessions() as s, s.begin():
+            saved = await self._get_by_id(s, conv.workspace_id, conv.id)
+            saved.history_from = len(saved.messages)
+            saved.state, saved.nudged = {}, False
+        conv.history_from, conv.state, conv.nudged = len(conv.messages), {}, False
+        log.info("started afresh", extra={"conversation_id": conv.id})
 
     async def restart(
         self, agent: LiveAgent, channel: str, contact: str, name: str | None = None
     ) -> None:
-        """A new, empty conversation for the contact (Telegram's /start); their next message
-        goes into it, after the greeting."""
+        """Telegram's /start: the contact's chat starts afresh (D157), or a new one if they have
+        none; their next message gets the greeting."""
+        latest = await self._latest(agent, channel, contact)
+        if latest is not None:
+            await self._start_afresh(latest)
+            return
         async with self.sessions() as s, s.begin():
             s.add(self._new(agent, channel, contact, name))
 
@@ -641,7 +662,7 @@ class ConversationService:
             ),
             tools=[],  # it only writes words: nothing is looked up, saved or sent
             model=self.settings.MODEL,
-            history=conv.messages,
+            history=conv.messages[conv.history_from :],  # what the agent remembers (D157)
             user_text=asked,
             channel="assist",
             agent=config,
@@ -712,7 +733,7 @@ class ConversationService:
     ) -> str:
         """A comment on the Page's post and our private reply to it (D141), added to the
         buyer's Messenger chat as their line and the agent's, so their reply there carries on
-        from it. The chat they have, unless it's full or quiet; else a new one."""
+        from it. The chat they have, started afresh if it's full or quiet (D157); else a new one."""
         async with self.sessions() as s, s.begin():
             conv = await s.scalar(
                 select(Conversation)
@@ -725,10 +746,11 @@ class ConversationService:
                 .order_by(Conversation.updated_at.desc())
                 .limit(1)
             )
-            idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
-            if conv is None or self._is_full(conv) or self.now() - conv.updated_at > idle:
+            if conv is None:
                 conv = self._new(agent, "messenger", contact, name)
                 s.add(conv)
+            elif self._stale(conv):
+                conv.history_from, conv.state, conv.nudged = len(conv.messages), {}, False
             llm = self.runtime.llm
             conv.messages = [*conv.messages, llm.user_message(said), llm.assistant_message(answer)]
             conv.updated_at = self.now()
@@ -865,7 +887,8 @@ class ConversationService:
         )
 
     def _is_full(self, conv: Conversation) -> bool:
-        turns = sum(1 for m in conv.messages if m.get("role") == "user")
+        """The agent's part only (D157): a chat kept for months isn't full."""
+        turns = sum(1 for m in conv.messages[conv.history_from :] if m.get("role") == "user")
         return turns >= self.settings.MAX_TURNS
 
     async def _get(self, s: AsyncSession, agent: LiveAgent, conversation_id: str) -> Conversation:

@@ -44,6 +44,7 @@ async def out(services: Services, ws: str, convs: list[Conversation]) -> list[Co
 
 
 class Line(BaseModel):
+    index: int  # its place in the whole chat, for `before` and `history_from` (D157)
     role: Literal["user", "assistant"]
     text: str  # empty for photos the agent showed
     photo: str = ""  # the photo the visitor sent with it (D57)
@@ -74,7 +75,10 @@ def visitor_out(visitor: Visitor, now: datetime) -> VisitorOut:
 
 
 class ConversationWithMessages(ConversationOut):
-    messages: list[Line]  # what was said; tool calls and results left out
+    messages: list[Line]  # what was said, oldest first; tool calls and results left out
+    count: int = 0  # every line in the chat, however many came (D157)
+    more: bool = False  # older lines are left, for `?before=` the first one's index (D157)
+    history_from: int = 0  # the agent remembers the lines from this index on (D157)
     # who wrote it, for Block and AI off (I2); None for a chat from before visitors were known
     visitor: VisitorOut | None = None
 
@@ -188,20 +192,33 @@ async def stats(
 
 @router.get("/api/conversations/{conversation_id}")
 async def conversation(
-    conversation_id: str, services: Svc, ws: Workspace
+    conversation_id: str,
+    services: Svc,
+    ws: Workspace,
+    before: Annotated[int | None, Query(ge=0)] = None,
+    limit: Annotated[int | None, Query(ge=1, le=200)] = None,
 ) -> ConversationWithMessages:
+    """The chat with what was said. `limit`: only the newest that many lines, before the line
+    `before` if given; the screen loads older ones as the team scrolls up (D157)."""
     conv = await services.conversations.get(ws, conversation_id)
     said = []
-    for m in conv.messages:
+    for i, m in enumerate(conv.messages):
         if m.get("photos"):  # a tool's result, kept only for the photos it showed
-            said.append(Line(role="assistant", text="", photos=m["photos"]))
+            said.append(Line(index=i, role="assistant", text="", photos=m["photos"]))
         elif (
             m.get("role") in ("user", "assistant")
             and isinstance(m.get("content"), str)
             and m["content"].strip()
             and not m.get("tool_calls")
         ):
-            said.append(Line(role=m["role"], text=m["content"], photo=m.get("photo", "")))
+            line = Line(index=i, role=m["role"], text=m["content"], photo=m.get("photo", ""))
+            said.append(line)
+    count = len(said)
+    if before is not None:
+        said = [line for line in said if line.index < before]
+    more = limit is not None and len(said) > limit
+    if limit is not None:
+        said = said[-limit:]
     [head] = await out(services, ws, [conv])
     found = (
         await services.visitors.find(ws, key_of(conv.channel, conv.contact))
@@ -209,7 +226,14 @@ async def conversation(
         else None
     )
     visitor = visitor_out(found, services.visitors.now()) if found else None
-    return ConversationWithMessages(**head.model_dump(), messages=said, visitor=visitor)
+    return ConversationWithMessages(
+        **head.model_dump(),
+        messages=said,
+        count=count,
+        more=more,
+        history_from=conv.history_from,
+        visitor=visitor,
+    )
 
 
 class HandBackIn(BaseModel):

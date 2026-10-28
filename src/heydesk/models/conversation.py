@@ -49,5 +49,8 @@ class Conversation(Base):
         JSON, default=dict
     )  # what a desk keeps between turns: the cart
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # Where the agent's memory starts in `messages` (D157). A messaging app's contact keeps
+    # one chat: after CONVERSATION_IDLE_HOURS it moves here, and the team still sees it all
+    history_from: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)

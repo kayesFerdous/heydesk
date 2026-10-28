@@ -437,7 +437,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cached_tokens (D154), cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
 | `agents` | kind (its desk), name, public_key (unique), config JSON |
-| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
+| `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), history_from (where the agent's memory starts in messages, D157), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
 | `tickets` | the shared columns, reason (the agent's words for what's wrong). Code `C-101`; open ↔ solved; one open ticket per chat; who has it is the chat's `assigned_to` (D138) |
 | `leads` | the shared columns, call_at (UTC), note (what they want), why (a lost one's reason, lower case). Code `L-101`; open → sold / not_now / lost, and back to open (D139) |
 | `post_comments` | post_id, commenter (their id in the comment), comment_id (the one answered), conversation_id (the chat it opened), nudged (the one more reply went, D142); unique per business, post and commenter: one public and one private reply each (D141) |
@@ -521,7 +521,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET/PATCH | `/api/tickets…` | Complaints the agent flagged (`?status=open`), each with who has its chat; `PATCH {status}` solves one or opens it again (D138) |
-| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128); `PUT …/{id}/takeover {on}` takes the chat over or gives it back (D135); `PUT …/{id}/labels {labels}`, `?label=` filters; `GET/POST …/{id}/notes {text}` the team's notes; `POST …/{id}/reply {text}` answers from the inbox and takes the chat over (D136); `POST …/{id}/assist {kind, question}` is the model's summary, answer or draft for the team, `{text}` (D137) |
+| GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127); `?limit=` gives only the newest lines and `?before=<index>` the ones before a line, with `more`, `count` (every line), each line's `index` and `history_from` (D157). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128); `PUT …/{id}/takeover {on}` takes the chat over or gives it back (D135); `PUT …/{id}/labels {labels}`, `?label=` filters; `GET/POST …/{id}/notes {text}` the team's notes; `POST …/{id}/reply {text}` answers from the inbox and takes the chat over (D136); `POST …/{id}/assist {kind, question}` is the model's summary, answer or draft for the team, `{text}` (D137) |
 | GET/PATCH | `/api/leads…` | Call backs the agent took (`?status=open`); `PATCH {status, why}` is the team's tap: `sold`, `not_now`, or `lost` with why; `GET /api/leads/why` counts the whys, most first: why we lose sales (D139) |
 | PATCH | `/api/visitors/{id}` | `{blocked}` or `{ai_off}`: the team blocks or unblocks a visitor, or turns the AI off or on for them (D127) |
 | GET | `/api/visitors/blocked` | Who is blocked now, with why, by whom, until when and their latest chat (D127) |
@@ -1108,16 +1108,20 @@ webhook to `PUBLIC_URL/api/telegram/{channel id}` with a random secret, and save
 
 ```
 Telegram ─► POST /api/telegram/{id}  (secret header checked, else 404) ─► 200 at once
-         then: /start      ─► a new conversation, and the greeting is sent
+         then: /start      ─► the chat starts afresh (D157), and the greeting is sent
                text        ─► "typing…" ─► ConversationService.reply(agent, "telegram", chat id, text)
                                ─► the whole reply as one message, then the hand-off line if any
                a photo (the shop) ─► the same, with the photo and its caption (D63)
                anything else (a voice note, a sticker) ─► "I can only read text messages for now."
 ```
 
-- **Which conversation:** `conversations.contact` is the chat id. A message continues the
-  chat's latest conversation, unless it's full (`MAX_TURNS`) or quiet for
-  `CONVERSATION_IDLE_HOURS` (12): then a new one starts, so yesterday's half-order doesn't return.
+- **Which conversation:** `conversations.contact` is the chat id, and a contact keeps one
+  conversation (D157). When it's full (`MAX_TURNS` since the agent's memory starts) or quiet
+  for `CONVERSATION_IDLE_HOURS` (12), the agent starts afresh in it: `history_from` moves to the
+  end of `messages`, the cart (`state`) is emptied and `nudged` is cleared, so yesterday's
+  half-order doesn't return. The model's history is `messages[history_from:]`; the team still
+  sees the whole chat, with its labels, a line where the agent's memory starts, and older
+  lines loading as they scroll up (`GET …/{id}?limit=&before=`).
 - **Another messaging app** is the same shape: its port and adapter, a webhook route, and
   `ConversationService.reply` for the turn. WhatsApp was (D103).
 - Only private chats are answered. The token is never returned by a route, and httpx's
@@ -1954,7 +1958,7 @@ version handles them.
 | Billing, phone numbers, hosting | No plans or billing; voice in the browser only, for a receptionist or a clinic (D108); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
-| Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |
+| Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `TAKEOVER_QUIET_MINUTES` (D135); after `CONVERSATION_IDLE_HOURS` the agent starts afresh in the same chat (D157) |
 | Telegram: a repeated update (Telegram retries when we don't answer) | The webhook says OK before the turn runs, so a retry is rare; one would be answered twice |
 | Ending logins when a password changes | A login token lasts 7 days, and a new password (changed, or reset with the emailed code, D93) doesn't end the ones already made. An admin's role is checked against the database on every request (D23) |
 | Changing `SECRETS_KEY` | It's set once; the secrets saved with the old key can't be read with a new one (D74) |

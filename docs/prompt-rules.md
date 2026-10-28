@@ -165,6 +165,11 @@ The same holds for the inbox's reply box (D136) and the owner's own messages fro
 (D135): added as the team's, read as the agent's earlier replies. A team member's notes and a
 chat's labels (D136) and the saved replies are never in the prompt or the history.
 
+The history is only what came after the agent last started afresh: `messages[history_from:]`
+(D157). On a messaging app a chat quiet for `CONVERSATION_IDLE_HOURS`, or full, moves that point
+to the end, so the model never reads yesterday's half-order; the team still sees it all. *Summary*,
+*Ask* and *Draft* (§6c) read the same part.
+
 ## 6c. Helping the team (D137)
 
 *Summary*, *Ask about this chat* and *Draft a reply* run the chat's own prompt and history with

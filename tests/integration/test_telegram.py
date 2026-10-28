@@ -113,19 +113,41 @@ async def test_start_sends_the_greeting_and_starts_afresh(
     await send(client, path, secret, message("hello"))
 
     assert sent(app)[1][1].startswith("Hi, welcome to Spice Garden!")
-    _, second = await telegram_conversations(app)
-    assert second.messages[0]["role"] == "assistant"  # the greeting they saw comes first (D8)
-    assert [m["content"] for m in second.messages if m["role"] == "user"] == ["hello"]
+    [conv] = await telegram_conversations(app)  # the same chat, started afresh (D157)
+    remembered = conv.messages[conv.history_from :]
+    assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first (D8)
+    assert [m["content"] for m in remembered if m["role"] == "user"] == ["hello"]
 
 
-async def test_a_quiet_conversation_is_left_behind(app: FastAPI, client: AsyncClient) -> None:
+async def test_a_quiet_chat_starts_afresh_in_the_same_chat(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The team keeps one chat per contact, with its labels; the agent forgets (D157)."""
     path, secret = await connect(app, client)
     await send(client, path, secret, message("two biryanis"))
+    [conv] = await telegram_conversations(app)
+    await client.put(f"/api/conversations/{conv.id}/labels", json={"labels": ["vip"]})
 
     app.state.services.conversations.now.advance(hours=13)
     await send(client, path, secret, message("hi"))
 
-    assert len(await telegram_conversations(app)) == 2
+    [conv] = await telegram_conversations(app)
+    assert conv.history_from == 3 and conv.labels == ["vip"]
+    prompt = app.state.services.conversations.runtime.llm.requests[-1]
+    assert "two biryanis" not in str(prompt.messages)  # yesterday's isn't in its history
+
+    whole = (await client.get(f"/api/conversations/{conv.id}")).json()
+    assert [line["text"] for line in whole["messages"] if line["role"] == "user"] == [
+        "two biryanis",
+        "hi",
+    ]
+    assert whole["history_from"] == 3 and not whole["more"]
+    newest = (await client.get(f"/api/conversations/{conv.id}", params={"limit": 1})).json()
+    assert [line["text"] for line in newest["messages"]] == ["(fake model) You said: hi"]
+    assert newest["more"] and newest["count"] == whole["count"] == 6
+    before = newest["messages"][0]["index"]
+    older = await client.get(f"/api/conversations/{conv.id}", params={"before": before})
+    assert older.json()["messages"][-1]["text"] == "hi"
 
 
 async def test_a_wrong_secret_is_a_404_and_nothing_is_answered(
