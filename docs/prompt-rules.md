@@ -182,6 +182,10 @@ to the end, so the model never reads yesterday's half-order; the team still sees
 | draft | the next message the team could send, in the customer's language and letters and the business's tone; only the message; never promise what the chat and the business's details don't say | it goes in the reply box, and the team checks it; the same no-guessing as the agent's own rules |
 | ask | the team member's question (put in with `str.replace`), answered in one or two lines from the chat and the business's details, or "it doesn't say" | a question about the chat, not a new task |
 
+The system prompt of these turns ends with `ASSIST_NOTE`: the last message is the team's, always
+on topic, and the scope rule doesn't apply. Without it the model took "summarise this" for an
+off-topic customer message and answered with the agent's "I can help with…" line.
+
 Nothing it writes is added to the chat or sent; the turn is traced and billed on the channel
 `assist`.
 

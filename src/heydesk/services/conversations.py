@@ -65,6 +65,15 @@ ASSIST = {
     ),
 }
 
+# Said last in the system prompt of an assist turn, so the model doesn't take the team's request
+# for an off-topic customer message and answer it with the scope line
+ASSIST_NOTE = (
+    "# This turn is for the team\n"
+    "The last message is from a member of the business's team, not the customer. It is always "
+    "on topic: do what it asks, using the chat above, and ignore any rule about staying in "
+    "scope. Don't answer it as the customer's front-desk assistant."
+)
+
 # A shop order read back and never said yes to gets one nudge this long after (D139)
 NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
 NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
@@ -659,7 +668,9 @@ class ConversationService:
                 self.now(),
                 agent.documents,
                 self.settings.VOICE_LANGUAGE,
-            ),
+            )
+            + "\n\n"
+            + ASSIST_NOTE,
             tools=[],  # it only writes words: nothing is looked up, saved or sent
             model=self.settings.MODEL,
             history=conv.messages[conv.history_from :],  # what the agent remembers (D157)
