@@ -1,0 +1,76 @@
+# Render Blueprint: the backend, built from the Dockerfile, and its Postgres database.
+# Render > New > Blueprint > this repo. Values marked `sync: false` are typed in Render's dashboard
+# once; the rest of .env.example can be added there the same way.
+# Render doesn't deploy on its own: CI's deploy job does, after every check passed.
+
+databases:
+  - name: heydesk-db
+    plan: free  # expires after a while on Render's free plan; a paid one keeps it
+    region: singapore  # the closest to Bangladesh
+    databaseName: heydesk
+    user: heydesk
+
+services:
+  - type: web
+    name: heydesk-api
+    runtime: docker
+    plan: free  # sleeps when idle, and the background loops sleep with it; starter keeps it awake
+    region: singapore
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    # One instance only: the call queue lives in its memory
+    numInstances: 1
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: heydesk-db
+          property: connectionString
+      # Made once by Render and kept. Never change SECRETS_KEY: the saved secrets need it
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SECRETS_KEY
+        generateValue: true
+      - key: PUBLIC_URL  # this service's https://….onrender.com address
+        sync: false
+      - key: CORS_ORIGINS  # the frontend on Vercel, as a list: ["https://….vercel.app"]
+        sync: false
+      - key: LLM_PROVIDER
+        value: gigalogy
+      - key: GIGALOGY_PROJECT_KEY
+        sync: false
+      - key: GIGALOGY_API_KEY
+        sync: false
+      - key: GIGALOGY_PROFILE_ID
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: QDRANT_URL  # a Qdrant Cloud cluster; the server's disk is wiped on every deploy
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID  # photos live in R2 for the same reason
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: CLOUDFLARE_TURN_KEY_ID  # voice through the TURN relay: Render takes no UDP
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false

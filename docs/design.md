@@ -1924,6 +1924,26 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
   after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
 - Live runs against Groq only with `-m live`, and only when asked: they cost quota.
 
+### CI and deploying
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`:
+
+| Job | What it proves |
+|---|---|
+| `check` | `scripts/check.sh`: tests, lint, format, types, import rules |
+| `postgres` | `alembic upgrade head` and `alembic check` on a real Postgres 17: every migration runs there, and no model change lacks one |
+| `audit` | `pip-audit` finds no known hole in the server's dependencies |
+| `image` | the Docker image builds and answers `/health` with the fake providers |
+| `deploy` | only on a push to `main` (a merged PR), after all four: Render's deploy hook with this commit, then `/health` until it names this commit |
+
+Production is Render (`render.yaml`, a Blueprint): one web service from the `Dockerfile` and a
+Render Postgres in Singapore. Render's own auto-deploy is off, so nothing goes live that CI didn't
+pass. The image runs `alembic upgrade head` on start. `DATABASE_URL` takes Render's
+`postgresql://…` as given; `Settings` names the asyncpg driver. Nothing lives on the server's
+disk, which a deploy wipes: Qdrant is Qdrant Cloud, photos are in R2. One instance only, because
+the call queue is in its memory. Voice goes through the
+Cloudflare TURN relay, since Render takes no UDP. The frontend deploys from its own repo.
+
 ## 12. Left out on purpose
 
 Each of these is real, but not worth the code for the MVP. The production
@@ -1951,7 +1971,7 @@ version handles them.
 | Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
-| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, for a receptionist or a clinic (D108); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume), and no host is chosen |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, for a receptionist or a clinic (D108); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `CONVERSATION_IDLE_HOURS`; then a new conversation starts with the agent (D43) |

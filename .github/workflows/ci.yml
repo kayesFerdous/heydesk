@@ -23,6 +23,28 @@ jobs:
       - run: uv sync --locked
       - run: scripts/check.sh
 
+  postgres:  # every migration runs on Postgres, as in production, and no model change lacks one
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: heydesk
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/heydesk  # the form Render gives
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+
   audit:  # known vulnerabilities in the dependencies the server runs
     runs-on: ubuntu-latest
     steps:
@@ -53,4 +75,28 @@ jobs:
             sleep 2
           done
           docker logs heydesk
+          exit 1
+
+  deploy:  # a merge to main goes live on Render, only after every job above passed
+    needs: [check, postgres, audit, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production  # GitHub > Settings > Environments can make it wait for an approval
+    steps:
+      - name: Ask Render to deploy this commit
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}  # Render > the service > Settings > Deploy Hook
+        run: curl -fsS -X POST "$HOOK&ref=$GITHUB_SHA" > /dev/null
+      - name: Wait until /health answers from this commit
+        env:
+          URL: ${{ vars.RENDER_URL }}  # https://….onrender.com, a repository variable
+        run: |
+          for _ in $(seq 90); do  # up to 15 minutes: Render builds the image first
+            if curl -fs "$URL/health" | grep -q "\"commit\":\"$GITHUB_SHA\""; then
+              echo "live: $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "the new version didn't answer /health; see the deploy's logs on Render"
           exit 1
