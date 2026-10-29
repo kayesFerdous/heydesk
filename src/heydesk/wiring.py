@@ -56,6 +56,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.live import LiveHub, watch
 from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
@@ -191,6 +192,8 @@ def build_services(
     couriers: dict[str, CourierApi] | None = None,
 ) -> Services:
     runtime = Runtime(llm=llm)
+    live = LiveHub()
+    watch(sessions, live)
     gateways = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     photos = build_photos(settings, embedder, photo_index, fetch_photo)
@@ -254,6 +257,7 @@ def build_services(
             review_after=timedelta(hours=settings.REVIEW_AFTER_HOURS),
         ),
         knowledge=knowledge,
+        live=live,
         members=MemberService(sessions, users, now),
         photos=photos,
         payments=PaymentService(sessions, gateways, team, woo_service, settings, now),

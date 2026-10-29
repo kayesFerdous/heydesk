@@ -1,5 +1,6 @@
 """A turn's events → text/event-stream frames (design §9)."""
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -7,6 +8,7 @@ from typing import Any
 
 from heydesk.runtime.events import Card, HandOff, Photos, Token, ToolStarted, TurnEnded
 from heydesk.services.conversations import RunningTurn
+from heydesk.services.live import LiveHub
 
 log = logging.getLogger(__name__)
 
@@ -38,3 +40,19 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
         # The response has started, so a 500 would arrive as a silent cut-off.
         log.exception("turn stream failed")
         yield frame("error", {"message": "Something went wrong. Please try again."})
+
+
+PING_SECONDS = 20
+
+
+async def live_frames(hub: LiveHub, ws: str) -> AsyncIterator[str]:
+    """The inbox's stream (D158): a `changed` frame per chat, and a `ping` while it's quiet."""
+    with hub.listen(ws) as queue:
+        yield frame("open", {})
+        while True:
+            try:
+                conversation_id = await asyncio.wait_for(queue.get(), PING_SECONDS)
+            except TimeoutError:
+                yield frame("ping", {})
+            else:
+                yield frame("changed", {"conversation_id": conversation_id})

@@ -8,6 +8,7 @@ from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
 from heydesk.services.knowledge import KnowledgeService
+from heydesk.services.live import LiveHub
 from heydesk.services.members import MemberService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
@@ -29,6 +30,7 @@ class Services:
     conversations: ConversationService
     courier: CourierService  # books and follows a shop's parcels (D90, D112)
     knowledge: KnowledgeService
+    live: LiveHub  # tells an open inbox a chat changed (D158)
     members: MemberService  # the business's moderators and what its team did (D97)
     payments: PaymentService
     photos: PhotoService

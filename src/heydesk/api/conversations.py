@@ -6,9 +6,11 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
+from heydesk.api.sse import live_frames
 from heydesk.models import Conversation, Lead, TeamMessage, Ticket, Visitor
 from heydesk.services import Services
 from heydesk.services.visitors import is_blocked, key_of
@@ -102,6 +104,19 @@ class MessageOut(BaseModel):
     best_time: str
     created_at: datetime
     updated_at: datetime
+
+
+@router.get("/api/conversations/live")
+async def live(services: Svc, ws: Workspace) -> StreamingResponse:
+    """A stream of `event: changed` frames, one per chat that changed in this business (D158).
+    The inbox keeps it open and fetches that chat; a `ping` every 20 seconds keeps a proxy from
+    closing it. It needs the Bearer header, so the page reads it with `fetch`, not
+    `EventSource`. After a reconnect the page fetches the list again."""
+    return StreamingResponse(
+        live_frames(services.live, ws),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/api/conversations")

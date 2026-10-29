@@ -8438,6 +8438,14 @@ tr.hl td { background: var(--accent-soft); }
 {
  "places": [
   {
+   "what": "The open inbox pages",
+   "file": "src/heydesk/services/live.py",
+   "where": "`LiveHub.pages` (workspace → one queue per open inbox stream), filled by `GET /api/conversations/live`",
+   "written": "`watch`: `after_flush` collects the changed conversations, `after_commit` publishes them",
+   "sync": "One server process only (D158). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page fetches that chat, and the list again after a reconnect.",
+   "failure": "A restart or a dropped connection ends the stream; the page reconnects and fetches the list. A page 100 events behind loses the oldest."
+  },
+  {
    "what": "A chat's waiting messages, and WhatsApp's recent ones",
    "file": "src/heydesk/services/channels.py",
    "where": "`ChannelService.waiting` (chat → messages not answered yet), `whatsapp_said` (message id → what the buyer sent, the last 10,000) and `cards_sent` (message id → the product card's words the agent sent on Messenger and WhatsApp, the last 10,000, D156), in memory",
