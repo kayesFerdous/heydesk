@@ -1,7 +1,7 @@
-"""The `PaymentGateway` port: taking a payment online (D47). Two gateways sit behind it:
-SSLCommerz (cards, mobile wallets, banks) and bKash on its own (D109).
+"""The `PaymentGateway` port: taking a payment online. Two gateways sit behind it:
+SSLCommerz (cards, mobile wallets, banks) and bKash on its own.
 
-Every call takes the business's own `Account` (D49): each business is paid into its own
+Every call takes the business's own `Account`: each business is paid into its own
 store, so there's no one account for the platform. The gateway's word is the only proof a
 payment happened: what a visitor's browser posts back is checked with it first.
 """
@@ -20,7 +20,7 @@ class PaymentUnavailable(Exception):
 @dataclass(frozen=True)
 class Account:
     """A business's account with one gateway. SSLCommerz needs a store id and its password;
-    bKash an app key and secret, a username and a password (D109)."""
+    bKash an app key and secret, a username and a password."""
 
     store_id: str  # SSLCommerz's; empty for bKash
     password: str  # SSLCommerz's store password, or bKash's password

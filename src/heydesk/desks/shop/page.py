@@ -1,9 +1,9 @@
-"""A product's public page (D121): `/p/<the agent's public key>/<code>`, opened from a product
+"""A product's public page: `/p/<the agent's public key>/<code>`, opened from a product
 card in any chat. Server-rendered HTML with only what a buyer may see: photos, name, price,
 the sizes and colours in stock, the description. No script runs on it: the photo gallery and
-the size and colour chips are radio buttons and CSS (D159).
+the size and colour chips are radio buttons and CSS.
 
-Its *Buy now* form (D130) posts back to it: first a page to check the order, read back as the
+Its *Buy now* form posts back to it: first a page to check the order, read back as the
 chat reads it, then *Place order*, the buyer's yes. The order's own page is `/o/<id>`."""
 
 import html
@@ -146,7 +146,7 @@ background:var(--line)}
 # A browser shows the page and its photos, and nothing else loads or runs
 POLICY = (
     "default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline'; "
-    "form-action 'self'"  # the Buy now form posts only back to us (D130)
+    "form-action 'self'"  # the Buy now form posts only back to us
 )
 # The icons beside the delivery lines; drawn inline, so nothing loads
 TRUCK = (
@@ -200,7 +200,7 @@ def product_page(
                 info += f'<h2>{label} in stock</h2><div class="chips">{chips}</div>'
     if product.description:
         info += f'<h2>About this</h2><p class="about">{e(product.description)}</p>'
-    for n, link in enumerate(product.videos, 1):  # links out, so nothing loads here (D125)
+    for n, link in enumerate(product.videos, 1):  # links out, so nothing loads here
         name = "Watch the video" if len(product.videos) == 1 else f"Watch video {n}"
         info += f'<a class="video" href="{e(link)}" target="_blank" rel="noopener">▶ {name}</a>'
     if zones and not sold_out:
@@ -331,7 +331,7 @@ def check_page(
     days: str,
     changed: bool,
 ) -> str:
-    """The order read back, as the chat would; *Place order* is the yes (D130). The form's
+    """The order read back, as the chat would; *Place order* is the yes. The form's
     details go back with it, and `heard`, what this page said, for Python to compare."""
     e = html.escape
     cur = order.currency
@@ -379,7 +379,7 @@ def check_page(
 
 
 def order_page(order: ShopOrder, shop: str, pay_link: str) -> str:
-    """`/o/<id>`, linked from every receipt (D130): where the order is. Not the buyer's name,
+    """`/o/<id>`, linked from every receipt: where the order is. Not the buyer's name,
     mobile or address: a link can be passed on."""
     e = html.escape
     cur = order.currency

@@ -1,9 +1,9 @@
 """The shop's tools: keep the cart up to date (Python adds it up, rule 1), place a
 cash-on-delivery order, and track, change or cancel one: the order placed in this chat, or any
-with its code and the buyer's mobile (D55). A delivered order can get an exchange request.
-On the web chat, it can show products' photos (D57).
+with its code and the buyer's mobile. A delivered order can get an exchange request.
+On the web chat, it can show products' photos.
 
-A shop can take the delivery charge online first (D47): then `place_order` saves the order
+A shop can take the delivery charge online first: then `place_order` saves the order
 `unpaid` and returns a payment link. No tool can mark it paid: only the payment check can."""
 
 from datetime import timedelta
@@ -43,7 +43,7 @@ from heydesk.domain.values import parse_code
 from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import money
-from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ShopStore]
 
@@ -57,9 +57,8 @@ class FindProductInput(BaseModel):
 
 
 async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
-    """For a shop with too many products to list in the prompt (D80): the closest ones, as
-    the prompt's own lines. Each is shown as a card, side by side, except on a call (D102,
-    D125)."""
+    """For a shop with too many products to list in the prompt: the closest ones, as
+    the prompt's own lines. Each is shown as a card, side by side, except on a call."""
     found = find_products(await ctx.store.products(), args.query)
     if not found:
         return fail(
@@ -76,7 +75,7 @@ async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
 
 def product_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
     """Each product's card for the visitor's screen: its first photo (or none), name, price and
-    first video (D57, D125). A tap on its Order button says "Order [code]" (D99)."""
+    first video. A tap on its Order button says "Order [code]"."""
     return [
         {
             "code": p.code,
@@ -132,7 +131,7 @@ def _priced(
 
     wanted: dict[tuple[str, str, str], int] = {}  # the same product, size and colour is added up
     problems = []
-    choices: list[str] = []  # buttons for the first question: what's in stock (D99)
+    choices: list[str] = []  # buttons for the first question: what's in stock
     for line in given:
         product = products[line.code]
         size = None
@@ -183,7 +182,7 @@ def _short(
         if qty > left:
             others = f" (left: {product.left()})" if counter != OWN and product.left() else ""
             short.append(
-                f"{product.what(counter)}: "
+                f"{product.display_name(counter)}: "
                 + (f"only {left} left" if left else "sold out")
                 + others
             )
@@ -216,22 +215,22 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
     cart: dict[str, Any] = {"lines": lines, "subtotal": subtotal}
     state: dict[str, Any] = {"cart": cart}
     offer = _goes_with(products, lines, ctx.state.get("offered") or [])
-    if offer:  # each is offered once in a chat (D125)
+    if offer:  # each is offered once in a chat
         data["goes_with"] = [p.line(currency) for p in offer]
         state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
     kept = ((ctx.state.get("cart") or {}).get("coupon") or {}).get("code", "")
-    # the buyer's code, the cart's, or an offer sent to this chat (D140)
+    # the buyer's code, the cart's, or an offer sent to this chat
     code = "".join(args.coupon.split()).upper() or kept or await ctx.store.offer_code()
     if not code or not subtotal:
         return ToolResult(ok=True, data=data, state=state)
-    coupon = await ctx.store.coupon(code)  # Python checks it and takes it off (D133)
+    coupon = await ctx.store.coupon(code)  # Python checks it and takes it off
     problem = coupon.problem(ctx.now) if coupon else f"There's no coupon {code}."
     if coupon is None or problem:  # the order is kept, without it
         hint = f"{problem} Tell the visitor; the order is kept without a coupon."
         return ToolResult(ok=False, data=data | {"coupon_problem": hint}, state=state)
     cart["coupon"] = {"code": coupon.code, "kind": coupon.kind, "value": coupon.value}
     cart["discount"] = coupon.discount(subtotal)
-    data["coupon"] = coupon.said(currency)
+    data["coupon"] = coupon.describe(currency)
     if cart["discount"]:
         data["discount"] = money(-cart["discount"], currency)
         data["subtotal_after_coupon"] = money(subtotal - cart["discount"], currency)
@@ -244,7 +243,7 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
 def _goes_with(
     products: dict[str, Product], lines: list[dict[str, Any]], offered: list[str]
 ) -> list[Product]:
-    """What goes with the cart's products (`Product.goes_with`, D125): the ones not in it, not
+    """What goes with the cart's products (`Product.goes_with`): the ones not in it, not
     offered before and not sold out; at most 2."""
     in_cart = {line["code"] for line in lines}
     codes = dict.fromkeys(code for line in lines for code in products[line["code"]].goes_with)
@@ -275,15 +274,15 @@ UPDATE_CART = Tool(
 )
 
 
-DUPLICATE_HOURS = 6  # the same mobile and items again within this is asked about (G8, D146)
-DISTRICT = (  # the model reads the district off the address; Python picks the area (D98)
+DUPLICATE_HOURS = 6  # the same mobile and items again within this is asked about
+DISTRICT = (  # the model reads the district off the address; Python picks the area
     "The address's district, in English, even if they didn't write it: Mirpur or Uttara → "
     "Dhaka, Patenga → Chattogram, Savar → Dhaka"
 )
 
 
 class TeamOrder(BaseModel):
-    """An order the team types for a buyer who called (D131): `POST /api/shop/orders`."""
+    """An order the team types for a buyer who called: `POST /api/shop/orders`."""
 
     lines: list[CartLine] = Field(min_length=1)
     name: str
@@ -314,11 +313,11 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if not cart.get("lines"):
         return fail("There's no order yet. Take it with update_cart first.")
     config = cast(ShopConfig, ctx.agent)
-    check = Checks(together=ctx.channel != "voice")  # a chat asks for it all at once (D92)
+    check = ArgumentChecker(together=ctx.channel != "voice")  # a chat asks for it all at once
     address = check.take(
         "address", args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
     )
-    zone = (  # Python finds the area from the district (D98)
+    zone = (  # Python finds the area from the district
         check.take("district", args.district, lambda d: match_zone(config.delivery, d))
         if args.district.strip() or args.address.strip()
         else None  # asked for with the address
@@ -336,7 +335,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         missing = check.result().data
         return ToolResult(ok=False, data=(data | missing) if zone else missing)
     address = with_district(address, args.district)
-    if not args.again:  # the same mobile and items a little while ago (G8, D146)
+    if not args.again:  # the same mobile and items a little while ago
         since = ctx.now - timedelta(hours=DUPLICATE_HOURS)
         if earlier := await ctx.store.same_order(phone, cart["lines"], since):
             return fail(
@@ -348,7 +347,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     order, read_back, how = await new_order(
         ctx.store, config, cart, zone, address, name, phone, args.note
     )
-    rows = [  # the card's details (D110), the same as the read-back's
+    rows = [  # the card's details, the same as the read-back's
         cards.row("Payment", how),
         cards.row("Address", address),
         cards.row("Name", name),
@@ -371,7 +370,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     code = saved.code
     items = cards.row("Items", lines_text(cart["lines"]))
     status = STATUS_WORDS[order.status].capitalize()
-    if order.status == "unpaid":  # the owner hears about it once it's paid (D47)
+    if order.status == "unpaid":  # the owner hears about it once it's paid
         link = ctx.store.pay_link(saved.id)
         card = cards.receipt(
             "Order saved", code, status, [items, *rows], total, link, ctx.store.order_link(saved.id)
@@ -415,7 +414,7 @@ async def new_order(
     note: str,
 ) -> tuple[NewOrder, str, str]:
     """The order ready for a yes, its read-back, and how it's paid: the same from the chat and
-    from the product page's form (D130)."""
+    from the product page's form."""
     currency = config.currency
     charge = _charge(config, zone, cart)
     order = NewOrder(
@@ -428,7 +427,7 @@ async def new_order(
         name=name,
         phone=phone,
         note=" ".join(note.split())[:500],
-        status=(  # one way to confirm it (D92): the advance, the shop's call, or none
+        status=(  # one way to confirm it: the advance, the shop's call, or none
             "unpaid"
             if charge and zone.pay_first and await store.pays_first(config)
             else "new"
@@ -445,7 +444,7 @@ async def new_order(
         if order.status == "unpaid"
         else "paid in cash on delivery"
     )
-    read_back = (  # cart_text has the coupon (D133)
+    read_back = (  # cart_text has the coupon
         f"{cart_text(cart, currency)}; delivery {zone.name} {delivery}; "
         f"total {money(order.total, currency)}, {how}; to {address}; "
         f"name {name}; mobile {phone}" + (f"; note: {order.note}" if order.note else "")
@@ -459,7 +458,7 @@ async def checked_order(
     wanted: list[CartLine],
     form: BuyForm | TeamOrder,
 ) -> tuple[NewOrder, str, str] | str:
-    """An order typed into a form, a product page's (D130) or the team's (D131): the order,
+    """An order typed into a form, a product page's or the team's: the order,
     its read-back and how it's paid, checked as the chat's are; or what to fix, in plain
     words."""
     products = {p.code: p for p in await store.products()}
@@ -468,7 +467,7 @@ async def checked_order(
         return "Choose a size and colour that's in stock."
     if _short(products, lines):
         return "There aren't that many left. Choose fewer, or another size or colour."
-    check = Checks()
+    check = ArgumentChecker()
     address = check.take(
         "address", form.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
     )
@@ -483,14 +482,14 @@ async def checked_order(
 
 
 def _charge(config: ShopConfig, zone: Zone, cart: dict[str, Any]) -> int:
-    """The delivery charge: free over the shop's amount, or with a free-delivery coupon (D133)."""
+    """The delivery charge: free over the shop's amount, or with a free-delivery coupon."""
     if (cart.get("coupon") or {}).get("kind") == "free_delivery":
         return 0
     return config.delivery_charge(zone, cart["subtotal"])
 
 
 def _coupon_line(order: NewOrder) -> list[dict[str, Any]]:
-    """The coupon on a card: "Coupon EID10", −৳370 (D133)."""
+    """The coupon on a card: "Coupon EID10", −৳370."""
     if not order.discount:
         return []
     return [
@@ -499,7 +498,7 @@ def _coupon_line(order: NewOrder) -> list[dict[str, Any]]:
 
 
 def _card_lines(lines: list[dict[str, Any]], currency: str) -> list[dict[str, Any]]:
-    """An order's items as a card's lines: "Cotton Panjabi (L, White)", 2, ৳3,700 (D110)."""
+    """An order's items as a card's lines: "Cotton Panjabi (L, White)", 2, ৳3,700."""
     found = []
     for item in lines:
         picked = ", ".join(p for p in (item["size"], item["colour"]) if p)
@@ -515,7 +514,7 @@ async def order_alert(
     """The owner's new-order alert: the order, and a warning when this mobile's orders came
     back before, and what's nearly sold out now. The visitor never hears these."""
     alert = f"🛍️ New order {code}\n{read_back}"
-    trouble = await store.past_trouble(phone)
+    trouble = await store.return_history(phone)
     if trouble:
         counts = ", ".join(f"{n} {status}" for status, n in sorted(trouble.items(), reverse=True))
         alert += f"\n⚠️ This mobile before: {counts}"
@@ -527,7 +526,7 @@ async def order_alert(
         if product is None or counter is None or product.count(counter) > LOW_STOCK:
             continue
         left = product.count(counter)
-        said = f"{product.what(counter)}: " + (f"{left} left" if left else "sold out")
+        said = f"{product.display_name(counter)}: " + (f"{left} left" if left else "sold out")
         if said not in low:
             low.append(said)
     if low:
@@ -562,9 +561,9 @@ class FindOrderInput(BaseModel):
 
 
 async def _find(ctx: Ctx, code: str, phone: str, by_phone: bool = False) -> ShopOrder | ToolResult:
-    """With no code, the order the shop's call is about (D88), or the one placed in this
-    conversation (D55); with `by_phone`, the latest one with that mobile (D92); or this buyer's
-    last one on Telegram or Messenger (D81, D92). Otherwise the order, if the code and the mobile
+    """With no code, the order the shop's call is about, or the one placed in this
+    conversation; with `by_phone`, the latest one with that mobile; or this buyer's
+    last one on Telegram or Messenger. Otherwise the order, if the code and the mobile
     both match: one answer for a wrong code and a wrong number, so a stranger can't find out
     whose order a code is."""
     calling = ctx.state.get("calling")
@@ -587,7 +586,7 @@ async def _find(ctx: Ctx, code: str, phone: str, by_phone: bool = False) -> Shop
             if latest is None:
                 return fail("No order was placed with that mobile number. Ask them to check it.")
             return latest
-        before = await ctx.store.before(ShopOrder)  # the same buyer, back again (D81)
+        before = await ctx.store.before(ShopOrder)  # the same buyer, back again
         if before:
             return before[0]
         if by_phone:
@@ -630,7 +629,7 @@ async def track_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
     zone = next((z for z in zones if z.name == found.zone), None)
     if found.status in ("confirmed", "shipped") and zone and zone.days:
         data["usually_takes"] = zone.days
-    if found.status == "shipped" and found.courier_status:  # the courier's own words (D112)
+    if found.status == "shipped" and found.courier_status:  # the courier's own words
         data["courier_says"] = found.courier_status
     takes = data.get("usually_takes")
     note = data["status"].capitalize() + (f". Delivery usually takes {takes}." if takes else "")
@@ -679,7 +678,7 @@ async def cancel_order(ctx: Ctx, args: FindOrderInput) -> ToolResult:
 
 
 def _call_over(ctx: Ctx) -> dict[str, Any] | None:
-    """On the shop's call (D89), the order is settled: the call ends after the goodbye."""
+    """On the shop's call, the order is settled: the call ends after the goodbye."""
     calling = ctx.state.get("calling")
     return {"calling": {**calling, "over": True}} if calling else None
 
@@ -704,7 +703,7 @@ class ConfirmOrderInput(BaseModel):
 
 
 async def confirm_order(ctx: Ctx, args: ConfirmOrderInput) -> ToolResult:
-    """On the shop's confirmation call (D88): the call's first line read the order back, so
+    """On the shop's confirmation call: the call's first line read the order back, so
     after a clear yes to it the order is `confirmed`."""
     calling = ctx.state.get("calling")
     if not calling:
@@ -757,7 +756,7 @@ class ChangeOrderInput(FindOrderInput):
 
 
 async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
-    """New items (D92) or delivery details before the courier has it (D55). Python works out
+    """New items or delivery details before the courier has it. Python works out
     the subtotal, a new charge and the total again; the store swaps the stock as it saves."""
     found = await _find(ctx, args.code, args.phone)
     if isinstance(found, ToolResult):
@@ -784,7 +783,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         if short:
             return fail(short)
         lines, subtotal = priced, sum(line["price"] * line["quantity"] for line in priced)
-    check = Checks()
+    check = ArgumentChecker()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
     address = check.take(
         "address", args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
@@ -884,7 +883,7 @@ class ExchangeInput(FindOrderInput):
 
 
 async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
-    """An exchange request on a delivered order, within the shop's days (D55). It's saved as a
+    """An exchange request on a delivered order, within the shop's days. It's saved as a
     message for the team, who arrange the swap: no stock changes here."""
     days = cast(ShopConfig, ctx.agent).exchange_days
     if not days:
@@ -919,7 +918,9 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
     counter = product.counter(size, colour)
     if counter is not None and product.count(counter) == 0:
         left = f" Left: {product.left()}." if counter != OWN and product.left() else ""
-        return fail(f"{product.what(counter)} is sold out.{left} Ask what they'd like instead.")
+        return fail(
+            f"{product.display_name(counter)} is sold out.{left} Ask what they'd like instead."
+        )
     if (size, colour) == (line["size"], line["colour"]):
         return fail("That's the size and colour they have. Ask what they want instead.")
     reason = " ".join(args.reason.split())[:300]
@@ -969,8 +970,8 @@ class ShowPhotosInput(BaseModel):
 
 async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
     """Each product's card, side by side, on the visitor's screen: its first photo, name and
-    price (D57, D125)."""
-    if ctx.channel == "voice":  # Messenger and Telegram send them as photos (D62, D63)
+    price."""
+    if ctx.channel == "voice":  # Messenger and Telegram send them as photos
         return fail("Photos can't be shown here. Describe the product from its line instead.")
     products = {p.code: p for p in await ctx.store.products()}
     unknown = [code for code in args.products if code not in products]

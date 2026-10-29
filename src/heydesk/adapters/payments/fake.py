@@ -22,7 +22,7 @@ class FakePayments:
 
 
 class FakeBkash(FakePayments):
-    """The same for bKash (D109): the app key "bad" is refused, and its page is another."""
+    """The same for bKash: the app key "bad" is refused, and its page is another."""
 
     async def verify(self, account: Account) -> None:
         if account.app_key == "bad":

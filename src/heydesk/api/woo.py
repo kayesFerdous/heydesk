@@ -1,5 +1,5 @@
-"""A shop's list kept in its WooCommerce store, and our orders written there (D75): the owner
-links it once with a Read/Write key, and the store's webhooks tell us when to sync (D78)."""
+"""A shop's list kept in its WooCommerce store, and our orders written there: the owner
+links it once with a Read/Write key, and the store's webhooks tell us when to sync."""
 
 from datetime import datetime
 from typing import Annotated

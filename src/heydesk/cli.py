@@ -1,10 +1,10 @@
 """`uv run heydesk` starts the dev server. `create-user EMAIL PASSWORD` adds an owner to the
 dev workspace, so the API can manage the dev agent. `create-admin EMAIL [PASSWORD]` makes a
-platform admin (the only way to make one, D23); `admins` lists them, `delete-admin EMAIL` removes
-one, and `reset-password EMAIL [PASSWORD]` is for a forgotten password, an admin's or an owner's
-(D67). Without a PASSWORD one is made up, and the password is printed: passwords are stored
+platform admin (the only way to make one); `admins` lists them, `delete-admin EMAIL` removes
+one, and `reset-password EMAIL [PASSWORD]` is for a forgotten password, an admin's or an owner's.
+Without a PASSWORD one is made up, and the password is printed: passwords are stored
 hashed, so this is the only time it can be seen. `reindex-knowledge` rebuilds the Qdrant chunks
-from the documents saved in the database (D34), and re-embeds every product photo (D57)."""
+from the documents saved in the database, and re-embeds every product photo."""
 
 import asyncio
 import sys

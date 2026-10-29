@@ -1,7 +1,7 @@
 [project]
 name = "heydesk-tts"
 version = "0.1.0"
-description = "The Bangla voice for HeyDesk's calls, as a small local server (D84)"
+description = "The Bangla voice for HeyDesk's calls, as a small local server"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "coqui-tts[bn,codec]>=0.27.5",

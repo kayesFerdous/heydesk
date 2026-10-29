@@ -1,4 +1,4 @@
-"""A shop's courier (D90, D112): the agent books each confirmed order's parcel and follows it.
+"""A shop's courier: the agent books each confirmed order's parcel and follows it.
 
 Steadfast and Pathao, with the shop's own merchant login (`courier_links`), and a fake courier
 for a shop with none, outside production."""

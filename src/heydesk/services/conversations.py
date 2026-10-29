@@ -44,7 +44,7 @@ from heydesk.services.woo import WooService
 
 log = logging.getLogger(__name__)
 
-# What the team asks the model about a chat (D137): the last message of a turn with no tools.
+# What the team asks the model about a chat: the last message of a turn with no tools.
 # A question is the team's words, put in with str.replace, never str.format
 ASSIST = {
     "summary": (
@@ -74,13 +74,13 @@ ASSIST_NOTE = (
     "scope. Don't answer it as the customer's front-desk assistant."
 )
 
-# A shop order read back and never said yes to gets one nudge this long after (D139)
+# A shop order read back and never said yes to gets one nudge this long after
 NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
 NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
-REMIND_BEFORE = timedelta(hours=24)  # a booking or appointment is reminded of then (D145)
+REMIND_BEFORE = timedelta(hours=24)  # a booking or appointment is reminded of then
 DHAKA = "Asia/Dhaka"  # an agent config saved before it had a timezone
-MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed (I3)
-OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs (I1)
+MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed
+OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs
 
 
 @dataclass
@@ -96,10 +96,10 @@ class Reply:
 
     text: str  # empty when the turn failed: the hand-off says what to do
     handoff: HandOff | None
-    photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool (D62)
-    choices: list[str] = field(default_factory=list)  # buttons under the text (D99)
-    card: Card | None = None  # the last card a tool showed (D110), sent its own way (D111)
-    conversation_id: str = ""  # a product card's page links back to it (D130)
+    photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool
+    choices: list[str] = field(default_factory=list)  # buttons under the text
+    card: Card | None = None  # the last card a tool showed, sent its own way
+    conversation_id: str = ""  # a product card's page links back to it
 
 
 class ConversationService:
@@ -139,18 +139,20 @@ class ConversationService:
         name: str | None = None,
     ) -> RunningTurn:
         """Loads the conversation (or starts one), then runs the turn as the listener reads it.
-        `visitor` is who is talking, for the limits (D51): `web:<token>`, `telegram:<chat id>`.
+        `visitor` is who is talking, for the limits: `web:<token>`, `telegram:<chat id>`.
         A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
-        new conversation; the web chat and a call pass the browser's token (D114). A web visitor
-        can send a `photo` with it, or instead of words, when the desk takes photos (D57)."""
+        new conversation; the web chat and a call pass the browser's token. A web visitor
+        can send a `photo` with it, or instead of words, when the desk takes photos."""
         text = text.strip()
         if photo is not None and not agent.desk.takes_photos:
             raise UnreadablePhoto("This chat can't take photos.")
         if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
-        runs_ai = await self.visitors.let_in(agent, visitor)  # a 429 when they're blocked (I2)
-        # practice mode (D143): a stranger's message waits for the team, like AI off
-        runs_ai = runs_ai and not agent.config.practicing(channel, visitor)
+        runs_ai = await self.visitors.check_not_blocked(
+            agent, visitor
+        )  # a 429 when they're blocked
+        # practice mode: a stranger's message waits for the team, like AI off
+        runs_ai = runs_ai and not agent.config.stays_silent_for(channel, visitor)
         # Read before anything is saved, so a file that isn't a photo changes nothing
         saved = await self.photos.save(agent.workspace_id, "chat", photo) if photo else None
         conv = None
@@ -159,13 +161,13 @@ class ConversationService:
                 conv = await self._get(s, agent, conversation_id)
             if self._is_full(conv):
                 raise ConversationFull("This conversation is very long. Please start a new one.")
-        if not runs_ai:  # the AI is off for them (I2): the team has the chat, no turn is paid
+        if not runs_ai:  # the AI is off for them: the team has the chat, no turn is paid
             conv = await self._for_team(agent, conv, channel, contact, name)
             return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
-        # the team is answering: the agent stays quiet (D43), until it's quiet (D135)
+        # the team is answering: the agent stays quiet, until it's quiet
         if conv is not None and conv.status == HUMAN and not await self._given_back(conv):
             return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())
-        await self.visitors.admit(agent, visitor)  # counts the turn, or refuses it (D51)
+        await self.visitors.count_turn(agent, visitor)  # counts the turn, or refuses it
         if conv is None:
             conv = self._new(agent, channel, contact, name)
             async with self.sessions() as s, s.begin():
@@ -193,11 +195,11 @@ class ConversationService:
                 now,
                 agent.documents,
                 self.settings.VOICE_LANGUAGE,
-                await store.remembered(),  # what they told the agent before (D124)
+                await store.visitor_notes(),  # what they told the agent before
             ),
             tools=tools_for(desk, config, has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
-            history=conv.messages[conv.history_from :],  # what the agent remembers (D157)
+            history=conv.messages[conv.history_from :],  # what the agent remembers
             user_text=text,
             channel=channel,
             agent=config,
@@ -220,9 +222,9 @@ class ConversationService:
         photo: bytes | None = None,
         name: str | None = None,
     ) -> Reply:
-        """For a messaging app (D42): continues the contact's conversation, or starts one, and
-        returns the whole reply. A `photo` is the one the visitor sent (Messenger, D62). One
-        that's full or quiet starts afresh in the same chat (D157)."""
+        """For a messaging app: continues the contact's conversation, or starts one, and
+        returns the whole reply. A `photo` is the one the visitor sent (Messenger). One
+        that's full or quiet starts afresh in the same chat."""
         latest = await self._latest(agent, channel, contact)
         if latest is not None and self._stale(latest):
             await self._start_afresh(latest)
@@ -258,18 +260,18 @@ class ConversationService:
     async def answers(self, agent: LiveAgent, channel: str, contact: str) -> bool:
         """Whether the agent will answer the contact's next message on a messaging app, so the
         app shows "typing…" only then: not blocked, the AI on for them, not practice mode, and
-        not a chat the team has (I2, D143, D135)."""
+        not a chat the team has."""
         visitor = f"{channel}:{contact}"
         found = await self.visitors.find(agent.workspace_id, visitor)
         if found is not None and (found.ai_off or is_blocked(found, self.now())):
             return False
-        if agent.config.practicing(channel, visitor):
+        if agent.config.stays_silent_for(channel, visitor):
             return False
         latest = await self._latest(agent, channel, contact)
         return latest is None or not self._team_has(latest)
 
     async def _latest(self, agent: LiveAgent, channel: str, contact: str) -> Conversation | None:
-        """The contact's conversation on a messaging app, or None. They keep one (D157): the
+        """The contact's conversation on a messaging app, or None. They keep one: the
         newest, for chats split before that."""
         async with self.sessions() as s:
             return await s.scalar(
@@ -286,13 +288,13 @@ class ConversationService:
 
     def _stale(self, conv: Conversation) -> bool:
         """Full, or quiet for CONVERSATION_IDLE_HOURS: yesterday's half-order shouldn't come
-        back, so the agent starts afresh (D157)."""
+        back, so the agent starts afresh."""
         idle = timedelta(hours=self.settings.CONVERSATION_IDLE_HOURS)
         at = conv.updated_at if conv.updated_at.tzinfo else conv.updated_at.replace(tzinfo=UTC)
         return self._is_full(conv) or self.now() - at > idle
 
     async def _start_afresh(self, conv: Conversation) -> None:
-        """The agent forgets what came before, in the same chat (D157): its memory starts after
+        """The agent forgets what came before, in the same chat: its memory starts after
         the last message, the cart is emptied and an unfinished order may be nudged again. The
         team still sees the whole chat, and its labels stay."""
         async with self.sessions() as s, s.begin():
@@ -305,7 +307,7 @@ class ConversationService:
     async def restart(
         self, agent: LiveAgent, channel: str, contact: str, name: str | None = None
     ) -> None:
-        """Telegram's /start: the contact's chat starts afresh (D157), or a new one if they have
+        """Telegram's /start: the contact's chat starts afresh, or a new one if they have
         none; their next message gets the greeting."""
         latest = await self._latest(agent, channel, contact)
         if latest is not None:
@@ -323,7 +325,7 @@ class ConversationService:
     async def store_for(
         self, agent: LiveAgent, conversation_id: str
     ) -> tuple[Store, Conversation | None]:
-        """The agent's data for an order from a product's page (D130): linked to the chat the
+        """The agent's data for an order from a product's page: linked to the chat the
         page was opened from when `conversation_id` is one of this agent's, else to none."""
         conv = None
         if conversation_id:
@@ -354,10 +356,10 @@ class ConversationService:
         before: datetime | None = None,
     ) -> list[Conversation]:
         """Newest activity first, a page at a time: the next page is `before=` the last
-        one's `updated_at`. `assigned_to` a team member, or `unassigned` (I1). Chats that are
+        one's `updated_at`. `assigned_to` a team member, or `unassigned`. Chats that are
         done or snoozed are left out, or only the done ones with `done`; a search (`q`: the
-        name, or anything said, such as a phone or an order code) looks through all (I3).
-        `label`: only the chats with it (D136)."""
+        name, or anything said, such as a phone or an order code) looks through all.
+        `label`: only the chats with it."""
         query = (
             select(Conversation)
             .where(Conversation.workspace_id == ws)
@@ -394,7 +396,7 @@ class ConversationService:
             return list(await s.scalars(query))
 
     async def counts(self, ws: str, user_id: str) -> dict[str, int]:
-        """How many shown chats wait for a person: all of them, the caller's, and no one's (I1)."""
+        """How many shown chats wait for a person: all of them, the caller's, and no one's."""
         waiting = Conversation.status == "needs_human"
         query = select(
             func.count().filter(waiting),
@@ -406,7 +408,7 @@ class ConversationService:
         return {"needs_human": needs_human, "mine": mine, "unassigned": unassigned}
 
     async def open_chats(self, ws: str) -> dict[str, int]:
-        """Each team member's open chats, the number a hand-off goes by (I1); none: not there."""
+        """Each team member's open chats, the number a hand-off goes by; none: not there."""
         query = (
             select(Conversation.assigned_to, func.count())
             .where(
@@ -425,7 +427,7 @@ class ConversationService:
 
     async def of_visitor(self, ws: str, key: str) -> Conversation | None:
         """The visitor's latest conversation (`key` as `visitors.key_of` makes it), for the
-        blocked list (I2)."""
+        blocked list."""
         kind, contact = key.split(":", 1)
         channels = ("web", "voice") if kind == "web" else (kind,)
         async with self.sessions() as s:
@@ -443,7 +445,7 @@ class ConversationService:
     async def assign(
         self, ws: str, conversation_id: str, by: Principal, user_id: str | None
     ) -> Conversation:
-        """Who has the chat (I1): the owner (or an admin) gives any chat to anyone on the team,
+        """Who has the chat: the owner (or an admin) gives any chat to anyone on the team,
         or no one; a moderator takes an unassigned one for themself and gives back their own."""
         async with self.sessions() as s, s.begin():
             conv = await self._get_by_id(s, ws, conversation_id)
@@ -458,12 +460,12 @@ class ConversationService:
                     raise NotFound("There's no such member on your team.")
             conv.assigned_to = user_id
         log.info("assigned", extra={"conversation_id": conv.id})
-        if user_id is not None and user_id != by.user_id:  # given to them: tell them (D148)
+        if user_id is not None and user_id != by.user_id:  # given to them: tell them
             await self.team.alert(conv, handoff_alert(conv.messages, "👉 This chat is yours now"))
         return conv
 
     async def mark_done(self, ws: str, conversation_id: str, done: bool) -> Conversation:
-        """Done hides the chat until the visitor writes again; not done shows it again (I3)."""
+        """Done hides the chat until the visitor writes again; not done shows it again."""
         async with self.sessions() as s, s.begin():
             conv = await self._get_by_id(s, ws, conversation_id)
             conv.done_at = self.now() if done else None
@@ -472,7 +474,7 @@ class ConversationService:
         return conv
 
     async def snooze(self, ws: str, conversation_id: str, until: datetime | None) -> Conversation:
-        """Hides the chat until `until`, when it comes back with an alert (I3); None: back now.
+        """Hides the chat until `until`, when it comes back with an alert; None: back now.
         A time not in the future, or more than `MAX_SNOOZE_DAYS` ahead, is refused."""
         now = self.now()
         if until is not None and not now < until <= now + timedelta(days=MAX_SNOOZE_DAYS):
@@ -484,7 +486,7 @@ class ConversationService:
         return conv
 
     async def run(self, every: float) -> None:
-        """Brings snoozed chats back when they're due, and nudges unfinished orders (D139),
+        """Brings snoozed chats back when they're due, and nudges unfinished orders,
         every `every` seconds, until cancelled (the app's lifespan starts it)."""
         while True:
             await asyncio.sleep(every)
@@ -496,7 +498,7 @@ class ConversationService:
                 log.exception("snooze and nudge round failed")
 
     async def nudge_unfinished(self) -> None:
-        """A shop order read back and never said yes to, 1–3 hours on (D139): the chat's last
+        """A shop order read back and never said yes to, 1–3 hours on: the chat's last
         turn ran `place_order` and no order came of it. One nudge per chat, ever, with the
         read-back's buttons, and only inside the app's window (`tell_in_window`)."""
         now = self.now()
@@ -538,7 +540,7 @@ class ConversationService:
 
     async def remind_tomorrow(self) -> None:
         """A table booking or an appointment in the next 24 hours, not cancelled, gets one
-        line in its chat (D145): once each, tried and marked whether it went or not, and only
+        line in its chat: once each, tried and marked whether it went or not, and only
         inside the app's window (`tell_in_window`). One booked less than a day ahead gets none."""
         now = self.now()
         due: list[tuple[str, str]] = []
@@ -586,7 +588,7 @@ class ConversationService:
 
     async def hand_back(self, ws: str, conversation_id: str) -> Conversation:
         """The owner dealt with a hand-off from the console: the agent answers again, as
-        after `/done` on Telegram (D83)."""
+        after `/done` on Telegram."""
         async with self.sessions() as s, s.begin():
             conv = await self._get_by_id(s, ws, conversation_id)
             if conv.status == "active":
@@ -598,7 +600,7 @@ class ConversationService:
     async def set_labels(
         self, ws: str, conversation_id: str, labels: Sequence[str]
     ) -> Conversation:
-        """The team's own words for a chat (D136): "vip", "fake order". Kept in order, once
+        """The team's own words for a chat: "vip", "fake order". Kept in order, once
         each; the visitor and the model never see them."""
         async with self.sessions() as s, s.begin():
             conv = await self._get_by_id(s, ws, conversation_id)
@@ -607,7 +609,7 @@ class ConversationService:
         return conv
 
     async def notes(self, ws: str, conversation_id: str) -> Sequence[Note]:
-        """The team's notes on a chat, oldest first (D136)."""
+        """The team's notes on a chat, oldest first."""
         async with self.sessions() as s:
             await self._get_by_id(s, ws, conversation_id)  # 404 for another business's
             rows = await s.scalars(
@@ -618,7 +620,7 @@ class ConversationService:
             return rows.all()
 
     async def add_note(self, ws: str, conversation_id: str, author: str, text: str) -> Note:
-        """A note for the team (D136): its own table, added and never edited (rule 5), and
+        """A note for the team: its own table, added and never edited (rule 5), and
         never in the transcript, so the visitor and the model don't see it."""
         async with self.sessions() as s, s.begin():
             await self._get_by_id(s, ws, conversation_id)
@@ -633,9 +635,9 @@ class ConversationService:
         return note
 
     async def team_reply(self, ws: str, conversation_id: str, text: str) -> Conversation:
-        """The team answers from the inbox (D136), as from a Telegram alert: the words go to
+        """The team answers from the inbox, as from a Telegram alert: the words go to
         the visitor and into the transcript as the team's, and the chat is taken over, until
-        given back or 30 quiet minutes (D135). A call can't take one."""
+        given back or 30 quiet minutes. A call can't take one."""
         async with self.sessions() as s, s.begin():
             conv = await self._get_by_id(s, ws, conversation_id, lock=True)
             if conv.channel == "voice":
@@ -650,7 +652,7 @@ class ConversationService:
     async def assist(
         self, agent: LiveAgent, conversation_id: str, kind: str, question: str = ""
     ) -> str:
-        """The model's help for the team on a chat (D137): a summary, an answer about it, or a
+        """The model's help for the team on a chat: a summary, an answer about it, or a
         draft of the next reply. The chat's own prompt and history, no tools, and one line of
         what's wanted; the words come back to the team and nothing is added to the chat or
         sent. Traced and billed as a turn, on the channel "assist"."""
@@ -673,7 +675,7 @@ class ConversationService:
             + ASSIST_NOTE,
             tools=[],  # it only writes words: nothing is looked up, saved or sent
             model=self.settings.MODEL,
-            history=conv.messages[conv.history_from :],  # what the agent remembers (D157)
+            history=conv.messages[conv.history_from :],  # what the agent remembers
             user_text=asked,
             channel="assist",
             agent=config,
@@ -699,7 +701,7 @@ class ConversationService:
         return text
 
     async def take_over(self, ws: str, conversation_id: str, on: bool) -> Conversation:
-        """The team takes the chat, and the agent stays quiet in it, or gives it back (D135):
+        """The team takes the chat, and the agent stays quiet in it, or gives it back:
         the inbox's switch, "." in Business Suite or on Telegram. Quiet for
         TAKEOVER_QUIET_MINUTES, it's the agent's again."""
         async with self.sessions() as s, s.begin():
@@ -710,7 +712,7 @@ class ConversationService:
         return conv
 
     async def page_wrote(self, agent: LiveAgent, channel: str, contact: str, text: str) -> None:
-        """The business wrote to a buyer from its own app, not through us (D135): Business
+        """The business wrote to a buyer from its own app, not through us: Business
         Suite or Messenger. "." takes the chat over or gives it back; other words are added to
         the chat as the team's (rule 5), so the agent reads them next turn, and keep a chat
         that's taken over from going quiet."""
@@ -739,12 +741,12 @@ class ConversationService:
             if saved.taken_over_at is not None:
                 saved.taken_over_at = self.now()
 
-    async def commented(
+    async def handle_post_comment(
         self, agent: LiveAgent, contact: str, said: str, answer: str, name: str | None
     ) -> str:
-        """A comment on the Page's post and our private reply to it (D141), added to the
+        """A comment on the Page's post and our private reply to it, added to the
         buyer's Messenger chat as their line and the agent's, so their reply there carries on
-        from it. The chat they have, started afresh if it's full or quiet (D157); else a new one."""
+        from it. The chat they have, started afresh if it's full or quiet; else a new one."""
         async with self.sessions() as s, s.begin():
             conv = await s.scalar(
                 select(Conversation)
@@ -769,8 +771,8 @@ class ConversationService:
         return conv.id
 
     async def _given_back(self, conv: Conversation) -> bool:
-        """A chat the team took over and then left quiet is the agent's again (D135), and so is
-        one that was the team's while the AI was off for the visitor (I2)."""
+        """A chat the team took over and then left quiet is the agent's again, and so is
+        one that was the team's while the AI was off for the visitor."""
         if self._team_has(conv):
             return False
         await self.take_over(conv.workspace_id, conv.id, False)
@@ -778,9 +780,9 @@ class ConversationService:
         return True
 
     def _team_has(self, conv: Conversation) -> bool:
-        """The team took the chat over and wrote in it less than TAKEOVER_QUIET_MINUTES ago
-        (D135). One with no time was the team's because the AI was off for the visitor: once
-        it's on again, the chat is the agent's again too (I2)."""
+        """The team took the chat over and wrote in it less than TAKEOVER_QUIET_MINUTES ago.
+        One with no time was the team's because the AI was off for the visitor: once
+        it's on again, the chat is the agent's again too."""
         at = conv.taken_over_at
         if conv.status != HUMAN or at is None:
             return False
@@ -792,14 +794,14 @@ class ConversationService:
     ) -> AsyncGenerator[Event]:
         """Passes the turn's events to the listener and saves the turn when it ends.
 
-        The listener drives this, so a tab closed mid-reply loses the turn (D3).
+        The listener drives this, so a tab closed mid-reply loses the turn.
         """
         async with aclosing(run_turn(turn, self.runtime)) as events:
             async for event in events:
                 if isinstance(event, TurnEnded):
                     await self._save(conv, event, agent.config.handoff.auto_assign)
                     await self._alert(conv, event)
-                    if event.alerts:  # a new shop order: its buyer may get a call (D89)
+                    if event.alerts:  # a new shop order: its buyer may get a call
                         await self.calls.after_turn(agent, conv.id)
                     await self.visitors.after_turn(agent, visitor, event.tools)
                 yield event
@@ -812,7 +814,7 @@ class ConversationService:
         contact: str | None,
         name: str | None,
     ) -> Conversation:
-        """The conversation (a new one if none) with the team answering it (I2)."""
+        """The conversation (a new one if none) with the team answering it."""
         async with self.sessions() as s, s.begin():
             if conv is None:
                 conv = self._new(agent, channel, contact, name)
@@ -834,7 +836,7 @@ class ConversationService:
         """Tells the owner what the turn saved, and if the visitor wants a person."""
         for alert in ended.alerts:
             await self.team.alert(conv, alert)
-        if ended.alerts:  # an order saved or changed: into a linked WooCommerce store now (D77)
+        if ended.alerts:  # an order saved or changed: into a linked WooCommerce store now
             self.woo.push_soon(conv.workspace_id)
         if ended.handed_off:
             await self.team.alert(conv, handoff_alert([*conv.messages, *ended.added]))
@@ -844,7 +846,7 @@ class ConversationService:
             saved = await self._get_by_id(s, conv.workspace_id, conv.id, lock=True)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
-            saved.done_at = saved.snoozed_until = None  # they wrote again: it's back (I3)
+            saved.done_at = saved.snoozed_until = None  # they wrote again: it's back
             if ended.handed_off:
                 saved.status = "needs_human"
                 if auto_assign and saved.assigned_to is None:
@@ -855,7 +857,7 @@ class ConversationService:
         log.info("turn finished", extra={"conversation_id": conv.id, "trace": ended.trace})
 
     def _turn(self, conv: Conversation, ended: TurnEnded) -> Turn:
-        """The turn's trace as a row (D71), so the admin can add it up. No one's words."""
+        """The turn's trace as a row, so the admin can add it up. No one's words."""
         trace = ended.trace
         tokens = [step["tokens"] for step in trace["steps"] if "tokens" in step]
         return Turn(
@@ -892,14 +894,14 @@ class ConversationService:
         )
 
     def _showing(self) -> tuple[ColumnElement[bool], ...]:
-        """The usual list's chats: not done, and not snoozed (I3)."""
+        """The usual list's chats: not done, and not snoozed."""
         return (
             Conversation.done_at.is_(None),
             or_(Conversation.snoozed_until.is_(None), Conversation.snoozed_until <= self.now()),
         )
 
     def _is_full(self, conv: Conversation) -> bool:
-        """The agent's part only (D157): a chat kept for months isn't full."""
+        """The agent's part only: a chat kept for months isn't full."""
         turns = sum(1 for m in conv.messages[conv.history_from :] if m.get("role") == "user")
         return turns >= self.settings.MAX_TURNS
 
@@ -910,7 +912,7 @@ class ConversationService:
         return conv
 
     async def by_ids(self, ws: str, ids: set[str]) -> Sequence[Conversation]:
-        """These of the business's conversations (the tickets' chats, D138), in no order."""
+        """These of the business's conversations (the tickets' chats), in no order."""
         if not ids:
             return []
         async with self.sessions() as s:
@@ -938,7 +940,7 @@ class ConversationService:
 
 async def least_busy(s: AsyncSession, ws: str) -> str | None:
     """The joined, available moderator with the fewest open chats (waiting for a person, or with
-    the team), the longest on the team first when it's even; None with no one (I1, D149)."""
+    the team), the longest on the team first when it's even; None with no one."""
     open_chats = (
         select(func.count())
         .select_from(Conversation)

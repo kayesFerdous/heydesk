@@ -1,4 +1,4 @@
-"""The business's team (D97): an owner adds moderators by email; a moderator runs the inbox,
+"""The business's team: an owner adds moderators by email; a moderator runs the inbox,
 not the settings; a removed one is out at once; the owner sees what the team changed."""
 
 from fastapi import FastAPI
@@ -79,7 +79,7 @@ async def test_a_moderator_runs_the_inbox_and_reads_but_doesnt_change_the_settin
         refused = await moderator.request(method, path, json={"email": "x@example.com"})
         assert refused.status_code == 403, (method, path)
 
-    # nothing on the agent is theirs to change, not even the saved replies (D153)
+    # nothing on the agent is theirs to change, not even the saved replies
     replies = {"saved_replies": ["Thanks!"]}
     assert (await moderator.patch("/api/agent", json=replies)).status_code == 403
 
@@ -124,7 +124,7 @@ async def test_an_email_joins_one_business_and_a_team_has_a_limit(
 
     services = app.state.services
     ws = services.users.principal(client.headers["Authorization"][7:]).workspace_id
-    for n in range(PLANS["pro"].moderators - 1):  # the dev workspace is on Pro (D106)
+    for n in range(PLANS["pro"].moderators - 1):  # the dev workspace is on Pro
         await services.members.invite(ws, f"m{n}@example.com", owner_id)
     full = await client.post("/api/team/members", json={"email": "one-more@example.com"})
     assert full.status_code == 409

@@ -5,7 +5,7 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.taken import Payable, Taken
+from heydesk.models.customer_request import CustomerRequest, Payable
 
 
 class DoctorRow(Base):
@@ -29,11 +29,11 @@ class DoctorRow(Base):
     position: Mapped[int] = mapped_column(default=0)  # the clinic's order, for the prompt
 
 
-class Appointment(Taken, Payable, Base):
+class Appointment(CustomerRequest, Payable, Base):
     """An appointment request: the clinic phones the patient to confirm it.
 
     When the clinic takes a deposit first, the request starts `unpaid` and only the payment
-    check makes it `new` (D48)."""
+    check makes it `new`."""
 
     __tablename__ = "appointments"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
@@ -51,14 +51,14 @@ class Appointment(Taken, Payable, Base):
     doctor_name: Mapped[str] = mapped_column(String(200))  # as it was when booked
     at: Mapped[datetime]  # UTC
     deposit: Mapped[int] = mapped_column(default=0)  # minor units, the clinic's when booked
-    # A deposit sent by hand (D145): the bKash or Nagad TrxID the patient typed ("" none),
+    # A deposit sent by hand: the bKash or Nagad TrxID the patient typed ("" none),
     # and whether the clinic ticked it as found in its account
     trx_id: Mapped[str] = mapped_column(String(30), default="", server_default="")
     trx_checked: Mapped[bool] = mapped_column(default=False, server_default="0")
     reminded: Mapped[bool] = mapped_column(default=False, server_default="0")  # the day before
 
     @property
-    def due(self) -> int:
+    def amount_due(self) -> int:
         return self.deposit
 
     def about(self) -> str:

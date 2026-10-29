@@ -5,13 +5,13 @@ from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base
-from heydesk.models.taken import Taken
+from heydesk.models.customer_request import CustomerRequest
 
 OUTCOMES = ("sold", "not_now", "lost")
 
 
-class Lead(Taken, Base):
-    """A visitor who asked to be called back at a time (D139): open until the team taps how
+class Lead(CustomerRequest, Base):
+    """A visitor who asked to be called back at a time: open until the team taps how
     it went. A lost one says why, and the whys are counted."""
 
     __tablename__ = "leads"

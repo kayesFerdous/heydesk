@@ -1,4 +1,4 @@
-// The buyer's phone for the shop's confirmation call (D88). It waits for one mobile number's
+// The buyer's phone for the shop's confirmation call. It waits for one mobile number's
 // calls, rings, and on Answer opens the same WebRTC call as the chat page's Call button.
 import { visitorId } from "./visitor.js";
 
@@ -117,7 +117,7 @@ $("decline").addEventListener("click", () => {
   const call = ringing;
   stopRinging();
   show("standby");
-  // The shop tries again later (D89)
+  // The shop tries again later
   if (call) fetch(`/api/phone/decline?${new URLSearchParams({ call: call.call })}`, { method: "POST" });
 });
 

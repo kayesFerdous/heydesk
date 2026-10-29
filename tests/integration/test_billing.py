@@ -1,4 +1,4 @@
-"""Plans and paying HeyDesk for one (D106)."""
+"""Plans and paying HeyDesk for one."""
 
 from datetime import timedelta
 
@@ -40,10 +40,10 @@ async def test_the_agent_stops_when_the_plan_ends_or_its_replies_run_out(world: 
 
     # A paid plan keeps answering for the grace days after its last paid day, then stops
     await billing.set_plan(DEV_WORKSPACE_ID, "starter", FIXED_NOW - timedelta(days=1))
-    await visitors.admit(agent, "web:a")
+    await visitors.count_turn(agent, "web:a")
     world.clock.advance(days=GRACE_DAYS)
     with pytest.raises(VisitorLimited):
-        await visitors.admit(agent, "web:a")
+        await visitors.count_turn(agent, "web:a")
     assert (await billing.billing(DEV_WORKSPACE_ID)).active is False
 
     # A trial's replies: the 200th in 30 days is the last
@@ -69,10 +69,10 @@ async def test_the_agent_stops_when_the_plan_ends_or_its_replies_run_out(world: 
             for _ in range(PLANS["trial"].replies - 1)
         )
     with pytest.raises(VisitorLimited):
-        await visitors.admit(agent, "web:b")
+        await visitors.count_turn(agent, "web:b")
     world.clock.advance(days=31)  # older replies stop counting, but the trial has ended too
     with pytest.raises(VisitorLimited):
-        await visitors.admit(agent, "web:b")
+        await visitors.count_turn(agent, "web:b")
 
 
 async def test_a_paid_plan_starts_once_and_only_for_the_right_amount(world: World) -> None:

@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class TeamEvent(Base):
-    """What someone in a business changed through the API, for its owner (D97). Insert-only.
+    """What someone in a business changed through the API, for its owner. Insert-only.
 
     No foreign key to `users`: a removed moderator's row is deleted, and what they did stays,
     with the email they had."""
@@ -25,4 +25,4 @@ class TeamEvent(Base):
 
 @event.listens_for(TeamEvent, "before_update")
 def _team_events_are_append_only(mapper: object, connection: object, target: TeamEvent) -> None:
-    raise RuntimeError("team events are never updated (D97)")
+    raise RuntimeError("team events are never updated")

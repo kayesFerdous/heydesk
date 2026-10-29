@@ -53,7 +53,7 @@ def test_a_product_photo_is_only_one_of_the_business_s_own(tmp_path: Path) -> No
 
 
 async def test_a_photo_link_must_be_a_public_address() -> None:
-    """A business's list names any address: never this server or its network (D102)."""
+    """A business's list names any address: never this server or its network."""
     for url in ("http://127.0.0.1/x.jpg", "http://10.0.0.5/x.jpg", "file:///etc/passwd"):
         with pytest.raises(ImageUnreachable):
             await public(url, local=False)

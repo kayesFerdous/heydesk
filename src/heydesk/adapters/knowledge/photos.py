@@ -1,4 +1,4 @@
-"""QdrantPhotoIndex: a shop's product photos, searched by likeness (D57).
+"""QdrantPhotoIndex: a shop's product photos, searched by likeness.
 
 One collection for every business, told apart by `workspace_id` in the payload (a tenant index),
 like the documents' chunks. One dense vector per photo, compared by cosine; no words to match.

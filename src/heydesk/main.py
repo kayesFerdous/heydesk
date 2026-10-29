@@ -93,7 +93,7 @@ def create_app(
             asyncio.create_task(
                 app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
             ),
-            # the comment nudge (D142), as often as the snooze round
+            # the comment nudge, as often as the snooze round
             asyncio.create_task(app.state.services.channels.run(settings.SNOOZE_CHECK_SECONDS)),
         ]
         yield
@@ -111,8 +111,8 @@ def create_app(
     app.add_middleware(RequestLogMiddleware)  # outermost: logs every request, even CORS rejections
     register_exception_handlers(app)
     include_routers(app, dev_page=dev)
-    # Product photos and the ones visitors send (D57), when they're on this server's disk and
-    # not in R2 (D101); the folder is made on the first photo
+    # Product photos and the ones visitors send, when they're on this server's disk and
+    # not in R2; the folder is made on the first photo
     if not settings.R2_BUCKET:
         media = StaticFiles(directory=settings.MEDIA_DIR, check_dir=False)
         app.mount("/media", media, name="media")

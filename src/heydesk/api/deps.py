@@ -16,7 +16,7 @@ from heydesk.services.users import Principal
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 
-# An admin names the business they're acting in (D23); an owner's is always their own
+# An admin names the business they're acting in; an owner's is always their own
 BUSINESS_HEADER = "X-Business"
 
 
@@ -25,7 +25,7 @@ class BusinessRequired(HeyDeskError):
 
 
 def client_ip(request: Request) -> str:
-    """The caller's address, for the rate limits (D52). Behind a proxy, uvicorn takes the real
+    """The caller's address, for the rate limits. Behind a proxy, uvicorn takes the real
     address from the proxy's X-Forwarded-For header, if the proxy is on this machine."""
     return request.client.host if request.client else "unknown"
 
@@ -53,7 +53,7 @@ async def current_workspace(
     """The business every business route is scoped by (rule 6).
 
     An owner: their own, whatever the request says. A moderator: theirs too, after the
-    database confirms they're still on the team, and never changing its settings (D97). An
+    database confirms they're still on the team, and never changing its settings. An
     admin: the one in the X-Business header, after the database confirms they're still an
     admin. An admin's writes, and their reads of one thing (a conversation), go to the audit
     log; an owner's and a moderator's writes that succeed go to the business's activity.
@@ -77,9 +77,9 @@ async def current_workspace(
 
 
 def owners_only(method: str, path: str) -> bool:
-    """The team, billing (D106) and any change to the agent's settings or channels are the
+    """The team, billing and any change to the agent's settings or channels are the
     owner's. A moderator gets the rest: the inbox, the records, the lists, and reading the
-    settings and channels, but change none of them (D97, D151, D153)."""
+    settings and channels, but change none of them."""
     if path.startswith(("/api/team", "/api/billing")):
         return True
     return path.startswith("/api/agent") and method != "GET"
@@ -127,7 +127,7 @@ def amount_cell(minor: int) -> int | float:
 
 
 def csv_file(name: str, columns: list[str], rows: list[list[Any]]) -> Response:
-    """A list as a file a spreadsheet opens (G6): UTF-8 with a BOM, so Excel reads Bangla. A
+    """A list as a file a spreadsheet opens: UTF-8 with a BOM, so Excel reads Bangla. A
     visitor's words that start like a formula get a ' first, so they stay words."""
 
     def cell(value: Any) -> Any:
@@ -182,7 +182,7 @@ class ImportIn(BaseModel):
     mapping: dict[str, str] | None = Field(
         default=None,
         description="Our field → the file's column, as the owner checked it after /suggest "
-        "(D53). Without it, the file's columns are matched to ours by name",
+        ". Without it, the file's columns are matched to ours by name",
     )
 
 
@@ -194,4 +194,4 @@ class ImportOut[T](BaseModel):
     saved: bool
     count: int
     preview: list[T]  # the first few, as they'll be saved
-    added: int | None = None  # a shop's import (D120): how many were new; the rest were updated
+    added: int | None = None  # a shop's import: how many were new; the rest were updated

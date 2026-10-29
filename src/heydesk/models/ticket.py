@@ -4,11 +4,11 @@ from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base
-from heydesk.models.taken import Taken
+from heydesk.models.customer_request import CustomerRequest
 
 
-class Ticket(Taken, Base):
-    """A complaint the agent flagged (D138): open until someone on the team marks it solved.
+class Ticket(CustomerRequest, Base):
+    """A complaint the agent flagged: open until someone on the team marks it solved.
     One open ticket per chat; who has it is the chat's `assigned_to`."""
 
     __tablename__ = "tickets"

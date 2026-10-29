@@ -1,4 +1,4 @@
-"""Steadfast Courier behind the `CourierApi` port (D90, D112), over httpx.
+"""Steadfast Courier behind the `CourierApi` port, over httpx.
 
 The API key and secret go as headers on every call. Steadfast has no sandbox: a booking is a
 real parcel. Its docs are the API guide in the merchant panel (steadfast.com.bd/user/api/guide).

@@ -1,4 +1,4 @@
-"""The `Transcriber` port: a visitor's voice note in words (G2, D147)."""
+"""The `Transcriber` port: a visitor's voice note in words."""
 
 from typing import Protocol
 

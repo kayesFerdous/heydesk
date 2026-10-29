@@ -64,7 +64,7 @@ async def test_the_first_turn_starts_with_the_greeting_the_visitor_saw() -> None
     llm = FakeLLM(["What can I get you?"])
     end = (await collect(make_turn("hi", history=[], is_first=True), llm))[-1]
 
-    greeting = {"role": "assistant", "content": "Hi, welcome to Spice Garden!"}  # D8
+    greeting = {"role": "assistant", "content": "Hi, welcome to Spice Garden!"}
     user = {"role": "user", "content": "hi"}
     assert isinstance(end, TurnEnded) and end.added[:2] == [greeting, user]
     assert llm.requests[0].messages == [greeting, user]

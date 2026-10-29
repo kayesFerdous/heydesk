@@ -30,7 +30,7 @@ from heydesk.runtime.trace import Trace
 
 MAX_MODEL_CALLS = 6  # rule 9
 # Keys a stored message may have for the people who read it, never for the model: who wrote it
-# (the team, D43), the photo a visitor sent and the photos a tool showed (D57)
+# (the team), the photo a visitor sent and the photos a tool showed
 HIDDEN = ("by", "photo", "photos")
 
 
@@ -54,9 +54,9 @@ class TurnInput:
     now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
     note: Callable[[dict[str, Any]], str] = lambda state: ""  # the desk's note on the state
-    is_first: bool = False  # the conversation's first turn: the greeting goes in first (D8)
+    is_first: bool = False  # the conversation's first turn: the greeting goes in first
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
-    photo_url: str = ""  # the photo the visitor sent with it, if any (D57)
+    photo_url: str = ""  # the photo the visitor sent with it, if any
     photo_line: str = ""  # Python's line on that photo, which the model reads before their text
 
 
@@ -71,9 +71,9 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
     alerts: list[str] = []  # for the owner: an order placed
-    used: list[str] = []  # the tools that ran, for the visitor limits (D51)
+    used: list[str] = []  # the tools that ran, for the visitor limits
     said: str | None = None  # a tool's own reply, which ends the turn
-    choices: list[str] = []  # the last tool's buttons, for the reply that follows it (D99)
+    choices: list[str] = []  # the last tool's buttons, for the reply that follows it
     failed = asked_for_person = interrupted = False
 
     try:
@@ -140,7 +140,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                     alerts.append(result.alert)
                 if result.photos:
                     yield Photos(result.photos)
-                if result.card and turn.channel != "voice":  # a call has no screen (D110)
+                if result.card and turn.channel != "voice":  # a call has no screen
                     yield Card(result.card["kind"], result.card["data"])
                 shown.append(result.photos)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
@@ -186,7 +186,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
 def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
     """This turn's first transcript additions."""
     added = []
-    if turn.is_first:  # what they saw first, so the model never greets twice (D8)
+    if turn.is_first:  # what they saw first, so the model never greets twice
         added.append(llm.assistant_message(turn.agent.fill(turn.agent.greeting)))
     said = llm.user_message("\n".join(t for t in (turn.photo_line, turn.user_text) if t))
     if turn.photo_url:

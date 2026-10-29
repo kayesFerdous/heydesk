@@ -1,4 +1,4 @@
-"""Cards on the messaging apps (D111): each app shows a tool's card (D110) in its own way."""
+"""Cards on the messaging apps: each app shows a tool's card in its own way."""
 
 from datetime import UTC, datetime
 from typing import Any

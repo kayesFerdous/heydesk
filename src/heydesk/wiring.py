@@ -122,7 +122,7 @@ def build_photo_index(settings: Settings, client: AsyncQdrantClient) -> PhotoInd
 
 
 def build_media(settings: Settings) -> MediaStore:
-    """Cloudflare R2 when a bucket is set, else this server's disk (D101)."""
+    """Cloudflare R2 when a bucket is set, else this server's disk."""
     if not settings.R2_BUCKET:
         return DiskMedia(settings.MEDIA_DIR)
     return R2Media(
@@ -141,7 +141,7 @@ def build_photos(
     fetch: FetchImage | None = None,
 ) -> PhotoService:
     """Photo links are fetched from public addresses only; in development localhost too, for
-    the test shop in dev/woo-shop (D76, D102)."""
+    the test shop in dev/woo-shop."""
     dev = settings.APP_ENV == "development"
     return PhotoService(
         embedder,
@@ -153,7 +153,7 @@ def build_photos(
 
 
 def build_payments(settings: Settings) -> Gateways:
-    """Both gateways (D109); each business's own account comes with every call (D49)."""
+    """Both gateways; each business's own account comes with every call."""
     if settings.PAYMENTS == "sslcommerz":
         return {"sslcommerz": SslCommerz(), "bkash": BkashCheckout()}
     # no network; no order is paid unless a test says so
@@ -167,7 +167,7 @@ def build_mailer(settings: Settings) -> Mailer:
 
 
 def build_transcriber(settings: Settings) -> Transcriber | None:
-    """Voice notes in words (D147): Groq's Whisper with a Groq key, the fake offline, or none
+    """Voice notes in words: Groq's Whisper with a Groq key, the fake offline, or none
     (a voice note gets "please type")."""
     if settings.GROQ_API_KEY:
         return GroqTranscriber(settings.GROQ_API_KEY)

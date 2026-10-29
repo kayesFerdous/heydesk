@@ -3,7 +3,7 @@
 A writing tool's first call returns the read-back, and `ask_for_yes` keeps it in the state.
 The model judges the visitor's reply: only after a clear yes does it call the tool again.
 Python checks that this call's details are the last ones read back on an earlier turn, so
-the visitor heard exactly what is saved (D107).
+the visitor heard exactly what is saved.
 """
 
 from typing import Any
@@ -20,7 +20,7 @@ def confirm[T](heard: str, value: T, read_back: str) -> Confirmed[T] | None:
 
 def ask_for_yes(read_back: str, tool: str, card: dict[str, Any] | None = None) -> ToolResult:
     """What a writing tool returns until the visitor has said yes to its read-back. `card`:
-    the same details as a summary card, for a screen (D110); the yes is still to `read_back`."""
+    the same details as a summary card, for a screen; the yes is still to `read_back`."""
     return ToolResult(
         ok=False,
         data={
@@ -29,6 +29,6 @@ def ask_for_yes(read_back: str, tool: str, card: dict[str, Any] | None = None) -
             f"{tool} again with the same details. A change, a question or a maybe is not a yes.",
         },
         state={"read_back": read_back},  # kept until another read-back replaces it
-        choices=["Yes", "Change"],  # a tapped Yes is the visitor's words, like a typed one (D99)
+        choices=["Yes", "Change"],  # a tapped Yes is the visitor's words, like a typed one
         card=card,
     )

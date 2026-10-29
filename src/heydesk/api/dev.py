@@ -22,6 +22,6 @@ async def chat_page(request: Request) -> HTMLResponse:
 
 @router.get("/phone")
 async def phone_page() -> HTMLResponse:
-    """A web page that acts as the buyer's phone for the shop's confirmation call (D88)."""
+    """A web page that acts as the buyer's phone for the shop's confirmation call."""
     page = await asyncio.to_thread((WEB_STATIC / "phone.html").read_text, encoding="utf-8")
     return HTMLResponse(page)

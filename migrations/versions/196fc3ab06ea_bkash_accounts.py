@@ -1,4 +1,4 @@
-"""bkash accounts (D109)
+"""bkash accounts
 
 Revision ID: 196fc3ab06ea
 Revises: 647c31600976

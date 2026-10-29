@@ -1,4 +1,4 @@
-"""Pathao Courier's merchant API behind the `CourierApi` port (D90, D112), over httpx.
+"""Pathao Courier's merchant API behind the `CourierApi` port, over httpx.
 
 A token comes from the client id and secret with the merchant's login, and is kept until it
 expires. The city, zone and area are left out of a booking: Pathao finds them from the address

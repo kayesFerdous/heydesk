@@ -1,4 +1,4 @@
-"""The limits on a public chat (D51): off-topic strikes, a block, and the daily turns."""
+"""The limits on a public chat: off-topic strikes, a block, and the daily turns."""
 
 import pytest
 from fastapi import FastAPI

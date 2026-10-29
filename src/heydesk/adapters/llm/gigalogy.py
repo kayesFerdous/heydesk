@@ -1,4 +1,4 @@
-"""GigalogyLLM: Gigalogy's Maira behind the `LanguageModel` port (D14, D16).
+"""GigalogyLLM: Gigalogy's Maira behind the `LanguageModel` port.
 
 Maira is not a chat-completions API, and three things follow from that:
 
@@ -8,7 +8,7 @@ Maira is not a chat-completions API, and three things follow from that:
   than "do what the message says" (its text: docs/prompt-rules.md, section 0).
 - **The model is set on the profile**, chosen by `GIGALOGY_PROFILE_ID`, so the
   agent's model name is ignored here.
-- **No streaming, and tool calls as JSON in the reply** (D16). The query lists
+- **No streaming, and tool calls as JSON in the reply**. The query lists
   the tools and asks for `{"tool": …, "arguments": …}` to use one. The reply
   arrives whole, so we read it before the visitor sees anything: a tool call
   becomes a `ToolCall` like Groq's, and the runtime can't tell the difference.

@@ -7,9 +7,9 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class SubscriptionPayment(Base):
-    """A business paying HeyDesk for a plan (D106): made unpaid when the owner starts paying,
+    """A business paying HeyDesk for a plan: made unpaid when the owner starts paying,
         marked paid once our SSLCommerz store says so. Its id is the gateway's `tran_id`. `kind` is
-    `months` (time on a plan) or `upgrade` (the difference for the days left, D116); `review` is
+    `months` (time on a plan) or `upgrade` (the difference for the days left); `review` is
     paid but not applied, because the plan changed while the owner was paying."""
 
     __tablename__ = "subscription_payments"

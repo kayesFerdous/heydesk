@@ -1,4 +1,4 @@
-"""Text-to-speech in Bangla: each sentence goes to our local TTS server (D84, `tts_server/`).
+"""Text-to-speech in Bangla: each sentence goes to our local TTS server (`tts_server/`).
 
 The server answers with the whole sentence as raw 16-bit PCM, which Pipecat resamples for the
 call. A sentence takes 0.6–1.3 s on an M2's CPU, and speech starts after the first one.

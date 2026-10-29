@@ -1,10 +1,10 @@
-"""Limits on a public chat (D51), so visitors here for timepass can't spend a business's turns,
-and the team's say over one visitor (I2): Block them, or turn the AI off for them.
+"""Limits on a public chat, so visitors here for timepass can't spend a business's turns,
+and the team's say over one visitor: Block them, or turn the AI off for them.
 
 Before anything, `let_in` refuses a blocked visitor (telling them once) and says when the AI is
 off for them. A messaging app's every message goes through `arrived`, which blocks a flood.
 Before a turn, `admit` counts it, or refuses when the visitor is blocked, the business's plan
-has ended or used its replies (D106), the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
+has ended or used its replies, the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
 `after_turn` gives a strike when the model called `off_topic`; enough strikes in a row block the
 visitor for a while. Any real step (another tool) clears the strikes.
 """
@@ -42,10 +42,10 @@ class VisitorService:
         self.sessions = sessions
         self.settings = settings
         self.now = now
-        self.flood = SlidingWindowCounterRateLimiter(MemoryStorage())  # in memory, like D52
+        self.flood = SlidingWindowCounterRateLimiter(MemoryStorage())  # in memory
 
-    async def let_in(self, agent: LiveAgent, key: str) -> bool:
-        """Raises when they're blocked (I2): `VisitorLimited` the first time, with how to reach
+    async def check_not_blocked(self, agent: LiveAgent, key: str) -> bool:
+        """Raises when they're blocked: `VisitorLimited` the first time, with how to reach
         the business, and `VisitorSilenced` after, so a messaging app tells them once. False
         when the team turned the AI off for them: their message goes to the team."""
         now = self.now()
@@ -61,9 +61,9 @@ class VisitorService:
             raise (VisitorSilenced if told else VisitorLimited)(limited_message(agent))
         return not ai_off
 
-    async def arrived(self, ws: str, key: str) -> None:
-        """One message from a messaging app (I2). `FLOOD_MESSAGES` in a minute block them for
-        `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit (D52)."""
+    async def count_message(self, ws: str, key: str) -> None:
+        """One message from a messaging app. `FLOOD_MESSAGES` in a minute block them for
+        `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit."""
         limit = parse(f"{self.settings.FLOOD_MESSAGES}/minute")
         if await self.flood.hit(limit, "flood", ws, key):
             return
@@ -83,7 +83,7 @@ class VisitorService:
     async def change(
         self, ws: str, visitor_id: str, by: str, blocked: bool | None, ai_off: bool | None
     ) -> Visitor:
-        """The team blocks or unblocks a visitor, or turns the AI off or on for them (I2).
+        """The team blocks or unblocks a visitor, or turns the AI off or on for them.
         `by` is who did it (their email). A block by the team lasts until someone unblocks."""
         async with self.sessions() as s, s.begin():
             visitor = await s.scalar(
@@ -113,7 +113,7 @@ class VisitorService:
             )
             return [v for v in found if is_blocked(v, now)]
 
-    async def admit(self, agent: LiveAgent, key: str, *, count: bool = True) -> None:
+    async def count_turn(self, agent: LiveAgent, key: str, *, count: bool = True) -> None:
         """Counts one turn for the visitor, or raises `VisitorLimited`. With `count=False` it
         only checks: a voice call checks before it connects."""
         now = self.now()
@@ -159,7 +159,7 @@ class VisitorService:
         """Why the visitor can't have a turn now, or None."""
         if is_blocked(visitor, now):
             return "blocked"
-        plan = await plan_problem(s, ws, now)  # ended, or its replies used up (D106)
+        plan = await plan_problem(s, ws, now)  # ended, or its replies used up
         if plan:
             return plan
         if visitor.turns >= self.settings.VISITOR_DAILY_TURNS:

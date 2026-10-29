@@ -1,4 +1,4 @@
-"""The business's team (D97): the owner adds and removes moderators, and sees what the team
+"""The business's team: the owner adds and removes moderators, and sees what the team
 did. Owners only: a moderator gets a 403 here (`deps.owners_only`)."""
 
 from datetime import datetime, timedelta
@@ -25,9 +25,9 @@ class MemberOut(BaseModel):
     status: Literal["active", "invited"]  # invited: hasn't set a password with the code yet
     invited_at: datetime
     joined_at: datetime | None
-    open_chats: int = 0  # waiting for a person, or with them: what a hand-off goes by (I1)
-    available: bool = True  # new hand-offs may go to them (D149)
-    telegram_linked: bool = False  # a moderator's alerts reach their own Telegram (D148)
+    open_chats: int = 0  # waiting for a person, or with them: what a hand-off goes by
+    available: bool = True  # new hand-offs may go to them
+    telegram_linked: bool = False  # a moderator's alerts reach their own Telegram
 
 
 class AvailableIn(BaseModel):
@@ -35,7 +35,7 @@ class AvailableIn(BaseModel):
 
 
 class MemberStatsOut(BaseModel):
-    """What one member did in the last `days` (D150)."""
+    """What one member did in the last `days`."""
 
     id: str
     email: str
@@ -69,7 +69,7 @@ def member(user: UserRow, open_chats: int = 0) -> MemberOut:
 
 @router.get("/members")
 async def members(ws: Workspace, services: Svc) -> list[MemberOut]:
-    """The team, each with their open chats (I1)."""
+    """The team, each with their open chats."""
     open_chats = await services.conversations.open_chats(ws)
     return [member(u, open_chats.get(u.id, 0)) for u in await services.members.members(ws)]
 
@@ -101,7 +101,7 @@ async def remove(user_id: str, ws: Workspace, services: Svc) -> None:
 
 @router.put("/members/{user_id}/available", status_code=status.HTTP_204_NO_CONTENT)
 async def set_available(user_id: str, body: AvailableIn, ws: Workspace, services: Svc) -> None:
-    """The owner switches anyone on or off for new hand-offs (D149); a moderator switches
+    """The owner switches anyone on or off for new hand-offs; a moderator switches
     themself at `/api/auth/me/available`."""
     await services.members.set_available(ws, user_id, body.available)
 
@@ -110,7 +110,7 @@ async def set_available(user_id: str, body: AvailableIn, ws: Workspace, services
 async def stats(
     ws: Workspace, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> list[MemberStatsOut]:
-    """Each member's work in the last `days` (D150), the owners first."""
+    """Each member's work in the last `days`, the owners first."""
     since = services.members.now() - timedelta(days=days)
     done = await services.members.stats(ws, since)
     open_chats = await services.conversations.open_chats(ws)
@@ -125,7 +125,7 @@ async def stats(
 
 @router.get("/activity")
 async def activity(ws: Workspace, services: Svc, paged: Paged) -> list[EventOut]:
-    """What the owners and moderators changed, newest first (`limit`, `before`: D46)."""
+    """What the owners and moderators changed, newest first (`limit`, `before`)."""
     events = await services.members.activity(ws, limit=paged.limit, before=paged.before)
     return [
         EventOut(actor_email=e.actor_email, action=e.action, target=e.target, at=e.at)

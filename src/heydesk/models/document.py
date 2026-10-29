@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Document(Base):
-    """A document a business added to its agent's knowledge (D34). The full text is kept here,
+    """A document a business added to its agent's knowledge. The full text is kept here,
     the source of truth: the Qdrant index of its chunks can always be rebuilt from it."""
 
     __tablename__ = "documents"

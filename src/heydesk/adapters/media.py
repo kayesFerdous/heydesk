@@ -1,5 +1,5 @@
-"""Photo files on this server's disk, or in a Cloudflare R2 bucket (D101), and photos
-downloaded from the links in a shop's list (D102).
+"""Photo files on this server's disk, or in a Cloudflare R2 bucket, and photos
+downloaded from the links in a shop's list.
 
 R2 speaks Amazon S3's API. Each request is signed with AWS Signature Version 4 (`signed`),
 which is a few lines of hashlib, so there's no SDK to install.
@@ -189,13 +189,13 @@ def signed(
     }
 
 
-# Photos from links (D102): a business's CSV, sheet or WooCommerce store names any address, so we
+# Photos from links: a business's CSV, sheet or WooCommerce store names any address, so we
 # only fetch public ones (not this server or its network), at most 10 MB, following 3 redirects
 
 MAX_IMAGE = 10_000_000  # bytes, as an owner's upload
 REDIRECTS = 3
 DRIVE = re.compile(r"^https://drive\.google\.com/(?:file/d/([\w-]+)|open\?id=([\w-]+))")
-LOCAL = ("localhost", "127.0.0.1")  # the test shop in dev/woo-shop, in development only (D76)
+LOCAL = ("localhost", "127.0.0.1")  # the test shop in dev/woo-shop, in development only
 
 
 def direct(url: str) -> str:

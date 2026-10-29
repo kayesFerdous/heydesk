@@ -218,7 +218,7 @@ async def new_business(app: FastAPI, email: str = "second@example.com") -> Async
 
 
 def emailed_code(app: FastAPI, email: str) -> str:
-    """The code in the last email to `email` (the test mailer keeps them, D93)."""
+    """The code in the last email to `email` (the test mailer keeps them)."""
     subject = [sub for to, sub, _ in app.state.services.users.mailer.sent if to == email][-1]
     return subject[-6:]
 

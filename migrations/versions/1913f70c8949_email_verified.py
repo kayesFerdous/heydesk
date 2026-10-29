@@ -1,4 +1,4 @@
-"""email verified (D93)
+"""email verified
 
 Revision ID: 1913f70c8949
 Revises: a163b89f1a08

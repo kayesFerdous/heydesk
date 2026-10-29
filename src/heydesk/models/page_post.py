@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class PagePost(Base):
-    """What a Page's post is about (D141, D142), found once, at its first comment: its words
+    """What a Page's post is about, found once, at its first comment: its words
     and the products they name, or its photo's closest ones. Every later comment uses it
     again, so the post isn't fetched or searched twice. The owner can set the products
     (`tagged`); prices and stock are read from the list each time."""

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
 from heydesk.desks.shop.values import lines_text
-from heydesk.models.taken import Payable, Taken
+from heydesk.models.customer_request import CustomerRequest, Payable
 from heydesk.runtime.speech import money
 
 
@@ -27,15 +27,15 @@ class ProductRow(Base):
     sizes: Mapped[list[Any]] = mapped_column(JSON, default=list)
     colours: Mapped[list[Any]] = mapped_column(JSON, default=list)
     stock: Mapped[int | None]  # None: not counted
-    variants: Mapped[list[Any]] = mapped_column(JSON, default=list)  # {size, colour, stock} (D56)
-    photos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # photo URLs (D57)
-    videos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # video links (D125)
-    goes_with: Mapped[list[Any]] = mapped_column(JSON, default=list)  # product codes (D125)
+    variants: Mapped[list[Any]] = mapped_column(JSON, default=list)  # {size, colour, stock}
+    photos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # photo URLs
+    videos: Mapped[list[Any]] = mapped_column(JSON, default=list)  # video links
+    goes_with: Mapped[list[Any]] = mapped_column(JSON, default=list)  # product codes
     position: Mapped[int] = mapped_column(default=0)  # the shop's order, for the prompt
 
 
 class CouponRow(Base):
-    """A shop's coupon code (`values.Coupon`, D133)."""
+    """A shop's coupon code (`values.Coupon`)."""
 
     __tablename__ = "coupons"
     __table_args__ = (UniqueConstraint("workspace_id", "code"),)
@@ -48,16 +48,16 @@ class CouponRow(Base):
     ends_at: Mapped[datetime | None] = mapped_column(default=None)
     max_uses: Mapped[int | None] = mapped_column(default=None)
     used: Mapped[int] = mapped_column(default=0)
-    # An offer (D140): only these chats, the ones it was sent to, may use it. None: anyone
+    # An offer: only these chats, the ones it was sent to, may use it. None: anyone
     only_for: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True), default=None)
 
 
-class ShopOrder(Taken, Payable, Base):
+class ShopOrder(CustomerRequest, Payable, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
     When the shop takes payment first, the order starts `unpaid` (its items held) and only
-    the payment check moves it on (D47); no tool can. The advance is the confirmation, so a
-    paid order is `confirmed`, with no call (D92)."""
+    the payment check moves it on; no tool can. The advance is the confirmation, so a
+    paid order is `confirmed`, with no call."""
 
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
@@ -67,9 +67,9 @@ class ShopOrder(Taken, Payable, Base):
     FLOW: ClassVar[dict[str, set[str]]] = {
         "unpaid": {"confirmed", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "on_hold", "cancelled"},  # the shop calls the buyer to confirm
-        "on_hold": {"confirmed", "cancelled"},  # waiting on the buyer or the shop (D131)
+        "on_hold": {"confirmed", "cancelled"},  # waiting on the buyer or the shop
         "confirmed": {"packed", "on_hold", "shipped", "cancelled"},
-        "packed": {"shipped", "on_hold", "cancelled"},  # ready for the courier (D131)
+        "packed": {"shipped", "on_hold", "cancelled"},  # ready for the courier
         "shipped": {"delivered", "returned"},  # with the courier
         "delivered": set(),
         "returned": set(),
@@ -79,31 +79,31 @@ class ShopOrder(Taken, Payable, Base):
     lines: Mapped[list[Any]] = mapped_column(JSON)  # {code, name, size, colour, quantity, price}
     subtotal: Mapped[int]  # minor units
     delivery_charge: Mapped[int]
-    discount: Mapped[int] = mapped_column(default=0)  # a coupon took this off the items (D133)
+    discount: Mapped[int] = mapped_column(default=0)  # a coupon took this off the items
     coupon: Mapped[str] = mapped_column(String(30), default="")
     total: Mapped[int]  # subtotal - discount + delivery_charge; the rider collects `total - paid`
     zone: Mapped[str] = mapped_column(String(100))
     address: Mapped[str] = mapped_column(String(300))
     note: Mapped[str] = mapped_column(default="")
-    # Where it was placed (D144): "chat", "page" (*Buy now*, D130) or "team" (D131)
+    # Where it was placed: "chat", "page" (*Buy now*) or "team"
     source: Mapped[str] = mapped_column(String(10), default="chat", server_default="chat")
-    # In a linked WooCommerce store (D75): its id there, and our status as last written ("" never)
+    # In a linked WooCommerce store: its id there, and our status as last written ("" never)
     woo_id: Mapped[int | None] = mapped_column(default=None)
     woo_sent: Mapped[str] = mapped_column(String(20), default="")
-    # Booked with the courier (D112): its parcel id ("" not booked), and its last words
+    # Booked with the courier: its parcel id ("" not booked), and its last words
     parcel_id: Mapped[str] = mapped_column(String(50), default="")
     courier_status: Mapped[str] = mapped_column(String(100), default="")
-    # Once it ends (D131): the rider's cash reached the shop, and why it came back or was
+    # Once it ends: the rider's cash reached the shop, and why it came back or was
     # cancelled ("refused", "damaged")
     paid_in: Mapped[bool] = mapped_column(default=False)
     reason: Mapped[str] = mapped_column(String(200), default="")
-    # Told once each (D134), sent or not (outside the app's window it isn't): out for
+    # Told once each, sent or not (outside the app's window it isn't): out for
     # delivery, and a day after it was delivered, how was it
     reminded: Mapped[bool] = mapped_column(default=False)
     review_asked: Mapped[bool] = mapped_column(default=False)
 
     @property
-    def due(self) -> int:
+    def amount_due(self) -> int:
         return self.delivery_charge
 
     def about(self) -> str:
@@ -111,7 +111,7 @@ class ShopOrder(Taken, Payable, Base):
 
     def news(self) -> str:
         """What the buyer is told in their chat when the owner or the courier moves it here; "" for nothing
-        (as the restaurant's, D66)."""
+        (as the restaurant's)."""
         if self.status == "confirmed":
             return f"✅ Your order {self.code} is confirmed and will be sent out."
         if self.status == "shipped":

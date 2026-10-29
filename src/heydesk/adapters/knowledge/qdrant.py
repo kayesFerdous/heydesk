@@ -1,4 +1,4 @@
-"""QdrantKnowledgeStore: hybrid search over a business's documents (D33).
+"""QdrantKnowledgeStore: hybrid search over a business's documents.
 
 One collection holds every business's chunks, told apart by `workspace_id` in the payload (a
 tenant index); every query filters by it. Each chunk has two vectors:
@@ -226,7 +226,10 @@ class QdrantKnowledgeStore:
             self.collection,
             models.FilterSelector(
                 filter=models.Filter(
-                    must=[_is("workspace_id", ws), _is("document_id", document_id)]
+                    must=[
+                        _field_equals("workspace_id", ws),
+                        _field_equals("document_id", document_id),
+                    ]
                 )
             ),
         )
@@ -234,7 +237,7 @@ class QdrantKnowledgeStore:
     async def search(
         self, ws: str, question: str, vector: list[float] | None, limit: int
     ) -> list[Snippet]:
-        mine = models.Filter(must=[_is("workspace_id", ws)])
+        mine = models.Filter(must=[_field_equals("workspace_id", ws)])
         legs: list[models.Prefetch] = []
         if vector is not None:
             legs.append(
@@ -266,5 +269,5 @@ class QdrantKnowledgeStore:
         ]
 
 
-def _is(key: str, value: str) -> models.FieldCondition:
+def _field_equals(key: str, value: str) -> models.FieldCondition:
     return models.FieldCondition(key=key, match=models.MatchValue(value=value))

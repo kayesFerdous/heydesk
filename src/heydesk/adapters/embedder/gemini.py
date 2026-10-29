@@ -1,11 +1,11 @@
-"""GeminiEmbedder: Google's `gemini-embedding-2` behind the `Embedder` port (D33).
+"""GeminiEmbedder: Google's `gemini-embedding-2` behind the `Embedder` port.
 
 Over httpx, like the other adapters. For text, this model takes a task written into the input
 rather than a parameter: documents as `title: … | text: …`, questions as `task: search result
 | query: …`. Vectors are cut to `dimensions` (768), which Qdrant compares by cosine.
 
 A photo goes in as it is (`inline_data`, a JPEG) with no task, one photo per request: Gemini
-takes up to 6 images in one embedding, but they'd make one vector, not six (D57).
+takes up to 6 images in one embedding, but they'd make one vector, not six.
 """
 
 import base64

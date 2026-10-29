@@ -1,4 +1,4 @@
-"""The team on Telegram (D43): the owner gets alerts, and answers visitors by replying."""
+"""The team on Telegram: the owner gets alerts, and answers visitors by replying."""
 
 from typing import Any
 
@@ -134,12 +134,12 @@ async def test_the_owner_must_reply_to_an_alert(app: FastAPI, client: AsyncClien
 async def test_a_moderators_chat_alerts_them_not_the_owner(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """D148: a moderator links their own chat; a chat they have alerts them, they answer it,
-    and the reply counts as theirs (D150)."""
+    """a moderator links their own chat; a chat they have alerts them, they answer it,
+    and the reply counts as theirs."""
     path, secret = await link_owner(app, client)
     rafi_id = await invite(client)
     rafi = await join(app)
-    assert (await rafi.get("/api/agent/telegram")).json()["owner_link"] is None  # D151
+    assert (await rafi.get("/api/agent/telegram")).json()["owner_link"] is None
     link = (await rafi.get("/api/auth/me")).json()["telegram_link"]
     code = link.split("?start=")[1]
     mod_chat = 888

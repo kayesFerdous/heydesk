@@ -1,7 +1,7 @@
 """Rows from a CSV file a business already has (a spreadsheet saved as CSV). Pure.
 
-Their columns become our fields by a `mapping` the owner checked ({"price": "MRP"}, D53).
-`suggest` makes the first one from the column names alone (D115), and without a mapping
+Their columns become our fields by a `mapping` the owner checked ({"price": "MRP"}).
+`suggest` makes the first one from the column names alone, and without a mapping
 columns match by name ("Price (৳)" → `price`). A desk turns each row into its own shape; every
 row's problems come back at once, and nothing is saved unless the whole file is clean.
 """
@@ -28,11 +28,11 @@ class Column(BaseModel):
     name: str  # "price"
     about: str  # what it holds, in plain words: "its price: 1850 or ৳1,850"
     required: bool = False
-    aliases: list[str] = []  # other names a sheet gives it: "mrp", "dam", "দাম" (D115)
+    aliases: list[str] = []  # other names a sheet gives it: "mrp", "dam", "দাম"
 
 
 class Suggestion(BaseModel):
-    """What the owner's screen for matching columns needs (D53)."""
+    """What the owner's screen for matching columns needs."""
 
     columns: list[Column]  # our fields
     headers: list[str]  # the file's columns, as they're spelled there
@@ -48,7 +48,7 @@ def reader(text: str) -> csv.DictReader[str]:
     return csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
 
 
-def peek(text: str) -> tuple[list[str], list[dict[str, str]]]:
+def preview_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
     """The file's column names and its first few rows, as they are."""
     rows = reader(text)
     headers = [h for h in rows.fieldnames or [] if h and h.strip()]
@@ -65,8 +65,8 @@ def peek(text: str) -> tuple[list[str], list[dict[str, str]]]:
 
 def suggest(text: str, columns: list[Column]) -> Suggestion:
     """The file's columns, a few rows, and which column is which of our fields, for the owner
-    to check and change (D115)."""
-    headers, samples = peek(text)
+    to check and change."""
+    headers, samples = preview_csv(text)
     return Suggestion(
         columns=columns, headers=headers, samples=samples, mapping=match(headers, columns)
     )
@@ -78,7 +78,7 @@ def match(headers: list[str], columns: list[Column]) -> dict[str, str]:
     scored = []
     for header in headers:
         for column in columns:
-            score = max(fit(header, name) for name in [column.name, *column.aliases])
+            score = max(column_match_score(header, name) for name in [column.name, *column.aliases])
             if score:
                 scored.append((score, column.name, header))
     mapping: dict[str, str] = {}
@@ -88,10 +88,10 @@ def match(headers: list[str], columns: list[Column]) -> dict[str, str]:
     return mapping
 
 
-def fit(header: str, name: str) -> float:
+def column_match_score(header: str, name: str) -> float:
     """How well a column's name fits one of a field's names: 1 the same ("Price (৳)" and
     "price"), 0.9 inside it ("Selling Price"), or how alike a misspelling is; 0 otherwise."""
-    theirs, ours = words(header), words(name)
+    theirs, ours = split_words(header), split_words(name)
     if not theirs or not ours:
         return 0
     if theirs == ours:
@@ -103,7 +103,7 @@ def fit(header: str, name: str) -> float:
     return alike * 0.85 if alike >= CLOSE else 0  # below an exact or a whole-word match
 
 
-def words(text: str) -> list[str]:
+def split_words(text: str) -> list[str]:
     """ "Doctor's Name (Bangla)" → ["doctor", "s", "name"]; Bangla letters are kept."""
     plain = re.sub(r"\(.*?\)", "", text).lower()
     return re.findall(r"[a-z0-9\u0980-\u09ff]+", plain)
@@ -121,7 +121,7 @@ def key(header: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", words).strip("_")
 
 
-def money(text: str) -> int:
+def parse_money(text: str) -> int:
     """ "৳1,200.50" or "1200" → minor units (120050)."""
     cleaned = re.sub(r"[^\d.]", "", text)
     try:

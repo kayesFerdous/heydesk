@@ -1,4 +1,4 @@
-"""The platform admin's routes (D23). Every one needs `Admin`: a 404 for owners.
+"""The platform admin's routes. Every one needs `Admin`: a 404 for owners.
 To act inside a business, an admin uses the ordinary routes with the X-Business header."""
 
 from dataclasses import asdict
@@ -25,7 +25,7 @@ class BusinessRowOut(BaseModel):
     conversations: int
     last_activity_at: datetime | None
     created_at: datetime
-    plan: str  # D106
+    plan: str
     paid_until: datetime
 
 
@@ -51,7 +51,7 @@ class TotalsOut(BaseModel):
     input_tokens: int
     cached_tokens: int  # of the input; cached / input is the cache's hit rate
     output_tokens: int
-    cost_micros: int  # millionths of a dollar; priced providers only (Groq), D71
+    cost_micros: int  # millionths of a dollar; priced providers only (Groq)
     failed: int  # turns that ended with the polite line
     handed_off: int
     first_reply_ms: int | None  # the median first reply
@@ -76,7 +76,7 @@ class BusinessOut(BaseModel):
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
-    usage: TotalsOut  # its turns in the last 7 days (D73)
+    usage: TotalsOut  # its turns in the last 7 days
 
 
 class DayOut(BaseModel):
@@ -117,7 +117,7 @@ class FailedTurnOut(BaseModel):
 
 class BusinessStatusIn(BaseModel):
     status: Literal["active", "suspended"]
-    reason: str = Field(default="", max_length=300)  # needed to suspend (D70)
+    reason: str = Field(default="", max_length=300)  # needed to suspend
 
     @model_validator(mode="after")
     def _a_suspension_says_why(self) -> "BusinessStatusIn":
@@ -152,7 +152,7 @@ class AuditOut(BaseModel):
 async def overview(
     admin: Admin, services: Svc, days: Annotated[int, Query(ge=1, le=30)] = 7
 ) -> OverviewOut:
-    """What every agent did today and in the last `days` days, from the saved turns (D72)."""
+    """What every agent did today and in the last `days` days, from the saved turns."""
     return OverviewOut.model_validate(asdict(await services.admin.overview(days)))
 
 
@@ -160,7 +160,7 @@ async def overview(
 async def failed_turns(
     admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
 ) -> list[FailedTurnOut]:
-    """Turns that ended with the polite line, newest first, a page at a time (D73)."""
+    """Turns that ended with the polite line, newest first, a page at a time."""
     rows = await services.admin.failed_turns(workspace_id, limit=page.limit, before=page.before)
     return [FailedTurnOut.model_validate(asdict(row)) for row in rows]
 
@@ -193,7 +193,7 @@ class PlanIn(BaseModel):
 
 @router.put("/businesses/{workspace_id}/plan", status_code=204)
 async def business_plan(workspace_id: str, body: PlanIn, admin: Admin, services: Svc) -> None:
-    """A plan set by hand, for a payment made another way (bKash to our number) (D106)."""
+    """A plan set by hand, for a payment made another way (bKash to our number)."""
     await services.billing.set_plan(workspace_id, body.plan, body.paid_until)
     target = f"{body.plan} until {body.paid_until:%Y-%m-%d}"
     await services.admin.audit(admin.user_id, workspace_id, "business plan", target)

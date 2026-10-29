@@ -1,4 +1,4 @@
-"""The `PhotoIndex` port: where a business's product photos are searched by likeness (D57).
+"""The `PhotoIndex` port: where a business's product photos are searched by likeness.
 
 A photo is known by its URL (`/media/<workspace_id>/products/<id>.jpg`). Every call carries the
 workspace: an index may never answer across businesses (rule 6).

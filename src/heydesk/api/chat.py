@@ -15,10 +15,10 @@ router = APIRouter()
 
 class AgentOut(BaseModel):
     name: str
-    greeting: str  # the page shows it on load; the first turn stores it (D8)
-    photos: bool  # the visitor can send a photo: the page shows its button (D57)
-    voice: bool  # the visitor can call it: the page shows its Call button (D108)
-    widget: Widget  # how the chat looks on the business's website (D82)
+    greeting: str  # the page shows it on load; the first turn stores it
+    photos: bool  # the visitor can send a photo: the page shows its button
+    voice: bool  # the visitor can call it: the page shows its Call button
+    widget: Widget  # how the chat looks on the business's website
 
 
 MAX_PHOTO = 2_000_000  # bytes: the page makes a photo smaller before it sends it
@@ -27,9 +27,9 @@ MAX_PHOTO = 2_000_000  # bytes: the page makes a photo smaller before it sends i
 class ChatIn(BaseModel):
     message: str = ""  # may be empty when there's a photo
     conversation_id: str | None = None  # none: start a new conversation
-    # A random token the page keeps in the browser, so the limits know the visitor (D51)
+    # A random token the page keeps in the browser, so the limits know the visitor
     visitor_id: str = Field(min_length=8, max_length=64)
-    # A JPEG or PNG in base64, sent with the message (D57). Only an agent with `photos` takes one
+    # A JPEG or PNG in base64, sent with the message. Only an agent with `photos` takes one
     photo: str | None = Field(default=None, max_length=MAX_PHOTO * 4 // 3 + 4)
 
 
@@ -54,7 +54,7 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
 
 @router.post("/api/chat/{public_key}")
 async def chat(public_key: str, body: ChatIn, services: Svc, ip: ClientIp) -> StreamingResponse:
-    await services.rate_limits.chat(body.visitor_id, ip)  # 429 for a burst (D52)
+    await services.rate_limits.chat(body.visitor_id, ip)  # 429 for a burst
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
         agent,
@@ -62,7 +62,7 @@ async def chat(public_key: str, body: ChatIn, services: Svc, ip: ClientIp) -> St
         body.message,
         "web",
         f"web:{body.visitor_id}",
-        body.visitor_id,  # the browser is the contact: a returning visitor is known (D114)
+        body.visitor_id,  # the browser is the contact: a returning visitor is known
         photo=decoded(body.photo) if body.photo else None,
     )
     return StreamingResponse(
@@ -88,6 +88,6 @@ class TeamOut(BaseModel):
 
 @router.get("/api/chat/{public_key}/{conversation_id}/team")
 async def team_replies(public_key: str, conversation_id: str, services: Svc) -> TeamOut:
-    """What the team wrote from Telegram (D43). The chat page asks every few seconds."""
+    """What the team wrote from Telegram. The chat page asks every few seconds."""
     agent = await services.agents.by_key(public_key)  # 404 if unknown
     return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

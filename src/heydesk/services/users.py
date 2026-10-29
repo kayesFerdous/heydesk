@@ -1,11 +1,11 @@
-"""Users: sign up, log in, and who a token belongs to (design §9, D23).
+"""Users: sign up, log in, and who a token belongs to (design §9).
 
 A token carries the user (`sub`), their role and, for an owner, their business (`ws`).
 Every business route is scoped by it. An admin has no business of their own: they name
 one per request, and the database (not the token) says they're still an admin.
 
-Email codes (D93, D94): six digits that verify an owner's email after signup (no login until
-then), or let them set a new password. An invited moderator (D97) joins with a reset code:
+Email codes: six digits that verify an owner's email after signup (no login until
+then), or let them set a new password. An invited moderator joins with a reset code:
 the invite emails one, and setting a password with it verifies the email. Nothing is stored: a code is an HMAC of the user, what it's for, their password
 hash and a 15-minute window, and checking it makes it again. So it expires by itself, and a
 reset code stops working once the password changes. The rate limits stop guessing.
@@ -96,9 +96,9 @@ class UserService:
 
     async def signup(self, email: str, password: str, workspace_name: str) -> None:
         """A new business and its owner, in one transaction: a taken email leaves nothing behind.
-        No token yet: it emails a code, and `verify_email` logs them in (D94)."""
+        No token yet: it emails a code, and `verify_email` logs them in."""
         async with self.sessions() as s, s.begin():
-            workspace = new_workspace(workspace_name, self.now())  # the free trial (D106)
+            workspace = new_workspace(workspace_name, self.now())  # the free trial
             s.add(workspace)
             await s.flush()
             user = await self.new_user(
@@ -109,7 +109,7 @@ class UserService:
     async def resend_code(self, email: str) -> None:
         """Another email with the verify code. An unknown or verified email gets nothing, and
         the route says nothing, so no one learns who has an account. An invited moderator
-        gets nothing either: they join with a password (Forgot password, D97)."""
+        gets nothing either: they join with a password (Forgot password)."""
         user = await self._by_email(email)
         if user is not None and user.role == "owner" and user.email_verified_at is None:
             await self.send_code(user, "verify")
@@ -185,7 +185,7 @@ class UserService:
         user = await self._by_email(email)
         if user is None or not hasher.verify(password, user.password_hash):
             raise Unauthorized("Wrong email or password.")
-        if user.email_verified_at is None:  # the right password, but no code typed yet (D94)
+        if user.email_verified_at is None:  # the right password, but no code typed yet
             raise EmailNotVerified("Verify your email first: type the code we sent you.")
         return self._token(user)
 
@@ -214,7 +214,7 @@ class UserService:
         return role == "admin"
 
     async def still_moderator(self, principal: Principal) -> bool:
-        """The database's word: a moderator the owner removed is out at once (D97)."""
+        """The database's word: a moderator the owner removed is out at once."""
         async with self.sessions() as s:
             role = await s.scalar(
                 select(User.role).where(
@@ -233,7 +233,7 @@ class UserService:
 
     async def set_password(self, user_id: str, password: str) -> None:
         """An admin resets an owner's forgotten password. Never another admin's: that would let
-        one admin take over another, so an admin's is reset on the command line (D68)."""
+        one admin take over another, so an admin's is reset on the command line."""
         async with self.sessions() as s, s.begin():
             user = await s.get(User, user_id)
             if user is None:
@@ -245,7 +245,7 @@ class UserService:
             user.password_hash = hasher.hash(password)
 
     async def change_password(self, user_id: str, current: str, new: str) -> None:
-        """Someone changes their own password, after a reset or any time (D68)."""
+        """Someone changes their own password, after a reset or any time."""
         async with self.sessions() as s, s.begin():
             user = await s.get(User, user_id)
             if user is None:

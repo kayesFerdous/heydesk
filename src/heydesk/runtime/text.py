@@ -1,4 +1,4 @@
-"""Words and chunks: how text is cut up for search (D33). Pure."""
+"""Words and chunks: how text is cut up for search. Pure."""
 
 import re
 import unicodedata
@@ -92,11 +92,11 @@ def _tail(text: str, overlap: int) -> str:
     return tail[tail.find(" ") + 1 :] if " " in tail else ""
 
 
-ALIKE = 0.75  # how close two questions' words are to count as one (D143)
+ALIKE = 0.75  # how close two questions' words are to count as one
 
 
 def group_alike(questions: list[str]) -> list[list[int]]:
-    """The questions in groups of ones asked alike (D143), each a list of their indexes, the
+    """The questions in groups of ones asked alike, each a list of their indexes, the
     biggest group first. Each joins the first group whose first question is close enough.
     ponytail: word likeness, not meaning; an embedding would group "delivery charge?" with
     "how much to send?", if the owner needs it."""

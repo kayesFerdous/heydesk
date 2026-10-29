@@ -8,7 +8,7 @@ currency: BDT
 handoff:
   message: Let me get someone from our team. You can also call or WhatsApp us.
   phone: "+880 1800 000000"
-# Each area covers its districts; the one with none is everywhere else (D98).
+# Each area covers its districts; the one with none is everywhere else.
 delivery:
   - {name: Inside Dhaka, charge: 6000, days: "1–2 days", districts: [Dhaka]}
   - {name: Dhaka suburbs, charge: 10000, days: "2–3 days",
@@ -27,7 +27,7 @@ size_guide: |
   Kids Panjabi: by age, as the size says; take the bigger one if in between.
 # The products: saved in the products table, not the config. No stock: not counted.
 products:
-  # Counted per size and colour (D56): M in any colour; L in White and Navy; XL in White. What
+  # Counted per size and colour: M in any colour; L in White and Navy; XL in White. What
   # isn't listed (L Cream, XXL…) isn't counted.
   - {code: panjabi-cotton, name: Cotton Panjabi, price: 185000, category: Men,
      sizes: [M, L, XL, XXL], colours: [White, Cream, Navy],

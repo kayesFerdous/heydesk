@@ -15,9 +15,9 @@ class FakeMessenger:
         self.files: dict[str, bytes] = {}  # what a visitor's photo URL downloads as
         self.actions: list[tuple[str, str]] = []  # (psid, "seen" or "typing"), in order
         self.messages: dict[str, dict[str, Any]] = {}  # what `get_message` finds, by mid
-        # a Facebook login's Pages, by its user token (D118)
+        # a Facebook login's Pages, by its user token
         self.logins: dict[str, list[dict[str, str]]] = {}
-        self.posts: dict[str, dict[str, str]] = {}  # a post's text and picture, by id (D141)
+        self.posts: dict[str, dict[str, str]] = {}  # a post's text and picture, by id
         self.fetched: list[str] = []  # the posts asked for, in order
         self.public: list[tuple[str, str]] = []  # (comment id, text), in order
         self.private: list[tuple[str, str]] = []  # (comment id, text), in order

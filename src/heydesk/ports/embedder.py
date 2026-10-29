@@ -1,5 +1,5 @@
-"""The `Embedder` port: text and photos → vectors, for searching a business's documents (D33)
-and its product photos (D57)."""
+"""The `Embedder` port: text and photos → vectors, for searching a business's documents
+and its product photos."""
 
 from typing import Protocol
 

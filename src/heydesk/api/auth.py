@@ -1,5 +1,5 @@
 """Sign up, log in, who am I; the token goes in `Authorization: Bearer …` (design §9).
-The emailed codes verify an owner's email and reset a forgotten password (D93)."""
+The emailed codes verify an owner's email and reset a forgotten password."""
 
 from typing import Literal
 
@@ -60,12 +60,12 @@ class BusinessOut(BaseModel):
 
 
 class MeOut(BaseModel):
-    id: str  # who "me" is when taking a chat (I1)
+    id: str  # who "me" is when taking a chat
     email: str
     role: Role  # a moderator runs the inbox, not settings
     business: BusinessOut | None  # an owner's or moderator's business; None for an admin
-    available: bool  # new hand-offs may go to them (D149)
-    # opening it sends them alerts about their chats on Telegram; None without a bot (D148)
+    available: bool  # new hand-offs may go to them
+    # opening it sends them alerts about their chats on Telegram; None without a bot
     telegram_link: str | None = None
     telegram_linked: bool = False
 
@@ -76,7 +76,7 @@ class AvailableIn(BaseModel):
 
 @router.post("/api/auth/signup", status_code=status.HTTP_204_NO_CONTENT)
 async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> None:
-    """A new business and its owner, and an email with a code; `verify` logs them in (D94).
+    """A new business and its owner, and an email with a code; `verify` logs them in.
     Admins are made from the command line, never here."""
     await services.rate_limits.signup(ip)  # 429: a script making businesses
     await services.users.signup(body.email, body.password, body.workspace_name)
@@ -84,8 +84,8 @@ async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> None:
 
 @router.post("/api/auth/login")
 async def login(body: LoginIn, services: Svc, ip: ClientIp) -> TokenOut:
-    """A 403 `email_not_verified` for the right password before the code is typed (D94)."""
-    await services.rate_limits.login(ip, body.email)  # 429: password guessing (D52)
+    """A 403 `email_not_verified` for the right password before the code is typed."""
+    await services.rate_limits.login(ip, body.email)  # 429: password guessing
     return TokenOut(token=await services.users.login(body.email, body.password))
 
 
@@ -113,7 +113,7 @@ async def forgot_password(body: EmailIn, services: Svc, ip: ClientIp) -> None:
 @router.post("/api/auth/reset")
 async def reset_password(body: ResetIn, services: Svc) -> TokenOut:
     """The emailed code and a new password → logged in. A 403 if the code is wrong or expired.
-    An invited moderator joins this way, with the code in their invite (D97)."""
+    An invited moderator joins this way, with the code in their invite."""
     await services.rate_limits.check_code(body.email)  # 429: guessing the code
     return TokenOut(
         token=await services.users.reset_with_code(body.email, body.code, body.new_password)
@@ -154,7 +154,7 @@ async def me(principal: User, services: Svc) -> MeOut:
 
 @router.put("/api/auth/me/available", status_code=status.HTTP_204_NO_CONTENT)
 async def set_available(body: AvailableIn, principal: User, services: Svc) -> None:
-    """Switches yourself on or off for new hand-offs (D149)."""
+    """Switches yourself on or off for new hand-offs."""
     if principal.workspace_id is None:
         raise NotFound("Only a business's team takes hand-offs.")
     await services.members.set_available(principal.workspace_id, principal.user_id, body.available)

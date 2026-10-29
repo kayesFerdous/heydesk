@@ -1,4 +1,4 @@
-"""The Bangla voice for calls: a small local server HeyDesk sends each sentence to (D84).
+"""The Bangla voice for calls: a small local server HeyDesk sends each sentence to.
 
 Its own uv project, so torch and Coqui stay out of HeyDesk's. Run it from this folder:
 

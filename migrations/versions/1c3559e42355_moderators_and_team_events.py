@@ -1,4 +1,4 @@
-"""moderators and team events (D97)
+"""moderators and team events
 
 Revision ID: 1c3559e42355
 Revises: c128ee4223d1

@@ -24,17 +24,19 @@ class ConversationOut(BaseModel):
     id: str
     channel: str
     name: str | None  # from the messaging app (Telegram, WhatsApp); None on the web
-    status: str  # active / needs_human / human (the team is answering, D43)
-    assigned_to: str | None  # the team member who has it, or None (I1)
+    status: str  # active / needs_human / human (the team is answering)
+    assigned_to: str | None  # the team member who has it, or None
     assigned_email: str | None = None
-    done_at: datetime | None  # Done: hidden until the visitor writes again (I3)
-    snoozed_until: datetime | None  # hidden until then (I3)
-    labels: list[str]  # the team's own words for it (D136)
+    done_at: datetime | None  # Done: hidden until the visitor writes again
+    snoozed_until: datetime | None  # hidden until then
+    labels: list[str]  # the team's own words for it
     created_at: datetime
     updated_at: datetime
 
 
-async def out(services: Services, ws: str, convs: list[Conversation]) -> list[ConversationOut]:
+async def conversations_out(
+    services: Services, ws: str, convs: list[Conversation]
+) -> list[ConversationOut]:
     """The conversations with the email of whoever has each."""
     emails = {u.id: u.email for u in await services.members.members(ws)}
     return [
@@ -46,15 +48,15 @@ async def out(services: Services, ws: str, convs: list[Conversation]) -> list[Co
 
 
 class Line(BaseModel):
-    index: int  # its place in the whole chat, for `before` and `history_from` (D157)
+    index: int  # its place in the whole chat, for `before` and `history_from`
     role: Literal["user", "assistant"]
     text: str  # empty for photos the agent showed
-    photo: str = ""  # the photo the visitor sent with it (D57)
-    photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url} (D57)
+    photo: str = ""  # the photo the visitor sent with it
+    photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url}
 
 
 class VisitorOut(BaseModel):
-    """What the team decided about one visitor (I2)."""
+    """What the team decided about one visitor."""
 
     id: str
     blocked: bool
@@ -78,10 +80,10 @@ def visitor_out(visitor: Visitor, now: datetime) -> VisitorOut:
 
 class ConversationWithMessages(ConversationOut):
     messages: list[Line]  # what was said, oldest first; tool calls and results left out
-    count: int = 0  # every line in the chat, however many came (D157)
-    more: bool = False  # older lines are left, for `?before=` the first one's index (D157)
-    history_from: int = 0  # the agent remembers the lines from this index on (D157)
-    # who wrote it, for Block and AI off (I2); None for a chat from before visitors were known
+    count: int = 0  # every line in the chat, however many came
+    more: bool = False  # older lines are left, for `?before=` the first one's index
+    history_from: int = 0  # the agent remembers the lines from this index on
+    # who wrote it, for Block and AI off; None for a chat from before visitors were known
     visitor: VisitorOut | None = None
 
 
@@ -108,7 +110,7 @@ class MessageOut(BaseModel):
 
 @router.get("/api/conversations/live")
 async def live(services: Svc, ws: Workspace) -> StreamingResponse:
-    """A stream of `event: changed` frames, one per chat that changed in this business (D158).
+    """A stream of `event: changed` frames, one per chat that changed in this business.
     The inbox keeps it open and fetches that chat; a `ping` every 20 seconds keeps a proxy from
     closing it. It needs the Bearer header, so the page reads it with `fetch`, not
     `EventSource`. After a reconnect the page fetches the list again."""
@@ -133,9 +135,9 @@ async def conversations(
     label: Annotated[str, Query(max_length=40)] = "",
 ) -> list[ConversationOut]:
     """Newest activity first, a page at a time (`limit`, `before` an `updated_at`),
-    optionally from one channel, and only the caller's (`assigned=me`) or no one's (I1).
+    optionally from one channel, and only the caller's (`assigned=me`) or no one's.
     Done and snoozed chats are left out, or only the done ones with `done=true`; `q` searches
-    every chat's name and what was said, such as a phone or an order code (I3)."""
+    every chat's name and what was said, such as a phone or an order code."""
     found = await services.conversations.list(
         ws,
         status=status,
@@ -148,7 +150,7 @@ async def conversations(
         limit=page.limit,
         before=page.before,
     )
-    return await out(services, ws, found)
+    return await conversations_out(services, ws, found)
 
 
 class CountsOut(BaseModel):
@@ -159,7 +161,7 @@ class CountsOut(BaseModel):
 
 @router.get("/api/conversations/counts")
 async def counts(services: Svc, ws: Workspace, principal: User) -> CountsOut:
-    """The inbox's numbers: how many chats wait for a person, the caller's and no one's (I1)."""
+    """The inbox's numbers: how many chats wait for a person, the caller's and no one's."""
     return CountsOut(**await services.conversations.counts(ws, principal.user_id))
 
 
@@ -185,7 +187,7 @@ class DashboardOut(BaseModel):
 async def stats(
     services: Svc, ws: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> DashboardOut:
-    """The owner's dashboard (D144): today, yesterday and the last `days` days, in the
+    """The owner's dashboard: today, yesterday and the last `days` days, in the
     business's own days."""
     agent = await services.agents.by_workspace(ws)
     store = await services.agents.store(ws)
@@ -214,7 +216,7 @@ async def conversation(
     limit: Annotated[int | None, Query(ge=1, le=200)] = None,
 ) -> ConversationWithMessages:
     """The chat with what was said. `limit`: only the newest that many lines, before the line
-    `before` if given; the screen loads older ones as the team scrolls up (D157)."""
+    `before` if given; the screen loads older ones as the team scrolls up."""
     conv = await services.conversations.get(ws, conversation_id)
     said = []
     for i, m in enumerate(conv.messages):
@@ -234,7 +236,7 @@ async def conversation(
     more = limit is not None and len(said) > limit
     if limit is not None:
         said = said[-limit:]
-    [head] = await out(services, ws, [conv])
+    [head] = await conversations_out(services, ws, [conv])
     found = (
         await services.visitors.find(ws, key_of(conv.channel, conv.contact))
         if conv.contact
@@ -259,8 +261,8 @@ class HandBackIn(BaseModel):
 async def hand_back(
     conversation_id: str, body: HandBackIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """Marks a hand-off handled (D83). 409 `invalid_transition` if nobody was waiting."""
-    [handled] = await out(
+    """Marks a hand-off handled. 409 `invalid_transition` if nobody was waiting."""
+    [handled] = await conversations_out(
         services, ws, [await services.conversations.hand_back(ws, conversation_id)]
     )
     return handled
@@ -274,8 +276,8 @@ class DoneIn(BaseModel):
 async def mark_done(
     conversation_id: str, body: DoneIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """Done hides the chat until the visitor writes again; `false` shows it again (I3)."""
-    [marked] = await out(
+    """Done hides the chat until the visitor writes again; `false` shows it again."""
+    [marked] = await conversations_out(
         services, ws, [await services.conversations.mark_done(ws, conversation_id, body.done)]
     )
     return marked
@@ -289,9 +291,9 @@ class SnoozeIn(BaseModel):
 async def snooze(
     conversation_id: str, body: SnoozeIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """Hides the chat until `until`, when it comes back and the owner gets an alert (I3).
+    """Hides the chat until `until`, when it comes back and the owner gets an alert.
     A 422 for a time not in the next 30 days."""
-    [snoozed] = await out(
+    [snoozed] = await conversations_out(
         services, ws, [await services.conversations.snooze(ws, conversation_id, body.until)]
     )
     return snoozed
@@ -305,9 +307,9 @@ class LabelsIn(BaseModel):
 async def set_labels(
     conversation_id: str, body: LabelsIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """The chat's labels, the whole list (D136); `?label=` on the list filters by one."""
+    """The chat's labels, the whole list; `?label=` on the list filters by one."""
     conv = await services.conversations.set_labels(ws, conversation_id, body.labels)
-    [labelled] = await out(services, ws, [conv])
+    [labelled] = await conversations_out(services, ws, [conv])
     return labelled
 
 
@@ -326,7 +328,7 @@ class NoteOut(BaseModel):
 
 @router.get("/api/conversations/{conversation_id}/notes")
 async def notes(conversation_id: str, services: Svc, ws: Workspace) -> list[NoteOut]:
-    """The team's notes on the chat, oldest first (D136). The visitor never sees them."""
+    """The team's notes on the chat, oldest first. The visitor never sees them."""
     found = await services.conversations.notes(ws, conversation_id)
     return [NoteOut.model_validate(n) for n in found]
 
@@ -335,7 +337,7 @@ async def notes(conversation_id: str, services: Svc, ws: Workspace) -> list[Note
 async def add_note(
     conversation_id: str, body: NoteIn, services: Svc, ws: Workspace, principal: User
 ) -> NoteOut:
-    """A note for the team (D136): added, never edited; not in the chat."""
+    """A note for the team: added, never edited; not in the chat."""
     author = next(
         (m.email for m in await services.members.members(ws) if m.id == principal.user_id), ""
     )
@@ -351,11 +353,11 @@ class ReplyIn(BaseModel):
 async def reply(
     conversation_id: str, body: ReplyIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """The team answers from the inbox (D136): the words reach the visitor and the chat, and
-    the chat is taken over (D135). On Messenger and WhatsApp only within 24 hours of the
+    """The team answers from the inbox: the words reach the visitor and the chat, and
+    the chat is taken over. On Messenger and WhatsApp only within 24 hours of the
     visitor's last message: Meta refuses it after, and nothing reaches them."""
     conv = await services.conversations.team_reply(ws, conversation_id, body.text)
-    [replied] = await out(services, ws, [conv])
+    [replied] = await conversations_out(services, ws, [conv])
     return replied
 
 
@@ -370,7 +372,7 @@ class AssistOut(BaseModel):
 
 @router.post("/api/conversations/{conversation_id}/assist")
 async def assist(conversation_id: str, body: AssistIn, services: Svc, ws: Workspace) -> AssistOut:
-    """The model's help on a chat (D137): `summary`, `ask` (with `question`), or `draft` (the
+    """The model's help on a chat: `summary`, `ask` (with `question`), or `draft` (the
     next reply, for the team to check and send). No tools, nothing added or sent; traced and
     billed as a turn. A 503 when the model didn't answer."""
     agent = await services.agents.by_workspace(ws)
@@ -386,11 +388,11 @@ class TakeOverIn(BaseModel):
 async def take_over(
     conversation_id: str, body: TakeOverIn, services: Svc, ws: Workspace
 ) -> ConversationOut:
-    """The inbox's *Take over* switch (D135), as "." in Business Suite or on Telegram: the
+    """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
     TAKEOVER_QUIET_MINUTES."""
     conv = await services.conversations.take_over(ws, conversation_id, body.on)
-    [taken] = await out(services, ws, [conv])
+    [taken] = await conversations_out(services, ws, [conv])
     return taken
 
 
@@ -402,11 +404,11 @@ class AssigneeIn(BaseModel):
 async def assign(
     conversation_id: str, body: AssigneeIn, services: Svc, ws: Workspace, principal: User
 ) -> ConversationOut:
-    """Who has the chat (I1). The owner gives any chat to anyone on the team, or no one; a
+    """Who has the chat. The owner gives any chat to anyone on the team, or no one; a
     moderator takes an unassigned one for themself (their own id) and gives back their own
     (`null`); anything else is a 403. 404 for someone not on the team."""
     conv = await services.conversations.assign(ws, conversation_id, principal, body.user_id)
-    [assigned] = await out(services, ws, [conv])
+    [assigned] = await conversations_out(services, ws, [conv])
     return assigned
 
 
@@ -419,7 +421,7 @@ class VisitorIn(BaseModel):
 async def change_visitor(
     visitor_id: str, body: VisitorIn, services: Svc, ws: Workspace, principal: User
 ) -> VisitorOut:
-    """Block or unblock a visitor, or turn the AI off or on for them (I2); the owner or a
+    """Block or unblock a visitor, or turn the AI off or on for them; the owner or a
     moderator. Their messages run no turn and cost nothing either way."""
     emails = {u.id: u.email for u in await services.members.members(ws)}
     by = emails.get(principal.user_id, "HeyDesk")  # an admin isn't on the team
@@ -477,7 +479,7 @@ class TicketOut(BaseModel):
     conversation_id: str | None
     status: str  # open / solved
     reason: str  # the agent's words for what's wrong
-    assigned_email: str | None = None  # who has its chat (I1)
+    assigned_email: str | None = None  # who has its chat
     created_at: datetime  # how old it is
     updated_at: datetime
 
@@ -486,7 +488,7 @@ class TicketOut(BaseModel):
 async def tickets(
     services: Svc, ws: Workspace, page: Paged, status: Literal["open", "solved"] | None = None
 ) -> list[TicketOut]:
-    """Complaints the agent flagged (D138), newest first, a page at a time; `status=open`
+    """Complaints the agent flagged, newest first, a page at a time; `status=open`
     for the ones still to deal with. Each with who has its chat."""
     store = await services.agents.store(ws)
     found = await store.find(Ticket, status, limit=page.limit, before=page.before)
@@ -513,7 +515,7 @@ async def tickets(
 async def set_ticket_status(
     ticket_id: str, body: StatusIn, services: Svc, ws: Workspace
 ) -> TicketOut:
-    """`solved`, or `open` again. It stays open until someone marks it solved (D138)."""
+    """`solved`, or `open` again. It stays open until someone marks it solved."""
     store = await services.agents.store(ws)
     return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))
 
@@ -550,7 +552,7 @@ async def leads(
     page: Paged,
     status: Literal["open", "sold", "not_now", "lost"] | None = None,
 ) -> list[LeadOut]:
-    """Call backs the agent took (D139), newest first; `status=open` for the ones to call."""
+    """Call backs the agent took, newest first; `status=open` for the ones to call."""
     store = await services.agents.store(ws)
     found = await store.find(Lead, status, limit=page.limit, before=page.before)
     return [LeadOut.model_validate(lead) for lead in found]
@@ -558,7 +560,7 @@ async def leads(
 
 @router.get("/api/leads/why")
 async def lost_why(services: Svc, ws: Workspace) -> list[WhyOut]:
-    """Why we lose sales: the lost leads' whys, counted, most first (D139)."""
+    """Why we lose sales: the lost leads' whys, counted, most first."""
     store = await services.agents.store(ws)
     return [WhyOut(why=why, count=n) for why, n in await store.lost_why()]
 
@@ -573,7 +575,7 @@ async def lead_outcome(lead_id: str, body: LeadIn, services: Svc, ws: Workspace)
 @router.post("/api/conversations/{conversation_id}/tester")
 async def add_tester(conversation_id: str, services: Svc, ws: Workspace) -> dict[str, list[str]]:
     """*This is me*: the chat's visitor is one of the owner's test accounts, answered while the
-    agent practises (D143). Says who the testers are now."""
+    agent practises. Says who the testers are now."""
     conv = await services.conversations.get(ws, conversation_id)
     agent = await services.agents.by_workspace(ws)
     key = f"{conv.channel}:{conv.contact}"

@@ -99,7 +99,7 @@ def make_engine(url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]
     if url in ("sqlite+aiosqlite://", "sqlite+aiosqlite:///:memory:"):
         # one shared connection, or every session would see its own empty database
         kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
-    # JSON keeps Bangla as letters, not \u escapes, so a search can find it (I3)
+    # JSON keeps Bangla as letters, not \u escapes, so a search can find it
     engine = create_async_engine(url, json_serializer=readable_json, **kwargs)
     # its own session class, so live.watch listens to this database's sessions and no others
     watched = type("WatchedSession", (Session,), {})

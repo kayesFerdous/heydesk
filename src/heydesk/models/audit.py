@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class AuditEvent(Base):
-    """What an admin did, or opened, in someone's business (D23). Insert-only."""
+    """What an admin did, or opened, in someone's business. Insert-only."""
 
     __tablename__ = "audit_events"
 
@@ -21,4 +21,4 @@ class AuditEvent(Base):
 
 @event.listens_for(AuditEvent, "before_update")
 def _audit_is_append_only(mapper: object, connection: object, target: AuditEvent) -> None:
-    raise RuntimeError("audit events are never updated (D23)")
+    raise RuntimeError("audit events are never updated")

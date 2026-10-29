@@ -161,8 +161,8 @@ async def test_a_new_visitors_first_two_messages_at_once_both_count(pg: World) -
     agent = await pg.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
 
     said = await at_once(
-        pg.services.visitors.admit(agent, "messenger:new"),
-        pg.services.visitors.admit(agent, "messenger:new"),
+        pg.services.visitors.count_turn(agent, "messenger:new"),
+        pg.services.visitors.count_turn(agent, "messenger:new"),
     )
 
     assert said == ["NoneType", "NoneType"]  # neither failed

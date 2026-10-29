@@ -1,6 +1,6 @@
-"""Paying first (D47, D48): with `pay_first` on, what a desk takes is saved unpaid, and only a
+"""Paying first: with `pay_first` on, what a desk takes is saved unpaid, and only a
 payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
-charge in the areas that pay first, and that payment confirms the order (D92); the restaurant
+charge in the areas that pay first, and that payment confirms the order; the restaurant
 takes its delivery charge, the clinic a deposit the owner sets."""
 
 from typing import Any, cast
@@ -46,7 +46,7 @@ async def paying_first(
 
 
 def pay_first(services: Services, kind: str) -> dict[str, Any]:
-    """The setting that turns paying first on: the shop's is each area's (D92)."""
+    """The setting that turns paying first on: the shop's is each area's."""
     if kind != "shop":
         return {"pay_first": True}
     zones = [
@@ -104,7 +104,7 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
         order.id, "v1"
     )  # the visitor's return and the gateway's notice: once is enough
     placed = await found(world, conv)
-    # the advance confirms it: no call (D92)
+    # the advance confirms it: no call
     assert (placed.status, placed.paid, placed.payment_ref) == ("confirmed", 6000, "B2")
     said = (await world.conversation(conv)).messages
     assert said[-1]["by"] == "team"
@@ -150,7 +150,7 @@ async def test_the_restaurant_takes_the_delivery_charge_first_but_not_for_pickup
     read_back = "delivery ৳60 paid online now; total ৳1,090, the rest ৳1,030 paid on delivery"
     assert read_back in str((await world.conversation(conv)).messages)
     saved = await found(world, conv)
-    assert (saved.status, saved.due, saved.total) == ("unpaid", 6000, 109000)
+    assert (saved.status, saved.amount_due, saved.total) == ("unpaid", 6000, 109000)
 
     gateway.paid["v1"] = Paid(saved.id, 6000, "BDT", "B1")
     await world.services.payments.settle(saved.id, "v1")
@@ -176,7 +176,7 @@ async def test_the_clinic_request_waits_for_its_deposit_even_when_moved(world: W
     request = ToolCall("c", "request_appointment", details | {"phone": "01712345678"})
     conv = await take(world, agent, [], request)
     appointment = await found(world, conv)
-    assert (appointment.status, appointment.due) == ("unpaid", 50000)
+    assert (appointment.status, appointment.amount_due) == ("unpaid", 50000)
 
     move = {"code": "A-101", "name": "Kayes", "new_time": "tuesday at 8 pm"}
     await world.say(agent, None, [ToolCall("m", "reschedule_appointment", move), "Moved."], "yes")
@@ -273,7 +273,7 @@ async def test_the_owner_connects_the_business_s_own_store(
     assert "password" not in shown and "the-api-password" not in str(shown)
     async with app.state.sessions() as s:
         stored = await s.scalar(text("SELECT password FROM payment_accounts"))
-    assert stored and "the-api-password" not in stored  # encrypted in the database (D74)
+    assert stored and "the-api-password" not in stored  # encrypted in the database
     assert (
         await app.state.services.payments.account(DEV_WORKSPACE_ID, "sslcommerz")
     ).password == body["password"]
@@ -305,7 +305,7 @@ async def test_the_owner_connects_bkash_too(app: FastAPI, client: AsyncClient) -
     assert "the-app-secret" not in str(shown) and "the-bkash-password" not in str(shown)
     async with app.state.sessions() as s:
         stored = await s.scalar(text("SELECT app_secret FROM payment_accounts"))
-    assert stored and "the-app-secret" not in stored  # encrypted in the database (D74)
+    assert stored and "the-app-secret" not in stored  # encrypted in the database
 
     assert (await client.delete("/api/agent/bkash")).status_code == 204
     assert (await client.get("/api/agent/bkash")).status_code == 404

@@ -1,4 +1,4 @@
-"""bKash behind the `PaymentGateway` port (D109): its Tokenized Checkout, over httpx.
+"""bKash behind the `PaymentGateway` port: its Tokenized Checkout, over httpx.
 
 Each call grants a fresh token with the account's four keys, then makes its one call. bKash's
 token lasts an hour and could be kept, but a payment is a few calls, so this keeps it simple.
