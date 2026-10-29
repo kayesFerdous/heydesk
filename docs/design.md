@@ -1042,13 +1042,27 @@ def added(ours, found, gone=None) -> list[Product]:     # values.py
 
 ### A product's page (D121)
 
-Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<code>?from=<app>`.
+Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<code>`, with
+`?from=messenger` or `?from=telegram` only where the page shows a button back to that app, and
+`c=<chat>` when a chat sent it (D160). The owner's products list has *Open its page* and *Copy
+its link* on each product, for the team to paste the link in a reply.
 `public_key` is already public (it's in the chat link); the code is the product's. The page
 (`desks/shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
 sale), the sizes and colours in stock (`Product.in_stock`), the description, and "To order, go
 back to the chat and say *Order [code]*". No JSON and no `/api` link; a policy header lets
 nothing but its photos load and no script run. An unknown key, a key that isn't a shop's, or
 an unknown code is the same 404 page.
+
+- **The look** (D159): a storefront, still with no script. Two columns on a wide screen (the
+  photos stay in view, the details scroll), one on a phone; the shop's initial and name in a bar
+  on top. Up to 3 photos with a thumbnail each: a radio button per photo, and CSS shows the
+  checked one. The price, the price before a sale struck through with *Save N%*, and a stock
+  line: *In stock*, *Only N left* (the product's own count at 5 or under; not with variants),
+  or *Sold out*. The sizes and colours in stock, the description (its line breaks kept), the
+  videos, *Buy now*, the chat's *Order [code]*, then each delivery area's charge and days and
+  *Cash on delivery*. In the form, the size and colour are chips to tap (radio buttons) in
+  place of lists. `og:` tags (name, description, the first photo's whole link from
+  `ChannelService.whole`) make a link pasted in an app show the product.
 
 - **Back to the chat:** on Messenger and Telegram a button opens `m.me/<page id>` or
   `t.me/<bot>` (`ChannelService.chat_link`, from `from`). The website chat opens the page in a

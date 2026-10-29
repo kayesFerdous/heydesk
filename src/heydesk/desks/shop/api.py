@@ -184,8 +184,11 @@ async def product(
     agent, item = found
     config = cast(ShopConfig, agent.config)
     back = await services.channels.chat_link(agent.workspace_id, via)
+    image = services.channels.whole(item.photos[0]) if item.photos else ""  # a link's preview
     return html_page(
-        page.product_page(item, config.business_name, config.currency, back, config.delivery)
+        page.product_page(
+            item, config.business_name, config.currency, back, config.delivery, image=image
+        )
     )
 
 

@@ -105,7 +105,7 @@ const handle = (event, data, reply) => {
         const card = el("div", "", "photo");
         const page = document.createElement("a");  // opens the product's page (D121)
         // `c`: this chat, where the page's Buy now sends the receipt (D130)
-        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web&c=${conversationId}`;
+        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?c=${conversationId}`;
         page.target = "_blank";
         if (item.url) {  // a product with no photo is a card with no picture
           const img = document.createElement("img");

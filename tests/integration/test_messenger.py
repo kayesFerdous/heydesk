@@ -169,7 +169,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
     assert "<script>" not in body and "&lt;script&gt;" in body  # the owner's words, escaped
     assert f'href="https://m.me/{PAGE}"' in body and "Order [kurti]" in body
     assert "/api/" not in body and "workspace" not in body
-    assert "m.me" not in (await client.get("/p/dev-shop/kurti?from=web")).text
+    assert "m.me" not in (await client.get("/p/dev-shop/kurti")).text
 
     await services.agents.ensure_dev_agent("restaurant", SEEDS / "restaurant.yaml")
     for wrong in ("/p/dev-shop/no-such", "/p/nobody/kurti", "/p/dev-restaurant/kurti"):

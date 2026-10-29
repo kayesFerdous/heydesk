@@ -123,10 +123,10 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
         "url": services.channels.settings.public_url + url,
         "video": "",
         "choice": "Order [kurti]",
-        "page": "https://heydesk.test/p/dev-shop/kurti?from=whatsapp",  # its page (D121)
+        "page": "https://heydesk.test/p/dev-shop/kurti",  # its page (D121), no `from` (D160)
     }
     [(to, [shown])] = fake(app).cards
-    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat (D130)
+    assert shown.pop("page").startswith(card.pop("page") + "?c=")  # and its chat (D130)
     assert (to, shown) == (FROM, card)
 
     tapped = {

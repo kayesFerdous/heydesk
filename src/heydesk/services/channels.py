@@ -946,10 +946,14 @@ class ChannelService:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
     def product_page(self, key: str, code: str, kind: str, conversation_id: str = "") -> str:
-        """A product's public page (D121), on the app it was sent on; `c`, the chat its
-        *Buy now* sends the receipt back to (D130)."""
-        chat = f"&c={conversation_id}" if conversation_id else ""
-        return f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}?from={kind}{chat}"
+        """A product's public page (D121): `from`, only where the page shows a button back to
+        the app (Messenger, Telegram); `c`, the chat its *Buy now* sends the receipt back to
+        (D130). Elsewhere it's only `/p/<key>/<code>` (D160)."""
+        query = ([f"from={kind}"] if kind in (MESSENGER, TELEGRAM) else []) + (
+            [f"c={conversation_id}"] if conversation_id else []
+        )
+        link = f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}"
+        return link + ("?" + "&".join(query) if query else "")
 
     async def chat_link(self, ws: str, kind: str) -> str:
         """Back to the business's chat on Messenger or Telegram, from a product's page (D121);

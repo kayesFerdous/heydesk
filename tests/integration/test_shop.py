@@ -1082,7 +1082,7 @@ async def test_a_card_and_the_product_page_link_its_video(
     next(p for p in products if p["code"] == "kurti")["videos"] = ["https://youtu.be/kurti"]
     assert (await client.put("/api/products", json=products)).status_code == 200
 
-    page = await client.get("/p/dev-shop/kurti?from=web")
+    page = await client.get("/p/dev-shop/kurti")
     assert 'href="https://youtu.be/kurti"' in page.text and "Watch the video" in page.text
     store = await app.state.services.agents.store(DEV_WORKSPACE_ID, "shop")
     shown = await show_photos(
@@ -1090,6 +1090,23 @@ async def test_a_card_and_the_product_page_link_its_video(
     )
     assert shown.photos and shown.photos[0]["video"] == "https://youtu.be/kurti"
     assert shown.data["video"] == ["Cotton Kurti"]
+
+
+async def test_the_product_page_shows_the_sale_the_stock_and_a_preview(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    """The saving, how many are left, the sizes as chips to tap, and a pasted link's
+    preview (D159)."""
+    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    url = await kurti_with_photo(client)
+    products = (await client.get("/api/products")).json()
+    next(p for p in products if p["code"] == "kurti").update(was_price=125000, stock=3)
+    assert (await client.put("/api/products", json=products)).status_code == 200
+
+    body = (await client.get("/p/dev-shop/kurti")).text
+    assert "Save 24%" in body and "Only 3 left" in body
+    assert 'type="radio" name="size" value="M"' in body
+    assert '<meta property="og:image" content="http' in body and url in body
 
 
 async def test_buy_now_on_the_product_page_saves_once_at_place_order(
@@ -1103,7 +1120,7 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     services.conversations.runtime.llm.script = ["Hello!"]
     res = await client.post("/api/chat/dev-shop", json={"visitor_id": "a-buyer-1", "message": "hi"})
     conv = res.text.split('"conversation_id": "')[1].split('"')[0]
-    url = f"/p/dev-shop/kurti?from=web&c={conv}"
+    url = f"/p/dev-shop/kurti?c={conv}"
     assert "Buy now" in (await client.get(url)).text
 
     async def saved() -> list[ShopOrder]:
