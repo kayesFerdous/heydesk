@@ -141,7 +141,7 @@ visitor message ─► start_turn: load the conversation (or start one), build t
                  ─► run_turn: model ⇄ tools, at most 6 model calls
                        text  ─► streamed to the visitor
                        tool  ─► validate ─► run with a timeout ─► result back to the model
-                 ─► append the turn's messages, save and log the trace
+                 ─► append the turn's messages (the row locked), save and log the trace
 ```
 
 `ConversationService.start_turn` is the one entry point for web and voice. The
@@ -467,6 +467,19 @@ number (101, 102… per business and table), status, name, phone, created_at, up
 change the table's `FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
 (`Payable`, same file) are on what a visitor can be asked to pay for first (D47, D48): currency,
 paid (minor units, online), payment_ref (the gateway's id).
+
+**Writes at the same moment (D162).** Production runs on Postgres, where two transactions can read
+the same row before either writes. Three kinds of write lock a row first, with `SELECT … FOR UPDATE`;
+SQLite ignores it, as it writes one transaction at a time anyway:
+- **A business's numbers and stock:** `Store._lock` locks the business's `workspaces` row. Every
+  save that takes a number (`add`, an order) and every write to the stock (an order placed, changed
+  or cancelled, a coupon used, the list replaced, a sheet or Woo sync) takes it first, so two at
+  once take turns: each gets its own number, and the last one goes to one buyer.
+- **A conversation's transcript:** whatever adds to `messages` (a turn saved, a team reply, the
+  Page's own words, a payment's news) reads the row with `lock=True`, so neither drops the other's
+  line (rule 5).
+- **A visitor's row:** their first two messages at once both try to make it; the unique
+  (workspace, key) refuses the second, which goes on with the first's. Counting a turn locks it.
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
 business's timezone. JSON columns: assign a new value to change one, because
@@ -1982,9 +1995,8 @@ version handles them.
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the suggestion makes that quick); the owner splits the column in the sheet; CSV only for now (D53). Matching by what a column holds (a column of links is `photos`) waits until names miss (D115) |
-| Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
+| Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only (D58). A sync and an order at the same moment take turns (D162) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
 | Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89), and off while the shop takes no voice (D108) |
-| Two records saved in the same instant in one business | Its next number is the highest + 1, read inside the save's transaction; the database's unique (workspace, number) refuses the second, which saves nothing and becomes the tool's "something went wrong": the visitor asks again |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in the gateway's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

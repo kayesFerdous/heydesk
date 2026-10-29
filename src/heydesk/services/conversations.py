@@ -296,7 +296,7 @@ class ConversationService:
         the last message, the cart is emptied and an unfinished order may be nudged again. The
         team still sees the whole chat, and its labels stay."""
         async with self.sessions() as s, s.begin():
-            saved = await self._get_by_id(s, conv.workspace_id, conv.id)
+            saved = await self._get_by_id(s, conv.workspace_id, conv.id, lock=True)
             saved.history_from = len(saved.messages)
             saved.state, saved.nudged = {}, False
         conv.history_from, conv.state, conv.nudged = len(conv.messages), {}, False
@@ -637,7 +637,7 @@ class ConversationService:
         the visitor and into the transcript as the team's, and the chat is taken over, until
         given back or 30 quiet minutes (D135). A call can't take one."""
         async with self.sessions() as s, s.begin():
-            conv = await self._get_by_id(s, ws, conversation_id)
+            conv = await self._get_by_id(s, ws, conversation_id, lock=True)
             if conv.channel == "voice":
                 raise InvalidTransition("That was a phone call: call them back instead.")
             said = {**self.runtime.llm.assistant_message(text.strip()), "by": TEAM}
@@ -732,7 +732,7 @@ class ConversationService:
             await self.take_over(agent.workspace_id, conv.id, conv.status != HUMAN)
             return
         async with self.sessions() as s, s.begin():
-            saved = await self._get_by_id(s, agent.workspace_id, conv.id)
+            saved = await self._get_by_id(s, agent.workspace_id, conv.id, lock=True)
             said = {**self.runtime.llm.assistant_message(text), "by": TEAM}
             saved.messages = [*saved.messages, said]  # a new list, so SQLAlchemy sees it
             saved.updated_at = self.now()
@@ -756,6 +756,7 @@ class ConversationService:
                 )
                 .order_by(Conversation.updated_at.desc())
                 .limit(1)
+                .with_for_update()  # as `_get_by_id(lock=True)`
             )
             if conv is None:
                 conv = self._new(agent, "messenger", contact, name)
@@ -840,7 +841,7 @@ class ConversationService:
 
     async def _save(self, conv: Conversation, ended: TurnEnded, auto_assign: bool = False) -> None:
         async with self.sessions() as s, s.begin():
-            saved = await self._get_by_id(s, conv.workspace_id, conv.id)
+            saved = await self._get_by_id(s, conv.workspace_id, conv.id, lock=True)
             saved.messages = [*saved.messages, *ended.added]  # a new list, so SQLAlchemy sees it
             saved.state = ended.state
             saved.done_at = saved.snoozed_until = None  # they wrote again: it's back (I3)
@@ -920,12 +921,16 @@ class ConversationService:
             )
             return found.all()
 
-    async def _get_by_id(self, s: AsyncSession, ws: str, conversation_id: str) -> Conversation:
-        conv = await s.scalar(
-            select(Conversation).where(
-                Conversation.id == conversation_id, Conversation.workspace_id == ws
-            )
+    async def _get_by_id(
+        self, s: AsyncSession, ws: str, conversation_id: str, *, lock: bool = False
+    ) -> Conversation:
+        """`lock` before adding to `messages`: two writes at once would each add to the list
+        they read, and the later one would drop the other's line. Postgres holds the row
+        until the transaction ends; SQLite writes one transaction at a time anyway."""
+        query = select(Conversation).where(
+            Conversation.id == conversation_id, Conversation.workspace_id == ws
         )
+        conv = await s.scalar(query.with_for_update() if lock else query)
         if conv is None:
             raise NotFound("There's no such conversation. Start a new one.")
         return conv

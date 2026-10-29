@@ -8458,7 +8458,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/models/conversation.py",
    "where": "`conversations.messages` (JSON, provider-native messages)",
    "written": "`_save`, `tell_visitor`, `team_wrote`, `CallService.answer`",
-   "sync": "Only appended (rule 5). Re-read inside a transaction, then `[*old, *new]`. The whole transcript is resent to the model each turn.",
+   "sync": "Only appended (rule 5). Re-read inside a transaction with the row locked (`_get_by_id(lock=True)`, D162), then `[*old, *new]`. The whole transcript is resent to the model each turn.",
    "failure": "A tab closed mid-reply loses that turn (D3). A new list is assigned so SQLAlchemy sees it.",
    "timeline": "turn"
   },
@@ -8494,14 +8494,14 @@ tr.hl td { background: var(--accent-soft); }
    "where": "desk tables + `team_messages`",
    "written": "store methods taking `Confirmed[T]`; owner PATCH routes",
    "sync": "Status moves only along the table's FLOW.",
-   "failure": "InvalidTransition 409; number collision possible under concurrency (Findings).",
+   "failure": "InvalidTransition 409. The next number is taken under `Store._lock`, so two saves at once each get their own (D162).",
    "timeline": "commit"
   },
   {
    "what": "Stock",
    "file": "src/heydesk/desks/shop/store.py",
    "where": "`products.stock` / `variants[].stock`",
-   "written": "`_stock` in the same transaction as the order",
+   "written": "`_stock` in the same transaction as the order, under `Store._lock` (D162)",
    "sync": "Sheet/Woo counts merged minus held orders.",
    "failure": "OutOfStock → nothing saved.",
    "timeline": "woo"
@@ -8520,7 +8520,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/models/visitor.py",
    "where": "`visitors` (turns, day, strikes, blocked_until; notes: what the agent remembers, D124)",
    "written": "`admit`, `after_turn`",
-   "sync": "Per business-local day.",
+   "sync": "Per business-local day. The first row is made once (`_first_seen`); counting a turn locks it (D162).",
    "failure": "Refused before any model call."
   },
   {
@@ -10103,21 +10103,25 @@ tr.hl td { background: var(--accent-soft); }
  "items": [
   {
    "sev": "low",
-   "title": "Two records saved in the same instant collide on their number",
-   "files": [
-    "src/heydesk/models/taken.py",
-    "docs/design.md"
-   ],
-   "detail": "`next_number` is the highest + 1; the unique (workspace_id, number) refuses the second save, which saves nothing and becomes the tool's 'something went wrong'. Kept as is on purpose: design.md §12 (D105)."
-  },
-  {
-   "sev": "low",
    "title": "Two turns at once on one conversation",
    "files": [
     "src/heydesk/services/conversations.py",
     "docs/design.md"
    ],
    "detail": "Both save (the transcript is re-read before appending), but the second turn's model didn't see the first's messages. Left out on purpose: design.md §12 'One reply at a time per conversation'."
+  },
+  {
+   "sev": "low",
+   "title": "Fixed on 29 Oct (D162)",
+   "files": [
+    "src/heydesk/desks/base.py",
+    "src/heydesk/desks/shop/store.py",
+    "src/heydesk/services/conversations.py",
+    "src/heydesk/services/team.py",
+    "src/heydesk/services/visitors.py",
+    "tests/integration/test_races.py"
+   ],
+   "detail": "Races seen on Postgres: the last one sold to several buyers at once, a coupon past its uses, two records at once colliding on their number, an order cancelled twice going back in stock twice, team replies at once dropping lines, and a new visitor's second message failing. Now `Store._lock` locks the business's row for numbers and stock, transcript writes lock the conversation, and a visitor's first row is made once."
   },
   {
    "sev": "low",

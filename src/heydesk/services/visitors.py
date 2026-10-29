@@ -11,6 +11,7 @@ visitor for a while. Any real step (another tool) clears the strikes.
 
 import logging
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,7 @@ from limits import parse
 from limits.aio.storage import MemoryStorage
 from limits.aio.strategies import SlidingWindowCounterRateLimiter
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
@@ -65,12 +67,10 @@ class VisitorService:
         limit = parse(f"{self.settings.FLOOD_MESSAGES}/minute")
         if await self.flood.hit(limit, "flood", ws, key):
             return
+        await self._first_seen(ws, key, self.now().date())  # admit puts the business's day right
         async with self.sessions() as s, s.begin():
-            visitor = await self._find(s, ws, key)
-            if visitor is None:
-                today = self.now().date()  # admit puts the business's day right
-                visitor = Visitor(workspace_id=ws, key=key, day=today, turns=0)
-                s.add(visitor)
+            visitor = await self._find(s, ws, key, lock=True)
+            assert visitor is not None
             if not is_blocked(visitor, self.now()):
                 until = self.now() + timedelta(hours=self.settings.BLOCK_HOURS)
                 block(visitor, "flooding", until)
@@ -118,11 +118,10 @@ class VisitorService:
         only checks: a voice call checks before it connects."""
         now = self.now()
         today = now.astimezone(ZoneInfo(agent.config.timezone)).date()
+        await self._first_seen(agent.workspace_id, key, today)
         async with self.sessions() as s, s.begin():
-            visitor = await self._find(s, agent.workspace_id, key)
-            if visitor is None:
-                visitor = Visitor(workspace_id=agent.workspace_id, key=key, day=today, turns=0)
-                s.add(visitor)
+            visitor = await self._find(s, agent.workspace_id, key, lock=True)  # counted once each
+            assert visitor is not None
             if visitor.day != today:  # a new day: yesterday's turns don't count
                 visitor.day, visitor.turns = today, 0
             reason = await self._limit(s, agent.workspace_id, visitor, today, now)
@@ -174,8 +173,22 @@ class VisitorService:
             return "workspace_daily_turns"
         return None
 
-    async def _find(self, s: AsyncSession, ws: str, key: str) -> Visitor | None:
-        return await s.scalar(select(Visitor).where(Visitor.workspace_id == ws, Visitor.key == key))
+    async def _first_seen(self, ws: str, key: str, today: date) -> None:
+        """Makes the visitor's row, the first time they write. Two first messages at once:
+        the unique (workspace, key) refuses the second row, and both go on with the first."""
+        async with self.sessions() as s:
+            if await self._find(s, ws, key) is not None:
+                return
+        with suppress(IntegrityError):
+            async with self.sessions() as s, s.begin():
+                s.add(Visitor(workspace_id=ws, key=key, day=today, turns=0))
+
+    async def _find(
+        self, s: AsyncSession, ws: str, key: str, *, lock: bool = False
+    ) -> Visitor | None:
+        """`lock` before changing it: two turns at once would both count from the same number."""
+        query = select(Visitor).where(Visitor.workspace_id == ws, Visitor.key == key)
+        return await s.scalar(query.with_for_update() if lock else query)
 
 
 def key_of(channel: str, contact: str) -> str:

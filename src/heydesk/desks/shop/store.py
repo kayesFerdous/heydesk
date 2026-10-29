@@ -1,7 +1,8 @@
 """A shop's data: its products and orders, plus what every desk has (`Store`).
 
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
-them back, so two buyers can't get the last one."""
+them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
+buyers at the same moment can't both get the last one."""
 
 from dataclasses import replace
 from datetime import datetime
@@ -65,6 +66,7 @@ class ShopStore(Store):
         added, and none is deleted. Returns how many were new."""
         found = await self.with_photos(found)  # downloads the new links (D102)
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             ours = await self._products(s)
             now = added(ours, found)
             await self._replace(s, ProductRow, now)
@@ -107,6 +109,7 @@ class ShopStore(Store):
         found = await self.with_photos(products_from_csv(text, mapping))
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order placed meanwhile is counted, not lost
             listed = await self._products(s)
             ours = {p.code: p for p in listed}
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
@@ -126,6 +129,7 @@ class ShopStore(Store):
         found = await self.with_photos(found)
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order placed meanwhile is counted, not lost
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
                 select(ShopOrder.lines).where(
                     ShopOrder.workspace_id == ws,
@@ -228,6 +232,7 @@ class ShopStore(Store):
     async def _save_order(self, o: NewOrder, source: str) -> ShopOrder:
         """Raises OutOfStock or CouponGone, and saves nothing."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # one save at a time: the last one and a coupon's last use
             await self._stock(s, o.lines, -1)
             if o.coupon:  # one more use, checked again in this transaction (D133)
                 row = await s.scalar(
@@ -518,6 +523,7 @@ class ShopStore(Store):
         nothing changed, if there aren't enough of the new items."""
         e = edit.value
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             order = await s.scalar(
                 select(ShopOrder).where(
                     ShopOrder.workspace_id == self.workspace_id, ShopOrder.number == e.number
@@ -560,6 +566,7 @@ class ShopStore(Store):
         """The owner moves an order along (or the buyer cancels it). A cancelled order's items
         go back in stock."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # cancelled twice at once, its items would go back twice
             order = await self._one(s, ShopOrder, order_id)
             if status != order.status:
                 self._move(order, status)

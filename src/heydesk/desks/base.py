@@ -30,6 +30,7 @@ from heydesk.models import (
     Turn,
     Visitor,
     WooLink,
+    Workspace,
 )
 from heydesk.models.taken import UNPAID, Taken, next_number
 from heydesk.ports.knowledge_store import Snippet
@@ -242,6 +243,7 @@ class Store:
     async def replace_rows(self, table: type[Any], items: Sequence[BaseModel]) -> None:
         """`table` becomes exactly these, in this order."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order taking stock meanwhile would lose its take
             await self._replace(s, table, items)
 
     async def _replace(self, s: AsyncSession, table: type[Any], items: Sequence[BaseModel]) -> None:
@@ -279,6 +281,7 @@ class Store:
     async def add[T: Taken](self, table: type[T], **fields: Any) -> T:
         """Saves a new one with the business's next number."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             now = self.now()
             row = table(
                 workspace_id=self.workspace_id,
@@ -485,6 +488,15 @@ class Store:
             bought=len({row.conversation_id for row in sales if row.conversation_id}),
             sources=dict(Counter(getattr(row, "source", "chat") for row in sales)),
             leads=leads or 0,
+        )
+
+    async def _lock(self, s: AsyncSession) -> None:
+        """Waits until no other transaction is numbering this business's records or changing
+        its stock, and holds them off until this one ends. Two saves at the same moment would
+        otherwise both read the same highest number, or both take the last one. Postgres
+        locks the business's row; SQLite writes one transaction at a time anyway."""
+        await s.execute(
+            select(Workspace.id).where(Workspace.id == self.workspace_id).with_for_update()
         )
 
     def _move(self, row: Taken, status: str) -> None:

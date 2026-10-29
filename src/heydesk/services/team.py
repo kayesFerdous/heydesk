@@ -158,7 +158,8 @@ class TeamService:
         sees it; sent on Telegram, Messenger or WhatsApp, with buttons for `choices` there.
         The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
-            conv = await s.get_one(Conversation, conversation_id)
+            # locked: a turn saving at the same moment would drop this line (rule 5)
+            conv = await s.get_one(Conversation, conversation_id, with_for_update=True)
             said = {**self.llm.assistant_message(text), "by": TEAM}
             conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
             conv.updated_at = self.now()
@@ -231,9 +232,11 @@ class TeamService:
         to_visitor = False
         async with self.sessions() as s, s.begin():
             conv = await s.scalar(
-                select(Conversation).where(
+                select(Conversation)
+                .where(
                     Conversation.id == found[1], Conversation.workspace_id == channel.workspace_id
                 )
+                .with_for_update()  # a turn saving at the same moment would drop this line
             )
             if conv is None:
                 await self.send(channel, owner, GONE)
