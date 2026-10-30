@@ -477,9 +477,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Health",
    "type": "api",
    "file": "src/heydesk/api/health.py",
-   "purpose": "GET /health runs SELECT 1 (Docker HEALTHCHECK, CI).",
+   "purpose": "GET /health runs SELECT 1 and names the running commit (Docker HEALTHCHECK, Render, CI's deploy job waits for its commit).",
    "inputs": "",
-   "outputs": "{status: ok}",
+   "outputs": "{status: ok, commit}",
    "fn": "health"
   },
   {
