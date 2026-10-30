@@ -1434,6 +1434,18 @@ async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: Worl
     assert "coupon" not in (await cart_in(today)).state["cart"]  # it has ended
 
 
+async def test_an_offer_reaches_as_far_back_as_the_owner_picks(world: World) -> None:
+    """`within_hours=48` reaches a web chat from yesterday too; the default doesn't."""
+    agent = await world.agent("shop")
+    await world.say(agent, None, ["Hello!"], "hi")
+    world.clock.advance(hours=30)
+    ends = world.clock.now + timedelta(hours=12)
+    offer = OfferIn(text="Eid sale!", kind="percent", value=10, ends_at=ends)
+    assert (await send_offer(offer, world.store(agent), world.services)).sent_to == 0
+    wider = offer.model_copy(update={"within_hours": 48})
+    assert (await send_offer(wider, world.store(agent), world.services)).sent_to == 1
+
+
 async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
     app: FastAPI, client: AsyncClient
 ) -> None:

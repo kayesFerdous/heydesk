@@ -367,12 +367,13 @@ async def delete_coupon(code: str, store: Shop) -> None:
 
 
 class OfferIn(BaseModel):
-    """An offer to everyone who wrote in the last 24 hours."""
+    """An offer to everyone who wrote in the last `within_hours`."""
 
     text: str = Field(min_length=1, max_length=500)  # sent as it is: "Free delivery till 10 pm!"
     kind: Literal["percent", "amount", "free_delivery"]
     value: int = Field(default=0, ge=0)  # as a coupon's
     ends_at: AwareDatetime
+    within_hours: int = Field(default=24, ge=1, le=168)  # who it reaches: up to a week back
 
 
 class OfferOut(BaseModel):
@@ -382,9 +383,10 @@ class OfferOut(BaseModel):
 
 @router.post("/api/shop/offers", status_code=201)
 async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
-    """Sends the offer to each chat where the buyer wrote in the last 24 hours, inside the
-    app's window (`tell_in_window`), and saves it as a coupon only those chats may use, until
-    `ends_at`; `update_cart` takes it off by itself."""
+    """Sends the offer to each chat where the buyer wrote in the last `within_hours`, inside
+    the app's window (`tell_in_window`: Messenger and WhatsApp only within 24 hours), and saves
+    it as a coupon only those chats may use, until `ends_at`; `update_cart` takes it off by
+    itself."""
     now = store.now()
     if body.ends_at <= now:
         raise InvalidConfig({"ends_at": "Pick an end time that's still to come."})
@@ -396,7 +398,7 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     text = " ".join(body.text.split())
     sent = [
         chat
-        for chat in await store.chats_since(now - timedelta(hours=24))
+        for chat in await store.chats_since(now - timedelta(hours=body.within_hours))
         if await services.team.tell_in_window(chat, text)
     ]
     await store.add_offer(coupon, sent)
