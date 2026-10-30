@@ -10,6 +10,11 @@ def test_production_refuses_fakes_and_empty_secrets() -> None:
         Settings(APP_ENV="production", LLM_PROVIDER="fake", _env_file=None)  # type: ignore[call-arg]
 
 
+def test_renders_postgres_url_gets_the_async_driver() -> None:
+    settings = Settings(DATABASE_URL="postgresql://u:p@host/db", _env_file=None)  # type: ignore[call-arg]
+    assert settings.DATABASE_URL == "postgresql+asyncpg://u:p@host/db"
+
+
 def test_production_starts_when_configured() -> None:
     Settings(
         APP_ENV="production",

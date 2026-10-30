@@ -1,6 +1,6 @@
 from typing import Literal, Self
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-only-secret-never-used-in-production"  # production refuses an empty one
@@ -148,6 +148,18 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = True  # False in development for readable lines
+
+    # The commit this server runs, which Render sets; /health shows it, so CI knows when a
+    # deploy is live
+    RENDER_GIT_COMMIT: str = ""
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _async_postgres(cls, url: str) -> str:
+        """Render gives postgresql://…; SQLAlchemy needs the async driver named in it."""
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url.removeprefix("postgresql://")
+        return url
 
     @property
     def jwt_secret(self) -> str:
