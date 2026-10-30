@@ -11,7 +11,7 @@ from tests.conftest import make_test_settings
 async def test_health_is_200(client: AsyncClient) -> None:
     r = await client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {"status": "ok", "commit": ""}  # Render sets the commit; tests don't
 
 
 async def test_a_request_logs_one_json_line_with_its_id(capsys: pytest.CaptureFixture[str]) -> None:

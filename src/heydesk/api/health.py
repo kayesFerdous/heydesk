@@ -8,4 +8,5 @@ router = APIRouter()
 async def health(request: Request) -> dict[str, str]:
     async with request.app.state.sessions() as session:
         await session.execute(text("SELECT 1"))
-    return {"status": "ok"}
+    # The commit tells CI's deploy job that the new version is the one answering
+    return {"status": "ok", "commit": request.app.state.settings.RENDER_GIT_COMMIT}

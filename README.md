@@ -134,6 +134,22 @@ from `.env` if you have one. Without one, the fake providers run offline. For pr
 `APP_ENV=production` with real providers, `JWT_SECRET` and `SECRETS_KEY`: the server refuses to
 start without them.
 
+### Deploying to Render
+
+Production is Render, set up from `render.yaml`. Only CI deploys: a PR merged into `main` goes live
+after every check passes. To set it up once:
+
+1. Make a free cluster on [Qdrant Cloud](https://cloud.qdrant.io): its URL and API key.
+2. Render > **New > Blueprint** > this repo. It makes `heydesk-api` and the `heydesk-db` Postgres.
+   Fill in the values it asks for (API keys, `PUBLIC_URL`, `CORS_ORIGINS`, R2, Qdrant).
+3. Render > `heydesk-api` > **Settings > Deploy Hook**: copy it into GitHub > Settings > Secrets
+   and variables > Actions as the secret `RENDER_DEPLOY_HOOK`. Add the variable `RENDER_URL`
+   (`https://….onrender.com`).
+4. GitHub > Settings > Branches: protect `main`, require a pull request and the `check`,
+   `postgres`, `audit` and `image` jobs.
+
+A bad deploy is undone with Render's **Rollback**. The frontend deploys to Vercel from its own repo.
+
 ## Tests and checks
 
 ```bash
