@@ -3,7 +3,7 @@
 An AI front desk a small business can set up in minutes. It picks its kind of business (a
 restaurant, a clinic, a receptionist for an office, an online shop), fills in its menu, doctors
 or products, hours and FAQ, and adds its own notes. Customers talk to the agent by web chat, by
-voice, on Telegram or on Facebook Messenger. It answers questions, takes orders, bookings and
+voice, on Telegram, Facebook Messenger or WhatsApp. It answers questions, takes orders, bookings and
 messages, and hands over to a person when needed.
 
 **The model talks; code guarantees.** The model writes the words. Python decides every price,
@@ -13,7 +13,7 @@ clear yes, checked by a separate model that fails closed.
 ## Status
 
 Built and tested: four desks (restaurant, clinic, receptionist, shop), web chat, voice, Telegram,
-Messenger, photo search in the shop, online payments, a Google Sheet as a product list, the
+Messenger, WhatsApp, photo search in the shop, coupons and offers to recent chats, online payments, a Google Sheet as a product list, the
 owner's API and the admin panel. Each desk passed a live run on a real model. What's next is in
 **[PLAN.md](PLAN.md)**. The owner's and admin's screens are a separate Vue app,
 `../heydesk-frontend`.

@@ -8,7 +8,7 @@ What's built, what's next, and how to know each step is done. How it works is in
 > presentation:** days C1 (tidy the repo and docs) and C2 (security, D74) done 15 Oct; C3 (Docker and
 > CI) done 16 Oct. Live checks: Telegram and Messenger passed 17 Oct. Day W1, a linked WooCommerce
 > store (D75), done 17 Oct. Day W2 (long lists, returning buyers, misheard names; D80, D81) done 18 Oct. Day W3, the website
-> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47). Day R1, the agent feels human (D117), built 25 Oct; its live check on a real Page is next. Day F1, Connect with Facebook (D118), built 25 Oct; connecting a real Page with it is next, then R2. Day R3a, a shop's imports add instead of replace (D120) and a product page from every card (D121), built 25 Oct; opening a product's page from a real Page is next. The agent remembers a visitor: a second order in the same chat is offered the first one's details (D123), and a `remember` tool keeps what they mention about themselves (D124); the website chat's product cards get *Order this* and *Details* (D123); built 25 Oct, a live check on a real Page is next. Day R2, product cards side by side (up to 10, Telegram and WhatsApp 3 photos then a list), videos and `goes_with` (D125), built 25 Oct; its live check on a real Page is next, then R3. **First, days I1–I3** (the team's inbox and spammers, asked 25 Oct): I1, who has a chat (D126), built 25 Oct; its browser check is next. I2, Block, AI off and the flood rule (D127), built 25 Oct; its dev chat check is next. I3, search, Done and Snooze (D128), built 25 Oct; its browser check is next, then R3. I4, assigning made plain (D129, asked 25 Oct), built 25 Oct; the owner's browser check passed, a moderator's is next. Day R3, *Buy now* on a product's page and the order's page `/o/<id>` (D130), built 26 Oct; its check from a real Messenger Page is next. Day R4, team orders, on hold, packed, money in and CSV exports (D131), done 26 Oct. Day R5, a buyer's record on each order and a buyers list (D132), done 26 Oct. Day R6, coupons (D133), built 26 Oct; "code EID10" in the dev chat with the real model is next. Day R7, the delivery-day reminder and the review request (D134), done 26 Oct. Day R8, take over with a dot (D135), built 26 Oct; "." in a real Page's Business Suite is next. Day R10, labels, notes, saved replies, a reply box and the buyer beside the chat (D136), done 26 Oct. Day R11, the model's help for the team (D137), done 26 Oct. Day R12, complaints become tickets (D138), done 26 Oct. Day R13, the nudge for an unfinished order and leads with a callback time (D139), built 26 Oct; "call me Friday 5pm" in the dev chat with the real model is next. Day R14, an offer to everyone who wrote today (D140), built 26 Oct; seeing it reach a dev chat and its bill is next. Day R15, comment to inbox (D141), built 26 Oct; App Review and a real post are next. Day R16, a post's findings kept for later comments, many products and one more reply (D142), built 26 Oct; a real post with three products is next. Day R17, missed questions with *Teach it*, and practice mode (D143), built 26 Oct; the screens and the browser check are next. R18 (change the agent in plain words) is put off to Later (26 Oct). Day R19, the owner's dashboard (D144), done 26 Oct. Day R20, reminders the day before and a deposit's TrxID (D145), built 26 Oct; check.sh and its dev chat check are next. R1–R20 are built except R18, put off (R9 was done as I1 and I3). G8, the same order twice is asked about (D146), done 26 Oct (the owner's check.sh and dev chat check passed). G2, voice notes answered from their words on Telegram, Messenger and WhatsApp (D147), done 26 Oct (live check passed). Days T3–T5, the team's management (asked 26 Oct): T3, alerts to whoever has the chat on Telegram (D148), built 26 Oct, its live check on a real bot is next; T4, who's available (D149), done 26 Oct; T5, each member's numbers (D150), done 26 Oct. Their screens in `../heydesk-web` are built; the owner's browser check is next. T6, moderators see the agent's pages and change none of them (D151, D153), built 26 Oct; its browser check is next. Day H2, Connect with WhatsApp: Meta's Embedded Signup (D155), built 27 Oct; connecting a real number with it is next. Day H3, a reply to a product photo names it on every channel (D156), done 27 Oct. Day C4, deploying to Render with Postgres after a merge to `main` (D161), built 29 Oct; setting up Render and a first deploy are next.
+> chat's settings (D82), done 18 Oct. W4, the bubble on any website, done 18 Oct. W5, the owner's page, done 18 Oct. Next: day V1, a Bangla voice (D84); then the voice check and rehearsing the demo. Day V2, the shop's confirmation call to a `/phone` page (D88), built 19 Oct. Days V3 and V4, the calls as an optional feature with a queue and their screens (D89), built 19 Oct; V4's live check (answer on a phone, say yes) is next. Day K1, the agent books the courier (D90), built 21 Oct, then removed (D95): the owner books the courier by hand. Day S1, the shop agent like a BD f-shop (D92), built 21 Oct; its live checks (the Jev yes words, a Banglish order) are next. Day A1, email codes for signup and a forgotten password (D93; no login until verified, D94), built 21 Oct; A2, its screens, done 21 Oct; A1's Brevo check passed 21 Oct. Days T1 and T2, moderators and their screens (D97), done 21 Oct. Day S2, delivery areas by district (D98), built 21 Oct; its live chat check is next. Day M1, buttons on Messenger and Telegram (D99), built 22 Oct; its live check on a real Page and bot is next. Days P1 and P2, photos in Cloudflare R2 (D101) and from the list, shown when searching (D102), built 22 Oct; their live checks are next. Day H1, WhatsApp as a channel (D103), built 22 Oct; its live check on a real number is next. Day B1, plans and billing (D106), built 22 Oct; its billing page and live payment are next. Day V5, voice only for the receptionist and the clinic (D108; the shop's confirmation calls off), done 23 Oct. Day K1, bKash beside SSLCommerz for a business's payments and our plans (D109), built 23 Oct; its live sandbox check is next. Day U1, cards in the chat (summary, receipt, tracking, doctors) and the website chat's buttons (D110), built 23 Oct; seeing each card on the dev chat page is next. Day U2, the cards on Messenger, Telegram and WhatsApp (D111), built 23 Oct; its live check on a real bot, Page and number is next. Day K2, a courier port with a fake courier that books, follows and delivers a confirmed shop order (D112), built 23 Oct; seeing an order go to delivered on the dev chat page is next. Day K3, Steadfast and Pathao back behind the port with each shop's login (D113), built 23 Oct; a live booking needs a merchant account. Returning visitors on every desk and channel, the web chat and calls included (D114), built 23 Oct; seeing it offer last time's details on the dev chat page is next. Column matching for imports without a model (D115), built 23 Oct. Plan changes priced (D116), built 24 Oct. **Next, from 25 Oct:** days R1–R20, what the "AI Practor" reel shows (docs/competitor-gaps.md G21–G47). Day R1, the agent feels human (D117), built 25 Oct; its live check on a real Page is next. Day F1, Connect with Facebook (D118), built 25 Oct; connecting a real Page with it is next, then R2. Day R3a, a shop's imports add instead of replace (D120) and a product page from every card (D121), built 25 Oct; opening a product's page from a real Page is next. The agent remembers a visitor: a second order in the same chat is offered the first one's details (D123), and a `remember` tool keeps what they mention about themselves (D124); the website chat's product cards get *Order this* and *Details* (D123); built 25 Oct, a live check on a real Page is next. Day R2, product cards side by side (up to 10, Telegram and WhatsApp 3 photos then a list), videos and `goes_with` (D125), built 25 Oct; its live check on a real Page is next, then R3. **First, days I1–I3** (the team's inbox and spammers, asked 25 Oct): I1, who has a chat (D126), built 25 Oct; its browser check is next. I2, Block, AI off and the flood rule (D127), built 25 Oct; its dev chat check is next. I3, search, Done and Snooze (D128), built 25 Oct; its browser check is next, then R3. I4, assigning made plain (D129, asked 25 Oct), built 25 Oct; the owner's browser check passed, a moderator's is next. Day R3, *Buy now* on a product's page and the order's page `/o/<id>` (D130), built 26 Oct; its check from a real Messenger Page is next. Day R4, team orders, on hold, packed, money in and CSV exports (D131), done 26 Oct. Day R5, a buyer's record on each order and a buyers list (D132), done 26 Oct. Day R6, coupons (D133), built 26 Oct; "code EID10" in the dev chat with the real model is next. Day R7, the delivery-day reminder and the review request (D134), done 26 Oct. Day R8, take over with a dot (D135), built 26 Oct; "." in a real Page's Business Suite is next. Day R10, labels, notes, saved replies, a reply box and the buyer beside the chat (D136), done 26 Oct. Day R11, the model's help for the team (D137), done 26 Oct. Day R12, complaints become tickets (D138), done 26 Oct. Day R13, the nudge for an unfinished order and leads with a callback time (D139), built 26 Oct; "call me Friday 5pm" in the dev chat with the real model is next. Day R14, an offer to everyone who wrote today (D140), built 26 Oct; seeing it reach a dev chat and its bill is next. Day R15, comment to inbox (D141), built 26 Oct; App Review and a real post are next. Day R16, a post's findings kept for later comments, many products and one more reply (D142), built 26 Oct; a real post with three products is next. Day R17, missed questions with *Teach it*, and practice mode (D143), built 26 Oct; the screens and the browser check are next. R18 (change the agent in plain words) is put off to Later (26 Oct). Day R19, the owner's dashboard (D144), done 26 Oct. Day R20, reminders the day before and a deposit's TrxID (D145), built 26 Oct; check.sh and its dev chat check are next. R1–R20 are built except R18, put off (R9 was done as I1 and I3). G8, the same order twice is asked about (D146), done 26 Oct (the owner's check.sh and dev chat check passed). G2, voice notes answered from their words on Telegram, Messenger and WhatsApp (D147), done 26 Oct (live check passed). Days T3–T5, the team's management (asked 26 Oct): T3, alerts to whoever has the chat on Telegram (D148), built 26 Oct, its live check on a real bot is next; T4, who's available (D149), done 26 Oct; T5, each member's numbers (D150), done 26 Oct. Their screens in `../heydesk-frontend` are still to build. T6, moderators see the agent's pages and change none of them (D151, D153), built 26 Oct; its browser check is next. Day H2, Connect with WhatsApp: Meta's Embedded Signup (D155), built 27 Oct; connecting a real number with it is next. Day H3, a reply to a product photo names it on every channel (D156), done 27 Oct. Day C4, deploying to Render with Postgres after a merge to `main` (D161), built 29 Oct; setting up Render and a first deploy are next. Day R14's offer reaches as far back as the owner picks, 24 hours to 7 days (D163), built 30 Oct; its form and the Coupons page are in `../heydesk-frontend`.
 > **Dates:** started Wed 30 Sep 2026 · presentation Sun 15 Nov.
 
 **How to use this file:** do the next unticked day. Its bullets say what to build;
@@ -276,7 +276,7 @@ its status comes back.
 - [x] The prompt: apni and ji, the read-back one detail per line, "the delivery man calls before
       he comes", bKash, Nagad or a card for the link; a plain "Assalamu alaikum" greeting
 - [x] A live test of Banglish yes words with Jev (`tests/integration/test_live_yes.py`)
-- [x] heydesk-web: each area's "Paid online first", "Call to confirm cash-on-delivery
+- [ ] Screens in `../heydesk-frontend`: each area's "Paid online first", "Call to confirm cash-on-delivery
       orders", a paid order marked confirmed, the Policies box asking for the door rules
 
 **Done when:** `scripts/check.sh` is green; the live yes test passes (costs Jev quota); and in the
@@ -689,8 +689,8 @@ items and ৳1,960, and no name or mobile. Messenger itself needs a real Page.)
 - [x] Tests: a team order is saved and alerted; a CSV has the filtered rows and no other business's
 
 **Done when:** `scripts/check.sh` is green; in the browser, an order moves on hold → packed →
-delivered with money in, and the CSV opens in a spreadsheet. [x] (26 Oct: green, 445 tests. In
-heydesk-web against the dev shop with the fake model: *New order* saved O-102 (1 Silk Panjabi to
+delivered with money in, and the CSV opens in a spreadsheet. [x] (26 Oct: green, 445 tests. On
+the dev shop with the fake model: *New order* saved O-102 (1 Silk Panjabi to
 Patenga, ৳3,200, free delivery over ৳3,000) as Confirmed, "typed by your team"; the fake courier
 booked it at once. O-101 went New → On hold → Confirmed → Packed → Shipped → Delivered, and
 *Money in* saved. The CSV, converted by LibreOffice, read dates as dates and money as numbers;
@@ -704,7 +704,7 @@ a bare mobile lost its 0, so mobiles are written `01812-345678` now, which keeps
 - [x] Tests: the counts; another business's orders never counted
 
 **Done when:** `scripts/check.sh` is green; in the browser, an order shows its buyer's record. [x]
-(26 Oct: green, 446 tests. In heydesk-web on the dev shop: O-103 for 01812345678 showed
+(26 Oct: green, 446 tests. On the dev shop: O-103 for 01812345678 showed
 "2 orders · 1 returned" in red beside the order, and the new Buyers page listed both mobiles with
 their counts, spent and channel.)
 
@@ -717,7 +717,7 @@ their counts, spent and channel.)
 - [x] Tests: each kind's total, an ended code, a used-up code, the read-back shows the discount
 
 **Done when:** `scripts/check.sh` is green; in the dev chat, "code EID10" puts 10% on the bill. [ ]
-(26 Oct: green, 448 tests; the Coupons page in heydesk-web saved EID10, 10% for 50 orders. The
+(26 Oct: green, 448 tests; the Coupons page saved EID10, 10% for 50 orders; 30 Oct: the page is in `../heydesk-frontend` too. The
 dev chat needs the real model, since the fake one only echoes: a live check for the owner.)
 
 ### Day R7: delivery-day reminder and a review request (G32)
@@ -743,7 +743,7 @@ rider.", then "delivered", and at 10:41 "How was your order O-104? Tap 👍 or �
       turn's history
 
 **Done when:** `scripts/check.sh` is green; on a real Page, "." in Business Suite silences the
-agent, and "." gives it back. [ ] (26 Oct: green. In heydesk-web, *Take over* on O-104's web chat
+agent, and "." gives it back. [ ] (26 Oct: green. In the browser, *Take over* on O-104's web chat
 made it `human` and its next message got no reply; *Give back to the agent*, and the next was
 answered. The real Page, connected again for its echoes, is the owner's check.)
 
@@ -760,7 +760,7 @@ Moved forward: days I1 (assign) and I3 (search, done, snooze).
 - [x] Tests: a note never reaches the prompt or the visitor
 
 **Done when:** `scripts/check.sh` is green; in the browser, a labelled chat with a note shows its
-buyer's orders. [x] (26 Oct: green, 453 tests. In heydesk-web, O-104's chat labelled "VIP" (kept
+buyer's orders. [x] (26 Oct: green, 453 tests. In the browser, O-104's chat labelled "VIP" (kept
 as "vip") with the note "Returned an order before. Call before sending." showed "1 order · 1
 delivered" and O-104 beside it; pressing the label listed only that chat.)
 
@@ -771,7 +771,7 @@ delivered" and O-104 beside it; pressing the label listed only that chat.)
 - [x] Tests (FakeLLM): a draft is shown, not sent
 
 **Done when:** `scripts/check.sh` is green; in the browser, a draft fills the reply box. [x]
-(26 Oct: green, 454 tests. In heydesk-web on O-104's chat, *Draft a reply* filled the reply box
+(26 Oct: green, 454 tests. In the browser, on O-104's chat, *Draft a reply* filled the reply box
 with the fake model's words; nothing was sent.)
 
 ### Day R12: complaints become tickets; AI off for one buyer (G37, G10, G38)
@@ -798,7 +798,7 @@ since the fake one only echoes: a live check for the owner, passed 26 Oct.)
 
 **Done when:** `scripts/check.sh` is green; in the dev chat, a callback request shows in leads. [ ]
 (26 Oct: green, 459 tests. The callback in the dev chat needs the real model: a live check for
-the owner. The leads screen in heydesk-web is still to build.)
+the owner. The leads screen is still to build.)
 
 ### Day R14: an offer to everyone who wrote today (G40)
 
@@ -808,8 +808,8 @@ the owner. The leads screen in heydesk-web is still to build.)
 - [x] Tests: a buyer who got it gets free delivery; one who didn't, or after the end, doesn't
 
 **Done when:** `scripts/check.sh` is green; on the dev chat page, the offer reaches a recent chat
-and its bill. [ ] (26 Oct: green, 460 tests. The dev chat check is the owner's; the offer's
-screen in heydesk-web is still to build.)
+and its bill. [ ] (26 Oct: green, 460 tests. The dev chat check is the owner's; 30 Oct: its form is on the Coupons
+page in `../heydesk-frontend`, and the owner picks how far back it reaches, 24 hours to 7 days, D163.)
 
 ### Day R15: comment to inbox (G1, G43)
 
@@ -845,7 +845,7 @@ reply is untried on a real Page.)
 - [x] Tests: a taught answer is found next time; practice mode ignores a stranger
 
 **Done when:** `scripts/check.sh` is green; in the browser, a missed question is taught and then
-answered. [ ] (26 Oct: green, 467 tests. The screens in heydesk-web are still to build.)
+answered. [ ] (26 Oct: green, 467 tests. The screens are still to build.)
 
 ### Day R19: the owner's dashboard (G4)
 
@@ -901,15 +901,14 @@ check on a real bot is the owner's.)
 
 **Done when:** a moderator's reply and solved ticket show on their row. [x] (26 Oct, test)
 
-In `../heydesk-web` (26 Oct): Account's *Your chats* (Link my Telegram, Take new hand-offs),
-and on Team each moderator's switch, a Telegram chip and the *Last 7 days* table. The
-owner's browser check is next.
+Still to build in `../heydesk-frontend`: Account's *Your chats* (Link my Telegram, Take new hand-offs),
+and on Team each moderator's switch, a Telegram chip and the *Last 7 days* table.
 
 ### Day T6: moderators see the agent's pages (D151, asked 26 Oct)
 
 - [x] A moderator reads the agent's settings, knowledge and channels; they change none
       of it (D153: not the Q&A or the saved replies either); the Telegram bot's `owner_link` is empty for them
-- [x] `../heydesk-web`: Agent, Knowledge and Channels in a moderator's menu, all view-only; their *Link my Telegram* on Channels and on Home until linked
+- [ ] `../heydesk-frontend`: Agent, Knowledge and Channels in a moderator's menu, all view-only; their *Link my Telegram* on Channels and on Home until linked
 
 **Done when:** a moderator sees every Agent tab greyed out, and finds their Telegram link
 on Home. [ ] (26 Oct: tested offline; the browser check is the owner's.)

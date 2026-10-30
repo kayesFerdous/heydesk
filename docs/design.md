@@ -528,7 +528,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PATCH | `/api/shop/orders…` | A shop's orders; one; move its status (D45, D96; the buyer hears confirmed, shipped or cancelled in their chat, D105); once it ended, `paid_in` and `reason` (D131) |
 | GET/POST/DELETE | `/api/shop/coupons…` | A shop's coupon codes with their uses; add one (`{code, kind, value, ends_at, max_uses}`, a 409 for a code it has); delete one by code (orders keep their discount) (D133) |
 | GET/PUT | `/api/shop/posts…` | The Page's posts the agent knows, with their products; `PUT …/{post_id} {products}` tags one (codes, at most 10; a 404 for one not in the list) (D142) |
-| POST | `/api/shop/offers` | `{text, kind, value, ends_at}`: sent to every chat that wrote in the last 24 h, inside the window, and saved as a coupon only they may use until it ends; `{code, sent_to}` (D140) |
+| POST | `/api/shop/offers` | `{text, kind, value, ends_at, within_hours}`: sent to every chat that wrote in the last `within_hours` (24 by default, up to 168), inside the window, and saved as a coupon only they may use until it ends; `{code, sent_to}` (D140) |
 | GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
 | GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
@@ -1784,8 +1784,9 @@ repeat it. A bad code is `ok=False` with `coupon_problem`, and the cart is kept 
 - Given up: a cancelled order doesn't give its use back; no minimum order; one code an order.
 
 **An offer to everyone who wrote today (D140).** `POST /api/shop/offers {text, kind, value,
-ends_at}` sends the owner's words, as they are, to each shop chat with a turn in the last 24
-hours (not a call, not an `assist`), through `tell_in_window`, and saves it as a coupon
+ends_at, within_hours}` sends the owner's words, as they are, to each shop chat with a turn in
+the last `within_hours` (24 by default, up to a week, D163; not a call, not an `assist`),
+through `tell_in_window`, and saves it as a coupon
 `OFFER1`, `OFFER2`… whose `only_for` is the chats it reached. `ShopStore.coupon` gives such a
 code only to those chats, so said by anyone else it's "no coupon"; `update_cart` uses the
 newest offer still running for the chat when the buyer gave no code and the cart has none.
