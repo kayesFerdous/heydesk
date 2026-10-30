@@ -165,6 +165,11 @@ The same holds for the inbox's reply box (D136) and the owner's own messages fro
 (D135): added as the team's, read as the agent's earlier replies. A team member's notes and a
 chat's labels (D136) and the saved replies are never in the prompt or the history.
 
+The history is only what came after the agent last started afresh: `messages[history_from:]`
+(D157). On a messaging app a chat quiet for `CONVERSATION_IDLE_HOURS`, or full, moves that point
+to the end, so the model never reads yesterday's half-order; the team still sees it all. *Summary*,
+*Ask* and *Draft* (§6c) read the same part.
+
 ## 6c. Helping the team (D137)
 
 *Summary*, *Ask about this chat* and *Draft a reply* run the chat's own prompt and history with
@@ -176,6 +181,10 @@ chat's labels (D136) and the saved replies are never in the prompt or the histor
 | summary | 2 to 4 short lines: what the customer wants, what was agreed, ordered or booked, what's still open; no greeting | a moderator picking up a chat reads it in seconds |
 | draft | the next message the team could send, in the customer's language and letters and the business's tone; only the message; never promise what the chat and the business's details don't say | it goes in the reply box, and the team checks it; the same no-guessing as the agent's own rules |
 | ask | the team member's question (put in with `str.replace`), answered in one or two lines from the chat and the business's details, or "it doesn't say" | a question about the chat, not a new task |
+
+The system prompt of these turns ends with `ASSIST_NOTE`: the last message is the team's, always
+on topic, and the scope rule doesn't apply. Without it the model took "summarise this" for an
+off-topic customer message and answered with the agent's "I can help with…" line.
 
 Nothing it writes is added to the chat or sent; the turn is traced and billed on the channel
 `assist`.

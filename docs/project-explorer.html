@@ -7613,9 +7613,10 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-conversations",
      "to": "st-sql",
-     "data": "latest conversation for this chat (unless idle > 12 h or full)",
+     "data": "the chat's one conversation; idle > 12 h or full: history_from moves to the end, cart emptied (D157)",
      "file": "src/heydesk/services/conversations.py",
-     "fn": "reply"
+     "fn": "reply",
+     "note": "The model's history is messages[history_from:]; the team still sees the whole chat"
     },
     {
      "from": "s-conversations",
@@ -8436,6 +8437,14 @@ tr.hl td { background: var(--accent-soft); }
 <script type="application/json" id="data-state">
 {
  "places": [
+  {
+   "what": "The open inbox pages",
+   "file": "src/heydesk/services/live.py",
+   "where": "`LiveHub.pages` (workspace → one queue per open inbox stream), filled by `GET /api/conversations/live`",
+   "written": "`watch`: `after_flush` collects the changed conversations, `after_commit` publishes them",
+   "sync": "One server process only (D158). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page fetches that chat, and the list again after a reconnect.",
+   "failure": "A restart or a dropped connection ends the stream; the page reconnects and fetches the list. A page 100 events behind loses the oldest."
+  },
   {
    "what": "A chat's waiting messages, and WhatsApp's recent ones",
    "file": "src/heydesk/services/channels.py",

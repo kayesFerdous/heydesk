@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import TypeDecorator
 
@@ -101,7 +101,9 @@ def make_engine(url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]
         kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
     # JSON keeps Bangla as letters, not \u escapes, so a search can find it (I3)
     engine = create_async_engine(url, json_serializer=readable_json, **kwargs)
-    return engine, async_sessionmaker(engine, expire_on_commit=False)
+    # its own session class, so live.watch listens to this database's sessions and no others
+    watched = type("WatchedSession", (Session,), {})
+    return engine, async_sessionmaker(engine, expire_on_commit=False, sync_session_class=watched)
 
 
 def readable_json(value: Any) -> str:

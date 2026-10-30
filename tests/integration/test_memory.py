@@ -18,7 +18,7 @@ async def test_a_note_is_in_the_next_conversations_prompt(world: World) -> None:
     await talk.reply(agent, "telegram", "chat-1", "ami dark colour pochondo kori")
     assert SECTION not in world.llm.requests[0].system
 
-    world.clock.advance(hours=13)  # a new conversation
+    world.clock.advance(hours=13)  # the same chat, started afresh (D157)
     world.llm.script = ["Welcome back!"]
     await talk.reply(agent, "telegram", "chat-1", "hi")
     assert "- colours: likes dark colours" in world.llm.requests[-1].system
