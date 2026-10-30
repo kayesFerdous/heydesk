@@ -1,4 +1,4 @@
-"""The platform's side (D23): every business, every user, and the audit log of what admins
+"""The platform's side: every business, every user, and the audit log of what admins
 did inside businesses. Only `api/admin.py` and the admin dependency call this."""
 
 import math
@@ -41,7 +41,7 @@ class BusinessRow:
     conversations: int
     last_activity_at: datetime | None
     created_at: datetime
-    plan: str  # D106
+    plan: str
     paid_until: datetime
 
 
@@ -85,12 +85,12 @@ class BusinessDetail:
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
-    usage: "Totals"  # its turns in the last 7 days (D73)
+    usage: "Totals"  # its turns in the last 7 days
 
 
 @dataclass(frozen=True)
 class Totals:
-    """What the agents did in a stretch of days (D72). Cost counts only priced providers."""
+    """What the agents did in a stretch of days. Cost counts only priced providers."""
 
     turns: int
     conversations: int  # started in those days
@@ -133,7 +133,7 @@ class Overview:
 
 @dataclass(frozen=True)
 class FailedTurn:
-    """A turn that ended with the polite line (D73): when, where, and the error. No words."""
+    """A turn that ended with the polite line: when, where, and the error. No words."""
 
     id: str
     at: datetime
@@ -185,7 +185,7 @@ class AdminService:
         )
         owner = (
             select(User.workspace_id, func.min(User.email).label("email"))
-            .where(User.role == "owner")  # not a moderator (D97)
+            .where(User.role == "owner")  # not a moderator
             .group_by(User.workspace_id)
             .subquery()
         )
@@ -279,7 +279,7 @@ class AdminService:
             )
 
     async def overview(self, days: int = 7) -> Overview:
-        """Today and the last `days` days, from the saved turns (D71). The rows are read and
+        """Today and the last `days` days, from the saved turns. The rows are read and
         added up here: a few thousand a week is fine, and it reads more easily than SQL."""
         today = self.now().astimezone(DAY_ZONE).date()
         first = today - timedelta(days=days - 1)
@@ -370,7 +370,7 @@ class AdminService:
         ]
 
     async def set_business_status(self, workspace_id: str, status: str, reason: str = "") -> None:
-        """A reason goes with a suspension (D70); reactivating clears it."""
+        """A reason goes with a suspension; reactivating clears it."""
         async with self.sessions() as s, s.begin():
             business = await s.get(Workspace, workspace_id)
             if business is None:

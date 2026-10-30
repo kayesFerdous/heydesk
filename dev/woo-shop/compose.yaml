@@ -1,4 +1,4 @@
-# A test WooCommerce shop for trying HeyDesk's WooCommerce link (D75). Not part of the app.
+# A test WooCommerce shop for trying HeyDesk's WooCommerce link. Not part of the app.
 #   docker compose up -d     start it (the first time, then run ./setup.sh once)
 #   docker compose stop      stop it; everything is kept
 #   docker compose down -v   delete it and all its data

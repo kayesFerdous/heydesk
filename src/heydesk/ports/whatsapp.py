@@ -1,4 +1,4 @@
-"""The `WhatsAppApi` port: the few Cloud API calls HeyDesk makes for WhatsApp (D103).
+"""The `WhatsAppApi` port: the few Cloud API calls HeyDesk makes for WhatsApp.
 
 Every call takes the business's access token and its number's id (`phone_id`): each business
 connects its own number to our Meta app.
@@ -19,41 +19,41 @@ class WhatsAppApi(Protocol):
         ...
 
     async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
-        """The business's token for the code Embedded Signup gave the browser (D155). A code
+        """The business's token for the code Embedded Signup gave the browser. A code
         works once."""
         ...
 
     async def register(self, token: str, phone_id: str, pin: str) -> None:
-        """Puts the number on the Cloud API, with `pin` as its two-step PIN (D155)."""
+        """Puts the number on the Cloud API, with `pin` as its two-step PIN."""
         ...
 
     async def send_message(
         self, token: str, phone_id: str, to: str, text: str, choices: list[str] | None = None
     ) -> None:
         """`to` is the visitor's WhatsApp number. `choices` are reply buttons, or a list past
-        three (D99): a tap comes back as a message with the choice as its id."""
+        three: a tap comes back as a message with the choice as its id."""
         ...
 
     async def send_cards(
         self, token: str, phone_id: str, to: str, cards: list[dict[str, str]]
     ) -> list[str]:
         """Products, one message each: `{name, price, url}`, the photo's full URL, and maybe
-        `choice`: an Order button whose tap comes back with it (D99). Its `page` and `video`
-        are links in the caption (D121, D125). Returns each card's message id, in order,
-        so a reply to one is known (D156)."""
+        `choice`: an Order button whose tap comes back with it. Its `page` and `video`
+        are links in the caption. Returns each card's message id, in order,
+        so a reply to one is known."""
         ...
 
     async def send_link(
         self, token: str, phone_id: str, to: str, text: str, title: str, url: str
     ) -> None:
-        """Text with one button that opens `url` (D111): a receipt's Pay button."""
+        """Text with one button that opens `url`: a receipt's Pay button."""
         ...
 
     async def send_list(
         self, token: str, phone_id: str, to: str, text: str, rows: list[dict[str, str]]
     ) -> None:
         """A list under the text: up to 10 rows `{id, title, description?}` (a title is 24
-        characters, a description 72). A tapped row comes back with its id (D99, D111)."""
+        characters, a description 72). A tapped row comes back with its id."""
         ...
 
     async def download(self, token: str, media_id: str) -> bytes:

@@ -1,4 +1,4 @@
-"""The `MessengerApi` port: the few Graph API calls HeyDesk makes for Facebook Messenger (D60).
+"""The `MessengerApi` port: the few Graph API calls HeyDesk makes for Facebook Messenger.
 
 Every call takes the Page's access token: each business connects its own Page.
 """
@@ -6,7 +6,7 @@ Every call takes the Page's access token: each business connects its own Page.
 from typing import Any, Protocol
 
 # Every message we send carries it as `metadata`, and so does its echo: an echo without it is
-# the Page's own, written in Business Suite or Messenger by the owner (D135)
+# the Page's own, written in Business Suite or Messenger by the owner
 OURS = "heydesk"
 
 
@@ -26,21 +26,21 @@ class MessengerApi(Protocol):
     async def send_message(
         self, token: str, psid: str, text: str, choices: list[str] | None = None
     ) -> None:
-        """`psid` is the visitor's id on this Page. `choices` are quick replies (D99): a tap
+        """`psid` is the visitor's id on this Page. `choices` are quick replies: a tap
         comes back as a message with the choice as its text."""
         ...
 
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
-        """Products as one carousel (D62): each card `{name, price, url}`, the photo's full URL,
-        and maybe `choice`: an Order button whose tap comes back as a postback with it (D99).
-        Doctors use it too (D111): no `url`, `price` is the line under the name, and `button`
+        """Products as one carousel: each card `{name, price, url}`, the photo's full URL,
+        and maybe `choice`: an Order button whose tap comes back as a postback with it.
+        Doctors use it too: no `url`, `price` is the line under the name, and `button`
         names the button ("Book"; a product's is "Order this"). A product's `page` and `video`
-        are link buttons (D121, D125); a card with no `url` has no photo. Returns the
-        carousel's message id, so a reply to it is known (D156)."""
+        are link buttons; a card with no `url` has no photo. Returns the
+        carousel's message id, so a reply to it is known."""
         ...
 
     async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
-        """Text with one button that opens `url` (D111): a receipt's Pay button."""
+        """Text with one button that opens `url`: a receipt's Pay button."""
         ...
 
     async def download(self, url: str) -> bytes:
@@ -52,32 +52,31 @@ class MessengerApi(Protocol):
         ...
 
     async def pages(self, app_id: str, app_secret: str, user_token: str) -> list[dict[str, str]]:
-        """The Pages a Facebook login manages (D118), each `{id, name, token}`. The login's
+        """The Pages a Facebook login manages, each `{id, name, token}`. The login's
         short token is first made a long-lived one, so the Pages' tokens don't expire."""
         ...
 
     async def mark_seen(self, token: str, psid: str) -> None:
-        """Shows the visitor their messages as "Seen" (D117)."""
+        """Shows the visitor their messages as "Seen"."""
         ...
 
     async def get_post(self, token: str, post_id: str) -> dict[str, str]:
-        """A Page post's `text` and `picture` (its photo's URL, or ""), to find its products
-        (D141, D142)."""
+        """A Page post's `text` and `picture` (its photo's URL, or ""), to find its products."""
         ...
 
     async def reply_public(self, token: str, comment_id: str, text: str) -> None:
-        """A reply under the comment, for everyone to see (D141)."""
+        """A reply under the comment, for everyone to see."""
         ...
 
     async def reply_private(
         self, token: str, comment_id: str, text: str, cards: list[dict[str, str]] | None = None
     ) -> str:
-        """Facebook's private reply to a comment: it opens a Messenger chat with its writer
-        (D141). `cards`: a carousel instead of the text, as `send_cards` takes them (D142).
+        """Facebook's private reply to a comment: it opens a Messenger chat with its writer.
+        `cards`: a carousel instead of the text, as `send_cards` takes them.
         Returns their id on this Page, the chat's contact."""
         ...
 
     async def get_message(self, token: str, mid: str) -> dict[str, Any]:
         """A message of the Page's chats by its id, the visitor's or the Page's own, in the
-        webhook's shape: `text`, and `attachments` with an image's `payload.url` (D117)."""
+        webhook's shape: `text`, and `attachments` with an image's `payload.url`."""
         ...

@@ -8,7 +8,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class SheetLink(Base):
-    """A business's list kept in a Google Sheet, read every few minutes (D58). One per agent."""
+    """A business's list kept in a Google Sheet, read every few minutes. One per agent."""
 
     __tablename__ = "sheet_links"
 
@@ -16,7 +16,7 @@ class SheetLink(Base):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), unique=True)
     url: Mapped[str] = mapped_column(String(500))  # as the owner pasted it
-    mapping: Mapped[dict[str, str]] = mapped_column(JSON)  # our field → their column (D53)
+    mapping: Mapped[dict[str, str]] = mapped_column(JSON)  # our field → their column
     # each product's count as the sheet last said it, so a count is taken only when it changes
     seen: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     checked: Mapped[str] = mapped_column(String(64), default="")  # SHA-256 of the last text

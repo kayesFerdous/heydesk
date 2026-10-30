@@ -421,7 +421,7 @@ G12 in docs/competitor-gaps.md.
       `paid_until`, `subscription_payments` (one migration; businesses already here get a 14-day
       trial, the dev workspace Pro)
 - [x] `BillingService`: the billing page's numbers, checkout through our SSLCommerz store,
-      settle (once, this amount), an admin's plan by hand; `admit` refuses once the plan ended
+      settle (once, this amount), an admin's plan by hand; `count_turn` refuses once the plan ended
       or its replies ran out; the plan's moderators cap invites
 - [x] Routes `/api/billing`, `/api/billing/checkout`, the return and the notice (owners only);
       `PUT /api/admin/businesses/{id}/plan`; the plan in the admin's business list

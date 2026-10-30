@@ -1,4 +1,4 @@
-"""Voice is only for the receptionist and the clinic (D108): the chat page's info says so,
+"""Voice is only for the receptionist and the clinic: the chat page's info says so,
 and a call to any other desk is refused before it starts."""
 
 from typing import Any

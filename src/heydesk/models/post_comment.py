@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class PostComment(Base):
-    """Someone commented on a Page's post and was answered (D141): once per post and person,
+    """Someone commented on a Page's post and was answered: once per post and person,
     so a second comment gets no second reply."""
 
     __tablename__ = "post_comments"
@@ -21,5 +21,5 @@ class PostComment(Base):
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("conversations.id"), default=None
     )  # the Messenger chat the private reply opened
-    nudged: Mapped[bool] = mapped_column(default=False)  # the one more reply went (D142)
+    nudged: Mapped[bool] = mapped_column(default=False)  # the one more reply went
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

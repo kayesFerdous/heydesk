@@ -76,6 +76,8 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 - SQLAlchemy 2.0 typed (`Mapped[...]`), short sessions; never hold a
   transaction open while waiting on a model.
 - Tools return problems as data (`ok=False`, a hint), not exceptions.
+- Comments say what and why in plain words. Decision and gap numbers (D…, G…) live in
+  `docs/` only, never in code, config or tests.
 - Customer text is never passed to `str.format`; placeholders use `str.replace`.
 - Logs are JSON with ids only: never message text, names or phone numbers.
 - Errors that reach HTTP are `HeyDeskError` subclasses (`heydesk.errors`).

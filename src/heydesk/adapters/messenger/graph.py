@@ -1,4 +1,4 @@
-"""MessengerGraph: Facebook's Graph API behind the `MessengerApi` port (D60), over httpx.
+"""MessengerGraph: Facebook's Graph API behind the `MessengerApi` port, over httpx.
 
 The token goes in the query string, so httpx's own request log is off (`logs.py`) and an error
 never repeats the URL.
@@ -14,20 +14,20 @@ API = "https://graph.facebook.com/v23.0"
 
 
 def carousel(cards: list[dict[str, str]]) -> dict[str, Any]:
-    """Cards side by side as one message (D62, D99, D121, D125): up to 10."""
+    """Cards side by side as one message: up to 10."""
     elements = []
     for c in cards:
         element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
         if c.get("url"):  # a doctor has no photo
             element["image_url"] = c["url"]
         buttons = []
-        if c.get("choice"):  # its tap is a postback with the choice as payload (D99)
+        if c.get("choice"):  # its tap is a postback with the choice as payload
             title = c.get("button") or "Order this"
             buttons.append({"type": "postback", "title": title, "payload": c["choice"]})
-        if c.get("page"):  # a product's page (D121): the card's tap, and a button
+        if c.get("page"):  # a product's page: the card's tap, and a button
             element["default_action"] = {"type": "web_url", "url": c["page"]}
             buttons.append({"type": "web_url", "title": "Details", "url": c["page"]})
-        if c.get("video"):  # its first video (D125)
+        if c.get("video"):  # its first video
             buttons.append({"type": "web_url", "title": "▶ Video", "url": c["video"]})
         if buttons:
             element["buttons"] = buttons
@@ -50,8 +50,8 @@ class MessengerGraph:
             f"{page_id}/subscribed_apps",
             token,
             subscribed_fields="messages,messaging_postbacks,message_echoes,feed",
-        )  # a card's button is a postback (D99); the Page's own messages are echoes (D135);
-        # its posts' comments come in its feed (D141)
+        )  # a card's button is a postback; the Page's own messages are echoes;
+        # its posts' comments come in its feed
 
     async def unsubscribe(self, token: str, page_id: str) -> None:
         await self._call("DELETE", f"{page_id}/subscribed_apps", token)
@@ -121,7 +121,7 @@ class MessengerGraph:
     async def reply_private(
         self, token: str, comment_id: str, text: str, cards: list[dict[str, str]] | None = None
     ) -> str:
-        # ponytail: a carousel as the private reply isn't tried on a real Page yet (D142)
+        # ponytail: a carousel as the private reply isn't tried on a real Page yet
         message = carousel(cards) if cards else {"text": text}
         body = {"recipient": {"comment_id": comment_id}, "message": {**message, "metadata": OURS}}
         sent = await self._call("POST", "me/messages", token, json=body)
@@ -138,7 +138,7 @@ class MessengerGraph:
         }
 
     async def _send(self, token: str, psid: str, **body: Any) -> Any:
-        if "message" in body:  # its echo comes back with this, so it's known as ours (D135)
+        if "message" in body:  # its echo comes back with this, so it's known as ours
             body["message"] = {**body["message"], "metadata": OURS}
         return await self._call(
             "POST", "me/messages", token, json={"recipient": {"id": psid}, **body}

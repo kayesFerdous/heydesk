@@ -1,4 +1,4 @@
-"""encrypt the secrets businesses give us (D74)
+"""encrypt the secrets businesses give us
 
 Revision ID: 3c1f0a7d2b94
 Revises: e056df2c394f

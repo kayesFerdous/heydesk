@@ -15,7 +15,7 @@ from heydesk.desks.clinic.values import (
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
-from heydesk.models.taken import FIRST_STATUS, UNPAID
+from heydesk.models.customer_request import FIRST_STATUS, UNPAID
 
 
 class ClinicStore(Store):
@@ -34,7 +34,7 @@ class ClinicStore(Store):
         return {}
 
     async def save_appointment(self, appointment: Confirmed[NewAppointment]) -> Appointment:
-        """Saves the request: `new`, or `unpaid` when a deposit is paid first (D48)."""
+        """Saves the request: `new`, or `unpaid` when a deposit is paid first."""
         a = appointment.value
         return await self.add(
             Appointment,
@@ -50,8 +50,7 @@ class ClinicStore(Store):
         )
 
     async def trx_checked(self, appointment_id: str, checked: bool) -> Appointment:
-        """The clinic found the deposit's TrxID in its bKash or Nagad account, or unticks it
-        (D145)."""
+        """The clinic found the deposit's TrxID in its bKash or Nagad account, or unticks it."""
         async with self.sessions() as s, s.begin():
             found = await self._one(s, Appointment, appointment_id)
             found.trx_checked = checked

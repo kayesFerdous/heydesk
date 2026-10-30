@@ -1,4 +1,4 @@
-"""A linked courier, and each order's parcel (D90)
+"""A linked courier, and each order's parcel
 
 Revision ID: 3ff093348cf3
 Revises: 91a7c4410a9b

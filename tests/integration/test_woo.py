@@ -1,4 +1,4 @@
-"""A shop's list kept in its WooCommerce store, and our orders written there (D75): Woo's
+"""A shop's list kept in its WooCommerce store, and our orders written there: Woo's
 fields become ours, a Read key is refused, an order placed here is created in Woo with our
 prices and moved when it moves, and a pull doesn't undo an order not in Woo yet."""
 
@@ -162,7 +162,7 @@ def test_woos_fields_become_ours() -> None:
         "M/White": 4,
         "L/White": 0,
         "L/Black": 3,
-        "M/Black": 0,  # Woo has no such variation: never offered (D59)
+        "M/Black": 0,  # Woo has no such variation: never offered
     }
     assert (xxl.name, xxl.price, xxl.sizes) == ("Linen Panjabi (XXL)", 265000, ["XXL"])
     assert ids["LP-1"] == {"id": 11, "variations": {"M|White": 12, "L|White": 13, "L|Black": 16}}
@@ -299,7 +299,7 @@ async def test_while_a_store_is_linked_the_list_is_changed_there(
     assert (linked["url"], linked["products"], linked["problem"]) == (URL, 3, "")
     assert "secret" not in (await client.get("/api/agent/woo")).json()
     assert [p["code"] for p in (await client.get("/api/products")).json()] == [
-        *seeded,  # Woo's join the list (D120)
+        *seeded,  # Woo's join the list
         "TP-1",
         "LP-1",
         "LP-1-2650",

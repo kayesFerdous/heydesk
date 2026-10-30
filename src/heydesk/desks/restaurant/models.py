@@ -5,7 +5,7 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.taken import Payable, Taken
+from heydesk.models.customer_request import CustomerRequest, Payable
 from heydesk.runtime.speech import money
 
 
@@ -31,12 +31,12 @@ PICKUP_ONLY = {"collected"}
 DELIVERY_ONLY = {"out_for_delivery", "delivered"}
 
 
-class Order(Taken, Payable, Base):
+class Order(CustomerRequest, Payable, Base):
     """A pickup or delivery order. Prices are copied in, so a later menu edit doesn't change it.
 
     When the restaurant takes the delivery charge first, a delivery order starts `unpaid` and
-    only the payment check makes it `new` (D48). A pickup is collected; a delivery goes out
-    and is delivered (D66)."""
+    only the payment check makes it `new`. A pickup is collected; a delivery goes out
+    and is delivered."""
 
     __tablename__ = "orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
@@ -60,7 +60,7 @@ class Order(Taken, Payable, Base):
     delivery_charge: Mapped[int] = mapped_column(default=0)
 
     @property
-    def due(self) -> int:
+    def amount_due(self) -> int:
         return self.delivery_charge
 
     def move(self, status: str, now: datetime) -> None:
@@ -72,7 +72,7 @@ class Order(Taken, Payable, Base):
 
     def news(self) -> str:
         """What the visitor is told in their chat when the owner moves it here; "" for
-        nothing (D66)."""
+        nothing."""
         if self.status == "ready" and not self.address:
             return f"🍽️ Your order {self.code} is ready to pick up."
         if self.status == "out_for_delivery":
@@ -90,7 +90,7 @@ class Order(Taken, Payable, Base):
         return f"Your order {self.code} is placed. The rest, {cod}, is paid on delivery."
 
 
-class Booking(Taken, Base):
+class Booking(CustomerRequest, Base):
     """A table booking. The restaurant confirms it, and the visitor hears so in the chat."""
 
     __tablename__ = "bookings"
@@ -112,7 +112,7 @@ class Booking(Taken, Base):
 
     def news(self) -> str:
         """What the visitor is told in their chat when the owner moves it here; "" for
-        nothing (D66)."""
+        nothing."""
         if self.status == "confirmed":
             return f"✅ Your table for {self.people} is confirmed ({self.code}). See you then!"
         if self.status == "cancelled":

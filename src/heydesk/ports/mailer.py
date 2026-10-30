@@ -1,4 +1,4 @@
-"""Email to an owner: the codes that verify their email and reset their password (D93)."""
+"""Email to an owner: the codes that verify their email and reset their password."""
 
 from typing import Protocol
 

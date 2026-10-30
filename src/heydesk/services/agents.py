@@ -38,7 +38,7 @@ class LiveAgent:
     public_key: str
     desk: Desk
     config: AgentConfig  # the desk's own config class
-    documents: list[str]  # the titles of its documents; any means `search_knowledge` (D35)
+    documents: list[str]  # the titles of its documents; any means `search_knowledge`
 
     @property
     def greeting(self) -> str:
@@ -88,12 +88,12 @@ class AgentService:
     async def create(
         self, ws: str, kind: str, fields: dict[str, Any], *, public_key: str | None = None
     ) -> str:
-        """The business's agent. A business has only one (D22)."""
+        """The business's agent. A business has only one."""
         desk = desk_of(kind)
         async with self.sessions() as s:
             business = await s.get(Workspace, ws)
         name = business.name if business else ws
-        # A business starts from just its kind: the name comes from signup (D26)
+        # A business starts from just its kind: the name comes from signup
         config = validate(desk, {"business_name": name, "name": f"{name} assistant", **fields})
         now = self.now()
         agent = Agent(
@@ -147,11 +147,11 @@ class AgentService:
         return await self._live(Agent.public_key == key)
 
     async def by_workspace(self, ws: str) -> LiveAgent:
-        """The business's agent, for a service that acts for its owner (D89)."""
+        """The business's agent, for a service that acts for its owner."""
         return await self._live(Agent.workspace_id == ws)
 
     async def by_id(self, agent_id: str) -> LiveAgent:
-        """For a messaging app, which knows its agent by id (D42)."""
+        """For a messaging app, which knows its agent by id."""
         return await self._live(Agent.id == agent_id)
 
     async def _live(self, where: ColumnElement[bool]) -> LiveAgent:

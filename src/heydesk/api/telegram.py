@@ -1,4 +1,4 @@
-"""Telegram (D42): the owner connects their bot, and Telegram posts its messages here.
+"""Telegram: the owner connects their bot, and Telegram posts its messages here.
 
 The webhook answers at once and the turn runs after, so Telegram never waits on the model.
 """
@@ -24,8 +24,8 @@ class TelegramIn(BaseModel):
 class TelegramOut(BaseModel):
     username: str
     link: str  # share it with customers: it opens a chat with the bot
-    # only for the owner: opening it sends them alerts there (D43); None for a moderator, whose
-    # own link is on /api/auth/me (D148, D151)
+    # only for the owner: opening it sends them alerts there; None for a moderator, whose
+    # own link is on /api/auth/me
     owner_link: str | None
     owner_linked: bool  # the owner has opened it
 

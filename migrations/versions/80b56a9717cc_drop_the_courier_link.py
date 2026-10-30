@@ -1,4 +1,4 @@
-"""drop the courier link (D95)
+"""drop the courier link
 
 Revision ID: 80b56a9717cc
 Revises: 1913f70c8949

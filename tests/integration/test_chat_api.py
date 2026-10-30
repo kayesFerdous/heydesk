@@ -19,12 +19,12 @@ async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -
     res = await client.get(f"/api/chat/{DEV_KEY}")
     assert res.status_code == 200
     info = res.json()
-    del info["widget"]  # the website chat's look: tests in test_agents_api.py (D82)
+    del info["widget"]  # the website chat's look: tests in test_agents_api.py
     assert info == {
         "name": "Spice Garden assistant",
         "greeting": "Hi, welcome to Spice Garden! Hungry? I can help with the menu or take your order.",
-        "photos": False,  # only a shop takes photos (D57)
-        "voice": False,  # only a receptionist or a clinic takes calls (D108)
+        "photos": False,  # only a shop takes photos
+        "voice": False,  # only a receptionist or a clinic takes calls
     }
 
 
@@ -110,4 +110,4 @@ async def test_a_read_back_sends_its_card_and_the_yes_buttons(
     card = dict(frames)["card"]
     assert card["kind"] == "summary"
     assert card["data"]["total"] == {"minor": 90000, "currency": "BDT", "text": "৳900"}
-    assert dict(frames)["choices"] == {"items": ["Yes", "Change"]}  # D99, D110
+    assert dict(frames)["choices"] == {"items": ["Yes", "Change"]}

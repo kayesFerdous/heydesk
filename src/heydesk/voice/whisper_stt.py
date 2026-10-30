@@ -1,4 +1,4 @@
-"""Speech-to-text with our Bangla–English Whisper on a Kaggle GPU (D87): one upload per utterance.
+"""Speech-to-text with our Bangla–English Whisper on a Kaggle GPU: one upload per utterance.
 
 `tts_server/kaggle_stt.ipynb` serves `kayees/whisper-medium-bn-en-cs-faster` at
 `WHISPER_STT_URL`. Like Chorus, it isn't a live stream: Pipecat's `SegmentedSTTService`

@@ -1,4 +1,4 @@
-"""Calls to confirm shop orders (D88, D89): off for now, since the shop takes no voice (D108).
+"""Calls to confirm shop orders: off for now, since the shop takes no voice.
 The code stays, so these tests turn the shop's voice back on (`shop_voice`) to keep it working:
 off until the shop turns them on; then each new
 order is queued and called in turn, inside the calling hours, on the buyer's `/phone` page; a
@@ -27,7 +27,7 @@ MOBILE = "01712345678"  # the one in DETAILS
 
 @pytest.fixture
 def shop_voice(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The shop takes voice again, as it did before D108, for the tests of the calls' code."""
+    """The shop takes voice again, as it once did, for the tests of the calls' code."""
     monkeypatch.setattr(ShopDesk, "takes_voice", True)
 
 
@@ -70,7 +70,7 @@ async def status_of(world: World, order_id: str) -> str:
 
 
 async def test_a_shop_order_queues_no_call_since_the_shop_takes_no_voice(world: World) -> None:
-    agent = await shop_with_calls(world.services)  # even with calls on (D108)
+    agent = await shop_with_calls(world.services)  # even with calls on
     placed = await order(world.services, agent)
     assert await world.services.calls.find(DEV_WORKSPACE_ID) == []
     with pytest.raises(Conflict, match="a shop takes no calls"):

@@ -1,6 +1,6 @@
-"""Rate limits (D52): how fast someone can send chat messages, log in or sign up.
+"""Rate limits: how fast someone can send chat messages, log in or sign up.
 
-The daily limits (D51) stop slow timepass; these stop bursts, such as a script sending many
+The daily limits stop slow timepass; these stop bursts, such as a script sending many
 messages a second or making a new visitor id for every message. Too many → a 429.
 The counts are kept in this server's memory.
 """
@@ -19,7 +19,7 @@ CHAT_PER_VISITOR = "6/minute"
 CHAT_PER_IP = "60/minute"  # generous: on mobile data many people share one address
 LOGIN = "10/15 minutes"  # per address and email: stops password guessing
 SIGNUP = "5/hour"  # per address: stops a script making businesses
-SEND_CODE = "3/hour"  # emails with a code (D93), per person: stops filling someone's inbox
+SEND_CODE = "3/hour"  # emails with a code, per person: stops filling someone's inbox
 SEND_CODE_PER_IP = "10/hour"  # and per address: stops spending our free 300 emails a day
 CHECK_CODE = "5/15 minutes"  # per person: a 6-digit code can't be guessed in 5 tries
 

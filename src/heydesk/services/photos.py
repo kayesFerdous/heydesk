@@ -1,15 +1,15 @@
-"""Photos (D57): a shop's product photos, and the ones visitors send to ask "do you have this?".
+"""Photos: a shop's product photos, and the ones visitors send to ask "do you have this?".
 
 Every photo is saved as a JPEG of at most 1024 px under the business's folder in the media
-store: this server's disk, or Cloudflare R2 (D101). A product photo is also embedded (Gemini)
+store: this server's disk, or Cloudflare R2. A product photo is also embedded (Gemini)
 into the photo index; a visitor's is embedded only to search it.
 
     <workspace_id>/products/<id>.jpg   a product's, in the index
     <workspace_id>/chat/<id>.jpg       a visitor's, kept for the owner's view
-    <workspace_id>/logo/<id>.jpg       the business's logo, for the website chat (D82)
+    <workspace_id>/logo/<id>.jpg       the business's logo, for the website chat
 
 A product photo can also come from a link in the shop's list: a CSV's or a sheet's `photos`
-column, or a WooCommerce product's images (D102). Its name is made from the link, so the same
+column, or a WooCommerce product's images. Its name is made from the link, so the same
 link is downloaded and indexed once, and is the same photo at every sync after.
 """
 
@@ -63,7 +63,7 @@ class PhotoService:
         return await self._add_product(ws, f"{ws}/products/{uuid.uuid4().hex}.jpg", data)
 
     async def take(self, ws: str, links: list[str]) -> dict[str, str]:
-        """Each link's product photo (D102): downloaded and indexed the first time, and only
+        """Each link's product photo: downloaded and indexed the first time, and only
         looked up after. A link that fails is left out, and tried again at the next sync."""
         lock = asyncio.Semaphore(FETCHING)
 
@@ -151,7 +151,7 @@ class PhotoService:
         return count
 
     async def read(self, url: str) -> bytes:
-        """A saved photo's JPEG, to upload where a URL can't be fetched (Telegram, D63).
+        """A saved photo's JPEG, to upload where a URL can't be fetched (Telegram).
         Raises MediaUnavailable when it can't be read."""
         return await self.media.get(self.key(url))
 

@@ -16,14 +16,14 @@ from heydesk.runtime.speech import money
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
 OWN = -1  # `Product.counter`: the product's own stock, not a variant's
-LONG_LIST = 60  # more products than this, and the prompt lists the groups, not each one (D80)
+LONG_LIST = 60  # more products than this, and the prompt lists the groups, not each one
 FOUND = 8  # the most products find_product returns
-CARDS = 10  # the most product cards in a row: Messenger's carousel holds 10 (D125)
+CARDS = 10  # the most product cards in a row: Messenger's carousel holds 10
 KEPT = ("photos", "videos", "goes_with")  # what an import leaves when its product has none
 
 
 class Variant(BaseModel):
-    """How many of one size and colour are left (D56). An empty size or colour means any of
+    """How many of one size and colour are left. An empty size or colour means any of
     them: `{"size": "L", "colour": "", "stock": 4}` counts L in every colour."""
 
     size: str = Field(default="", max_length=50)
@@ -48,15 +48,15 @@ class Product(BaseModel):
     sizes: list[str] = []  # "M", "L", "XL": the visitor picks one, when there are any
     colours: list[str] = []
     stock: int | None = Field(default=None, ge=0)  # None: not counted; 0: sold out
-    # Stock per size and colour (D56). When there are any, they hold the stock and `stock` is
+    # Stock per size and colour. When there are any, they hold the stock and `stock` is
     # None; a size and colour no variant matches isn't counted
     variants: list[Variant] = []
     # Up to 3 photo URLs, from `POST /api/products/photos`; the first is the one the agent shows.
-    # Read from a list (a CSV, a sheet, Woo) they're its links, until the store takes them (D102)
+    # Read from a list (a CSV, a sheet, Woo) they're its links, until the store takes them
     photos: list[str] = Field(default=[], max_length=3)
-    # Up to 3 video links (a YouTube or Facebook video, a how-to); its card links the first (D125)
+    # Up to 3 video links (a YouTube or Facebook video, a how-to); its card links the first
     videos: list[str] = Field(default=[], max_length=3)
-    # Up to 3 codes of products that go with it; update_cart offers them once (D125)
+    # Up to 3 codes of products that go with it; update_cart offers them once
     goes_with: list[str] = Field(default=[], max_length=3)
 
     @field_validator("videos")
@@ -94,7 +94,7 @@ class Product(BaseModel):
         """How many are left on that count."""
         return (self.stock or 0) if counter == OWN else self.variants[counter].stock
 
-    def what(self, counter: int) -> str:
+    def display_name(self, counter: int) -> str:
         """ "Cotton Panjabi", or with a variant "Cotton Panjabi (L/White)"."""
         return self.name if counter == OWN else f"{self.name} ({self.variants[counter].label()})"
 
@@ -110,7 +110,7 @@ class Product(BaseModel):
 
     def in_stock(self, what: str, size: str = "", colour: str = "") -> list[str]:
         """The sizes (or colours) that aren't sold out, with the colour (or size) already
-        chosen: the buttons a buyer taps (D99)."""
+        chosen: the buttons a buyer taps."""
 
         def left(s: str, c: str) -> bool:
             counter = self.counter(s, c)
@@ -162,13 +162,13 @@ class Product(BaseModel):
 
 class Zone(BaseModel):
     """Where the shop delivers, and what that costs: "Inside Dhaka", ৳60, "1–2 days". It covers
-    its `districts`; one with none covers everywhere else (D98, D100)."""
+    its `districts`; one with none covers everywhere else."""
 
     name: str = Field(min_length=1, max_length=100)
     charge: int = Field(ge=0)  # minor units
     days: str = Field(default="", max_length=50)  # how long it usually takes
     districts: list[str] = []  # of Bangladesh's 64, spelled as in `DISTRICTS`
-    # The buyer pays this area's charge online first, and that confirms the order (D92): BD
+    # The buyer pays this area's charge online first, and that confirms the order: BD
     # shops ask it outside Dhaka, where a refused parcel costs the most
     pay_first: bool = False
 
@@ -188,7 +188,7 @@ class Zone(BaseModel):
 
 
 def match_zone(zones: list[Zone], said_district: str) -> Zone:
-    """The delivery area for an address in `said_district` (D98): the one with that district,
+    """The delivery area for an address in `said_district`: the one with that district,
     else the one for everywhere else. Raises ValueError."""
     name = district(said_district)
     found = next((z for z in zones if name in z.districts), None)
@@ -213,7 +213,7 @@ def with_district(address: str, said_district: str) -> str:
 
 
 class CallSettings(BaseModel):
-    """The shop's calls to confirm new orders (D88, D89): off until the owner turns them on."""
+    """The shop's calls to confirm new orders: off until the owner turns them on."""
 
     enabled: bool = False
     wait_minutes: int = Field(default=1, ge=0, le=240)  # after the order, before the call
@@ -244,22 +244,22 @@ class ShopConfig(AgentConfig):
     )
     greeting: str = "Assalamu alaikum! Welcome to {business_name}. How can we help you?"
     # A cash-on-delivery order waits for the shop's call before it's sent (by hand, or
-    # `calls`); off: it's confirmed when placed (D92)
+    # `calls`); off: it's confirmed when placed
     call_to_confirm: bool = True
-    calls: CallSettings = CallSettings()  # calls to confirm new orders (D88, D89)
+    calls: CallSettings = CallSettings()  # calls to confirm new orders
     delivery: list[Zone] = Field(
         default_factory=list
     )  # where the shop delivers, and the charge for each
     free_delivery_over: int = Field(default=0, ge=0)  # minor units; 0: never free
     policies: str = Field(default="", max_length=4000)  # returns, exchanges
     size_guide: str = Field(default="", max_length=4000)  # each size's measurements, in words
-    # A delivered order's size or colour can be swapped within this many days (D55); 0: the
+    # A delivered order's size or colour can be swapped within this many days; 0: the
     # agent takes no exchange requests
     exchange_days: int = Field(default=0, ge=0, le=60)
 
     @property
     def pay_first(self) -> bool:
-        """Some area's charge is paid online first (D47, D92): `Store.pays_first` reads it."""
+        """Some area's charge is paid online first: `Store.pays_first` reads it."""
         return any(zone.pay_first for zone in self.delivery)
 
     @model_validator(mode="after")
@@ -284,7 +284,7 @@ class ShopConfig(AgentConfig):
 
 
 class BuyForm(BaseModel):
-    """A product page's *Buy now* form (D130): one product, and the buyer's details."""
+    """A product page's *Buy now* form: one product, and the buyer's details."""
 
     size: str = ""
     colour: str = ""
@@ -299,7 +299,7 @@ class BuyForm(BaseModel):
 
 
 class Coupon(BaseModel):
-    """A code the owner gives out (D133): a percent or an amount off the items, or free
+    """A code the owner gives out: a percent or an amount off the items, or free
     delivery; until `ends_at` and for `max_uses` orders, if set. Python works out the discount
     (rule 1)."""
 
@@ -342,7 +342,7 @@ class Coupon(BaseModel):
             return min(self.value, subtotal)
         return 0
 
-    def said(self, currency: str) -> str:
+    def describe(self, currency: str) -> str:
         """ "EID10: 10% off", "FLAT100: ৳100 off", "SHIPFREE: free delivery"."""
         if self.kind == "percent":
             return f"{self.code}: {self.value}% off"
@@ -352,7 +352,7 @@ class Coupon(BaseModel):
 
 
 class BuyerRecord(BaseModel):
-    """A mobile's orders with this shop (D132): shown on each order before it's sent, since
+    """A mobile's orders with this shop: shown on each order before it's sent, since
     a buyer who refused parcels before costs the shop two delivery charges again."""
 
     orders: int = 0
@@ -362,7 +362,7 @@ class BuyerRecord(BaseModel):
 
 
 class Buyer(BuyerRecord):
-    """One line of the buyers list: a mobile, and what it did with this shop (D132)."""
+    """One line of the buyers list: a mobile, and what it did with this shop."""
 
     phone: str
     name: str  # on their latest order
@@ -377,7 +377,7 @@ PHOTO_MATCHES = 3  # products named in a photo's line
 
 
 def photo_line(products: list[Product], matches: list[tuple[str, float]] | None) -> str:
-    """What the model reads about a visitor's photo (D57): the products whose photos are most
+    """What the model reads about a visitor's photo: the products whose photos are most
     like it, best first, each once. `matches` are (photo URL, score), best first; a URL on no
     product (one the owner removed) is skipped. None: the photo couldn't be searched."""
     if matches is None:
@@ -399,7 +399,7 @@ def groups_text(products: list[Product]) -> str:
 
 
 def find_products(products: list[Product], query: str) -> list[Product]:
-    """The products whose words match `query` best, at most `FOUND` (D80). A word in the name
+    """The products whose words match `query` best, at most `FOUND`. A word in the name
     or group counts twice, one in the sizes, colours or description once; a tie keeps the
     shop's order. Plain word matching: "lal" doesn't find Red."""
     words = {w for w in re.findall(r"\w+", query.lower()) if len(w) > 1}
@@ -432,7 +432,7 @@ def mobile(said: str) -> str:
 
 
 def post_products(products: list[Product], post: str) -> list[str]:
-    """The codes of the products a post names (D141, D142), in the order it names them. The
+    """The codes of the products a post names, in the order it names them. The
     longest names are looked for first, and each found name is taken out, so "Silk Panjabi"
     isn't also a "Panjabi"."""
     words, found = post.lower(), []
@@ -451,7 +451,7 @@ def post_products(products: list[Product], post: str) -> list[str]:
 
 
 def price_range(products: list[Product], currency: str) -> str:
-    """ "৳950" or "৳950–৳3,200": what a post's products cost, for its comments (D142)."""
+    """ "৳950" or "৳950–৳3,200": what a post's products cost, for its comments."""
     low, high = min(p.price for p in products), max(p.price for p in products)
     if low == high:
         return money(low, currency)
@@ -460,7 +460,7 @@ def price_range(products: list[Product], currency: str) -> str:
 
 def cart_text(cart: dict[str, Any], currency: str) -> str:
     """The cart `update_cart` keeps in the state: "2 × Cotton Panjabi (L, White), …, subtotal
-    ৳3,700", and its coupon: "coupon EID10 −৳370" or "coupon SHIPFREE: free delivery" (D133)."""
+    ৳3,700", and its coupon: "coupon EID10 −৳370" or "coupon SHIPFREE: free delivery"."""
     said = f"{lines_text(cart['lines'])}, subtotal {money(cart['subtotal'], currency)}"
     coupon = cart.get("coupon")
     if coupon and coupon["kind"] == "free_delivery":
@@ -489,7 +489,7 @@ STATUS_WORDS = {  # what track_order says about each status
     "returned": "returned to the shop",
     "cancelled": "cancelled",
 }
-# An order's steps on the tracking card (D110); unpaid, returned and cancelled are off them
+# An order's steps on the tracking card; unpaid, returned and cancelled are off them
 STEPS = [
     ("new", "Received"),
     ("confirmed", "Confirmed"),
@@ -501,9 +501,9 @@ CANCELLABLE = {"unpaid", "new", "on_hold", "confirmed", "packed"}  # not once th
 # The items, address, area, mobile or note can change until the courier has it. An unpaid
 # order isn't placed yet: cancel it and order again
 CHANGEABLE = {"new", "on_hold", "confirmed", "packed"}
-# Sold but still on the shelf: a count from a linked sheet includes them (D58)
+# Sold but still on the shelf: a count from a linked sheet includes them
 HOLDS = {"unpaid", "new", "on_hold", "confirmed", "packed"}
-ENDED = {"delivered", "returned", "cancelled"}  # these take money in and a reason (D131)
+ENDED = {"delivered", "returned", "cancelled"}  # these take money in and a reason
 
 
 @dataclass(frozen=True)
@@ -519,10 +519,10 @@ class NewOrder:
     name: str
     phone: str
     note: str = ""
-    # "unpaid" until its delivery charge is paid online (D47), "new" until the shop's call,
-    # "confirmed" when the shop doesn't call (D92)
+    # "unpaid" until its delivery charge is paid online, "new" until the shop's call,
+    # "confirmed" when the shop doesn't call
     status: str = "new"
-    coupon: str = ""  # its code (D133); counted as used when the order is saved
+    coupon: str = ""  # its code; counted as used when the order is saved
     discount: int = 0  # what the coupon took off the items
 
     @property
@@ -537,14 +537,14 @@ class OrderCancel:
 
 @dataclass(frozen=True)
 class OrderConfirm:
-    """The buyer said yes on the shop's confirmation call (D88)."""
+    """The buyer said yes on the shop's confirmation call."""
 
     number: int
 
 
 @dataclass(frozen=True)
 class OrderEdit:
-    """An order after a change the visitor said yes to (D55): its items (D92) or delivery
+    """An order after a change the visitor said yes to: its items or delivery
     details. Every field is the new value, or the old one where nothing changed. Money in
     minor units."""
 
@@ -643,8 +643,8 @@ PRODUCT_COLUMNS = [
 def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
     """Columns: name, price, and optionally was_price (before a sale), category, description,
     sizes ("M; L; XL"), colours, stock (a number, "M: 5; L White: 0" per size and colour, or
-    empty: not counted), code, photos (links, D102), videos (links) and goes_with (codes, D125).
-    `mapping` names them in the file (D53)."""
+    empty: not counted), code, photos (links), videos (links) and goes_with (codes).
+    `mapping` names them in the file."""
 
     def row(cells: dict[str, str]) -> Product:
         sizes = csv_import.items(cells.get("sizes", ""))
@@ -656,8 +656,8 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
                 "code": cells.get("code") or csv_import.slug(cells["name"]),
                 "name": cells["name"],
                 "description": cells.get("description", ""),
-                "price": csv_import.money(cells["price"]),
-                "was_price": csv_import.money(was) if was else None,
+                "price": csv_import.parse_money(cells["price"]),
+                "was_price": csv_import.parse_money(was) if was else None,
                 "category": cells.get("category") or "Products",
                 "sizes": sizes,
                 "colours": colours,
@@ -673,8 +673,7 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
 
 
 def links(text: str) -> list[str]:
-    """A photos (or videos) cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|"
-    (D102)."""
+    """A photos (or videos) cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|"."""
     found = [
         part for part in re.split(r"[\s,;|]+", text) if part.startswith(("http://", "https://"))
     ]
@@ -682,13 +681,13 @@ def links(text: str) -> list[str]:
 
 
 def grouped(rows: list[Product]) -> list[Product]:
-    """Rows with the same name and price are one product (D59): many shops keep one row per
+    """Rows with the same name and price are one product: many shops keep one row per
     size and colour ("T-Shirt, M, Black, 100" and "T-Shirt, L, White, 80"). Its sizes and
-    colours are all the rows', and each row's count is a variant (D56). The first row gives
+    colours are all the rows', and each row's count is a variant. The first row gives
     the code, description and category. A different price stays its own product.
 
     When every row has a count, a size and colour no row has is 0: the shop doesn't make it,
-    so it's never offered (on its own, unlisted would mean not counted, D56)."""
+    so it's never offered (on its own, unlisted would mean not counted)."""
     groups: dict[tuple[str, int], list[Product]] = {}
     for p in rows:
         groups.setdefault((p.name.strip().lower(), p.price), []).append(p)
@@ -726,7 +725,7 @@ def one_product(group: list[Product]) -> Product:
 
 def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | None, list[Variant]]:
     """A CSV stock cell: "" (not counted), "12" (the product's own stock), or a count per
-    size and colour, "M: 5; L: 0" or "L White: 2; L/Navy: 0" (D56). Raises ValueError."""
+    size and colour, "M: 5; L: 0" or "L White: 2; L/Navy: 0". Raises ValueError."""
     text = text.strip()
     if not text:
         return None, []
@@ -753,10 +752,10 @@ def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | N
     return None, variants
 
 
-# A linked Google Sheet (D58): the owner writes what's on the shelf
+# A linked Google Sheet: the owner writes what's on the shelf
 
 
-def counted(p: Product) -> list[Any]:
+def stock_snapshot(p: Product) -> list[Any]:
     """A product's count as the sheet says it, to see next time whether the owner changed it."""
     return [p.stock, [v.model_dump() for v in p.variants]]
 
@@ -781,11 +780,11 @@ def merge(
 ) -> list[Product]:
     """The sheet's products (`found`), with our count where the sheet's is the same as last
     time (`seen`), and a new count less what's `held` (the lines of orders not shipped yet).
-    Photos are the ones `found` has (the store took them already, D102)."""
+    Photos are the ones `found` has (the store took them already)."""
     kept = []
     for p in found:
         old = ours.get(p.code)
-        if old and seen.get(p.code) == counted(p):  # the owner didn't touch this count
+        if old and seen.get(p.code) == stock_snapshot(p):  # the owner didn't touch this count
             p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
         else:
             p = take_off(p, [line for line in held if line["code"] == p.code])
@@ -794,11 +793,11 @@ def merge(
 
 
 def added(ours: list[Product], found: list[Product], gone: set[str] | None = None) -> list[Product]:
-    """Our list with a source's products in it (D120): each found product updates the one it
+    """Our list with a source's products in it: each found product updates the one it
     is (the same code, or else the only one with the same name) in its place, or joins the
     end. Ours stay, except the `gone` codes: a linked list's products it doesn't have any more.
     A found product with no photos, videos or goes_with keeps the ones it has here (an owner
-    adds them by hand, D125)."""
+    adds them by hand)."""
     kept = [p for p in ours if p.code not in (gone or set())]
     free = set(range(len(kept)))  # ours no found product has updated yet
     for p in found:
@@ -815,7 +814,7 @@ def added(ours: list[Product], found: list[Product], gone: set[str] | None = Non
     return kept
 
 
-# A linked WooCommerce store (D75): its fields are the same in every store, so they're matched here
+# A linked WooCommerce store: its fields are the same in every store, so they're matched here
 
 SIZE, COLOUR = {"size"}, {"colour", "color"}  # attribute names, in any case
 UNSORTED = "Uncategorized"  # Woo's own default category: ours is "Products"
@@ -824,8 +823,8 @@ UNSORTED = "Uncategorized"  # Woo's own default category: ours is "Products"
 def products_from_woo(items: list[dict[str, Any]]) -> tuple[list[Product], dict[str, Any]]:
     """Woo's published products as ours, and each code's Woo ids for writing its order lines:
     `{code: {"id": 11, "variations": {"M|White": 15}}}`. A variable product's variations are
-    its variants (D56); variations that cost differently are one product per price, as rows
-    are grouped (D59). What can't be bought (no price, a grouped or external product) is left
+    its variants; variations that cost differently are one product per price, as rows
+    are grouped. What can't be bought (no price, a grouped or external product) is left
     out. Raises ValueError for a product that doesn't fit ours."""
     products: list[Product] = []
     ids: dict[str, Any] = {}
@@ -840,7 +839,7 @@ def products_from_woo(items: list[dict[str, Any]]) -> tuple[list[Product], dict[
             "category": woo_category(item),
             "sizes": woo_options(item["attributes"], SIZE),
             "colours": woo_options(item["attributes"], COLOUR),
-            "photos": [i["src"] for i in item.get("images") or [] if i.get("src")][:3],  # D102
+            "photos": [i["src"] for i in item.get("images") or [] if i.get("src")][:3],
         }
         if item["type"] == "simple":
             products.append(
@@ -867,7 +866,7 @@ def products_from_woo(items: list[dict[str, Any]]) -> tuple[list[Product], dict[
 def woo_variations(
     base: dict[str, Any], item: dict[str, Any]
 ) -> tuple[dict[int, dict[str, int]], dict[int, Product]]:
-    """A variable product's variations: a row each, grouped by price (D59). Returns, per
+    """A variable product's variations: a row each, grouped by price. Returns, per
     price, the variation ids by "size|colour" and the product."""
     rows: list[Product] = []
     found: dict[int, dict[str, int]] = {}
@@ -900,8 +899,8 @@ def woo_ids(ids: dict[str, Any], line: dict[str, Any]) -> tuple[int, int | None]
 
 
 def woo_prices(item: dict[str, Any]) -> dict[str, int | None]:
-    price = csv_import.money(item["price"])
-    regular = csv_import.money(item["regular_price"]) if item.get("regular_price") else 0
+    price = csv_import.parse_money(item["price"])
+    regular = csv_import.parse_money(item["regular_price"]) if item.get("regular_price") else 0
     return {"price": price, "was_price": regular if regular > price else None}
 
 

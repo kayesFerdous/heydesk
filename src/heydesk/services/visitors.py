@@ -1,16 +1,17 @@
-"""Limits on a public chat (D51), so visitors here for timepass can't spend a business's turns,
-and the team's say over one visitor (I2): Block them, or turn the AI off for them.
+"""Limits on a public chat, so visitors here for timepass can't spend a business's turns,
+and the team's say over one visitor: Block them, or turn the AI off for them.
 
 Before anything, `let_in` refuses a blocked visitor (telling them once) and says when the AI is
 off for them. A messaging app's every message goes through `arrived`, which blocks a flood.
 Before a turn, `admit` counts it, or refuses when the visitor is blocked, the business's plan
-has ended or used its replies (D106), the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
+has ended or used its replies, the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
 `after_turn` gives a strike when the model called `off_topic`; enough strikes in a row block the
 visitor for a while. Any real step (another tool) clears the strikes.
 """
 
 import logging
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,7 @@ from limits import parse
 from limits.aio.storage import MemoryStorage
 from limits.aio.strategies import SlidingWindowCounterRateLimiter
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
@@ -40,10 +42,10 @@ class VisitorService:
         self.sessions = sessions
         self.settings = settings
         self.now = now
-        self.flood = SlidingWindowCounterRateLimiter(MemoryStorage())  # in memory, like D52
+        self.flood = SlidingWindowCounterRateLimiter(MemoryStorage())  # in memory
 
-    async def let_in(self, agent: LiveAgent, key: str) -> bool:
-        """Raises when they're blocked (I2): `VisitorLimited` the first time, with how to reach
+    async def check_not_blocked(self, agent: LiveAgent, key: str) -> bool:
+        """Raises when they're blocked: `VisitorLimited` the first time, with how to reach
         the business, and `VisitorSilenced` after, so a messaging app tells them once. False
         when the team turned the AI off for them: their message goes to the team."""
         now = self.now()
@@ -59,18 +61,16 @@ class VisitorService:
             raise (VisitorSilenced if told else VisitorLimited)(limited_message(agent))
         return not ai_off
 
-    async def arrived(self, ws: str, key: str) -> None:
-        """One message from a messaging app (I2). `FLOOD_MESSAGES` in a minute block them for
-        `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit (D52)."""
+    async def count_message(self, ws: str, key: str) -> None:
+        """One message from a messaging app. `FLOOD_MESSAGES` in a minute block them for
+        `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit."""
         limit = parse(f"{self.settings.FLOOD_MESSAGES}/minute")
         if await self.flood.hit(limit, "flood", ws, key):
             return
+        await self._first_seen(ws, key, self.now().date())  # admit puts the business's day right
         async with self.sessions() as s, s.begin():
-            visitor = await self._find(s, ws, key)
-            if visitor is None:
-                today = self.now().date()  # admit puts the business's day right
-                visitor = Visitor(workspace_id=ws, key=key, day=today, turns=0)
-                s.add(visitor)
+            visitor = await self._find(s, ws, key, lock=True)
+            assert visitor is not None
             if not is_blocked(visitor, self.now()):
                 until = self.now() + timedelta(hours=self.settings.BLOCK_HOURS)
                 block(visitor, "flooding", until)
@@ -83,7 +83,7 @@ class VisitorService:
     async def change(
         self, ws: str, visitor_id: str, by: str, blocked: bool | None, ai_off: bool | None
     ) -> Visitor:
-        """The team blocks or unblocks a visitor, or turns the AI off or on for them (I2).
+        """The team blocks or unblocks a visitor, or turns the AI off or on for them.
         `by` is who did it (their email). A block by the team lasts until someone unblocks."""
         async with self.sessions() as s, s.begin():
             visitor = await s.scalar(
@@ -113,16 +113,15 @@ class VisitorService:
             )
             return [v for v in found if is_blocked(v, now)]
 
-    async def admit(self, agent: LiveAgent, key: str, *, count: bool = True) -> None:
+    async def count_turn(self, agent: LiveAgent, key: str, *, count: bool = True) -> None:
         """Counts one turn for the visitor, or raises `VisitorLimited`. With `count=False` it
         only checks: a voice call checks before it connects."""
         now = self.now()
         today = now.astimezone(ZoneInfo(agent.config.timezone)).date()
+        await self._first_seen(agent.workspace_id, key, today)
         async with self.sessions() as s, s.begin():
-            visitor = await self._find(s, agent.workspace_id, key)
-            if visitor is None:
-                visitor = Visitor(workspace_id=agent.workspace_id, key=key, day=today, turns=0)
-                s.add(visitor)
+            visitor = await self._find(s, agent.workspace_id, key, lock=True)  # counted once each
+            assert visitor is not None
             if visitor.day != today:  # a new day: yesterday's turns don't count
                 visitor.day, visitor.turns = today, 0
             reason = await self._limit(s, agent.workspace_id, visitor, today, now)
@@ -160,7 +159,7 @@ class VisitorService:
         """Why the visitor can't have a turn now, or None."""
         if is_blocked(visitor, now):
             return "blocked"
-        plan = await plan_problem(s, ws, now)  # ended, or its replies used up (D106)
+        plan = await plan_problem(s, ws, now)  # ended, or its replies used up
         if plan:
             return plan
         if visitor.turns >= self.settings.VISITOR_DAILY_TURNS:
@@ -174,8 +173,22 @@ class VisitorService:
             return "workspace_daily_turns"
         return None
 
-    async def _find(self, s: AsyncSession, ws: str, key: str) -> Visitor | None:
-        return await s.scalar(select(Visitor).where(Visitor.workspace_id == ws, Visitor.key == key))
+    async def _first_seen(self, ws: str, key: str, today: date) -> None:
+        """Makes the visitor's row, the first time they write. Two first messages at once:
+        the unique (workspace, key) refuses the second row, and both go on with the first."""
+        async with self.sessions() as s:
+            if await self._find(s, ws, key) is not None:
+                return
+        with suppress(IntegrityError):
+            async with self.sessions() as s, s.begin():
+                s.add(Visitor(workspace_id=ws, key=key, day=today, turns=0))
+
+    async def _find(
+        self, s: AsyncSession, ws: str, key: str, *, lock: bool = False
+    ) -> Visitor | None:
+        """`lock` before changing it: two turns at once would both count from the same number."""
+        query = select(Visitor).where(Visitor.workspace_id == ws, Visitor.key == key)
+        return await s.scalar(query.with_for_update() if lock else query)
 
 
 def key_of(channel: str, contact: str) -> str:

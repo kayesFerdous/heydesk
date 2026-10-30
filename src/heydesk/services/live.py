@@ -1,9 +1,9 @@
-"""Tells an open inbox that a chat changed, so it needn't be refreshed (D158).
+"""Tells an open inbox that a chat changed, so it needn't be refreshed.
 
 A page that has the inbox open holds one stream. When a committed change touches a
 conversation, the workspace's open pages get `{"conversation_id": ...}` and fetch that chat. With
 no page open, nothing happens: no query, no timer. The pages are kept in this process's
-memory, like the `/phone` pages (D88); more than one process needs Postgres LISTEN/NOTIFY
+memory, like the `/phone` pages; more than one process needs Postgres LISTEN/NOTIFY
 or Redis behind `publish`.
 """
 

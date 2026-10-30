@@ -1,4 +1,4 @@
-"""Steadfast and Pathao over a mocked HTTP layer (D90, D112): what each booking sends, and how their
+"""Steadfast and Pathao over a mocked HTTP layer: what each booking sends, and how their
 words map to the order's end."""
 
 import json

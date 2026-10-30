@@ -1,4 +1,4 @@
-"""A linked WooCommerce store, and the orders written there (D75)
+"""A linked WooCommerce store, and the orders written there
 
 Revision ID: 3db5c9967e5a
 Revises: 3c1f0a7d2b94

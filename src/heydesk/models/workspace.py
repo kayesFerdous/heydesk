@@ -8,8 +8,8 @@ from heydesk.db import Base, new_id, utcnow
 
 class Workspace(Base):
     """A business. A suspended one's chat says "unavailable"; its owner can still log in.
-    Why it was suspended is for admins only, never shown to the owner (D70). Its `plan` holds
-    until `paid_until` (D106, `services/billing.py`)."""
+    Why it was suspended is for admins only, never shown to the owner. Its `plan` holds
+    until `paid_until` (`services/billing.py`)."""
 
     __tablename__ = "workspaces"
     __table_args__ = (CheckConstraint("status IN ('active', 'suspended')", name="status"),)
@@ -20,5 +20,5 @@ class Workspace(Base):
     suspended_reason: Mapped[str] = mapped_column(String(300), default="")  # empty while active
     plan: Mapped[str] = mapped_column(String(10), default="trial")  # a key of billing.PLANS
     paid_until: Mapped[datetime]  # the trial's end, or the last paid day
-    months: Mapped[int] = mapped_column(default=1)  # the last paid cycle: 1 or 12 (D116)
+    months: Mapped[int] = mapped_column(default=1)  # the last paid cycle: 1 or 12
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

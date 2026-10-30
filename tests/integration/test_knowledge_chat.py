@@ -1,4 +1,4 @@
-"""A document an owner adds is found by the agent in a chat (D35), and only for that business."""
+"""A document an owner adds is found by the agent in a chat, and only for that business."""
 
 import re
 
@@ -86,7 +86,7 @@ async def test_a_missed_question_is_listed_taught_and_found_next_time(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """A hand-off for a question it didn't know is saved; two asked alike are one row with a
-    count; *Teach it* makes a knowledge entry that the search finds (D143)."""
+    count; *Teach it* makes a knowledge entry that the search finds."""
     llm = app.state.services.conversations.runtime.llm
     for asked in ("Do you cater weddings?", "do you cater a wedding"):
         llm.script = [

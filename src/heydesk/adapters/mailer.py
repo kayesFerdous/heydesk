@@ -1,4 +1,4 @@
-"""Email (D93): Brevo's API in production (free for 300 a day); without a key, the terminal.
+"""Email: Brevo's API in production (free for 300 a day); without a key, the terminal.
 
 Brevo sends from MAIL_FROM, an address verified in Brevo (Senders, domains). With your own
 domain, add Brevo's SPF and DKIM records too, or Gmail puts the codes in spam.

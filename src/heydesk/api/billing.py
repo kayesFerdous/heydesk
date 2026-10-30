@@ -1,11 +1,11 @@
-"""Paying HeyDesk for a plan (D106, D109). The owner's billing page reads `/api/billing` and
+"""Paying HeyDesk for a plan. The owner's billing page reads `/api/billing` and
 pays with `/api/billing/checkout`, which returns our SSLCommerz or bKash page. SSLCommerz sends
 the owner back to `/billing/<id>/back` and tells the server itself at NOTIFY_PATH; only the
 `val_id` it posts counts, checked with our store. bKash sends them back to `/billing/<id>/bkash`;
 only its `paymentID`, executed with our bKash account, counts. Both returns send the owner on
 to the billing page, `/billing?payment=paid|review|failed`, in the same tab. Owners only: a moderator gets a
 403 (`owners_only`). `/api/billing/quote` shows what a plan costs before paying: an upgrade
-is the difference for the days left, and a smaller plan waits until this one ends (D116).
+is the difference for the days left, and a smaller plan waits until this one ends.
 """
 
 from contextlib import suppress
@@ -120,7 +120,7 @@ async def checkout(body: CheckoutIn, ws: Workspace, services: Svc) -> CheckoutOu
 
 def to_billing_page(payment: SubscriptionPayment | None, services: Svc) -> RedirectResponse:
     """Back to the owner's billing page in the same tab, which says how it went: `paid`,
-    `review` (paid, not applied, D116) or `failed`. 303, so SSLCommerz's POST becomes a GET."""
+    `review` (paid, not applied) or `failed`. 303, so SSLCommerz's POST becomes a GET."""
     outcome = payment.status if payment and payment.status != "unpaid" else "failed"
     url = f"{services.billing.settings.public_url}/billing?payment={outcome}"
     return RedirectResponse(url, status_code=303)
@@ -145,7 +145,7 @@ async def bkash_back(
     bkash_id: Annotated[str, Query(alias="paymentID")] = "",
     outcome: Annotated[str, Query(alias="status")] = "",
 ) -> RedirectResponse:
-    """bKash sends the owner back here, paid, failed or cancelled (D109). Only a "success" is
+    """bKash sends the owner back here, paid, failed or cancelled. Only a "success" is
     worth asking bKash about, and only bKash's answer counts."""
     payment = None
     if bkash_id and outcome == "success":

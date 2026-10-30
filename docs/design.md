@@ -72,7 +72,7 @@ src/heydesk/
 │   ├── shop/            the same
 │   ├── receptionist/    __init__ only: no tools or tables of its own
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53, D115)
-├── models/              the shared tables; `taken.py` is what orders, appointments and messages share
+├── models/              the shared tables; `customer_request.py` is what orders, appointments and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
 │                        knowledge, photos (D57), sheets (D58), woo (D75), channels (Telegram,
 │                        Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43), payments (D47)
@@ -141,7 +141,7 @@ visitor message ─► start_turn: load the conversation (or start one), build t
                  ─► run_turn: model ⇄ tools, at most 6 model calls
                        text  ─► streamed to the visitor
                        tool  ─► validate ─► run with a timeout ─► result back to the model
-                 ─► append the turn's messages, save and log the trace
+                 ─► append the turn's messages (the row locked), save and log the trace
 ```
 
 `ConversationService.start_turn` is the one entry point for web and voice. The
@@ -223,7 +223,7 @@ merged into the conversation's `state`, saved with the turn.
 **A writing tool takes its details as arguments** (D41). Every one has the same three answers:
 
 1. **Something's missing or wrong**: `{"problems": {...}, "still_needed": [...], "next": "Ask for
-   the name…"}`. Each detail is checked by Python as it's taken (`Checks.take`); the model may call
+   the name…"}`. Each detail is checked by Python as it's taken (`ArgumentChecker.take`); the model may call
    as soon as it has a part, so a closed hour or a doctor's day off is caught early.
 2. **Everything's there, no yes yet**: `{"read_back": "...", "next": "Read this back and ask for a
    clear yes…"}` (`ask_for_yes`).
@@ -246,7 +246,7 @@ merged into the conversation's `state`, saved with the turn.
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends a card for each product it found, photo or not, as `show_photos` does, and names them in `shown` (D102, D125) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45). `goes_with`: the prompt lines of up to 2 products the cart's products name in their `goes_with`, not in the cart, not sold out and not offered before in this chat (`state["offered"]`), so each is offered once (D125) |
-| `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`Checks(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
+| `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`ArgumentChecker(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
 | `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or with nothing, this buyer's last order from the same chat or browser (D92, D114), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, and the `pay_link` while it's unpaid; while shipped, the courier's last words (`courier_says`, D112). A wrong code and a wrong number get the same answer |
 | `change_order` | shop | **yes** | Found like `track_order`, except the mobile alone: a change needs the code (or the order from this chat, or this buyer's last). Then any of new `items` (the whole list, checked and priced as `update_cart`'s, with the order's own items counted as on the shelf, D92), `address` (with its `district`, or it asks for it, D98), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). New items or a new district work out the delivery charge (free or not) and total again; not once its charge was paid online. The store swaps the stock in one transaction. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
@@ -462,11 +462,24 @@ Every table has `workspace_id` (except `workspaces`).
 | `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131), source (where it was placed: `chat`, `page` for *Buy now* or `team`, D144). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
 
-The **shared columns** (`models/taken.py`) are what the agent took for the business: conversation_id,
+The **shared columns** (`models/customer_request.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
 change the table's `FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
 (`Payable`, same file) are on what a visitor can be asked to pay for first (D47, D48): currency,
 paid (minor units, online), payment_ref (the gateway's id).
+
+**Writes at the same moment (D162).** Production runs on Postgres, where two transactions can read
+the same row before either writes. Three kinds of write lock a row first, with `SELECT … FOR UPDATE`;
+SQLite ignores it, as it writes one transaction at a time anyway:
+- **A business's numbers and stock:** `Store._lock` locks the business's `workspaces` row. Every
+  save that takes a number (`add`, an order) and every write to the stock (an order placed, changed
+  or cancelled, a coupon used, the list replaced, a sheet or Woo sync) takes it first, so two at
+  once take turns: each gets its own number, and the last one goes to one buyer.
+- **A conversation's transcript:** whatever adds to `messages` (a turn saved, a team reply, the
+  Page's own words, a payment's news) reads the row with `lock=True`, so neither drops the other's
+  line (rule 5).
+- **A visitor's row:** their first two messages at once both try to make it; the unique
+  (workspace, key) refuses the second, which goes on with the first's. Counting a turn locks it.
 
 Money is in minor units (paisa). Datetimes are stored in UTC; "today" is the
 business's timezone. JSON columns: assign a new value to change one, because
@@ -1042,13 +1055,27 @@ def added(ours, found, gone=None) -> list[Product]:     # values.py
 
 ### A product's page (D121)
 
-Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<code>?from=<app>`.
+Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<code>`, with
+`?from=messenger` or `?from=telegram` only where the page shows a button back to that app, and
+`c=<chat>` when a chat sent it (D160). The owner's products list has *Open its page* and *Copy
+its link* on each product, for the team to paste the link in a reply.
 `public_key` is already public (it's in the chat link); the code is the product's. The page
 (`desks/shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
 sale), the sizes and colours in stock (`Product.in_stock`), the description, and "To order, go
 back to the chat and say *Order [code]*". No JSON and no `/api` link; a policy header lets
 nothing but its photos load and no script run. An unknown key, a key that isn't a shop's, or
 an unknown code is the same 404 page.
+
+- **The look** (D159): a storefront, still with no script. Two columns on a wide screen (the
+  photos stay in view, the details scroll), one on a phone; the shop's initial and name in a bar
+  on top. Up to 3 photos with a thumbnail each: a radio button per photo, and CSS shows the
+  checked one. The price, the price before a sale struck through with *Save N%*, and a stock
+  line: *In stock*, *Only N left* (the product's own count at 5 or under; not with variants),
+  or *Sold out*. The sizes and colours in stock, the description (its line breaks kept), the
+  videos, *Buy now*, the chat's *Order [code]*, then each delivery area's charge and days and
+  *Cash on delivery*. In the form, the size and colour are chips to tap (radio buttons) in
+  place of lists. `og:` tags (name, description, the first photo's whole link from
+  `ChannelService.whole`) make a link pasted in an app show the product.
 
 - **Back to the chat:** on Messenger and Telegram a button opens `m.me/<page id>` or
   `t.me/<bot>` (`ChannelService.chat_link`, from `from`). The website chat opens the page in a
@@ -1586,7 +1613,7 @@ line (`pay_first_rule`).
 yes to the read-back ─► the tool saves it `unpaid` (a shop's items held), returns
     pay_link = PUBLIC_URL/pay/<id>; no alert yet
 visitor opens the link ─► both connected? a button for each; the visitor picks (?via=…)
-    ─► a new session with that gateway for `due` ─► its page
+    ─► a new session with that gateway for `amount_due` ─► its page
 SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
     /api/payments/sslcommerz/<id>)
     ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
@@ -1988,9 +2015,8 @@ version handles them.
 | Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the suggestion makes that quick); the owner splits the column in the sheet; CSV only for now (D53). Matching by what a column holds (a column of links is `photos`) waits until names miss (D115) |
-| Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive, a sync racing an order | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only. A sync that writes while an order takes stock could lose that order's take; the same-text check makes a write rare (D58) |
+| Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only (D58). A sync and an order at the same moment take turns (D162) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
 | Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89), and off while the shop takes no voice (D108) |
-| Two records saved in the same instant in one business | Its next number is the highest + 1, read inside the save's transaction; the database's unique (workspace, number) refuses the second, which saves nothing and becomes the tool's "something went wrong": the visitor asks again |
 | Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in the gateway's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |

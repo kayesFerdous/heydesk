@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Turn(Base):
-    """One agent turn's trace, kept so it can be added up (D71): how long it took, its
+    """One agent turn's trace, kept so it can be added up: how long it took, its
     tokens and cost, the tools that ran, what went wrong. Never what anyone said: that's in
     the conversation. Insert-only, like the transcript."""
 

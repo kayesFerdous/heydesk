@@ -56,7 +56,7 @@ from heydesk.voice.whisper_stt import WhisperSTT
 VOICE = "en_US-lessac-medium"  # Piper, free and local, when VOICE_LANGUAGE is `en`
 PAUSE_S = 0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
 BARGE_IN_S = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
-GOODBYE_S = 1.5  # after the last word of a settled shop call, it hangs up (D89)
+GOODBYE_S = 1.5  # after the last word of a settled shop call, it hangs up
 BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
 
 
@@ -73,8 +73,8 @@ class Agent(FrameProcessor):
         super().__init__()
         self.conversations = conversations
         self.agent = agent
-        self.visitor = visitor  # the caller's page token, for the limits (D51)
-        # One conversation per call: made by the first turn, or by the shop's call (D88)
+        self.visitor = visitor  # the caller's page token, for the limits
+        # One conversation per call: made by the first turn, or by the shop's call
         self.conversation_id = conversation_id
         self.turn: asyncio.Task[None] | None = None  # the running turn, in its own task
         self.interrupt: asyncio.Event | None = None  # that turn's stop flag
@@ -90,7 +90,7 @@ class Agent(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame):
-            await self.heard(frame.text)
+            await self.on_transcript(frame.text)
             return
         if isinstance(frame, BotStartedSpeakingFrame | BotStoppedSpeakingFrame):
             self.speaking = isinstance(frame, BotStartedSpeakingFrame)
@@ -108,7 +108,7 @@ class Agent(FrameProcessor):
             self.barge_in = None
         await self.push_frame(frame, direction)
 
-    async def heard(self, text: str) -> None:
+    async def on_transcript(self, text: str) -> None:
         if self.over_agent and text.lower().strip(" .,!?") in BACKCHANNEL:
             return  # "mm-hmm" while the agent talks: let it go on
         await self.stop()  # anything else is a new turn: the old one stops first
@@ -139,9 +139,9 @@ class Agent(FrameProcessor):
                 text,
                 "voice",
                 self.visitor,
-                self.visitor.removeprefix("web:"),  # the caller's browser, as in web chat (D114)
+                self.visitor.removeprefix("web:"),  # the caller's browser, as in web chat
             )
-        except HeyDeskError as error:  # over a limit (D51), or a full conversation: say why
+        except HeyDeskError as error:  # over a limit, or a full conversation: say why
             await self.push_frame(LLMFullResponseStartFrame())
             await self.push_frame(LLMTextFrame(error.message))
             await self.push_frame(LLMFullResponseEndFrame())
@@ -163,11 +163,11 @@ class Agent(FrameProcessor):
                 # There's no card on a call: a failure's polite line is said out loud
                 await self.push_frame(LLMTextFrame(f" {event.message}"))
             elif isinstance(event, TurnEnded) and event.state.get("calling", {}).get("over"):
-                self.over = True  # the goodbye is on its way (D89)
+                self.over = True  # the goodbye is on its way
         await self.push_frame(LLMFullResponseEndFrame())
 
 
-class Speakable(BaseTextFilter):
+class SpokenTextFilter(BaseTextFilter):
     """Each sentence in words just before it's spoken: "৳450" → "four hundred and fifty taka"."""
 
     def __init__(self, language: str) -> None:
@@ -203,11 +203,11 @@ async def run_call(
     answered: Answered | None = None,
 ) -> None:
     """A call the visitor made, or with `answered`, the shop's call they answered on
-    `/phone` (D88): that one starts with its own first line, not the greeting."""
+    `/phone`: that one starts with its own first line, not the greeting."""
     transport = SmallWebRTCTransport(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
-    language = settings.VOICE_LANGUAGE  # what every call hears and speaks (D86)
+    language = settings.VOICE_LANGUAGE  # what every call hears and speaks
     stt: FrameProcessor
     if settings.STT_PROVIDER == "deepgram":
         stt = DeepgramSTTService(
@@ -220,10 +220,11 @@ async def run_call(
         stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY, language)
     tts: FrameProcessor
     if language == "bn":
-        tts = BanglaTTS(settings.BANGLA_TTS_URL, text_filters=[Speakable(language)])
+        tts = BanglaTTS(settings.BANGLA_TTS_URL, text_filters=[SpokenTextFilter(language)])
     else:
         tts = PiperTTSService(
-            settings=PiperTTSService.Settings(voice=VOICE), text_filters=[Speakable(language)]
+            settings=PiperTTSService.Settings(voice=VOICE),
+            text_filters=[SpokenTextFilter(language)],
         )
     pipeline = Pipeline(
         [
@@ -246,10 +247,10 @@ async def run_call(
 
     @transport.event_handler("on_client_connected")
     async def on_connected(transport: SmallWebRTCTransport, client: object) -> None:
-        if answered:  # already stored in its conversation (D88)
+        if answered:  # already stored in its conversation
             await task.queue_frame(TTSSpeakFrame(answered.said))
         else:
-            await task.queue_frame(TTSSpeakFrame(agent.greeting))  # what the first turn stores (D8)
+            await task.queue_frame(TTSSpeakFrame(agent.greeting))  # what the first turn stores
 
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(transport: SmallWebRTCTransport, client: object) -> None:

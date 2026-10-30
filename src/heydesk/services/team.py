@@ -1,11 +1,10 @@
-"""The team on Telegram (D43): alerts for the owner, and the owner answering visitors.
+"""The team on Telegram: alerts for the owner, and the owner answering visitors.
 
 The owner links their own chat with the business's bot once, through `owner_link`; a moderator
-links theirs through `member_link`, and then a chat they have alerts them, not the owner (D148).
+links theirs through `member_link`, and then a chat they have alerts them, not the owner.
 Every alert ends with a `Ref:` line naming the conversation; whoever got it answers a visitor by
 replying to it, and the agent stays quiet in that chat until they reply `/done`. Their words
-reach a Telegram, Messenger or WhatsApp visitor from the business's bot, Page or number (D60,
-D103).
+reach a Telegram, Messenger or WhatsApp visitor from the business's bot, Page or number.
 """
 
 import hashlib
@@ -51,7 +50,7 @@ TAKEN_OVER = (
     "your last reply."
 )
 GIVEN_BACK = "The agent is answering this chat again."
-TELEGRAM_REPLY = "Telegram reply"  # a team event's action: a reply to an alert (D150)
+TELEGRAM_REPLY = "Telegram reply"  # a team event's action: a reply to an alert
 
 
 def owner_code(channel: Channel) -> str:
@@ -65,7 +64,7 @@ def owner_link(channel: Channel) -> str:
 
 
 def member_code(channel: Channel, user_id: str) -> str:
-    """For a moderator's link (D148): theirs alone, and connecting the bot again changes it."""
+    """For a moderator's link: theirs alone, and connecting the bot again changes it."""
     return hashlib.sha256(f"member:{channel.secret}:{user_id}".encode()).hexdigest()[:16]
 
 
@@ -106,7 +105,7 @@ class TeamService:
 
     async def alert(self, conv: Conversation, text: str) -> None:
         """Sends an alert about `conv` to the team member who has it, if they've linked their
-        chat (D148); otherwise to the owner, if they have."""
+        chat; otherwise to the owner, if they have."""
         channel = await self._channel(conv.workspace_id)
         if channel is None:
             return
@@ -124,7 +123,7 @@ class TeamService:
 
     async def notify(self, ws: str, text: str) -> None:
         """Tells the owner something about the business, not a chat (a sheet that can't be
-        read, D58), if they've linked their chat. No `Ref:`: there's no one to answer."""
+        read), if they've linked their chat. No `Ref:`: there's no one to answer."""
         channel = await self._channel(ws)
         if channel is not None and channel.owner_chat_id is not None:
             await self.send(channel, channel.owner_chat_id, text)
@@ -132,7 +131,7 @@ class TeamService:
     async def send(
         self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
-        """One message from the business's bot, Page or number, with buttons for `choices` (D99). A
+        """One message from the business's bot, Page or number, with buttons for `choices`. A
         failure is logged, never raised."""
         try:
             if channel.kind == MESSENGER:
@@ -158,7 +157,8 @@ class TeamService:
         sees it; sent on Telegram, Messenger or WhatsApp, with buttons for `choices` there.
         The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
-            conv = await s.get_one(Conversation, conversation_id)
+            # locked: a turn saving at the same moment would drop this line (rule 5)
+            conv = await s.get_one(Conversation, conversation_id, with_for_update=True)
             said = {**self.llm.assistant_message(text), "by": TEAM}
             conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
             conv.updated_at = self.now()
@@ -167,7 +167,7 @@ class TeamService:
     async def tell_in_window(
         self, conversation_id: str, text: str, choices: list[str] | None = None
     ) -> bool:
-        """`tell_visitor` for a message the visitor didn't ask for (D134): only inside the app's
+        """`tell_visitor` for a message the visitor didn't ask for: only inside the app's
         window, 24 hours since their last message on Messenger and WhatsApp (Meta refuses a
         message after it). Telegram and the web chat have none; a call can't take one. Says
         whether it was sent."""
@@ -196,7 +196,7 @@ class TeamService:
         await self.send(channel, chat_id, LINKED)
 
     async def link_member(self, channel: Channel, chat_id: str, payload: str) -> None:
-        """A moderator opened their link (D148): alerts about their chats come to this chat."""
+        """A moderator opened their link: alerts about their chats come to this chat."""
         user_id, code = payload[:32], payload[32:]
         async with self.sessions() as s, s.begin():
             user = await s.scalar(
@@ -210,7 +210,7 @@ class TeamService:
         await self.send(channel, chat_id, LINKED)
 
     async def is_team(self, channel: Channel, chat_id: str) -> bool:
-        """The owner's chat, or a moderator's linked one (D148)."""
+        """The owner's chat, or a moderator's linked one."""
         if chat_id == channel.owner_chat_id:
             return True
         async with self.sessions() as s:
@@ -218,10 +218,10 @@ class TeamService:
 
     async def team_wrote(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
         """Someone on the team replied to an alert: send their words to that visitor, or with
-        `/done` give the chat back to the agent; "." takes it over, or gives it back (D135).
+        `/done` give the chat back to the agent; "." takes it over, or gives it back.
         Their words go in the transcript as the agent's, and a reply is in the team's activity
-        under their name (D150)."""
-        owner = chat_id  # who answers: the owner, or a moderator (D148)
+        under their name."""
+        owner = chat_id  # who answers: the owner, or a moderator
         text = (message.get("text") or "").strip()
         quoted = (message.get("reply_to_message") or {}).get("text") or ""
         found = REF.search(quoted)
@@ -231,14 +231,16 @@ class TeamService:
         to_visitor = False
         async with self.sessions() as s, s.begin():
             conv = await s.scalar(
-                select(Conversation).where(
+                select(Conversation)
+                .where(
                     Conversation.id == found[1], Conversation.workspace_id == channel.workspace_id
                 )
+                .with_for_update()  # a turn saving at the same moment would drop this line
             )
             if conv is None:
                 await self.send(channel, owner, GONE)
                 return
-            if text == "/done" or (text == "." and conv.status == HUMAN):  # "." (D135)
+            if text == "/done" or (text == "." and conv.status == HUMAN):  # "."
                 conv.status, conv.taken_over_at, answer = "active", None, GIVEN_BACK
             elif text == ".":  # taken over, with nothing said to them
                 conv.status, conv.taken_over_at, answer = HUMAN, self.now(), TAKEN_OVER
@@ -249,7 +251,7 @@ class TeamService:
                 conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
                 answer = "" if conv.status == HUMAN else TAKEN_OVER
                 conv.status, to_visitor = HUMAN, True
-                conv.taken_over_at = self.now()  # quiet for 30 minutes, it's given back (D135)
+                conv.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
                 who = await s.scalar(
                     self._member(channel, chat_id)
                     if chat_id != channel.owner_chat_id
@@ -287,14 +289,14 @@ class TeamService:
             await self.send(channel, str(conv.contact), text, choices)
 
     async def link_of(self, ws: str, user_id: str) -> tuple[str | None, bool]:
-        """A team member's own alerts link and whether they've opened it (D148); no link without
+        """A team member's own alerts link and whether they've opened it; no link without
         a Telegram bot."""
         channel = await self._channel(ws)
         async with self.sessions() as s:
             user = await s.get_one(User, user_id)
         if channel is None:
             return None, False
-        if user.role == "owner":  # the owner's alerts are the bot's own link (D43)
+        if user.role == "owner":  # the owner's alerts are the bot's own link
             return owner_link(channel), channel.owner_chat_id is not None
         return member_link(channel, user_id), user.telegram_chat_id is not None
 

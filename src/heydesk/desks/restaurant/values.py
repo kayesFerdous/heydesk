@@ -64,7 +64,7 @@ class NewOrder:
     note: str = ""
     address: str = ""  # empty: pickup
     delivery_charge: int = 0
-    pay_first: bool = False  # saved as unpaid until the delivery charge is paid online (D48)
+    pay_first: bool = False  # saved as unpaid until the delivery charge is paid online
 
     @property
     def total(self) -> int:
@@ -73,7 +73,7 @@ class NewOrder:
 
 @dataclass(frozen=True)
 class OrderEdit:
-    """An order's new time, address or note, after a change the visitor said yes to (D65).
+    """An order's new time, address or note, after a change the visitor said yes to.
     Every field is the new value, or the old one where nothing changed. `pickup_at` is local."""
 
     number: int
@@ -96,7 +96,7 @@ STATUS_WORDS = {  # what track_order says about each status
     "delivered": "delivered",
     "cancelled": "cancelled",
 }
-# An order's steps on the tracking card (D110); unpaid and cancelled are off them
+# An order's steps on the tracking card; unpaid and cancelled are off them
 PICKUP_STEPS = [("new", "Received"), ("ready", "Ready"), ("collected", "Picked up")]
 DELIVERY_STEPS = [
     ("new", "Received"),
@@ -134,7 +134,7 @@ NEARBY = 6  # steps either side of the asked time: up to 3 hours
 OFFERED = 3  # other times offered when a slot is full
 
 
-def party(people: int, most: int) -> int:
+def check_party_size(people: int, most: int) -> int:
     if people > most:
         raise ValueError(
             f"We take tables for up to {most} people. For a bigger group, offer to take a "
@@ -230,14 +230,14 @@ MENU_COLUMNS = [
 
 def menu_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[MenuItem]:
     """Columns: name, price, and optionally category, description, tags ("spicy; popular"),
-    available (yes/no), code. `mapping` names them in the file (D53)."""
+    available (yes/no), code. `mapping` names them in the file."""
 
     def row(cells: dict[str, str]) -> MenuItem:
         return MenuItem(
             code=cells.get("code") or csv_import.slug(cells["name"]),
             name=cells["name"],
             description=cells.get("description", ""),
-            price=csv_import.money(cells["price"]),
+            price=csv_import.parse_money(cells["price"]),
             category=cells.get("category") or "Menu",
             tags=csv_import.items(cells.get("tags", "")),
             available=csv_import.available(cells.get("available", "")),
@@ -257,7 +257,7 @@ class RestaurantConfig(AgentConfig):
     delivers: bool = False  # off: pickup only
     delivery_charge: int = Field(default=0, ge=0)  # minor units, the same to any address
     # A delivery order's charge is paid online first (SSLCommerz or bKash); the order is placed
-    # only when the payment comes in, and the rest is cash on delivery (D48)
+    # only when the payment comes in, and the rest is cash on delivery
     pay_first: bool = False
     takes_bookings: bool = False  # off: no table bookings, and the agent doesn't offer them
     seats: int = Field(default=0, ge=0)  # people we can seat at once

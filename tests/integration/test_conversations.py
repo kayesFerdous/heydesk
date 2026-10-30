@@ -33,7 +33,7 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
         conv = await s.get(Conversation, conv_id)
     assert conv is not None and conv.workspace_id == DEV_WORKSPACE_ID
     assert [(m["role"], m["content"][:12]) for m in conv.messages] == [
-        ("assistant", "Hi, welcome "),  # the greeting the visitor saw (D8)
+        ("assistant", "Hi, welcome "),  # the greeting the visitor saw
         ("user", "What's good?"),
         ("assistant", "Biryani is o"),
         ("user", "Two of those"),
@@ -86,10 +86,10 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
     assert [t.name for t in request.tools] == [
         "update_order",
         "place_order",
-        "track_order",  # after the order (D65)
+        "track_order",  # after the order
         "change_order",
         "cancel_order",
-        "book_table",  # the seed takes bookings (D64)
+        "book_table",  # the seed takes bookings
         "cancel_booking",
         "take_message",
         "take_lead",
@@ -152,7 +152,7 @@ async def test_a_message_to_the_team_is_not_a_turn(world: World) -> None:
 
 async def test_a_chat_taken_over_and_left_quiet_is_the_agents_again(world: World) -> None:
     """The inbox's switch, or ".": the agent is quiet; 30 minutes after the team last wrote,
-    the next message is answered (D135)."""
+    the next message is answered."""
     agent = await world.agent()
     conv = await world.say(agent, None, ["Hello!"], "hi")
     await world.services.conversations.take_over(agent.workspace_id, conv, True)

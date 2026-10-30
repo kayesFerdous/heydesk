@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Note(Base):
-    """A team member's note on a chat (D136). Added, never edited (rule 5), and kept apart
+    """A team member's note on a chat. Added, never edited (rule 5), and kept apart
     from the transcript, so the visitor and the model never see it."""
 
     __tablename__ = "notes"

@@ -1,4 +1,4 @@
-"""Two roles (D23): an owner sees only their business; an admin runs the platform."""
+"""Two roles: an owner sees only their business; an admin runs the platform."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any

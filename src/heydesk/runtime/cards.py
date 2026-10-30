@@ -1,4 +1,4 @@
-"""Cards (D110): what a tool shows on a screen next to its words. The website chat draws them;
+"""Cards: what a tool shows on a screen next to its words. The website chat draws them;
 Messenger, Telegram and WhatsApp will send them their own way. Every value is Python's
 (rule 1): an amount comes in minor units with its display form, a time in UTC with its display
 form. A card is `{kind, data}`; there are four kinds:
@@ -71,9 +71,9 @@ def receipt(
     data: dict[str, Any] = {"title": title, "number": number, "status": status, "rows": rows}
     if total:
         data["total"] = total
-    if pay_url:  # saved unpaid: the button to pay (D47)
+    if pay_url:  # saved unpaid: the button to pay
         data["pay_url"] = pay_url
-    if order_url:  # the order's own page (D130)
+    if order_url:  # the order's own page
         data["order_url"] = order_url
     return {"kind": "receipt", "data": data}
 

@@ -1,4 +1,4 @@
-"""A shop's courier (D90, D112): the owner links Steadfast or Pathao once, and the agent books
+"""A shop's courier: the owner links Steadfast or Pathao once, and the agent books
 each confirmed order's parcel and follows it."""
 
 from typing import Literal

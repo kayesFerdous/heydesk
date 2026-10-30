@@ -158,7 +158,7 @@ async def test_the_inbox_lists_the_chats_the_team_is_answering(
     )
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
     async with app.state.sessions() as s, s.begin():
-        (await s.get(Conversation, conv_id)).status = "human"  # the owner took it over (D43)
+        (await s.get(Conversation, conv_id)).status = "human"  # the owner took it over
 
     [taken] = (await client.get("/api/conversations", params={"status": "human"})).json()
     assert taken["id"] == conv_id
@@ -168,7 +168,7 @@ async def test_a_complaint_hands_off_and_opens_one_ticket(
     world: World, app: FastAPI, client: AsyncClient
 ) -> None:
     """flag_complaint hands the chat to the team and opens a ticket, with an alert; a second
-    complaint in the same chat keeps the one ticket, which stays open until solved (D138)."""
+    complaint in the same chat keeps the one ticket, which stays open until solved."""
     agent = await world.agent()
     complaint = ToolCall("c1", "flag_complaint", {"reason": "parcel came damaged"})
     conv = await world.say(agent, None, [complaint, "I'm sorry. Someone will call you."], "!!!")
@@ -206,7 +206,7 @@ async def test_a_call_back_is_a_lead_at_the_time_python_read(
     world: World, app: FastAPI, client: AsyncClient
 ) -> None:
     """ "call me Friday 5pm" on Tue 29 Sep → a lead for Fri 2 Oct, 17:00 in Dhaka, saved only
-    at the yes; the team taps the outcome, and a lost one's why is counted (D139)."""
+    at the yes; the team taps the outcome, and a lost one's why is counted."""
     agent = await world.agent()
     conv = await world.say(agent, None, ["Hello!"], "hi")
     ctx = make_ctx(world.store(agent, conv), agent=agent.config)

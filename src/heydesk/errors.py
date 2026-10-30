@@ -31,19 +31,19 @@ class NotFound(HeyDeskError):
 
 
 class Unavailable(NotFound):
-    """A suspended business's chat: the link is there, the agent isn't answering (D23)."""
+    """A suspended business's chat: the link is there, the agent isn't answering."""
 
     code = "unavailable"
 
 
 class NoVoice(Forbidden):
-    """A call to an agent whose desk takes none: only the receptionist and the clinic do (D108)."""
+    """A call to an agent whose desk takes none: only the receptionist and the clinic do."""
 
     code = "no_voice"
 
 
 class EmailNotVerified(Forbidden):
-    """The right password, but the emailed code isn't typed yet (D94): the client asks for it."""
+    """The right password, but the emailed code isn't typed yet: the client asks for it."""
 
     code = "email_not_verified"
 
@@ -65,7 +65,7 @@ class InvalidTransition(Conflict):
 
 
 class UnreadableDocument(HeyDeskError):
-    """A file we can't get text from, or a document that breaks a limit (D34)."""
+    """A file we can't get text from, or a document that breaks a limit."""
 
     status_code = 422
     code = "unreadable_document"
@@ -80,14 +80,14 @@ class KnowledgeUnavailable(HeyDeskError):
 
 class UnreadablePhoto(HeyDeskError):
     """A file that isn't a picture we can read, one too big, or a photo sent to an agent that
-    takes none (D57)."""
+    takes none."""
 
     status_code = 422
     code = "unreadable_photo"
 
 
 class ConversationFull(HeyDeskError):
-    """A conversation reached MAX_TURNS: every turn sends the whole transcript (D21)."""
+    """A conversation reached MAX_TURNS: every turn sends the whole transcript."""
 
     status_code = 409
     code = "conversation_full"
@@ -95,19 +95,19 @@ class ConversationFull(HeyDeskError):
 
 class VisitorLimited(HeyDeskError):
     """A visitor (or the whole business) used up today's turns, or was blocked for chatting
-    off topic (D51). The message says how to reach the business instead."""
+    off topic. The message says how to reach the business instead."""
 
     status_code = 429
     code = "visitor_limited"
 
 
 class VisitorSilenced(VisitorLimited):
-    """A blocked visitor who was told already (I2): a messaging app sends nothing more. The web
+    """A blocked visitor who was told already: a messaging app sends nothing more. The web
     chat still gets the 429 with the message, as it shows the error itself."""
 
 
 class TooFast(HeyDeskError):
-    """Too many requests in a short time from one visitor, chat or address (D52)."""
+    """Too many requests in a short time from one visitor, chat or address."""
 
     status_code = 429
     code = "rate_limited"
@@ -165,7 +165,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 
 class AssistUnavailable(HeyDeskError):
-    """The model didn't answer the team's request about a chat (D137): try again."""
+    """The model didn't answer the team's request about a chat: try again."""
 
     status_code = 503
     code = "assist_unavailable"

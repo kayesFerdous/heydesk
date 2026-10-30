@@ -1,4 +1,4 @@
-"""A courier that delivers every parcel on its own (D112), for a shop with no courier linked,
+"""A courier that delivers every parcel on its own, for a shop with no courier linked,
 outside production: development and the demo.
 
 The parcel id carries the time it was booked, so a restarted server still knows how far a

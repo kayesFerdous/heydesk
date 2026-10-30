@@ -4,10 +4,10 @@ from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base
-from heydesk.models.taken import Taken
+from heydesk.models.customer_request import CustomerRequest
 
 
-class TeamMessage(Taken, Base):
+class TeamMessage(CustomerRequest, Base):
     """A message for the team or a call-back request: every desk can take one."""
 
     __tablename__ = "team_messages"

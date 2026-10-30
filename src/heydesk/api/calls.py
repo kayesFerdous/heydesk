@@ -1,4 +1,4 @@
-"""The owner's view of the calls that confirm shop orders, and the queue's buttons (D89)."""
+"""The owner's view of the calls that confirm shop orders, and the queue's buttons."""
 
 from datetime import datetime
 from typing import Literal

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from heydesk.desks.restaurant.tools import UPDATE_ORDER
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime import parse
-from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, run_tool
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, run_tool
 from tests.conftest import make_ctx
 
 CTX = make_ctx()
@@ -62,7 +62,7 @@ def test_the_schema_the_model_sees_has_nested_models_written_out() -> None:
 
 
 def test_checks_say_what_is_missing_and_wrong_and_what_to_ask_first() -> None:
-    check = Checks()
+    check = ArgumentChecker()
     assert check.take("name", "Kayes", parse.name) == "Kayes"
     assert check.take("pickup_time", "  ", parse.name) is None
     assert check.take("phone", "call me", parse.phone) is None

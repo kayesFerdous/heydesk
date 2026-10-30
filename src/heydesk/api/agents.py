@@ -34,7 +34,7 @@ class AgentOut(BaseModel):
     missing: list[str]  # what's still to fill in, in plain words; empty when set up
 
 
-def out(agent: AgentInfo) -> AgentOut:
+def agent_out(agent: AgentInfo) -> AgentOut:
     return AgentOut(
         kind=agent.kind,
         public_key=agent.public_key,
@@ -59,14 +59,14 @@ async def desks() -> list[DeskOut]:
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
 async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
-    # a new agent practises on its owner's test accounts until they go live (D143)
+    # a new agent practises on its owner's test accounts until they go live
     await services.agents.create(ws, body.kind, {"practice": True, **body.config})
-    return out(await services.agents.get(ws))
+    return agent_out(await services.agents.get(ws))
 
 
 @router.get("/api/agent")
 async def read(services: Svc, ws: Workspace) -> AgentOut:
-    return out(await services.agents.get(ws))
+    return agent_out(await services.agents.get(ws))
 
 
 class LogoOut(BaseModel):
@@ -82,7 +82,7 @@ async def add_logo(
     services: Svc,
     ws: Workspace,
 ) -> LogoOut:
-    """The business's logo for the website chat (D82): saved small and set on the widget."""
+    """The business's logo for the website chat: saved small and set on the widget."""
     widget = (await services.agents.get(ws)).config.widget  # 404 before anything is saved
     photo = await services.photos.save(ws, "logo", await file.read(), LOGO_SIDE)
     await services.agents.update(
@@ -95,4 +95,4 @@ async def add_logo(
 async def edit(patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
     """Top-level fields replace the config's: send the whole `hours`, not a part."""
     await services.agents.update(ws, patch)
-    return out(await services.agents.get(ws))
+    return agent_out(await services.agents.get(ws))

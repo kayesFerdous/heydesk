@@ -1,4 +1,4 @@
-"""Finding a chat (I3): search, Done until the buyer writes again, and Snooze until a time."""
+"""Finding a chat: search, Done until the buyer writes again, and Snooze until a time."""
 
 from datetime import timedelta
 from typing import Any

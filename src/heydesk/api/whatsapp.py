@@ -1,4 +1,4 @@
-"""WhatsApp (D103): the owner connects their number, and Meta posts its messages here.
+"""WhatsApp: the owner connects their number, and Meta posts its messages here.
 
 One webhook for every number, set once in our Meta app's dashboard; each message names its
 number's id. Signed and checked like Messenger's. It answers at once and the turns run after.
@@ -37,7 +37,7 @@ class WhatsAppSignupIn(BaseModel):
 
 class WhatsAppLoginOut(BaseModel):
     app_id: str
-    config_id: str  # the WhatsApp Embedded Signup configuration (D155)
+    config_id: str  # the WhatsApp Embedded Signup configuration
 
 
 class WhatsAppOut(BaseModel):
@@ -60,7 +60,7 @@ async def connect_whatsapp(body: WhatsAppIn, ws: Workspace, services: Svc) -> Wh
 
 @router.get("/api/agent/whatsapp/login")
 async def whatsapp_login(ws: Workspace, services: Svc) -> WhatsAppLoginOut:
-    """What the Connect with WhatsApp button needs (D155). 400 if the server has no app id."""
+    """What the Connect with WhatsApp button needs. 400 if the server has no app id."""
     return WhatsAppLoginOut(**services.channels.whatsapp_login())
 
 

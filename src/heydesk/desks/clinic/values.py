@@ -101,8 +101,8 @@ class NewAppointment:
     phone: str
     currency: str
     deposit: int = 0  # minor units
-    pay_first: bool = False  # saved as unpaid until the deposit is paid online (D48)
-    trx_id: str = ""  # the deposit sent by hand: its bKash or Nagad TrxID (D145)
+    pay_first: bool = False  # saved as unpaid until the deposit is paid online
+    trx_id: str = ""  # the deposit sent by hand: its bKash or Nagad TrxID
 
 
 def trx_id(said: str) -> str:
@@ -185,7 +185,7 @@ DOCTOR_COLUMNS = [
 def doctors_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Doctor]:
     """Columns: name, speciality, fee, days ("sat; sun; mon"), and either start and end
     ("17:00", "21:00") or hours ("17:00-21:00"); optionally languages, description,
-    available (yes/no), code. `mapping` names them in the file (D53)."""
+    available (yes/no), code. `mapping` names them in the file."""
 
     def row(cells: dict[str, str]) -> Doctor:
         start, end = cells.get("start", ""), cells.get("end", "")
@@ -196,7 +196,7 @@ def doctors_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[D
                 "code": cells.get("code") or csv_import.slug(cells["name"]),
                 "name": cells["name"],
                 "speciality": cells["speciality"],
-                "fee": csv_import.money(cells["fee"]),
+                "fee": csv_import.parse_money(cells["fee"]),
                 "days": csv_import.items(cells["days"]),
                 "start": start.strip(),
                 "end": end.strip(),
@@ -221,10 +221,10 @@ class ClinicConfig(AgentConfig):
     policies: str = ""  # insurance, what to bring, how fees are paid
     deposit: int = Field(default=0, ge=0)  # minor units, taken online with each request
     # The patient pays the deposit online first (SSLCommerz or bKash). The request reaches the
-    # clinic only when the payment comes in (D48)
+    # clinic only when the payment comes in
     pay_first: bool = False
     # Or the patient sends the deposit by hand to this bKash or Nagad number and types the
-    # TrxID; the clinic ticks it once it's found (D145). Online first wins when both are set
+    # TrxID; the clinic ticks it once it's found. Online first wins when both are set
     advance_number: str = ""
 
     @model_validator(mode="after")

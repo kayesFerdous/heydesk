@@ -1,4 +1,4 @@
-"""Text out of an uploaded file (D34): `.txt` and `.md` as they are, `.pdf` by its text layer."""
+"""Text out of an uploaded file: `.txt` and `.md` as they are, `.pdf` by its text layer."""
 
 import io
 from pathlib import PurePath

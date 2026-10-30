@@ -1,14 +1,14 @@
-"""Plans and paying for HeyDesk (D106). A business is on one plan until `paid_until`, and a
+"""Plans and paying for HeyDesk. A business is on one plan until `paid_until`, and a
 plan is a number of AI replies in any 30 days plus a number of moderators.
 
 A new business gets the free trial: `TRIAL_DAYS` and `PLANS["trial"]`'s replies. The owner
 pays for a plan on the billing page, through **our** SSLCommerz store (`BILLING_STORE_*`) or
-our bKash account (`BILLING_BKASH_*`, D109), not the business's own ones (D49). The same check
-as an order's payment (D47) applies: only the gateway's word counts, for this payment and this
+our bKash account (`BILLING_BKASH_*`), not the business's own ones. The same check
+as an order's payment applies: only the gateway's word counts, for this payment and this
 amount. A paid month adds 30 days, a paid year 365, from today or from when the plan would have
 ended, whichever is later. An admin can also set a plan by hand, for a payment made another way.
 
-Changing plans (D116). The plan is prepaid, so nothing renews by itself, and `quote` prices
+Changing plans. The plan is prepaid, so nothing renews by itself, and `quote` prices
 every purchase from where the business stands:
 - on the trial, or after the paid plan has ended: the plan's full price, starting now;
 - the same plan while it runs: its full price, added after the days left;
@@ -21,7 +21,7 @@ the owner was paying (another payment, an admin), the payment is kept as `review
 settles it by hand, rather than applying a price that no longer holds.
 
 A plan that has ended keeps answering for `GRACE_DAYS` (not a trial); then the agent stops,
-and visitors are told how to reach the business (`VisitorService`, D51).
+and visitors are told how to reach the business (`VisitorService`).
 """
 
 import logging
@@ -129,7 +129,7 @@ class Billing:
     payments: list[SubscriptionPayment]  # paid or held for review, newest first
 
 
-def ends(ws: Workspace) -> datetime:
+def plan_end_date(ws: Workspace) -> datetime:
     """When the agent stops: the paid date, plus the grace days for a paid plan."""
     return ws.paid_until + timedelta(days=0 if ws.plan == "trial" else GRACE_DAYS)
 
@@ -149,7 +149,7 @@ async def plan_problem(s: AsyncSession, workspace_id: str, now: datetime) -> str
     ws = await s.get(Workspace, workspace_id)
     if ws is None:
         return None
-    if now >= ends(ws):
+    if now >= plan_end_date(ws):
         return "plan_ended"
     if await replies_used(s, workspace_id, now) >= PLANS[ws.plan].replies:
         return "plan_replies"
@@ -207,7 +207,7 @@ class BillingService:
         return Billing(
             ws.plan,
             ws.paid_until,
-            now < ends(ws),
+            now < plan_end_date(ws),
             used,
             plan.replies,
             plan.moderators,
@@ -272,7 +272,7 @@ class BillingService:
         """Checks a payment a gateway sent word of (SSLCommerz's `val_id`, bKash's paymentID)
         and, if it paid this payment in full, moves the business onto the plan. Only the first
         word changes anything. Priced again now: a plan that changed meanwhile holds it for
-        review instead (D116)."""
+        review instead."""
         async with self.sessions() as s:
             payment = await s.get(SubscriptionPayment, payment_id)
         if payment is None:

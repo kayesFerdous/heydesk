@@ -83,7 +83,7 @@ async def test_a_new_owner_logs_in_only_after_typing_the_emailed_code(app: FastA
         assert (await anon.post("/api/auth/signup", json=NEW)).status_code == 204
         login = {"email": "second@example.com", "password": NEW["password"]}
 
-        # The right password, but no code yet: no token (D94)
+        # The right password, but no code yet: no token
         early = await anon.post("/api/auth/login", json=login)
         assert early.status_code == 403
         assert early.json()["error"]["code"] == "email_not_verified"

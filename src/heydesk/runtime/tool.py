@@ -30,7 +30,7 @@ class ToolContext[S]:
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     now: datetime  # when the turn started, in UTC
     heard: str  # the last read-back the visitor heard, before this turn: "" if none
-    # "web", "voice", "telegram", "messenger", "whatsapp": all but voice show photos (D57, D62, D63)
+    # "web", "voice", "telegram", "messenger", "whatsapp": all but voice show photos
     channel: str = "web"
 
     @property
@@ -45,13 +45,13 @@ class ToolResult:
     data: dict[str, Any]  # short JSON the model reads
     state: dict[str, Any] | None = None  # changes to the conversation state (the cart)
     handoff: bool = False  # the turn ends with the hand-off card; the conversation needs a person
-    alert: str | None = None  # for the owner, on Telegram (D43): what was just saved
+    alert: str | None = None  # for the owner, on Telegram: what was just saved
     reply: str | None = None  # said to the visitor as it is, and the turn ends: no more model calls
-    photos: list[dict[str, str]] | None = None  # shown to the visitor: {name, price, url} (D57)
+    photos: list[dict[str, str]] | None = None  # shown to the visitor: {name, price, url}
     # Buttons with the reply on Telegram and Messenger: what the visitor can tap, picked by
-    # Python (D99). A tap is only its words, a message like any other
+    # Python. A tap is only its words, a message like any other
     choices: list[str] | None = None
-    # A card on the visitor's screen, `{kind, data}`, built with `runtime/cards.py` (D110)
+    # A card on the visitor's screen, `{kind, data}`, built with `runtime/cards.py`
     card: dict[str, Any] | None = None
 
 
@@ -60,7 +60,7 @@ def fail(hint: str) -> ToolResult:
     return ToolResult(ok=False, data={"error": hint})
 
 
-class Checks:
+class ArgumentChecker:
     """Checks a tool's details one by one and remembers what's missing or wrong, so the model
     hears about all of it at once and knows what to ask next. A tool takes each detail with
     `take`, and if any came back None, returns `result()`. `together`: the model asks for

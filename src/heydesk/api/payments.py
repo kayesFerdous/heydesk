@@ -1,4 +1,4 @@
-"""Payments (D47-D49, D109). The owner connects the business's own SSLCommerz store at
+"""Payments. The owner connects the business's own SSLCommerz store at
 `/api/agent/sslcommerz` and its bKash account at `/api/agent/bkash`, one or both. The
 visitor's pages need no login: the order's or appointment's id is the key. `/pay/<id>` sends
 them to the gateway, or with both connected lets them pick one.
@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, Workspace
 from heydesk.errors import NotFound
-from heydesk.models.taken import UNPAID
+from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import Account, PaymentUnavailable, Provider
 from heydesk.runtime.speech import money
 from heydesk.services.payments import NOTIFY_PATH, Payable
@@ -138,10 +138,8 @@ def page(text: str, status_code: int = 200) -> HTMLResponse:
 
 
 def choose_page(record: Payable, providers: list[Provider]) -> HTMLResponse:
-    """One button for each gateway the business is connected to (D109)."""
-    what = (
-        f"{record.PAY_FOR[4:].capitalize()} for {record.code}: {money(record.due, record.currency)}"
-    )
+    """One button for each gateway the business is connected to."""
+    what = f"{record.PAY_FOR[4:].capitalize()} for {record.code}: {money(record.amount_due, record.currency)}"
     buttons = "".join(
         f'<a style="{BUTTON}{COLOURS[p]}" href="/pay/{record.id}?via={p}">{LABELS[p]}</a>'
         for p in providers

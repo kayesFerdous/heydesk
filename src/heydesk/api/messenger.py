@@ -1,4 +1,4 @@
-"""Facebook Messenger (D60): the owner connects their Page, and Facebook posts its messages here.
+"""Facebook Messenger: the owner connects their Page, and Facebook posts its messages here.
 
 One webhook for every Page, set once in our Meta app's dashboard; each post names its Page.
 It answers at once and the turns run after, so Facebook never waits on the model.
@@ -37,7 +37,7 @@ class FacebookPageIn(FacebookLoginIn):
 
 class FacebookLoginOut(BaseModel):
     app_id: str
-    config_id: str  # Facebook Login for Business's configuration: the permissions (D119)
+    config_id: str  # Facebook Login for Business's configuration: the permissions
 
 
 class FacebookPageOut(BaseModel):
@@ -68,7 +68,7 @@ async def connect_messenger(body: MessengerIn, ws: Workspace, services: Svc) -> 
 
 @router.get("/api/agent/messenger/login")
 async def facebook_login(ws: Workspace, services: Svc) -> FacebookLoginOut:
-    """What the Connect with Facebook button needs (D118). 400 if the server has no app id."""
+    """What the Connect with Facebook button needs. 400 if the server has no app id."""
     return FacebookLoginOut(**services.channels.facebook_login())
 
 
@@ -123,7 +123,7 @@ async def messenger_webhook(
             continue
         for event in entry.get("messaging", []):
             background.add_task(services.channels.answer_messenger, channel, event)
-        for change in entry.get("changes", []):  # the Page's feed: a new comment (D141)
+        for change in entry.get("changes", []):  # the Page's feed: a new comment
             value = change.get("value") or {}
             new = value.get("item") == "comment" and value.get("verb") == "add"
             if change.get("field") == "feed" and new:

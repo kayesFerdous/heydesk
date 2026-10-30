@@ -25,13 +25,13 @@ def upgrade() -> None:
     with op.batch_alter_table("visitors", schema=None) as batch_op:
         batch_op.add_column(sa.Column("blocked_why", sa.String(length=20), nullable=True))
         batch_op.add_column(sa.Column("blocked_by", sa.String(length=320), nullable=True))
-        no = sa.false()  # existing visitors: no notice sent yet, the agent answers (I2)
+        no = sa.false()  # existing visitors: no notice sent yet, the agent answers
         batch_op.add_column(
             sa.Column("told_blocked", sa.Boolean(), nullable=False, server_default=no)
         )
         batch_op.add_column(sa.Column("ai_off", sa.Boolean(), nullable=False, server_default=no))
 
-    # a block from before I2 was for chatting off topic (D51)
+    # a block from before this migration was for chatting off topic
     op.execute("UPDATE visitors SET blocked_why = 'off_topic' WHERE blocked_until IS NOT NULL")
     # ### end Alembic commands ###
 

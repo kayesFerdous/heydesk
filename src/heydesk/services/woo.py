@@ -1,12 +1,12 @@
-"""A shop's list kept in its WooCommerce store, and our orders written there (D75).
+"""A shop's list kept in its WooCommerce store, and our orders written there.
 
-The owner links the store with a Read/Write key, and we make webhooks in it with that key
-(D78): when a product or an order changes there, Woo posts to us and we sync. An order saved in
-a chat is written at once, in the background, so the website can't sell the same last piece
-(D77). Every 30 minutes a safety sync runs anyway and puts back a webhook Woo turned off; with
+The owner links the store with a Read/Write key, and we make webhooks in it with that key:
+when a product or an order changes there, Woo posts to us and we sync. An order saved in
+a chat is written at once, in the background, so the website can't sell the same last piece.
+Every 30 minutes a safety sync runs anyway and puts back a webhook Woo turned off; with
 no public address for webhooks, the store is synced every WOO_SYNC_MINUTES instead. A sync
 pushes, then pulls: each order whose status changed since it was last written is created or moved in Woo,
-so Woo's stock takes it off or puts it back; then Woo's products join the list (D120), with
+so Woo's stock takes it off or puts it back; then Woo's products join the list, with
 Woo's count less the orders not in Woo yet, and the ones deleted in Woo leave it. A problem keeps the old list, and the owner hears once.
 """
 
@@ -91,7 +91,7 @@ def woo_order(order: ShopOrder, ids: dict[str, Any]) -> dict[str, Any]:
         "shipping": buyer,
         "customer_note": order.note,
         "line_items": lines,
-        # A coupon's discount, as a negative fee: Woo's own coupons are its own codes (D133)
+        # A coupon's discount, as a negative fee: Woo's own coupons are its own codes
         "fee_lines": (
             [{"name": f"Coupon {order.coupon}", "total": f"-{amount(order.discount)}"}]
             if order.discount
@@ -174,7 +174,7 @@ class WooService:
                 key=store.key,
                 secret=store.secret,
                 ids=ids,
-                checked=digest(items),
+                checked=hash_items(items),
                 synced_at=shop.now(),
                 created_at=shop.now(),  # the orders placed from now on are written there
                 hooks=hooks,
@@ -214,10 +214,10 @@ class WooService:
         ids, checked = link.ids, link.checked
         try:
             items = await self.api.products(store)
-            if digest(items) != checked:  # the same as last time: nothing to do
+            if hash_items(items) != checked:  # the same as last time: nothing to do
                 found, ids = products_from_woo(items)
                 await shop.take_woo(found, set(link.ids) - set(ids))  # deleted in Woo
-                checked = digest(items)
+                checked = hash_items(items)
         except (WooUnreachable, ValueError) as error:  # the old list stays
             problem = problem or str(error)
         async with self.sessions() as s, s.begin():
@@ -278,7 +278,7 @@ class WooService:
     async def run(self, every: float) -> None:
         """Every `every` seconds, until cancelled (the app's lifespan starts it), syncs each
         store without webhooks, and each with them once every SAFETY_SECONDS, checking its
-        webhooks too: a store linked without them (before D78, or with no public address
+        webhooks too: a store linked without them (linked before webhooks were added, or with no public address
         then) gets them now. One store failing doesn't stop the others."""
         while True:
             await asyncio.sleep(every)
@@ -382,5 +382,5 @@ class WooService:
         return store
 
 
-def digest(items: list[dict[str, Any]]) -> str:
+def hash_items(items: list[dict[str, Any]]) -> str:
     return hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()

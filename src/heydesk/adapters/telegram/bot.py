@@ -1,4 +1,4 @@
-"""TelegramBot: Telegram's Bot API behind the `TelegramApi` port (D42), over httpx.
+"""TelegramBot: Telegram's Bot API behind the `TelegramApi` port, over httpx.
 
 The token is part of every URL, so httpx's own request log is off (`logs.py`) and an error
 never repeats the URL.
@@ -28,7 +28,7 @@ class TelegramBot:
         params = {
             "url": url,
             "secret_token": secret,
-            # a button's tap is a callback query (D99); not edits, reactions or group events
+            # a button's tap is a callback query; not edits, reactions or group events
             "allowed_updates": ["message", "callback_query"],
             # what was sent before it was connected isn't answered
             "drop_pending_updates": drop_pending,

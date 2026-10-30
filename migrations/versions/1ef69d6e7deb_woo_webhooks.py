@@ -1,4 +1,4 @@
-"""A linked WooCommerce store's webhooks and their signing secret (D78)
+"""A linked WooCommerce store's webhooks and their signing secret
 
 Revision ID: 1ef69d6e7deb
 Revises: 3db5c9967e5a

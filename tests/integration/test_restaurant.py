@@ -370,7 +370,7 @@ async def test_the_owner_sees_and_moves_bookings(app: FastAPI, client: AsyncClie
     assert confirmed.json()["status"] == "confirmed"
     skipped = await client.patch(f"/api/bookings/{booking['id']}", json={"status": "done"})
     assert skipped.status_code == 409
-    # The visitor hears it in their chat, as the team's message (D66)
+    # The visitor hears it in their chat, as the team's message
     team = await client.get(f"/api/chat/{DEV_KEY}/{conv_id}/team")
     assert team.json()["replies"] == ["✅ Your table for 4 is confirmed (T-101). See you then!"]
 
@@ -416,7 +416,7 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
     ]
 
     asked = await place_order(ctx, args)
-    assert asked.card == {  # D110: every number is Python's, as in the read-back
+    assert asked.card == {  # every number is Python's, as in the read-back
         "kind": "summary",
         "data": {
             "title": "Your order",
@@ -477,7 +477,7 @@ async def test_a_booking_shows_a_summary_then_a_receipt(world: World) -> None:
 
 
 async def test_orders_and_bookings_export_as_files(client: AsyncClient) -> None:
-    """The dev agent is a restaurant: its lists come as CSV files (G6)."""
+    """The dev agent is a restaurant: its lists come as CSV files."""
     for path, first in (("/api/orders.csv", "Order"), ("/api/bookings.csv", "Booking")):
         res = await client.get(path, params={"status": "new"})
         assert res.status_code == 200 and res.text.removeprefix("﻿").startswith(first)

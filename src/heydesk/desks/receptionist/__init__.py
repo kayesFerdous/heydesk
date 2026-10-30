@@ -34,7 +34,7 @@ class ReceptionistDesk(Desk):
     description = "Answers questions about the business and takes messages for the team."
     config_model = ReceptionistConfig
     tools: ClassVar[list[Tool]] = []  # only the shared ones
-    takes_voice = True  # a visitor can call it (D108)
+    takes_voice = True  # a visitor can call it
 
     async def prompt(self, config: ReceptionistConfig, store: Store) -> str:
         about = ["# The business"]
@@ -47,7 +47,7 @@ class ReceptionistDesk(Desk):
         if config.services.strip():
             about += ["Services:", config.services.strip()]
         sections = [ROLE, "\n".join(about)]
-        for last in await store.before(TeamMessage):  # back again (D114), if they left a name
+        for last in await store.before(TeamMessage):  # back again, if they left a name
             if last.name or last.phone:
                 facts = [f"Their last message {last.code}: name {last.name}; phone {last.phone}"]
                 sections.append(returning("Their last message", facts))

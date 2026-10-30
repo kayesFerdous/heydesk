@@ -1,4 +1,4 @@
-"""SSLCommerz behind the `PaymentGateway` port (D47, D49), over httpx.
+"""SSLCommerz behind the `PaymentGateway` port, over httpx.
 
 Each call uses the business's own store. Starting a payment makes a session and returns its
 page. When the buyer is done, SSLCommerz posts a `val_id` to the back and notify URLs;

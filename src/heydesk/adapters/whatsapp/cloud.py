@@ -1,4 +1,4 @@
-"""WhatsAppCloud: Meta's WhatsApp Cloud API behind the `WhatsAppApi` port (D103), over httpx.
+"""WhatsAppCloud: Meta's WhatsApp Cloud API behind the `WhatsAppApi` port, over httpx.
 
 The token goes in the Authorization header, and an error never repeats it.
 """
@@ -68,15 +68,15 @@ class WhatsAppCloud:
         ids = []
         for c in cards:
             caption = f"{c['name']} · {c['price']}"
-            if c.get("page"):  # a product's page (D121): WhatsApp opens a link in a message
+            if c.get("page"):  # a product's page: WhatsApp opens a link in a message
                 caption += f"\nDetails: {c['page']}"
-            if c.get("video"):  # its first video (D125)
+            if c.get("video"):  # its first video
                 caption += f"\nVideo: {c['video']}"
             if not c.get("choice"):
                 image = {"link": c["url"], "caption": caption}
                 ids.append(await self._send(token, phone_id, to, type="image", image=image))
                 continue
-            # its tap is a button reply with the choice as its id (D99)
+            # its tap is a button reply with the choice as its id
             button = {"type": "reply", "reply": {"id": c["choice"], "title": "Order this"}}
             interactive = {
                 "type": "button",

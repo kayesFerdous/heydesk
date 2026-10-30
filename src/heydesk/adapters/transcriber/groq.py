@@ -1,4 +1,4 @@
-"""Voice notes in words with Groq's Whisper (D147). It reads Telegram's and WhatsApp's ogg and
+"""Voice notes in words with Groq's Whisper. It reads Telegram's and WhatsApp's ogg and
 Messenger's mp4 as they come, and finds the language itself: Bangla, English or both."""
 
 from groq import AsyncGroq, GroqError

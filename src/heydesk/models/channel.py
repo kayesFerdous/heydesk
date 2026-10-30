@@ -7,12 +7,12 @@ from heydesk.db import Base, Encrypted, new_id, utcnow
 
 
 class Channel(Base):
-    """A business's agent on a messaging app: its Telegram bot (D42), Facebook Page (D60) or
-    WhatsApp number (D103).
+    """A business's agent on a messaging app: its Telegram bot, Facebook Page or
+    WhatsApp number.
     One per app.
 
     `token` lets anyone run the bot, so it never leaves the server: no route returns it,
-    and it's encrypted in the database (D74).
+    and it's encrypted in the database.
     """
 
     __tablename__ = "channels"
@@ -28,6 +28,6 @@ class Channel(Base):
     address: Mapped[str] = mapped_column(
         String(100)
     )  # the bot's username; the Page's id; the number's id
-    # the owner's own chat with the bot, for alerts and answering visitors (D43)
+    # the owner's own chat with the bot, for alerts and answering visitors
     owner_chat_id: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

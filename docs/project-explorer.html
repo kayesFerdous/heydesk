@@ -517,7 +517,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Product page",
    "type": "api",
    "file": "src/heydesk/desks/shop/page.py",
-   "purpose": "`/p/<public_key>/<code>`: a product's public HTML page (photos, price, sizes and colours in stock), linked from every product card; one 404 for anything else (D121). Its *Buy now* form posts back: a check page read back as the chat does, then *Place order* is the yes (`confirm`), the receipt goes to the chat in `c`; `/o/<id>` is the order's page (D130).",
+   "purpose": "`/p/<public_key>/<code>`: a product's public HTML page (photos, price, sizes and colours in stock), linked from every product card; one 404 for anything else (D121). Its *Buy now* form posts back: a check page read back as the chat does, then *Place order* is the yes (`confirm`), the receipt goes to the chat in `c`; `/o/<id>` is the order's page (D130). A storefront layout with no script: a photo gallery and size/colour chips as radio buttons, the saving, how many are left, delivery lines, and `og:` tags so a pasted link previews (D159). The link is `/p/<key>/<code>`; `from` only for Messenger and Telegram, `c` only from a chat (D160).",
    "inputs": "public_key, code, from, c, BuyForm",
    "outputs": "HTML, 303 to /o/<id>",
    "fn": "product_page, check_page, order_page"
@@ -570,7 +570,7 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Daily turn limits (visitor 30, business 500), off-topic strikes (5 → blocked 24 h), the team's Block and AI off, and a flood on a messaging app (20 a minute → blocked 24 h) (D127).",
    "inputs": "agent, visitor key, tools used",
    "outputs": "VisitorLimited (once), VisitorSilenced, AI off, or OK",
-   "fn": "admit"
+   "fn": "count_turn"
   },
   {
    "id": "s-ratelimits",
@@ -727,7 +727,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Tool contract",
    "type": "core",
    "file": "src/heydesk/runtime/tool.py",
-   "purpose": "Tool, ToolContext, ToolResult, Checks; run_tool validates args, applies a timeout and never raises.",
+   "purpose": "Tool, ToolContext, ToolResult, ArgumentChecker; run_tool validates args, applies a timeout and never raises.",
    "inputs": "ToolCall, ToolContext",
    "outputs": "ToolResult",
    "fn": "run_tool"
@@ -1613,7 +1613,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "a-voice",
    "target": "s-visitors",
-   "label": "admit(count=False)"
+   "label": "count_turn(count=False)"
   },
   {
    "source": "a-voice",
@@ -1893,7 +1893,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-conversations",
    "target": "s-visitors",
-   "label": "admit / after_turn"
+   "label": "count_turn / after_turn"
   },
   {
    "source": "s-conversations",
@@ -5215,7 +5215,7 @@ tr.hl td { background: var(--accent-soft); }
      "vars": [
       [
        "notes",
-       "Store.remembered(): the visitors row's notes, {about: note}; never filled or formatted"
+       "Store.visitor_notes(): the visitors row's notes, {about: note}; never filled or formatted"
       ]
      ]
     },
@@ -5670,10 +5670,10 @@ tr.hl td { background: var(--accent-soft); }
    "fragments": [
     {
      "id": "missing",
-     "title": "Checks.result()",
+     "title": "ArgumentChecker.result()",
      "owner": "python",
      "file": "src/heydesk/runtime/tool.py",
-     "fn": "Checks.result",
+     "fn": "ArgumentChecker.result",
      "text": "{\"problems\": {\"time\": \"That time has passed…\"}, \"still_needed\": [\"name\", \"phone\"], \"next\": \"Ask for the time, one question at a time.\"}\n\nIn a shop chat (together=True): \"next\": \"Ask for all of these in one message: …\"",
      "when": {
       "outcome": "details missing"
@@ -5804,12 +5804,12 @@ tr.hl td { background: var(--accent-soft); }
      "fn": "_to_team"
     },
     {
-     "id": "admit",
+     "id": "count_turn",
      "label": "Blocked? ≥30 today? business ≥500?",
      "shape": "decision",
-     "code": "if is_blocked(visitor, now): 'blocked'  # let_in already refused them (D127)\nif visitor.turns >= VISITOR_DAILY_TURNS: ...\nif business_turns >= WORKSPACE_DAILY_TURNS: ...",
+     "code": "if is_blocked(visitor, now): 'blocked'  # check_not_blocked already refused them (D127)\nif visitor.turns >= VISITOR_DAILY_TURNS: ...\nif business_turns >= WORKSPACE_DAILY_TURNS: ...",
      "file": "src/heydesk/services/visitors.py",
-     "fn": "admit"
+     "fn": "count_turn"
     },
     {
      "id": "limited",
@@ -5896,26 +5896,26 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "human",
-     "admit",
+     "count_turn",
      "no"
     ],
     [
      "cid",
-     "admit",
+     "count_turn",
      "no"
     ],
     [
-     "admit",
+     "count_turn",
      "limited",
      "yes"
     ],
     [
-     "admit",
+     "count_turn",
      "new",
      "ok, new chat"
     ],
     [
-     "admit",
+     "count_turn",
      "near",
      "ok, existing"
     ],
@@ -6102,11 +6102,11 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "check",
-     "label": "Checks.take each detail",
+     "label": "ArgumentChecker.take each detail",
      "shape": "step",
      "code": "at = check.take('time', args.time, lambda said: parse.time_today(said, now, config.hours))\nname = check.take('name', args.name, parse.name)",
      "file": "src/heydesk/runtime/tool.py",
-     "fn": "Checks.take"
+     "fn": "ArgumentChecker.take"
     },
     {
      "id": "miss",
@@ -6118,7 +6118,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "ask",
      "label": "{problems, still_needed, next}",
      "shape": "fail",
-     "fn": "Checks.result"
+     "fn": "ArgumentChecker.result"
     },
     {
      "id": "conf",
@@ -7326,7 +7326,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "s-visitors",
      "data": "count one turn or refuse (429)",
      "file": "src/heydesk/services/visitors.py",
-     "fn": "admit"
+     "fn": "count_turn"
     },
     {
      "from": "s-conversations",
@@ -7742,7 +7742,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-voice",
      "to": "s-visitors",
-     "data": "admit(count=False): limited? → 429 before connecting",
+     "data": "count_turn(count=False): limited? → 429 before connecting",
      "file": "src/heydesk/api/voice.py",
      "fn": "offer"
     },
@@ -8458,7 +8458,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/models/conversation.py",
    "where": "`conversations.messages` (JSON, provider-native messages)",
    "written": "`_save`, `tell_visitor`, `team_wrote`, `CallService.answer`",
-   "sync": "Only appended (rule 5). Re-read inside a transaction, then `[*old, *new]`. The whole transcript is resent to the model each turn.",
+   "sync": "Only appended (rule 5). Re-read inside a transaction with the row locked (`_get_by_id(lock=True)`, D162), then `[*old, *new]`. The whole transcript is resent to the model each turn.",
    "failure": "A tab closed mid-reply loses that turn (D3). A new list is assigned so SQLAlchemy sees it.",
    "timeline": "turn"
   },
@@ -8490,18 +8490,18 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "what": "Orders, bookings, appointments, messages",
-   "file": "src/heydesk/models/taken.py",
+   "file": "src/heydesk/models/customer_request.py",
    "where": "desk tables + `team_messages`",
    "written": "store methods taking `Confirmed[T]`; owner PATCH routes",
    "sync": "Status moves only along the table's FLOW.",
-   "failure": "InvalidTransition 409; number collision possible under concurrency (Findings).",
+   "failure": "InvalidTransition 409. The next number is taken under `Store._lock`, so two saves at once each get their own (D162).",
    "timeline": "commit"
   },
   {
    "what": "Stock",
    "file": "src/heydesk/desks/shop/store.py",
    "where": "`products.stock` / `variants[].stock`",
-   "written": "`_stock` in the same transaction as the order",
+   "written": "`_stock` in the same transaction as the order, under `Store._lock` (D162)",
    "sync": "Sheet/Woo counts merged minus held orders.",
    "failure": "OutOfStock → nothing saved.",
    "timeline": "woo"
@@ -8519,8 +8519,8 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Visitor limits",
    "file": "src/heydesk/models/visitor.py",
    "where": "`visitors` (turns, day, strikes, blocked_until; notes: what the agent remembers, D124)",
-   "written": "`admit`, `after_turn`",
-   "sync": "Per business-local day.",
+   "written": "`count_turn`, `after_turn`",
+   "sync": "Per business-local day. The first row is made once (`_first_seen`); counting a turn locks it (D162).",
    "failure": "Refused before any model call."
   },
   {
@@ -8660,7 +8660,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "f": "CS",
      "t": "DB",
-     "m": "admit visitor (transaction)"
+     "m": "count_turn visitor (transaction)"
     },
     {
      "note": "no DB transaction held from here",
@@ -10103,21 +10103,25 @@ tr.hl td { background: var(--accent-soft); }
  "items": [
   {
    "sev": "low",
-   "title": "Two records saved in the same instant collide on their number",
-   "files": [
-    "src/heydesk/models/taken.py",
-    "docs/design.md"
-   ],
-   "detail": "`next_number` is the highest + 1; the unique (workspace_id, number) refuses the second save, which saves nothing and becomes the tool's 'something went wrong'. Kept as is on purpose: design.md §12 (D105)."
-  },
-  {
-   "sev": "low",
    "title": "Two turns at once on one conversation",
    "files": [
     "src/heydesk/services/conversations.py",
     "docs/design.md"
    ],
    "detail": "Both save (the transcript is re-read before appending), but the second turn's model didn't see the first's messages. Left out on purpose: design.md §12 'One reply at a time per conversation'."
+  },
+  {
+   "sev": "low",
+   "title": "Fixed on 29 Oct (D162)",
+   "files": [
+    "src/heydesk/desks/base.py",
+    "src/heydesk/desks/shop/store.py",
+    "src/heydesk/services/conversations.py",
+    "src/heydesk/services/team.py",
+    "src/heydesk/services/visitors.py",
+    "tests/integration/test_races.py"
+   ],
+   "detail": "Races seen on Postgres: the last one sold to several buyers at once, a coupon past its uses, two records at once colliding on their number, an order cancelled twice going back in stock twice, team replies at once dropping lines, and a new visitor's second message failing. Now `Store._lock` locks the business's row for numbers and stock, transcript writes lock the conversation, and a visitor's first row is made once."
   },
   {
    "sev": "low",

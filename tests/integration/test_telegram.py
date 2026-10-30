@@ -1,4 +1,4 @@
-"""Telegram (D42): an owner connects their bot, and visitors talk to the agent there."""
+"""Telegram: an owner connects their bot, and visitors talk to the agent there."""
 
 from typing import Any
 
@@ -68,7 +68,7 @@ async def test_the_token_is_encrypted_in_the_database(app: FastAPI, client: Asyn
     async with app.state.sessions() as s:
         stored = await s.scalar(text("SELECT token FROM channels"))
         channel = await s.scalar(select(Channel))
-    assert stored and TOKEN not in stored  # a copy of the database can't run the bot (D74)
+    assert stored and TOKEN not in stored  # a copy of the database can't run the bot
     assert channel is not None and channel.token == TOKEN  # the code reads it as it was given
 
     assert await send(client, path, secret, message("hi")) == 200
@@ -113,16 +113,16 @@ async def test_start_sends_the_greeting_and_starts_afresh(
     await send(client, path, secret, message("hello"))
 
     assert sent(app)[1][1].startswith("Hi, welcome to Spice Garden!")
-    [conv] = await telegram_conversations(app)  # the same chat, started afresh (D157)
+    [conv] = await telegram_conversations(app)  # the same chat, started afresh
     remembered = conv.messages[conv.history_from :]
-    assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first (D8)
+    assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first
     assert [m["content"] for m in remembered if m["role"] == "user"] == ["hello"]
 
 
 async def test_a_quiet_chat_starts_afresh_in_the_same_chat(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """The team keeps one chat per contact, with its labels; the agent forgets (D157)."""
+    """The team keeps one chat per contact, with its labels; the agent forgets."""
     path, secret = await connect(app, client)
     await send(client, path, secret, message("two biryanis"))
     [conv] = await telegram_conversations(app)
@@ -211,7 +211,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     said = llm.requests[0].messages[-1]["content"]
     assert said == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
     assert fake.photos == [(str(CHAT), "Cotton Kurti · ৳950")]
-    assert fake.choices == [(str(CHAT), ["Order [kurti]"])]  # its button (D99)
+    assert fake.choices == [(str(CHAT), ["Order [kurti]"])]  # its button
     [(to, page)] = fake.pages
     assert to == str(CHAT) and page.startswith(
         "https://heydesk.test/p/dev-shop/kurti?from=telegram&c="
@@ -220,7 +220,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
 
 
 def tap(data: str) -> dict[str, Any]:
-    """A tap on a button under the bot's photo, as Telegram sends it (D99)."""
+    """A tap on a button under the bot's photo, as Telegram sends it."""
     photo = {"message_id": 7, "chat": {"id": CHAT, "type": "private"}, "photo": [{"file_id": "x"}]}
     return {"update_id": 2, "callback_query": {"id": "cb1", "message": photo, "data": data}}
 
@@ -253,7 +253,7 @@ async def test_a_photo_to_a_desk_that_takes_none(app: FastAPI, client: AsyncClie
 
 
 async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
-    """D117: Telegram sends the quoted message whole."""
+    """Telegram sends the quoted message whole."""
     path, secret = await connect(app, client)
     update = message("is it spicy?")
     update["message"]["reply_to_message"] = {"message_id": 0, "text": "Beef Bhuna"}
@@ -265,7 +265,7 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
 
 
 async def test_a_reply_to_a_product_photo_names_it(app: FastAPI, client: AsyncClient) -> None:
-    """D156: a product photo's caption comes with the reply, so it names the product."""
+    """a product photo's caption comes with the reply, so it names the product."""
     path, secret = await connect(app, client)
     update = message("I want this")
     update["message"]["reply_to_message"] = {"message_id": 5, "caption": "Cotton Kurti · ৳950"}
@@ -279,7 +279,7 @@ async def test_a_reply_to_a_product_photo_names_it(app: FastAPI, client: AsyncCl
 async def test_more_cards_than_photos_are_one_message_to_tap(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """A photo each for the first 3 with one, the rest one message with an Order each (D125)."""
+    """A photo each for the first 3 with one, the rest one message with an Order each."""
     services = app.state.services
     await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
     await kurti_with_photo(client)
@@ -301,7 +301,7 @@ async def test_more_cards_than_photos_are_one_message_to_tap(
 
 
 async def test_a_voice_note_is_answered_from_its_words(app: FastAPI, client: AsyncClient) -> None:
-    """D147: the note is downloaded, put in words, and the turn reads them as heard."""
+    """the note is downloaded, put in words, and the turn reads them as heard."""
     path, secret = await connect(app, client)
     app.state.services.channels.telegram.files["v1"] = b"OggS..."
     update = message(None)

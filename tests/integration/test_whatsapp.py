@@ -1,4 +1,4 @@
-"""WhatsApp (D103): an owner connects their number, and visitors talk to the agent there."""
+"""WhatsApp: an owner connects their number, and visitors talk to the agent there."""
 
 import hashlib
 import hmac
@@ -123,10 +123,10 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
         "url": services.channels.settings.public_url + url,
         "video": "",
         "choice": "Order [kurti]",
-        "page": "https://heydesk.test/p/dev-shop/kurti?from=whatsapp",  # its page (D121)
+        "page": "https://heydesk.test/p/dev-shop/kurti",  # its page, no `from`
     }
     [(to, [shown])] = fake(app).cards
-    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat (D130)
+    assert shown.pop("page").startswith(card.pop("page") + "?c=")  # and its chat
     assert (to, shown) == (FROM, card)
 
     tapped = {
@@ -136,7 +136,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
     await post(client, message(type="interactive", interactive=tapped))
     assert llm.requests[-1].messages[-1]["content"] == "Order [kurti]"
 
-    # D156: a reply to the card names its product, though Meta sends only the card's id
+    # a reply to the card names its product, though Meta sends only the card's id
     reply = message("I want this")
     reply["entry"][0]["changes"][0]["value"]["messages"][0] |= {
         "id": "wamid.3",
@@ -158,7 +158,7 @@ async def test_a_number_belongs_to_one_business(app: FastAPI, client: AsyncClien
 async def test_connect_with_whatsapp_turns_the_signup_into_a_connected_number(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """D155: Meta's Embedded Signup window gives a code and two ids; nothing to copy."""
+    """Meta's Embedded Signup window gives a code and two ids; nothing to copy."""
     fake(app).codes["a-signup-code"] = TOKEN
     res = await client.get("/api/agent/whatsapp/login")
     assert res.json() == {"app_id": "4242", "config_id": "888"}
@@ -242,7 +242,7 @@ async def test_the_list_filters_by_channel(client: AsyncClient) -> None:
 
 
 async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
-    """D117: WhatsApp sends only the quoted message's id; the buyer's own was kept."""
+    """WhatsApp sends only the quoted message's id; the buyer's own was kept."""
     await connect(client)
     await post(client, message("Beef Bhuna"))
     reply = message("is it spicy?")
@@ -257,7 +257,7 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
 
 
 async def test_more_cards_than_photos_are_one_list(app: FastAPI, client: AsyncClient) -> None:
-    """The cards with no photo (or past the first 3) are one list to tap (D125)."""
+    """The cards with no photo (or past the first 3) are one list to tap."""
     services = app.state.services
     await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
     await kurti_with_photo(client)

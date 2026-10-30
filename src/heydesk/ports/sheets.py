@@ -1,4 +1,4 @@
-"""Reading a business's linked Google Sheet as CSV (D58): one function, `FetchCsv`."""
+"""Reading a business's linked Google Sheet as CSV: one function, `FetchCsv`."""
 
 from collections.abc import Awaitable, Callable
 
