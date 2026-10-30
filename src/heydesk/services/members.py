@@ -1,4 +1,4 @@
-"""A business's team (D97): the owner adds moderators by email, and sees what everyone did.
+"""A business's team: the owner adds moderators by email, and sees what everyone did.
 
 A moderator is a user of the business with the role `moderator`. Adding one makes the user
 with a password no one knows and emails them a code; they join by setting their own password
@@ -24,7 +24,7 @@ from heydesk.services.billing import PLANS, count_moderators
 from heydesk.services.team import TELEGRAM_REPLY
 from heydesk.services.users import Principal, UserService
 
-# a reply to a visitor, from the inbox or Telegram (D150)
+# a reply to a visitor, from the inbox or Telegram
 REPLIES = ("POST /api/conversations/{conversation_id}/reply", TELEGRAM_REPLY)
 
 
@@ -58,7 +58,7 @@ class MemberService:
                 )
             moderators = await count_moderators(s, ws)
             business = await s.get(Workspace, ws)
-            seats = PLANS[business.plan].moderators if business else 0  # the plan's (D106)
+            seats = PLANS[business.plan].moderators if business else 0  # the plan's
             if moderators >= seats:
                 raise Conflict(
                     f"Your plan has {seats} moderator{'s' if seats > 1 else ''}. "
@@ -81,7 +81,7 @@ class MemberService:
 
     async def remove(self, ws: str, user_id: str) -> None:
         """A moderator leaves the team, invited or joined, and their chats go back to
-        unassigned (I1). An owner can't be removed."""
+        unassigned. An owner can't be removed."""
         async with self.sessions() as s, s.begin():
             await s.delete(await self._moderator(s, ws, user_id))
             await s.execute(
@@ -91,7 +91,7 @@ class MemberService:
             )
 
     async def set_available(self, ws: str, user_id: str, available: bool) -> None:
-        """Whether new hand-offs may go to them (D149)."""
+        """Whether new hand-offs may go to them."""
         async with self.sessions() as s, s.begin():
             user = await s.scalar(select(User).where(User.id == user_id, User.workspace_id == ws))
             if user is None:
@@ -99,7 +99,7 @@ class MemberService:
             user.available = available
 
     async def stats(self, ws: str, since: datetime) -> dict[str, dict[str, int]]:
-        """Each member's work since `since`, from the activity (D150): replies to visitors, the
+        """Each member's work since `since`, from the activity: replies to visitors, the
         chats they replied in, and the tickets they marked solved and leads they marked sold
         (still so). `{user_id: {...}}`; a member who did nothing isn't in it."""
 
@@ -160,7 +160,7 @@ class MemberService:
     async def activity(
         self, ws: str, *, limit: int, before: datetime | None = None
     ) -> list[TeamEvent]:
-        """Newest first, a page at a time (D46)."""
+        """Newest first, a page at a time."""
         query = select(TeamEvent).where(TeamEvent.workspace_id == ws)
         if before is not None:
             query = query.where(TeamEvent.at < before)

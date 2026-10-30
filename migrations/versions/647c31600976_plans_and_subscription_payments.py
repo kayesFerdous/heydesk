@@ -56,7 +56,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("paid_until", sa.DateTime(timezone=True), nullable=True))
 
     # ### end Alembic commands ###
-    # Businesses already here start a 14-day trial today; the dev workspace is Pro (D106)
+    # Businesses already here start a 14-day trial today; the dev workspace is Pro
     now = datetime.now(UTC)
     workspaces = sa.table("workspaces", sa.column("id"), sa.column("plan"), sa.column("paid_until"))
     op.execute(workspaces.update().values(paid_until=now + timedelta(days=14)))

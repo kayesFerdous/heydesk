@@ -1,4 +1,4 @@
-"""drop an order's tracking line (D96)
+"""drop an order's tracking line
 
 Revision ID: c128ee4223d1
 Revises: 80b56a9717cc

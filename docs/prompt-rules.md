@@ -214,7 +214,7 @@ A prompt rule can be ignored, so the ones that matter are also enforced in code:
 | Rule | Enforced by |
 |---|---|
 | No saving without a yes | `confirm()` and `Confirmed[T]` (rule 2) |
-| What to ask next | A writing tool's `Checks`: what's missing or wrong, and which to ask first; the shop's `place_order` asks for all of it in one message in a chat, one at a time on a call (`together`, D92) |
+| What to ask next | A writing tool's `ArgumentChecker`: what's missing or wrong, and which to ask first; the shop's `place_order` asks for all of it in one message in a chat, one at a time on a call (`together`, D92) |
 | One way to confirm a shop order | `place_order` saves it `unpaid` (its area pays first), `new` (`call_to_confirm`) or `confirmed`, and its `next` says the call only for `new`; a paid one becomes `confirmed` (D92) |
 | Times inside opening hours | `WeeklyHours.problem_with`, used by `runtime/parse.py` (D31) |
 | No order on a closed day | `update_order` refuses (D40) |

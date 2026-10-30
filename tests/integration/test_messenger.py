@@ -1,4 +1,4 @@
-"""Messenger (D60): an owner connects their Facebook Page, and visitors talk to the agent there."""
+"""Messenger: an owner connects their Facebook Page, and visitors talk to the agent there."""
 
 import asyncio
 import hashlib
@@ -132,18 +132,18 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
         "price": "৳950",
         "url": services.channels.settings.public_url + url,
         "video": "",
-        "choice": "Order [kurti]",  # its button's tap (D99)
-        "page": "https://heydesk.test/p/dev-shop/kurti?from=messenger",  # its page (D121)
+        "choice": "Order [kurti]",  # its button's tap
+        "page": "https://heydesk.test/p/dev-shop/kurti?from=messenger",  # its page
     }
     [(to, [shown])] = fake.cards
-    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat (D130)
+    assert shown.pop("page").startswith(card.pop("page") + "&c=")  # and its chat
     assert (to, shown) == (PSID, card)
     assert sent(app) == [(PSID, "Is it this one?")]
 
     await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up
     assert sent(app)[-1] == (PSID, NOT_TEXT)
 
-    # D156: a reply to the carousel names its products, without asking Facebook
+    # a reply to the carousel names its products, without asking Facebook
     await post(client, message("I want this", mid="m2", reply_to={"mid": "m-cards-1"}))
     said = llm.requests[-1].messages[-1]["content"]
     assert said == '(replying to: "Cotton Kurti · ৳950") I want this'
@@ -151,7 +151,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
 
 async def test_a_products_card_opens_its_public_page(app: FastAPI, client: AsyncClient) -> None:
     """The page shows what a buyer may see, as HTML, with the way back to the chat; anything
-    else, another business's agent included, is the same 404 (D121)."""
+    else, another business's agent included, is the same 404."""
     services = app.state.services
     await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
     url = await kurti_with_photo(client)
@@ -169,7 +169,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
     assert "<script>" not in body and "&lt;script&gt;" in body  # the owner's words, escaped
     assert f'href="https://m.me/{PAGE}"' in body and "Order [kurti]" in body
     assert "/api/" not in body and "workspace" not in body
-    assert "m.me" not in (await client.get("/p/dev-shop/kurti?from=web")).text
+    assert "m.me" not in (await client.get("/p/dev-shop/kurti")).text
 
     await services.agents.ensure_dev_agent("restaurant", SEEDS / "restaurant.yaml")
     for wrong in ("/p/dev-shop/no-such", "/p/nobody/kurti", "/p/dev-restaurant/kurti"):
@@ -210,7 +210,7 @@ async def test_the_owner_answers_a_messenger_visitor_from_telegram(
 
 
 def postback(payload: str) -> dict[str, Any]:
-    """A tap on a card's Order button (D99)."""
+    """A tap on a card's Order button."""
     tapped = {"title": "Order this", "payload": payload}
     event = {"sender": {"id": PSID}, "recipient": {"id": PAGE}, "postback": tapped}
     return {"object": "page", "entry": [{"id": PAGE, "messaging": [event]}]}
@@ -232,7 +232,7 @@ async def test_a_yes_tapped_with_no_read_back_saves_nothing(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """A tap is only words: with no read-back before it, nothing is saved (rule 2), and the
-    reply asks for a yes with Yes and Change buttons (D99)."""
+    reply asks for a yes with Yes and Change buttons."""
     await services_shop(app)
     await connect(client)
     services = app.state.services
@@ -257,7 +257,7 @@ async def services_shop(app: FastAPI) -> None:
 async def test_three_quick_messages_get_one_reply_after_seen_and_typing(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """D117: the agent waits for the visitor's next message, then answers all of them."""
+    """the agent waits for the visitor's next message, then answers all of them."""
     await connect(client)
     channels = app.state.services.channels
     channels.settings.CHAT_WAIT_SECONDS = 0.05
@@ -288,7 +288,7 @@ SHOP_PAGE = {"id": PAGE, "name": "Rina's Kurti", "token": TOKEN}
 async def test_connect_with_facebook_lists_pages_and_connects_the_chosen_one(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """D118: the owner logs in with Facebook and picks a Page; nothing to copy."""
+    """the owner logs in with Facebook and picks a Page; nothing to copy."""
     fake = app.state.services.channels.messenger
     other = {"id": "1002", "name": "Another Page", "token": "EAAB-another-page-token"}
     fake.logins["a-facebook-user-token"] = [SHOP_PAGE, other]
@@ -324,7 +324,7 @@ async def test_a_page_the_login_doesnt_manage_or_a_bad_login_is_refused(
 
 
 def echo(text: str, **extra: Any) -> dict[str, Any]:
-    """The Page's own message to the buyer, as Facebook echoes it (D135)."""
+    """The Page's own message to the buyer, as Facebook echoes it."""
     msg = {"mid": "e1", "is_echo": True, "text": text, **extra}
     event = {"sender": {"id": PAGE}, "recipient": {"id": PSID}, "message": msg}
     return {"object": "page", "entry": [{"id": PAGE, "messaging": [event]}]}
@@ -334,7 +334,7 @@ async def test_a_dot_in_business_suite_takes_the_chat_over_and_gives_it_back(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """While the owner has it, the buyer's messages run no turn; the owner's words are in the
-    next turn's history; our own messages' echoes are left alone (D135)."""
+    next turn's history; our own messages' echoes are left alone."""
     await connect(client)
     llm = app.state.services.conversations.runtime.llm
     await post(client, message("hi"))
@@ -376,7 +376,7 @@ async def test_a_comment_gets_one_public_and_one_private_reply_and_joins_the_cha
 ) -> None:
     """ "dam koto?" under a post of the Cotton Kurti: its price under it, and a private reply
     with its price and sizes that starts their Messenger chat; a second comment from them gets
-    neither, and the Page's own comments are skipped (D141)."""
+    neither, and the Page's own comments are skipped."""
     await services_shop(app)
     await connect(client)
     fake: Any = app.state.services.channels.messenger
@@ -403,7 +403,7 @@ async def test_a_post_is_looked_at_once_and_later_commenters_reuse_it(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """The first comment fetches the post and finds its products; the next person's comment
-    uses what was kept, with the list's price of today (D142)."""
+    uses what was kept, with the list's price of today."""
     await services_shop(app)
     await connect(client)
     fake: Any = app.state.services.channels.messenger
@@ -422,7 +422,7 @@ async def test_a_post_with_many_products_gets_the_range_and_cards(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """The comment gets the price range from the list; the private reply is the products'
-    cards side by side. The owner can tag a post's products instead (D142)."""
+    cards side by side. The owner can tag a post's products instead."""
     await services_shop(app)
     await connect(client)
     fake: Any = app.state.services.channels.messenger
@@ -464,8 +464,7 @@ async def test_practice_mode_answers_only_the_owners_test_accounts(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """A new agent starts in practice mode; on Messenger a stranger gets no answer (their
-    message waits for the team) until the chat is marked as a tester, or the owner goes live
-    (D143)."""
+    message waits for the team) until the chat is marked as a tester, or the owner goes live."""
     other = await new_business(app)
     made = await other.post("/api/agent", json={"kind": "shop"})
     assert made.json()["config"]["practice"] is True

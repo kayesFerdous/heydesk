@@ -1,6 +1,6 @@
-"""Paying online before something is placed (D47, D48): a shop's or restaurant's delivery
+"""Paying online before something is placed: a shop's or restaurant's delivery
 charge, a clinic's deposit. Each is a `Payable` table, and each business is paid into its own
-SSLCommerz store, its own bKash account, or both, which its owner connects here (D49, D109).
+SSLCommerz store, its own bKash account, or both, which its owner connects here.
 
 A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
 starts a payment with the gateway the visitor picks. When the gateway sends word back (the
@@ -26,7 +26,7 @@ from heydesk.desks.restaurant.models import Order
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import Conversation, PaymentAccount
-from heydesk.models.taken import UNPAID
+from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import (
     PROVIDERS,
     Account,
@@ -60,11 +60,11 @@ class PaymentService:
         self.sessions = sessions
         self.gateways = gateways
         self.team = team
-        self.woo = woo  # a paid shop order goes into a linked WooCommerce store at once (D77)
+        self.woo = woo  # a paid shop order goes into a linked WooCommerce store at once
         self.settings = settings
         self.now = now
 
-    # The business's own accounts (D49, D109)
+    # The business's own accounts
 
     async def account(self, ws: str, provider: Provider) -> PaymentAccount | None:
         async with self.sessions() as s:
@@ -155,7 +155,7 @@ class PaymentService:
             await self._gateway_account(record.workspace_id, provider),
             Checkout(
                 order_id=record.id,
-                amount=record.due,
+                amount=record.amount_due,
                 currency=record.currency,
                 what=f"{record.PAY_FOR[4:].capitalize()} for {record.code}",  # minus "the "
                 name=record.name,
@@ -180,7 +180,7 @@ class PaymentService:
         )
         if paid is None or paid.order_id != record.id:
             return record
-        if (paid.amount, paid.currency) != (record.due, record.currency):
+        if (paid.amount, paid.currency) != (record.amount_due, record.currency):
             log.warning("payment amount differs", extra={"record_id": record.id})
             return record
 
@@ -221,7 +221,7 @@ class PaymentService:
             f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
             f"{record.about()}; name {record.name}; phone {record.phone}",
         )
-        if isinstance(record, ShopOrder):  # it holds stock: into a linked Woo store now (D77)
+        if isinstance(record, ShopOrder):  # it holds stock: into a linked Woo store now
             self.woo.push_soon(record.workspace_id)
 
     async def _alert(self, record: Payable, text: str) -> None:

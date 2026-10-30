@@ -1,4 +1,4 @@
-"""plan changes (D116)
+"""plan changes
 
 Revision ID: 2df0c83236e4
 Revises: 5d446276a96b

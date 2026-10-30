@@ -1,4 +1,4 @@
-"""The `TelegramApi` port: the few Bot API calls HeyDesk makes (D42).
+"""The `TelegramApi` port: the few Bot API calls HeyDesk makes.
 
 Every call takes the bot's token: each business connects its own bot, so there's no one
 token for the platform.
@@ -27,15 +27,15 @@ class TelegramApi(Protocol):
     async def send_message(
         self, token: str, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
-        """`choices` are buttons under the text (D99): a tap comes back as a callback query
+        """`choices` are buttons under the text: a tap comes back as a callback query
         with the choice as its data."""
         ...
 
     async def send_card(
         self, token: str, chat_id: str, html: str, buttons: list[dict[str, str]]
     ) -> None:
-        """A card as HTML text (D111), with a button a row under it: `{title, choice}` sends
-        the choice back like a choice's tap (D99); `{title, url}` opens the link (a Pay button)."""
+        """A card as HTML text, with a button a row under it: `{title, choice}` sends
+        the choice back like a choice's tap; `{title, url}` opens the link (a Pay button)."""
         ...
 
     async def send_photo(
@@ -48,9 +48,9 @@ class TelegramApi(Protocol):
         page: str = "",
         video: str = "",
     ) -> None:
-        """A photo uploaded from us, so it needs no public URL (D63); with `choice`, an Order
-        button under it whose tap sends it back (D99); with `page`, a Details button that opens
-        the product's page (D121); with `video`, a Video button that opens it (D125)."""
+        """A photo uploaded from us, so it needs no public URL; with `choice`, an Order
+        button under it whose tap sends it back; with `page`, a Details button that opens
+        the product's page; with `video`, a Video button that opens it."""
         ...
 
     async def answer_callback(self, token: str, callback_id: str) -> None:

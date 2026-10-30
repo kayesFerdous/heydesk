@@ -27,14 +27,14 @@ class HandOff:
 
 @dataclass(frozen=True)
 class Photos:
-    """Photos a tool showed the visitor (D57): each `{name, price, url}`."""
+    """Photos a tool showed the visitor: each `{name, price, url}`."""
 
     items: list[dict[str, str]]
 
 
 @dataclass(frozen=True)
 class Card:
-    """A card a tool showed the visitor (D110): a summary, a receipt, tracking or doctors.
+    """A card a tool showed the visitor: a summary, a receipt, tracking or doctors.
     `data` is built by Python; its shape for each kind is in `runtime/cards.py`."""
 
     kind: str
@@ -48,9 +48,9 @@ class TurnEnded:
     trace: dict[str, Any]
     handed_off: bool = False
     interrupted: bool = False
-    alerts: list[str] = field(default_factory=list)  # tools' alerts for the owner (D43)
-    tools: list[str] = field(default_factory=list)  # the tools that ran, in order (D51)
-    choices: list[str] = field(default_factory=list)  # the last tool's buttons (D99)
+    alerts: list[str] = field(default_factory=list)  # tools' alerts for the owner
+    tools: list[str] = field(default_factory=list)  # the tools that ran, in order
+    choices: list[str] = field(default_factory=list)  # the last tool's buttons
 
 
 type Event = Token | ToolStarted | HandOff | Photos | Card | TurnEnded

@@ -7,7 +7,7 @@ from heydesk.db import Base, Encrypted, new_id, utcnow
 
 
 class CourierLink(Base):
-    """A shop's courier, which the agent books confirmed orders with (D90, D112). One per agent,
+    """A shop's courier, which the agent books confirmed orders with. One per agent,
     shops only."""
 
     __tablename__ = "courier_links"
@@ -17,7 +17,7 @@ class CourierLink(Base):
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), unique=True)
     kind: Mapped[str] = mapped_column(String(20))  # "steadfast" or "pathao"
     key: Mapped[str] = mapped_column(String(200))  # Steadfast's API key; Pathao's client id
-    secret: Mapped[str] = mapped_column(Encrypted())  # encrypted in the database (D74)
+    secret: Mapped[str] = mapped_column(Encrypted())  # encrypted in the database
     username: Mapped[str] = mapped_column(String(200), default="")  # Pathao's merchant login
     password: Mapped[str] = mapped_column(Encrypted(), default="")
     store_id: Mapped[int | None] = mapped_column(default=None)  # Pathao's pick-up store

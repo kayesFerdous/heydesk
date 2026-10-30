@@ -1,4 +1,4 @@
-"""pay first per delivery area (D92)
+"""pay first per delivery area
 
 Revision ID: a163b89f1a08
 Revises: 6fbc01248f23

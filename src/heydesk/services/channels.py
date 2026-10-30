@@ -1,8 +1,8 @@
-"""Messaging apps: a business connects its own Telegram bot (D42), Facebook Page (D60) or
-WhatsApp number (D103), and the agent answers there.
+"""Messaging apps: a business connects its own Telegram bot, Facebook Page or
+WhatsApp number, and the agent answers there.
 
 The app posts each message to our webhook. The agent waits a moment for the visitor's next
-message, then answers all of them in one turn, sent as one message (D117).
+message, then answers all of them in one turn, sent as one message.
 """
 
 import asyncio
@@ -50,12 +50,12 @@ log = logging.getLogger(__name__)
 
 NOT_TEXT = "I can only read text messages for now. Please type your question."
 FAILED = "Sorry, something went wrong. Please try again."
-# Under a comment, for everyone (D141); the details go privately
+# Under a comment, for everyone; the details go privately
 IN_INBOX = "Sent you the details in Messenger 📩"
-LOOK_IN_INBOX = "We sent you a message in Messenger: check your inbox 📩"  # the nudge (D142)
+LOOK_IN_INBOX = "We sent you a message in Messenger: check your inbox 📩"  # the nudge
 NUDGE = timedelta(hours=2)  # no answer in the chat this long after a comment's reply
 MAX_VOICE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
-PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list (D125)
+PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list
 
 
 def first_photo(message: dict[str, Any]) -> str | None:
@@ -68,7 +68,7 @@ def first_photo(message: dict[str, Any]) -> str | None:
 
 
 def first_audio(message: dict[str, Any]) -> str | None:
-    """The first voice clip's URL in a Messenger message (D147)."""
+    """The first voice clip's URL in a Messenger message."""
     for attachment in message.get("attachments") or []:
         if attachment.get("type") == "audio":
             return (attachment.get("payload") or {}).get("url")
@@ -76,13 +76,13 @@ def first_audio(message: dict[str, Any]) -> str | None:
 
 
 def buttons(choices: list[str]) -> list[str]:
-    """The choices a button can carry (D99): Messenger takes 13 quick replies of 20 characters,
+    """The choices a button can carry: Messenger takes 13 quick replies of 20 characters,
     and Telegram's button data is 64 bytes. A longer one is left out, so it's typed instead."""
     return [c for c in choices if len(c) <= 20 and len(c.encode()) <= 64][:13]
 
 
 def card_text(card: Card, channel: str) -> str:
-    """A card as a message's words (D111), a line each, its title in bold: Telegram's HTML
+    """A card as a message's words, a line each, its title in bold: Telegram's HTML
     (so every value is escaped), WhatsApp's *stars*; Messenger has no bold."""
 
     def esc(s: str) -> str:  # a name or an address could hold a "<"
@@ -97,7 +97,7 @@ def card_text(card: Card, channel: str) -> str:
     said: list[str] = []
     if card.kind == "tracking":
         steps = data["steps"]
-        marks = [step_mark(s, i == len(steps) - 1 and len(steps) > 1) for i, s in enumerate(steps)]
+        marks = [step_icon(s, i == len(steps) - 1 and len(steps) > 1) for i, s in enumerate(steps)]
         said.append(bold(esc(f"Order {data['number']}")))
         said.append(" → ".join(f"{m} {esc(s['label'])}" for m, s in zip(marks, steps, strict=True)))
         if data["note"]:
@@ -120,12 +120,12 @@ def card_text(card: Card, channel: str) -> str:
     said += [esc(f"{r['label']}: {r['value']}") for r in data["rows"]]
     if "total" in data:
         said.append(bold(esc(f"Total: {data['total']['text']}")))
-    if "order_url" in data:  # the apps make a link of it (D130)
+    if "order_url" in data:  # the apps make a link of it
         said.append(esc(f"Follow your order: {data['order_url']}"))
     return "\n".join(said)
 
 
-def step_mark(step: dict[str, Any], last: bool) -> str:
+def step_icon(step: dict[str, Any], last: bool) -> str:
     """✅ done, 🔵 where it is now, ⚪ still to come; the last step reached is done."""
     if step["current"] and not last:
         return "🔵"
@@ -162,7 +162,7 @@ class ChannelService:
     ) -> None:
         self.sessions = sessions
         self.agents = agents
-        self.transcriber = transcriber  # voice notes in words (D147); None: "please type"
+        self.transcriber = transcriber  # voice notes in words; None: "please type"
         self.conversations = conversations
         self.visitors = visitors
         self.photos = photos
@@ -172,14 +172,14 @@ class ChannelService:
         self.whatsapp = whatsapp
         self.settings = settings
         self.now = now
-        # a chat's messages not answered yet, while it waits for more (D117); in memory, so
+        # a chat's messages not answered yet, while it waits for more; in memory, so
         # one server process
         self.waiting: dict[str, list[dict[str, Any]]] = {}
         # WhatsApp's webhook quotes only a message's id, so the buyers' recent messages are
-        # kept here, by id, for their replies (D117)
+        # kept here, by id, for their replies
         self.whatsapp_said: dict[str, dict[str, Any]] = {}
         # the product cards the agent sent on Messenger and WhatsApp, by message id, as
-        # "Cotton Shirt · ৳950": a buyer's reply to one names the product (D156)
+        # "Cotton Shirt · ৳950": a buyer's reply to one names the product
         self.cards_sent: dict[str, str] = {}
 
     async def connect_telegram(self, ws: str, token: str) -> Channel:
@@ -207,7 +207,7 @@ class ChannelService:
     async def refresh_telegram(self) -> None:
         """Points every bot's webhook at this server again, as the app starts. Telegram keeps
         the `allowed_updates` it was given when connected, so a bot connected before button
-        taps (D99) never got them; and a tunnel's address changes on every run. Oldest first:
+        taps never got them; and a tunnel's address changes on every run. Oldest first:
         a bot connected twice answers for the newest. Messages waiting for us are kept."""
         if not self.settings.PUBLIC_URL:
             return
@@ -259,8 +259,8 @@ class ChannelService:
         return channel
 
     def facebook_login(self) -> dict[str, str]:
-        """What the owner's Connect with Facebook button needs (D118): our app's id, and the
-        Facebook Login for Business configuration that holds the permissions it asks for (D119)."""
+        """What the owner's Connect with Facebook button needs: our app's id, and the
+        Facebook Login for Business configuration that holds the permissions it asks for."""
         s = self.settings
         if not (s.META_APP_ID and s.META_APP_SECRET and s.META_LOGIN_CONFIG_ID):
             raise HeyDeskError(
@@ -269,7 +269,7 @@ class ChannelService:
         return {"app_id": s.META_APP_ID, "config_id": s.META_LOGIN_CONFIG_ID}
 
     async def facebook_pages(self, user_token: str) -> list[dict[str, str]]:
-        """The Pages the owner's Facebook login manages, with their tokens (D118)."""
+        """The Pages the owner's Facebook login manages, with their tokens."""
         self.facebook_login()  # the app's id and secret are set
         try:
             return await self.messenger.pages(
@@ -281,7 +281,7 @@ class ChannelService:
             ) from None
 
     async def connect_facebook(self, ws: str, user_token: str, page_id: str) -> Channel:
-        """Connects one of the login's Pages with its own token, as if typed in (D118)."""
+        """Connects one of the login's Pages with its own token, as if typed in."""
         pages = await self.facebook_pages(user_token)
         page = next((p for p in pages if p["id"] == page_id), None)
         if page is None:
@@ -301,7 +301,7 @@ class ChannelService:
         self, ws: str, token: str, account_id: str, phone_id: str
     ) -> Channel:
         """Subscribes our app to the business account's messages, which also checks the token,
-        the account and the number. Connecting again replaces the old number (D103)."""
+        the account and the number. Connecting again replaces the old number."""
         if not self.settings.META_APP_SECRET:
             raise HeyDeskError("The server has no META_APP_SECRET, so WhatsApp can't reach it.")
         agent = await self.agents.get(ws)  # 404 if the business has no agent yet
@@ -326,7 +326,7 @@ class ChannelService:
         return channel
 
     def whatsapp_login(self) -> dict[str, str]:
-        """What the owner's Connect with WhatsApp button needs (D155): our app's id, and the
+        """What the owner's Connect with WhatsApp button needs: our app's id, and the
         Embedded Signup configuration."""
         s = self.settings
         if not (s.META_APP_ID and s.META_APP_SECRET and s.META_WA_CONFIG_ID):
@@ -339,7 +339,7 @@ class ChannelService:
         self, ws: str, code: str, account_id: str, phone_id: str
     ) -> Channel:
         """Embedded Signup's code becomes the business's token, the number is registered on
-        the Cloud API, then it's connected as if typed in (D155)."""
+        the Cloud API, then it's connected as if typed in."""
         self.whatsapp_login()  # the app's id, secret and configuration are set
         taken = await self.whatsapp_number(phone_id)
         if taken is not None and taken.workspace_id != ws:
@@ -405,7 +405,7 @@ class ChannelService:
 
     async def answer_telegram(self, channel: Channel, update: dict[str, Any]) -> None:
         """Answers one message from Telegram. Runs after the webhook has said OK. A tapped
-        button is a callback query: its data becomes the message's text (D99)."""
+        button is a callback query: its data becomes the message's text."""
         message = update.get("message") or {}
         tapped = update.get("callback_query")
         if tapped:
@@ -423,10 +423,10 @@ class ChannelService:
     async def answer_messenger(self, channel: Channel, event: dict[str, Any]) -> None:
         """Answers one message to a Facebook Page. Runs after the webhook has said OK."""
         message = event.get("message")
-        if "postback" in event:  # a card's button (D99): its payload is what they chose
+        if "postback" in event:  # a card's button: its payload is what they chose
             message = {"text": event["postback"].get("payload") or ""}
         if message and message.get("is_echo"):  # sent from the Page: by us, or by the owner
-            if message.get("metadata") != OURS and message.get("text"):  # (D135)
+            if message.get("metadata") != OURS and message.get("text"):
                 agent = await self.agents.by_id(channel.agent_id)
                 buyer = str(event["recipient"]["id"])
                 await self.conversations.page_wrote(agent, MESSENGER, buyer, message["text"])
@@ -434,12 +434,12 @@ class ChannelService:
         if not message:
             return
         psid = str(event["sender"]["id"])
-        with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would (D117)
+        with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would
             await self.messenger.mark_seen(channel.token, psid)
         await self._answer(channel, psid, message)
 
     async def answer_comment(self, channel: Channel, change: dict[str, Any]) -> None:
-        """A new comment on the Page's post (D141): one public reply under it and one private
+        """A new comment on the Page's post: one public reply under it and one private
         reply that opens a Messenger chat, once per post and person. The Page's own comments
         (our replies among them) are skipped. Runs after the webhook has said OK."""
         commenter = str((change.get("from") or {}).get("id") or "")
@@ -447,7 +447,7 @@ class ChannelService:
         if not commenter or commenter == channel.address or not post_id:
             return
         agent = await self.agents.by_id(channel.agent_id)
-        if agent.config.practicing(MESSENGER, f"{MESSENGER}:{commenter}"):  # (D143)
+        if agent.config.stays_silent_for(MESSENGER, f"{MESSENGER}:{commenter}"):
             return
         try:
             async with self.sessions() as s, s.begin():
@@ -476,7 +476,9 @@ class ChannelService:
             post_words = " ".join(post.text.split())[:200]
             said = f'(a comment on our post: "{post_words}") {change.get("message") or ""}'
             name = (change.get("from") or {}).get("name")
-            conv = await self.conversations.commented(agent, psid, said.strip(), answer, name)
+            conv = await self.conversations.handle_post_comment(
+                agent, psid, said.strip(), answer, name
+            )
             async with self.sessions() as s, s.begin():
                 saved = await s.get_one(PostComment, first.id)
                 saved.conversation_id = conv
@@ -484,7 +486,7 @@ class ChannelService:
             log.exception("comment not answered", extra={"channel_id": channel.id})
 
     async def page_post(self, channel: Channel, post_id: str) -> PagePost:
-        """What the post is about, found at its first comment and kept (D142): every later
+        """What the post is about, found at its first comment and kept: every later
         comment uses it again, so the post is fetched, and its photo searched, once."""
         async with self.sessions() as s:
             kept = await s.scalar(
@@ -518,7 +520,7 @@ class ChannelService:
         return post
 
     async def _photo_product(self, channel: Channel, listed: list[Any], url: str) -> list[str]:
-        """The one product whose photo is most like the post's (D57), or none."""
+        """The one product whose photo is most like the post's, or none."""
         try:
             jpeg = to_jpeg(await self.messenger.download(url))
         except (MessengerUnavailable, UnreadablePhoto):
@@ -538,7 +540,7 @@ class ChannelService:
     def _about_post(
         self, agent: Any, products: list[Any]
     ) -> tuple[str, list[dict[str, str]] | None, str]:
-        """The private reply's words, its cards when the post has many products (D142), and
+        """The private reply's words, its cards when the post has many products, and
         the public reply: the price, or the range, from the list (rule 1)."""
         currency = getattr(agent.config, "currency", "BDT")
         if not products:
@@ -550,7 +552,7 @@ class ChannelService:
                     **card,
                     "choice": f"Order [{card['code']}]",
                     "page": self.product_page(agent.public_key, card["code"], MESSENGER),
-                    "url": self.whole(card["url"]) if card["url"] else "",
+                    "url": self.absolute_url(card["url"]) if card["url"] else "",
                 }
                 for card in product_cards(products, currency)
             ]
@@ -572,7 +574,7 @@ class ChannelService:
         return answer, None, public
 
     async def nudge_comments(self) -> None:
-        """No answer in the chat ~2 hours after a comment's private reply (D142): one more
+        """No answer in the chat ~2 hours after a comment's private reply: one more
         reply under the comment, once. A day on, it's left alone."""
         now = self.now()
         async with self.sessions() as s, s.begin():
@@ -606,7 +608,7 @@ class ChannelService:
                     )
 
     async def run(self, every: float) -> None:
-        """The comment nudge round (D142) every `every` seconds, until cancelled. The first
+        """The comment nudge round every `every` seconds, until cancelled. The first
         time round it also sets the Telegram bots up again."""
         refreshed = False
         while True:
@@ -626,7 +628,7 @@ class ChannelService:
         self, channel: Channel, message: dict[str, Any], name: str | None = None
     ) -> None:
         """Answers one WhatsApp message. Runs after the webhook has said OK. It's put in the
-        shape `_answer` reads: a tapped button's id is the text (D99), a photo's caption its
+        shape `_answer` reads: a tapped button's id is the text, a photo's caption its
         words; anything else (a sticker, a voice note) has no text."""
         kind = message.get("type")
         said: dict[str, Any] = {}
@@ -638,7 +640,7 @@ class ChannelService:
             said = {"text": choice.get("id") or ""}
         elif kind == "image":
             said = {"image": message["image"], "caption": message["image"].get("caption") or ""}
-        elif kind == "audio":  # a voice note (D147)
+        elif kind == "audio":  # a voice note
             said = {"audio": message["audio"]}
         said["reply_to"] = (message.get("context") or {}).get("id")
         said["id"] = message["id"]  # "typing…" goes with it (`_keep_typing`)
@@ -651,10 +653,10 @@ class ChannelService:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
         text = message.get("text")
         try:
-            if channel.kind == TELEGRAM and text and text.startswith("/start owner_"):  # D43
+            if channel.kind == TELEGRAM and text and text.startswith("/start owner_"):
                 await self.team.link_owner(channel, chat_id, text.removeprefix("/start owner_"))
                 return
-            if channel.kind == TELEGRAM and text and text.startswith("/start member_"):  # D148
+            if channel.kind == TELEGRAM and text and text.startswith("/start member_"):
                 await self.team.link_member(channel, chat_id, text.removeprefix("/start member_"))
                 return
             if chat_id == channel.owner_chat_id or (
@@ -667,12 +669,12 @@ class ChannelService:
                 await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
                 await self._send(channel, chat_id, agent.greeting)
                 return
-            # every message counts toward a flood, even one batched into another's turn (I2)
-            await self.visitors.arrived(channel.workspace_id, f"{channel.kind}:{chat_id}")
+            # every message counts toward a flood, even one batched into another's turn
+            await self.visitors.count_message(channel.workspace_id, f"{channel.kind}:{chat_id}")
             messages = await self._gather(channel, chat_id, message)
             if messages is not None:
                 await self._turn(channel, chat_id, messages)
-        except VisitorSilenced:  # blocked, and told once already (I2)
+        except VisitorSilenced:  # blocked, and told once already
             return
         except HeyDeskError as error:  # too long, or a suspended business: it says why
             await self._send(channel, chat_id, error.message)
@@ -683,7 +685,7 @@ class ChannelService:
     async def _gather(
         self, channel: Channel, chat_id: str, message: dict[str, Any]
     ) -> list[dict[str, Any]] | None:
-        """Many bubbles, one turn (D117): waits `CHAT_WAIT_SECONDS` after a message. If another
+        """Many bubbles, one turn: waits `CHAT_WAIT_SECONDS` after a message. If another
         came meanwhile, that one answers both, so this gives None; if not, every message the
         chat sent while it waited, in order."""
         key = f"{channel.id}:{chat_id}"
@@ -697,7 +699,7 @@ class ChannelService:
 
     async def _turn(self, channel: Channel, chat_id: str, messages: list[dict[str, Any]]) -> None:
         """One turn on the visitor's messages: their words a line each, a quoted message before
-        the words that reply to it (D117), and the last photo, theirs or a quoted one."""
+        the words that reply to it, and the last photo, theirs or a quoted one."""
         agent = await self.agents.by_id(channel.agent_id)
         takes_photos = agent.desk.takes_photos
         lines: list[str] = []
@@ -718,7 +720,7 @@ class ChannelService:
         if not lines:
             await self._send(channel, chat_id, NOT_TEXT)
             return
-        typing = None  # "typing…" only when the agent will answer, not the team (I2)
+        typing = None  # "typing…" only when the agent will answer, not the team
         if await self.conversations.answers(agent, channel.kind, chat_id):
             typing = asyncio.create_task(
                 self._keep_typing(channel, chat_id, messages[-1].get("id", ""))
@@ -739,7 +741,7 @@ class ChannelService:
             await self._send_photos(
                 channel, chat_id, reply.photos, agent.public_key, reply.conversation_id
             )
-        # a summary's Yes and Change go under it, the last message (D111)
+        # a summary's Yes and Change go under it, the last message
         summary = reply.card is not None and reply.card.kind == "summary"
         choices = buttons(reply.choices)
         if reply.text:
@@ -762,10 +764,10 @@ class ChannelService:
     async def _quoted(
         self, channel: Channel, message: dict[str, Any], takes_photos: bool
     ) -> tuple[str, bytes | None]:
-        """The earlier message this one replies to (D117): its words, and its photo if the desk
+        """The earlier message this one replies to: its words, and its photo if the desk
         takes photos. Telegram sends the whole message; Messenger its id, so it's fetched;
         WhatsApp its id, so only a message this server kept is known: the buyer's own, or a
-        product card the agent sent (D156)."""
+        product card the agent sent."""
         try:
             if channel.kind == TELEGRAM:  # a product photo's caption names it
                 quoted = message.get("reply_to_message")
@@ -793,7 +795,7 @@ class ChannelService:
         await self.team.send(channel, chat_id, text, choices)
 
     async def _voice(self, channel: Channel, message: dict[str, Any]) -> str | None:
-        """A voice note's words, marked as heard (D147), or None: not a voice note, too long,
+        """A voice note's words, marked as heard, or None: not a voice note, too long,
         or nothing understood."""
         if self.transcriber is None:
             return None
@@ -824,15 +826,15 @@ class ChannelService:
 
     async def _photo(self, channel: Channel, message: dict[str, Any]) -> bytes | None:
         """The photo a visitor sent, downloaded now (Facebook's URLs expire), or None."""
-        if channel.kind == TELEGRAM:  # D63: the same photo in several sizes, largest last
+        if channel.kind == TELEGRAM:  # the same photo in several sizes, largest last
             sizes = message.get("photo")
             return (
                 await self.telegram.download(channel.token, sizes[-1]["file_id"]) if sizes else None
             )
-        if channel.kind == WHATSAPP:  # D103: a media id, fetched with the token
+        if channel.kind == WHATSAPP:  # a media id, fetched with the token
             image = message.get("image")
             return await self.whatsapp.download(channel.token, image["id"]) if image else None
-        url = first_photo(message)  # D62
+        url = first_photo(message)
         return await self.messenger.download(url) if url else None
 
     async def _send_photos(
@@ -843,12 +845,12 @@ class ChannelService:
         key: str,
         conversation_id: str = "",
     ) -> None:
-        """The products a tool showed, as cards side by side (D125). Messenger: one carousel of
-        up to 10, whose photos Meta fetches from us, so their URLs are made whole (D62, D103).
+        """The products a tool showed, as cards side by side. Messenger: one carousel of
+        up to 10, whose photos Meta fetches from us, so their URLs are made whole.
         Telegram and WhatsApp send a message a photo, so the first 3 with a photo go as photos
-        (Telegram uploads them, D63) and the rest as one message to tap: a list on WhatsApp,
-        a button each on Telegram. Each Order says "Order [code]" (D99); a card links the
-        product's page (D121) and its first video (D125). If it fails, the text still goes."""
+        (Telegram uploads them) and the rest as one message to tap: a list on WhatsApp,
+        a button each on Telegram. Each Order says "Order [code]"; a card links the
+        product's page and its first video. If it fails, the text still goes."""
         cards = [
             {
                 **p,
@@ -861,7 +863,7 @@ class ChannelService:
             if channel.kind == TELEGRAM and len(c["choice"].encode()) > 64:  # its data limit
                 c["choice"] = ""
             if c["url"] and channel.kind != TELEGRAM:
-                c["url"] = self.whole(c["url"])
+                c["url"] = self.absolute_url(c["url"])
         sent = [c for c in cards if c["url"]][:PHOTOS_SENT]
         rest = [c for c in cards if c not in sent and c["choice"]]
         try:
@@ -906,7 +908,7 @@ class ChannelService:
     async def _send_card(
         self, channel: Channel, chat_id: str, card: Card, choices: list[str]
     ) -> None:
-        """A tool's card (D110), after the words, each app its own way (D111): on Telegram
+        """A tool's card, after the words, each app its own way: on Telegram
         HTML with buttons; on Messenger and WhatsApp the words with `choices`, a receipt with
         a Pay button, doctors as a carousel or a list. A doctor's Book sends its `book` words.
         If it fails, the words have gone already."""
@@ -946,13 +948,17 @@ class ChannelService:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
     def product_page(self, key: str, code: str, kind: str, conversation_id: str = "") -> str:
-        """A product's public page (D121), on the app it was sent on; `c`, the chat its
-        *Buy now* sends the receipt back to (D130)."""
-        chat = f"&c={conversation_id}" if conversation_id else ""
-        return f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}?from={kind}{chat}"
+        """A product's public page: `from`, only where the page shows a button back to
+        the app (Messenger, Telegram); `c`, the chat its *Buy now* sends the receipt back to.
+        Elsewhere it's only `/p/<key>/<code>`."""
+        query = ([f"from={kind}"] if kind in (MESSENGER, TELEGRAM) else []) + (
+            [f"c={conversation_id}"] if conversation_id else []
+        )
+        link = f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}"
+        return link + ("?" + "&".join(query) if query else "")
 
     async def chat_link(self, ws: str, kind: str) -> str:
-        """Back to the business's chat on Messenger or Telegram, from a product's page (D121);
+        """Back to the business's chat on Messenger or Telegram, from a product's page;
         "" elsewhere: the page was opened over the chat, and closing it goes back."""
         if kind not in (MESSENGER, TELEGRAM):
             return ""
@@ -962,8 +968,8 @@ class ChannelService:
             return ""
         return f"https://{'m.me' if kind == MESSENGER else 't.me'}/{channel.address}"
 
-    def whole(self, url: str) -> str:
-        """A photo on this server's disk is "/media/…"; one in R2 is whole already (D101)."""
+    def absolute_url(self, url: str) -> str:
+        """A photo on this server's disk is "/media/…"; one in R2 is whole already."""
         return url if url.startswith("https://") else self.settings.public_url + url
 
     async def _keep_typing(self, channel: Channel, chat_id: str, message_id: str) -> None:
@@ -1005,7 +1011,7 @@ class ChannelService:
                 s.add(channel)
             channel.token, channel.secret, channel.address = token, secret, address
             channel.owner_chat_id = None  # a new bot: the owner links their chat with it again
-            if kind == TELEGRAM:  # and so does each moderator (D148)
+            if kind == TELEGRAM:  # and so does each moderator
                 await s.execute(
                     update(User).where(User.workspace_id == ws).values(telegram_chat_id=None)
                 )

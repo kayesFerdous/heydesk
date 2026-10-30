@@ -114,7 +114,7 @@ class ShopDesk(Desk):
     config_model = ShopConfig
     tools = TOOLS
     columns = PRODUCT_COLUMNS
-    takes_photos = True  # "eta ache?" with a screenshot (D57)
+    takes_photos = True  # "eta ache?" with a screenshot
 
     def store(self, *args: Any, **kwargs: Any) -> ShopStore:
         return ShopStore(*args, **kwargs)
@@ -132,9 +132,9 @@ class ShopDesk(Desk):
                 f"Exchanges: a size or colour, within {config.exchange_days} days of delivery."
             )
 
-        # One way to confirm each order (D92): the advance in its area, the shop's call, or none
+        # One way to confirm each order: the advance in its area, the shop's call, or none
         pays = await store.pays_first(config)
-        # Each area's districts, not every place in it (D98)
+        # Each area's districts, not every place in it
         delivery = ["# Delivery", "The charge depends on the area:"]
         for zone in config.delivery:
             first = pays and zone.pay_first and zone.charge
@@ -160,7 +160,7 @@ class ShopDesk(Desk):
 
         listed = await store.products()
         products = ["# Products"]
-        if len(listed) > LONG_LIST:  # too many for every call: the model looks them up (D80)
+        if len(listed) > LONG_LIST:  # too many for every call: the model looks them up
             products.append(
                 f"The shop has {len(listed)} products, too many to list here. "
                 f"Groups: {groups_text(listed)}."
@@ -179,7 +179,7 @@ class ShopDesk(Desk):
             products.append("No products listed yet.")
 
         sections = [ROLE, "\n".join(about), "\n".join(delivery), "\n".join(products)]
-        for last in await store.before(ShopOrder):  # a buyer back again (D81, D114)
+        for last in await store.before(ShopOrder):  # a buyer back again
             sections.append(
                 returning(
                     "Their last order",
@@ -208,7 +208,7 @@ class ShopDesk(Desk):
         if cart.get("lines"):
             note += f"\n# The order so far\n{cart_text(cart, config.currency)}\n"
         calling = state.get("calling")
-        if calling:  # the shop's call to confirm an order (D88)
+        if calling:  # the shop's call to confirm an order
             note += (
                 f"\n# This call\nThe shop phoned the buyer about order {calling['code']}. Your "
                 f'first line was: "{calling["said"]}" It read the order back and asked them to '

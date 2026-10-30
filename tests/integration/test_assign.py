@@ -1,4 +1,4 @@
-"""Who has a chat (I1): the owner gives any chat to anyone on the team; a moderator takes a free
+"""Who has a chat: the owner gives any chat to anyone on the team; a moderator takes a free
 one and gives back their own; a hand-off can go to the least busy moderator."""
 
 from fastapi import FastAPI
@@ -107,7 +107,7 @@ async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
 
 async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: AsyncClient) -> None:
     """A label filters the list; a note stays the team's, out of the prompt and the chat; a
-    reply from the inbox reaches the chat and takes it over (D136)."""
+    reply from the inbox reaches the chat and takes it over."""
     llm = app.state.services.conversations.runtime.llm
     llm.script = ["Hello!"]
     conv = await chat(app, client)
@@ -149,7 +149,7 @@ async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: Asy
 
 async def test_a_draft_is_shown_to_the_team_and_not_sent(app: FastAPI, client: AsyncClient) -> None:
     """Summary, ask and draft: the model with no tools on the chat's history; the words come
-    back, nothing is added to the chat or sent, and each is a traced turn (D137)."""
+    back, nothing is added to the chat or sent, and each is a traced turn."""
     services = app.state.services
     llm = services.conversations.runtime.llm
     llm.script = ["Hello!"]
@@ -180,7 +180,7 @@ async def test_a_draft_is_shown_to_the_team_and_not_sent(app: FastAPI, client: A
 async def test_a_hand_off_skips_a_moderator_who_isnt_available(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    """D149: a moderator switches themself off; the owner can switch anyone."""
+    """a moderator switches themself off; the owner can switch anyone."""
     rafi_id, nila_id = await invite(client), await invite(client, OTHER)
     rafi, nila = await join(app), await join(app, OTHER)
     await client.patch("/api/agent", json={"handoff": {"auto_assign": True}})
@@ -204,7 +204,7 @@ async def test_a_hand_off_skips_a_moderator_who_isnt_available(
 
 
 async def test_a_solved_ticket_counts_for_who_marked_it(app: FastAPI, client: AsyncClient) -> None:
-    """D150: the team's numbers come from what each member did."""
+    """the team's numbers come from what each member did."""
     rafi_id = await invite(client)
     rafi = await join(app)
     llm = app.state.services.conversations.runtime.llm

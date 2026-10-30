@@ -1,4 +1,4 @@
-"""Rate limits (D52): bursts get a 429, from one visitor, one address or one login."""
+"""Rate limits: bursts get a 429, from one visitor, one address or one login."""
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient

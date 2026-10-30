@@ -1,6 +1,6 @@
 """The browser's WebRTC handshake for a voice call; the call itself runs in `voice/` (design §10).
 
-Also the `/phone` page's side (D88): it waits here for its mobile's calls, and answers one by
+Also the `/phone` page's side: it waits here for its mobile's calls, and answers one by
 making the same offer with `call=`."""
 
 import asyncio
@@ -58,8 +58,8 @@ async def offer(
     key: str | None = None,
     call: str | None = None,
 ) -> dict[str, Any] | None:
-    """`visitor` is the page's token, as in web chat: a call shares the visitor's limits (D51).
-    `call` is a ring the `/phone` page answered: the shop's call to confirm an order (D89)."""
+    """`visitor` is the page's token, as in web chat: a call shares the visitor's limits.
+    `call` is a ring the `/phone` page answered: the shop's call to confirm an order."""
     state = request.app.state
     answered = await state.services.calls.answer(call) if call else None  # 404 if it ended
     if answered:
@@ -68,20 +68,22 @@ async def offer(
         agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
         if not agent.desk.takes_voice:
             raise NoVoice("This agent takes no calls: chat with it instead.")
-        await state.services.visitors.admit(agent, f"web:{visitor}", count=False)  # 429: limited
+        await state.services.visitors.count_turn(
+            agent, f"web:{visitor}", count=False
+        )  # 429: limited
     handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])
 
-    async def talk(connection: SmallWebRTCConnection) -> None:
+    async def handle_call(connection: SmallWebRTCConnection) -> None:
         try:
             await run_call(
                 connection, state.settings, state.services, agent, f"web:{visitor}", answered
             )
         finally:
-            if answered:  # its outcome, from the order (D89)
+            if answered:  # its outcome, from the order
                 await state.services.calls.ended(answered.call_id)
 
     async def start(connection: SmallWebRTCConnection) -> None:
-        call = asyncio.create_task(talk(connection))
+        call = asyncio.create_task(handle_call(connection))
         calls.add(call)
         call.add_done_callback(calls.discard)
 
@@ -95,7 +97,7 @@ async def ice(body: SmallWebRTCPatchRequest) -> None:
 
 @router.get("/api/phone/rings")
 async def rings(number: str, request: Request) -> StreamingResponse:
-    """The `/phone` page waits here for its mobile's calls (D88): `ready {number}`, then a
+    """The `/phone` page waits here for its mobile's calls: `ready {number}`, then a
     `ring {call, business, order}` for each one."""
     calls = request.app.state.services.calls
     mobile = calls.number(number)  # 400 if it isn't a mobile number
@@ -119,5 +121,5 @@ async def rings(number: str, request: Request) -> StreamingResponse:
 
 @router.post("/api/phone/decline", status_code=204)
 async def decline(call: str, request: Request) -> None:
-    """The buyer tapped Decline: a missed call, tried again later (D89)."""
+    """The buyer tapped Decline: a missed call, tried again later."""
     await request.app.state.services.calls.missed(call)

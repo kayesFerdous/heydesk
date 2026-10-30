@@ -21,7 +21,7 @@ from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.schedule import DAYS
 from heydesk.runtime.speech import clock_time, money
-from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ClinicStore]
 
@@ -51,7 +51,7 @@ async def find_doctor(ctx: Ctx, args: FindDoctorInput) -> ToolResult:
     if not doctors:
         data["hint"] = "No doctor fits all of that. Offer another day or speciality."
         return ToolResult(ok=True, data=data)
-    card = cards.doctors(  # each with a Book button: a tap is only its words (D99, D110)
+    card = cards.doctors(  # each with a Book button: a tap is only its words
         [
             {
                 "name": d.name,
@@ -92,7 +92,7 @@ class RequestAppointmentInput(BaseModel):
 
 async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolResult:
     doctors = await ctx.store.doctors()
-    check = Checks()
+    check = ArgumentChecker()
     doctor = check.take("doctor", args.doctor, lambda said: match_doctor(doctors, said))
     when = check.take(
         "time", args.time, lambda said: parse.day_and_time(said, ctx.local_now, ctx.agent.hours)
@@ -105,7 +105,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
     config = cast(ClinicConfig, ctx.agent)
     online = await ctx.store.pays_first(config)
     by_hand = not online and bool(config.deposit and config.advance_number.strip())
-    trx = check.take("trx_id", args.trx_id, trx_id) if by_hand else ""  # D145
+    trx = check.take("trx_id", args.trx_id, trx_id) if by_hand else ""
     if doctor is None or when is None or name is None or phone is None or trx is None:
         return check.result()
 
@@ -119,7 +119,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
         + (f"; a deposit of {amount} paid online now" if online else "")
         + (f"; the deposit of {amount} sent, TrxID {trx}" if trx else "")
     )
-    rows = [  # the card's details (D110), the same as the read-back's
+    rows = [  # the card's details, the same as the read-back's
         cards.row("Doctor", f"{doctor.name}, {doctor.speciality}"),
         cards.row("Time", parse.day_time(when), when),
         cards.row("Patient", name),
@@ -134,7 +134,7 @@ async def request_appointment(ctx: Ctx, args: RequestAppointmentInput) -> ToolRe
         return ask_for_yes(read_back, "request_appointment", card)
     saved = await ctx.store.save_appointment(confirmed)
     code = saved.code
-    if appointment.pay_first:  # the clinic hears about it once it's paid (D48)
+    if appointment.pay_first:  # the clinic hears about it once it's paid
         link = ctx.store.pay_link(saved.id)
         status = "Waiting for the deposit to be paid online"
         card = cards.receipt("Appointment saved", code, status, rows, total, link)
@@ -244,7 +244,7 @@ async def reschedule_appointment(ctx: Ctx, args: RescheduleInput) -> ToolResult:
     read_back = f"{title} with {found.doctor_name} to {parse.day_time(when)}"
     change = AppointmentChange(found.number, when)
     alert = f"✏️ Appointment {found.code} moved\n{read_back}"
-    rows = [  # the card's details (D110)
+    rows = [  # the card's details
         cards.row("Doctor", found.doctor_name),
         cards.row("From", parse.day_time(_local(ctx, found.at)), found.at),
         cards.row("To", parse.day_time(when), when),

@@ -1,7 +1,7 @@
-"""A shop's courier (D90, D112): every confirmed order is booked, and each parcel followed.
+"""A shop's courier: every confirmed order is booked, and each parcel followed.
 
 The owner links Steadfast or Pathao with the shop's own merchant login. A shop with none uses
-the fake courier outside production (`fallback`); in production it books by hand (D95).
+the fake courier outside production (`fallback`); in production it books by hand.
 Every COURIER_SYNC_MINUTES a round books each confirmed order with no parcel (it's `shipped`
 then, and the owner is told to pack it) and asks about each shipped one; the courier's final
 word makes it delivered or returned. The buyer hears each move in their chat. A courier
@@ -72,7 +72,7 @@ class CourierService:
         team: TeamService,
         apis: dict[str, CourierApi],  # by kind: "steadfast", "pathao", "fake"
         fallback: str | None,  # the kind a shop with no link uses; None: by hand
-        review_after: timedelta = timedelta(hours=24),  # after delivery, "how was it?" (D134)
+        review_after: timedelta = timedelta(hours=24),  # after delivery, "how was it?"
     ) -> None:
         self.sessions = sessions
         self.agents = agents
@@ -125,7 +125,7 @@ class CourierService:
                 await s.delete(link)
 
     async def sync(self, ws: str) -> None:
-        """Asks the buyers of yesterday's deliveries how it was (D134); then books the confirmed
+        """Asks the buyers of yesterday's deliveries how it was; then books the confirmed
         and packed orders with no parcel, and asks about each shipped one, with the shop's
         courier, or the fallback when none is linked."""
         shop = cast(ShopStore, await self.agents.store(ws, "shop"))
@@ -178,8 +178,8 @@ class CourierService:
             await self.team.tell_visitor(order.conversation_id, line)
 
     async def _remind(self, shop: ShopStore, order: ShopOrder) -> None:
-        """Out for delivery (D134): the buyer keeps the cash ready, once, inside the window."""
-        await shop.told(order.id, "reminded")
+        """Out for delivery: the buyer keeps the cash ready, once, inside the window."""
+        await shop.mark_notified(order.id, "reminded")
         if order.conversation_id is None:
             return
         due = order.total - order.paid
@@ -192,12 +192,12 @@ class CourierService:
         await self.team.tell_in_window(order.conversation_id, line)
 
     async def _ask_reviews(self, shop: ShopStore) -> None:
-        """A day after delivery (D134): one question with two buttons, inside the window. An
+        """A day after delivery: one question with two buttons, inside the window. An
         order delivered long before (when this began, or the shop's round was down) isn't
         asked, only marked."""
         now = shop.now()
         for order in await shop.to_review(now - self.review_after):
-            await shop.told(order.id, "review_asked")
+            await shop.mark_notified(order.id, "review_asked")
             delivered = (
                 order.updated_at
                 if order.updated_at.tzinfo
@@ -220,7 +220,7 @@ class CourierService:
                         or_(
                             and_(ShopOrder.status.in_(TO_BOOK), ShopOrder.parcel_id == ""),
                             and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
-                            and_(  # its buyer is asked how it was (D134)
+                            and_(  # its buyer is asked how it was
                                 ShopOrder.status == "delivered",
                                 ShopOrder.review_asked.is_(False),
                                 ShopOrder.conversation_id.is_not(None),

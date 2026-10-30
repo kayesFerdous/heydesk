@@ -8,7 +8,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Agent(Base):
-    """A business's agent: one per workspace (D22). Edits to `config` take effect on the next message."""
+    """A business's agent: one per workspace. Edits to `config` take effect on the next message."""
 
     __tablename__ = "agents"
 

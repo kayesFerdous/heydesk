@@ -1,5 +1,5 @@
 """Bangladesh's 64 districts, so Python, not the model, says which delivery area an address is
-in (D98). The model names the district from the address ("Mirpur 10" → Dhaka), and an owner
+in. The model names the district from the address ("Mirpur 10" → Dhaka), and an owner
 names an area's districts; `district()` checks each is one of these, spelled as here."""
 
 import unicodedata

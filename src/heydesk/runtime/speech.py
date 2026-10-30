@@ -1,7 +1,7 @@
-"""Display and spoken forms of values (D7, D20).
+"""Display and spoken forms of values.
 
 The model always sees display forms ("৳450", "7:30 pm"); on voice, `speakable()`
-turns each sentence into words just before it's spoken, in English or in Bangla (D84).
+turns each sentence into words just before it's spoken, in English or in Bangla.
 """
 
 import re
@@ -92,7 +92,7 @@ def _clock(m: re.Match[str]) -> str:
     return said + (f" {m[3].lower()}.m." if m[3] else "")
 
 
-# Bangla (D84). The Bangla voice reads Bangla letters only, so every number becomes Bangla words.
+# Bangla. The Bangla voice reads Bangla letters only, so every number becomes Bangla words.
 BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 BN_DIGIT_WORDS = ["শূন্য", "এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়"]
 BN_CURRENCY_WORDS = {
@@ -102,7 +102,7 @@ BN_CURRENCY_WORDS = {
     "GBP": ("পাউন্ড", "পেন্স"),
     "INR": ("রুপি", "পয়সা"),
 }
-CODE = re.compile(r"\b([AMOT])-(\d+)")  # O-104, A-104, T-101, M-104: a record's code (D38)
+CODE = re.compile(r"\b([AMOT])-(\d+)")  # O-104, A-104, T-101, M-104: a record's code
 BN_LETTERS = {"A": "এ", "M": "এম", "O": "ও", "T": "টি"}
 TWICE = re.compile(r"(সকাল|দুপুর|বিকেল|সন্ধ্যা|রাত) \1")
 

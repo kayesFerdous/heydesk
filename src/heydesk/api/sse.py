@@ -29,11 +29,11 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
                 case HandOff(message, phone, email):
                     yield frame("handoff", {"message": message, "phone": phone, "email": email})
                 case Photos(items):
-                    yield frame("photos", {"items": items})  # product photos to show (D57)
+                    yield frame("photos", {"items": items})  # product photos to show
                 case Card(kind, data):
-                    yield frame("card", {"kind": kind, "data": data})  # D110
+                    yield frame("card", {"kind": kind, "data": data})
                 case TurnEnded(interrupted=interrupted, choices=choices):
-                    if choices:  # buttons under the reply; a tap sends its words (D99, D110)
+                    if choices:  # buttons under the reply; a tap sends its words
                         yield frame("choices", {"items": choices})
                     yield frame("done", {"interrupted": interrupted})
     except Exception:
@@ -46,7 +46,7 @@ PING_SECONDS = 20
 
 
 async def live_frames(hub: LiveHub, ws: str) -> AsyncIterator[str]:
-    """The inbox's stream (D158): a `changed` frame per chat, and a `ping` while it's quiet."""
+    """The inbox's stream: a `changed` frame per chat, and a `ping` while it's quiet."""
     with hub.listen(ws) as queue:
         yield frame("open", {})
         while True:

@@ -224,7 +224,7 @@ async def test_find_doctor_shows_the_doctors_with_a_book_button(world: World) ->
     ctx = make_ctx(world.store(agent), agent=agent.config)
     found = await find_doctor(ctx, FindDoctorInput(speciality="cardio", day="tomorrow"))
 
-    assert found.card == {  # D110: Python's facts, the same as the model's lines
+    assert found.card == {  # Python's facts, the same as the model's lines
         "kind": "doctors",
         "data": {
             "doctors": [
@@ -234,7 +234,7 @@ async def test_find_doctor_shows_the_doctors_with_a_book_button(world: World) ->
                     "days": "Tue, Wed",
                     "hours": "6:00 pm–9:00 pm",
                     "fee": {"minor": 90000, "currency": "BDT", "text": "৳900"},
-                    "book": "Book with Dr. Imran Hasan",  # a tap sends these words (D99)
+                    "book": "Book with Dr. Imran Hasan",  # a tap sends these words
                 }
             ]
         },
@@ -259,7 +259,7 @@ async def test_a_request_shows_a_summary_then_a_receipt(world: World) -> None:
         "kind": "summary",
         "data": {"title": "Appointment request", "lines": [], "rows": rows},
     }
-    assert asked.choices == ["Yes", "Change"]  # the buttons stay as they were (D99)
+    assert asked.choices == ["Yes", "Change"]  # the buttons stay as they were
 
     saved = await said_yes(request_appointment, ctx, args)
     assert saved.card == {
@@ -276,7 +276,7 @@ async def test_a_request_shows_a_summary_then_a_receipt(world: World) -> None:
 async def test_a_patient_back_from_the_same_browser_is_offered_their_details(
     world: World,
 ) -> None:
-    """The browser's token is the web chat's and a call's contact (D114): a later conversation
+    """The browser's token is the web chat's and a call's contact: a later conversation
     from it, typed or spoken, has the past appointment in the prompt; another browser's doesn't."""
     agent = await world.agent("clinic")
     talk = world.services.conversations
@@ -305,7 +305,7 @@ async def test_appointments_export_as_a_file(app: FastAPI, client: AsyncClient) 
 
 
 async def test_a_deposit_sent_by_hand_is_saved_with_its_trx_id(world: World) -> None:
-    """With an advance number, the request needs the TrxID, read back and saved (D145)."""
+    """With an advance number, the request needs the TrxID, read back and saved."""
     agent = await world.agent("clinic")
     by_hand = agent.config.model_copy(update={"deposit": 50000, "advance_number": "01711111111"})
     ctx = make_ctx(world.store(agent), agent=by_hand)

@@ -52,7 +52,7 @@ class OrderOut(BaseModel):
     currency: str
     address: str  # empty: pickup
     delivery_charge: int  # in `total`
-    paid: int  # paid online first (D48)
+    paid: int  # paid online first
     payment_ref: str  # the payment gateway's id for it
     pickup_at: datetime  # UTC
     note: str
@@ -68,7 +68,7 @@ async def menu(store: Restaurant) -> list[MenuItem]:
 @router.put("/api/menu")
 async def replace_menu(body: list[MenuItem], store: Restaurant) -> list[MenuItem]:
     """The menu becomes exactly these dishes, in this order. Live from the next message.
-    A 409 while a Google Sheet is the list (D58)."""
+    A 409 while a Google Sheet is the list."""
     await store.not_linked()
     await store.replace_menu(body)
     return body
@@ -88,7 +88,7 @@ async def orders(
 async def orders_csv(
     store: Restaurant, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
 ) -> Response:
-    """The orders the list shows, as a spreadsheet's file (G6)."""
+    """The orders the list shows, as a spreadsheet's file."""
     tz = (await services.agents.by_workspace(ws)).config.timezone
     rows = [
         [
@@ -118,15 +118,15 @@ async def order(order_id: str, store: Restaurant) -> OrderOut:
 @router.patch("/api/orders/{order_id}")
 async def set_status(order_id: str, body: StatusIn, store: Restaurant, services: Svc) -> OrderOut:
     """Moves it along. The visitor hears it in their chat when it's ready to pick up, on its
-    way, or cancelled (D66)."""
+    way, or cancelled."""
     order = await store.set_status(Order, order_id, body.status)
     await tell_visitor(services, order)
     return OrderOut.model_validate(order)
 
 
 async def tell_visitor(services: Svc, row: Order | Booking) -> None:
-    """The line for the visitor's chat, as the team's message (D66). It goes out on Telegram or
-    Messenger, and the web page fetches it, as the payment line does (D47)."""
+    """The line for the visitor's chat, as the team's message. It goes out on Telegram or
+    Messenger, and the web page fetches it, as the payment line does."""
     if row.conversation_id and (line := row.news()):
         await services.team.tell_visitor(row.conversation_id, line)
 
@@ -134,7 +134,7 @@ async def tell_visitor(services: Svc, row: Order | Booking) -> None:
 @router.post("/api/menu/import/suggest")
 async def suggest_menu_columns(body: SuggestIn, _: Restaurant) -> Suggestion:
     """The file's columns, a few rows and our fields, with a guess at which column is which
-    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    field. The owner checks it, then imports with that `mapping`."""
     return suggest(body.csv, MENU_COLUMNS)
 
 
@@ -179,7 +179,7 @@ async def bookings(
 async def bookings_csv(
     store: Restaurant, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
 ) -> Response:
-    """The bookings the list shows, as a spreadsheet's file (G6)."""
+    """The bookings the list shows, as a spreadsheet's file."""
     tz = (await services.agents.by_workspace(ws)).config.timezone
     rows = [
         [b.code, local_time(b.at, tz), b.people, b.status, b.name, phone_cell(b.phone), b.note]

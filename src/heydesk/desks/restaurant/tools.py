@@ -1,6 +1,6 @@
 """The restaurant's tools: keep the order up to date (Python adds it up, rule 1), place it,
 and track, change or cancel it: the order placed in this chat, or any with its code and the
-phone (D65). When the restaurant takes bookings, book a table (Python counts the seats) or
+phone. When the restaurant takes bookings, book a table (Python counts the seats) or
 cancel one."""
 
 from datetime import datetime
@@ -25,16 +25,16 @@ from heydesk.desks.restaurant.values import (
     OrderEdit,
     RestaurantConfig,
     cart_text,
+    check_party_size,
     free_times,
     has_room,
-    party,
 )
 from heydesk.desks.shared import awaiting_payment
 from heydesk.domain.values import parse_code
 from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import clock_time, money
-from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult, fail
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[RestaurantStore]
 
@@ -113,7 +113,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     if args.delivery and not config.delivers:
         return fail("We don't deliver: orders are for pickup only. Tell the visitor.")
     now = ctx.local_now
-    check = Checks()
+    check = ArgumentChecker()
     at = check.take("time", args.time, lambda said: parse.time_today(said, now, config.hours))
     address = (
         check.take("address", args.address, lambda said: parse.text(said, limit=300))
@@ -155,7 +155,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     read_back = f"{cart_text(cart, currency)}; {how}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
-    rows = [  # the card's details (D110), the same as the read-back's
+    rows = [  # the card's details, the same as the read-back's
         cards.row(
             "Delivery" if args.delivery else "Pickup", f"today, {clock_time(at)}", order.pickup_at
         ),
@@ -183,7 +183,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     saved = await ctx.store.place_order(confirmed)
     items = cards.row("Items", ", ".join(f"{x['quantity']} × {x['name']}" for x in cart["lines"]))
     status = STATUS_WORDS[saved.status].capitalize()
-    if order.pay_first:  # the owner hears about it once it's paid (D48)
+    if order.pay_first:  # the owner hears about it once it's paid
         link = ctx.store.pay_link(saved.id)
         fee = money(charge, currency)
         card = cards.receipt("Order saved", saved.code, status, [items, *rows], card_total, link)
@@ -224,7 +224,7 @@ class FindOrderInput(BaseModel):
 
 
 async def _find(ctx: Ctx, code: str, phone: str) -> Order | ToolResult:
-    """With no code, the one order placed in this conversation (as the shop, D55). Otherwise
+    """With no code, the one order placed in this conversation (as the shop). Otherwise
     the order, if the code and the phone both match: one answer for a wrong code and a wrong
     phone, so a stranger can't find out whose order a code is."""
     if not code.strip():
@@ -297,7 +297,7 @@ class ChangeOrderInput(FindOrderInput):
 
 
 async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
-    """A new time, address or note while the order is new (D65). The dishes can't change here."""
+    """A new time, address or note while the order is new. The dishes can't change here."""
     found = await _find(ctx, args.code, args.phone)
     if isinstance(found, ToolResult):
         return found
@@ -317,7 +317,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
             "cancel and order again."
         )
     now = ctx.local_now
-    check = Checks()
+    check = ArgumentChecker()
     # Only what they gave is checked (an empty one is None); the rest stays as it is
     at = check.take("time", args.time, lambda said: parse.time_today(said, now, ctx.agent.hours))
     address = check.take("address", args.address, lambda said: parse.text(said, limit=300))
@@ -345,7 +345,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     read_back = f"{title}: " + "; ".join(f"{label}: {old} → {new}" for label, old, new in changes)
     confirmed = confirm(ctx.heard, edit, read_back)
     if confirmed is None:
-        rows = [  # a new time carries its `at` (D110)
+        rows = [  # a new time carries its `at`
             cards.row(
                 label.capitalize(), f"{old} → {new}", edit.pickup_at if label == "time" else None
             )
@@ -428,9 +428,9 @@ async def book_table(ctx: Ctx, args: BookTableInput) -> ToolResult:
     as soon as the people and the time are known, before the name and phone are asked."""
     config = cast(RestaurantConfig, ctx.agent)
     now = ctx.local_now
-    check = Checks()
+    check = ArgumentChecker()
     people = check.take(
-        "people", str(args.people or ""), lambda said: party(int(said), config.max_party)
+        "people", str(args.people or ""), lambda said: check_party_size(int(said), config.max_party)
     )
     at = check.take("time", args.time, lambda said: parse.day_and_time(said, now, config.hours))
     if people and at:
@@ -453,7 +453,7 @@ async def book_table(ctx: Ctx, args: BookTableInput) -> ToolResult:
     read_back = f"Table for {people} on {parse.day_time(at)}; name {name}; phone {phone}" + (
         f"; note: {note}" if note else ""
     )
-    rows = [  # the card's details (D110)
+    rows = [  # the card's details
         cards.row("People", str(people)),
         cards.row("Time", parse.day_time(at), at),
         cards.row("Name", name),
@@ -504,7 +504,7 @@ def _same_name(a: str, b: str) -> bool:
 
 async def _find_booking(ctx: Ctx, code: str, name: str) -> Booking | ToolResult:
     """The booking, if the code and the name both match. One answer for a wrong code and a
-    wrong name, so a stranger can't find out whose booking a code is (as the clinic, D38)."""
+    wrong name, so a stranger can't find out whose booking a code is (as the clinic)."""
     if not code.strip() or not name.strip():
         return fail("Ask for the booking code (like T-101), then the name it's under.")
     parsed = parse_code(code)

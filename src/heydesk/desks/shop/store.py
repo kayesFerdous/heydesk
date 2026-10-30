@@ -1,7 +1,8 @@
 """A shop's data: its products and orders, plus what every desk has (`Store`).
 
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
-them back, so two buyers can't get the last one."""
+them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
+buyers at the same moment can't both get the last one."""
 
 from dataclasses import replace
 from datetime import datetime
@@ -26,21 +27,21 @@ from heydesk.desks.shop.values import (
     OrderEdit,
     Product,
     added,
-    counted,
     merge,
     products_from_csv,
+    stock_snapshot,
     take_off,
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation, PagePost, Turn
-from heydesk.models.taken import next_number
+from heydesk.models.customer_request import next_number
 
-TO_BOOK = ("confirmed", "packed")  # the courier books these (D112, D131); not one on hold
+TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
 
 
 class CouponGone(ValueError):
-    """The coupon ended or was used up since the cart was made (D133)."""
+    """The coupon ended or was used up since the cart was made."""
 
 
 class OutOfStock(ValueError):
@@ -51,7 +52,7 @@ class ShopStore(Store):
     SALES = (ShopOrder,)
 
     def order_link(self, order_id: str) -> str:
-        """The order's page for the buyer, `/o/<id>` (D130); the id is long and random."""
+        """The order's page for the buyer, `/o/<id>`; the id is long and random."""
         return f"{self.public_url}/o/{order_id}"
 
     async def products(self) -> list[Product]:
@@ -61,10 +62,11 @@ class ShopStore(Store):
         await self.replace_rows(ProductRow, products)
 
     async def add_products(self, found: list[Product]) -> int:
-        """A file's products join the list (D120): the ones we have are updated, the rest are
+        """A file's products join the list: the ones we have are updated, the rest are
         added, and none is deleted. Returns how many were new."""
-        found = await self.with_photos(found)  # downloads the new links (D102)
+        found = await self.with_photos(found)  # downloads the new links
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             ours = await self._products(s)
             now = added(ours, found)
             await self._replace(s, ProductRow, now)
@@ -79,7 +81,7 @@ class ShopStore(Store):
         return [Product.model_validate(r, from_attributes=True) for r in rows]
 
     async def with_photos(self, found: list[Product]) -> list[Product]:
-        """A list's products with their photos (D102): a product with photo links gets those
+        """A list's products with their photos: a product with photo links gets those
         photos, each downloaded and indexed the first time; one with none keeps the photos it
         has here (the owner's own uploads)."""
         # ponytail: a first import with many new links waits for them all (4 at a time);
@@ -102,11 +104,12 @@ class ShopStore(Store):
         self, text: str, mapping: dict[str, str], seen: dict[str, Any]
     ) -> dict[str, Any]:
         """The sheet's products, keeping our count where the sheet's didn't change, and
-        taking a new count less the orders not shipped yet (D58), and its photos (D102). They
-        join the list (D120): the ones the sheet had last time (`seen`) and hasn't now go."""
+        taking a new count less the orders not shipped yet, and its photos. They
+        join the list: the ones the sheet had last time (`seen`) and hasn't now go."""
         found = await self.with_photos(products_from_csv(text, mapping))
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order placed meanwhile is counted, not lost
             listed = await self._products(s)
             ours = {p.code: p for p in listed}
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
@@ -117,15 +120,16 @@ class ShopStore(Store):
             held = [line for lines in orders for line in lines]
             gone = set(seen) - {p.code for p in found}
             await self._replace(s, ProductRow, added(listed, merge(found, ours, seen, held), gone))
-        return {p.code: counted(p) for p in found}
+        return {p.code: stock_snapshot(p) for p in found}
 
     async def take_woo(self, found: list[Product], gone: set[str]) -> None:
-        """The WooCommerce store's products join the list (D75, D120), with Woo's count less
-        the orders that hold stock here but aren't in Woo yet, and Woo's photos (D102). The
+        """The WooCommerce store's products join the list, with Woo's count less
+        the orders that hold stock here but aren't in Woo yet, and Woo's photos. The
         `gone` codes, ones Woo had last time and hasn't now, leave it."""
         found = await self.with_photos(found)
         ws = self.workspace_id
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order placed meanwhile is counted, not lost
             orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
                 select(ShopOrder.lines).where(
                     ShopOrder.workspace_id == ws,
@@ -139,7 +143,7 @@ class ShopStore(Store):
 
     async def orders_for_woo(self, since: datetime) -> list[ShopOrder]:
         """The orders placed since the store was linked whose status changed since it was
-        last written there, oldest first (D75)."""
+        last written there, oldest first."""
         async with self.sessions() as s:
             rows = await s.scalars(
                 select(ShopOrder)
@@ -159,8 +163,8 @@ class ShopStore(Store):
             order.woo_id, order.woo_sent = woo_id, status
 
     async def orders_for_courier(self, status: str) -> list[ShopOrder]:
-        """The orders the courier deals with (D112), oldest first: `confirmed` (or `packed`,
-        D131) ones with no parcel yet, to book; `shipped` ones with a parcel, to follow."""
+        """The orders the courier deals with, oldest first: `confirmed` (or `packed`)
+        ones with no parcel yet, to book; `shipped` ones with a parcel, to follow."""
         booked = ShopOrder.parcel_id == "" if status == "confirmed" else ShopOrder.parcel_id != ""
         statuses = TO_BOOK if status == "confirmed" else (status,)
         async with self.sessions() as s:
@@ -176,7 +180,7 @@ class ShopStore(Store):
             return list(rows)
 
     async def to_review(self, delivered_before: datetime) -> list[ShopOrder]:
-        """Delivered orders from a chat whose buyer wasn't asked how it was yet (D134)."""
+        """Delivered orders from a chat whose buyer wasn't asked how it was yet."""
         async with self.sessions() as s:
             rows = await s.scalars(
                 select(ShopOrder).where(
@@ -189,8 +193,8 @@ class ShopStore(Store):
             )
             return list(rows)
 
-    async def told(self, order_id: str, what: Literal["reminded", "review_asked"]) -> None:
-        """The buyer was told this once (D134), so the next round doesn't tell them again."""
+    async def mark_notified(self, order_id: str, what: Literal["reminded", "review_asked"]) -> None:
+        """The buyer was told this once, so the next round doesn't tell them again."""
         async with self.sessions() as s, s.begin():
             setattr(await self._one(s, ShopOrder, order_id), what, True)
 
@@ -216,20 +220,21 @@ class ShopStore(Store):
         self, order: Confirmed[NewOrder], source: Literal["chat", "page"] = "chat"
     ) -> ShopOrder:
         """Takes the items out of stock and saves the order as its status says: `unpaid` when
-        its delivery charge is paid first (D47), `new` for the shop's call, or `confirmed`
-        (D92). Raises OutOfStock, and saves nothing, if there aren't enough left."""
+        its delivery charge is paid first, `new` for the shop's call, or `confirmed`.
+        Raises OutOfStock, and saves nothing, if there aren't enough left."""
         return await self._save_order(order.value, source)
 
     async def add_team_order(self, order: NewOrder) -> ShopOrder:
-        """An order the team typed for a buyer who called (D131): no read-back to a visitor
+        """An order the team typed for a buyer who called: no read-back to a visitor
         and no `Confirmed`, as the team member is the yes. Saved `confirmed`, in no chat."""
         return await self._save_order(replace(order, status="confirmed"), "team")
 
     async def _save_order(self, o: NewOrder, source: str) -> ShopOrder:
         """Raises OutOfStock or CouponGone, and saves nothing."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # one save at a time: the last one and a coupon's last use
             await self._stock(s, o.lines, -1)
-            if o.coupon:  # one more use, checked again in this transaction (D133)
+            if o.coupon:  # one more use, checked again in this transaction
                 row = await s.scalar(
                     select(CouponRow).where(
                         CouponRow.workspace_id == self.workspace_id, CouponRow.code == o.coupon
@@ -271,8 +276,8 @@ class ShopStore(Store):
     async def same_order(
         self, phone: str, lines: list[dict[str, Any]], since: datetime
     ) -> ShopOrder | None:
-        """The newest order from this mobile since then, not cancelled, with the same items
-        (G8, D146): a second one is usually a mistake or a prank, and costs a delivery."""
+        """The newest order from this mobile since then, not cancelled, with the same items:
+        a second one is usually a mistake or a prank, and costs a delivery."""
 
         def items(of: list[dict[str, Any]]) -> set[tuple[str, str, str]]:
             return {(line["code"], line.get("size", ""), line.get("colour", "")) for line in of}
@@ -290,7 +295,7 @@ class ShopStore(Store):
             )
             return next((o for o in found if items(o.lines) == items(lines)), None)
 
-    async def past_trouble(self, phone: str) -> dict[str, int]:
+    async def return_history(self, phone: str) -> dict[str, int]:
         """How many of this mobile's orders came back or were cancelled: {"returned": 2}. For
         the owner's new-order alert, since a fake order costs a shop two delivery charges."""
         async with self.sessions() as s:
@@ -306,7 +311,7 @@ class ShopStore(Store):
             return {status: count for status, count in rows}
 
     async def coupon(self, code: str) -> Coupon | None:
-        """The code, if this chat may use it: an offer's only by the chats it went to (D140)."""
+        """The code, if this chat may use it: an offer's only by the chats it went to."""
         async with self.sessions() as s:
             row = await s.scalar(
                 select(CouponRow).where(
@@ -321,7 +326,7 @@ class ShopStore(Store):
         return row.only_for is None or self.conversation_id in row.only_for
 
     async def offer_code(self) -> str:
-        """The newest offer sent to this chat that hasn't ended (D140), or ""."""
+        """The newest offer sent to this chat that hasn't ended, or ""."""
         if self.conversation_id is None:
             return ""
         async with self.sessions() as s:
@@ -337,7 +342,7 @@ class ShopStore(Store):
             return next((r.code for r in rows if self._may_use(r)), "")
 
     async def chats_since(self, since: datetime) -> list[str]:
-        """The shop's chats where the visitor wrote since then (an offer's audience, D140), not
+        """The shop's chats where the visitor wrote since then (an offer's audience), not
         calls and not the team's own asks."""
         async with self.sessions() as s:
             found = await s.scalars(
@@ -352,7 +357,7 @@ class ShopStore(Store):
             return list(found)
 
     async def posts(self) -> list[PagePost]:
-        """The Page's posts that were commented on or tagged (D142), newest first."""
+        """The Page's posts that were commented on or tagged, newest first."""
         async with self.sessions() as s:
             rows = await s.scalars(
                 select(PagePost)
@@ -363,7 +368,7 @@ class ShopStore(Store):
             return list(rows)
 
     async def tag_post(self, post_id: str, codes: list[str]) -> PagePost:
-        """The owner says which products a post has (D142): from now on its comments use these.
+        """The owner says which products a post has: from now on its comments use these.
         Raises NotFound for a code the list hasn't."""
         listed = {p.code for p in await self.products()}
         unknown = [code for code in codes if code not in listed]
@@ -384,7 +389,7 @@ class ShopStore(Store):
         return post
 
     async def add_offer(self, coupon: Coupon, chats: list[str]) -> None:
-        """An offer as a coupon only `chats` may use (D140)."""
+        """An offer as a coupon only `chats` may use."""
         async with self.sessions() as s, s.begin():
             fields = coupon.model_dump(exclude={"used"})
             s.add(CouponRow(workspace_id=self.workspace_id, only_for=chats, **fields))
@@ -428,7 +433,7 @@ class ShopStore(Store):
             await s.delete(row)
 
     async def records(self, phones: set[str]) -> dict[str, BuyerRecord]:
-        """Each mobile's orders with this shop by how they ended (D132), in one query."""
+        """Each mobile's orders with this shop by how they ended, in one query."""
         found: dict[str, BuyerRecord] = {phone: BuyerRecord() for phone in phones}
         if not phones:
             return found
@@ -446,7 +451,7 @@ class ShopStore(Store):
         return found
 
     async def buyers(self, q: str | None = None, limit: int = PAGE) -> list[Buyer]:
-        """The shop's buyers by mobile, the latest to order first (D132). `q` matches the
+        """The shop's buyers by mobile, the latest to order first. `q` matches the
         mobile or a name they ordered under."""
         ws = self.workspace_id
         query = (
@@ -498,11 +503,11 @@ class ShopStore(Store):
         ]
 
     async def orders_here(self) -> list[ShopOrder]:
-        """The orders placed in this conversation, newest first (D55)."""
-        return await self.here(ShopOrder)
+        """The orders placed in this conversation, newest first."""
+        return await self.records_in_conversation(ShopOrder)
 
     async def latest_order(self, phone: str) -> ShopOrder | None:
-        """The newest order placed with this mobile (D92): buyers know their number, not the
+        """The newest order placed with this mobile: buyers know their number, not the
         order's code."""
         async with self.sessions() as s:
             return await s.scalar(
@@ -513,11 +518,12 @@ class ShopStore(Store):
             )
 
     async def change_order(self, edit: Confirmed[OrderEdit]) -> ShopOrder:
-        """New items (their stock swapped: the old back, the new out, D92) or delivery details,
+        """New items (their stock swapped: the old back, the new out) or delivery details,
         and the total again. Raises TooLate if the courier has it by now, and OutOfStock, with
         nothing changed, if there aren't enough of the new items."""
         e = edit.value
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             order = await s.scalar(
                 select(ShopOrder).where(
                     ShopOrder.workspace_id == self.workspace_id, ShopOrder.number == e.number
@@ -533,7 +539,7 @@ class ShopStore(Store):
                 order.lines, order.subtotal = e.lines, e.subtotal
             order.address, order.zone, order.phone, order.note = e.address, e.zone, e.phone, e.note
             order.delivery_charge = e.delivery_charge
-            # ponytail: the coupon's amount stays as it was, at most the new items (D133)
+            # ponytail: the coupon's amount stays as it was, at most the new items
             order.discount = min(order.discount, order.subtotal)
             order.total = order.subtotal - order.discount + e.delivery_charge
             order.updated_at = self.now()
@@ -550,7 +556,7 @@ class ShopStore(Store):
         await self.move_order(found.id, "cancelled")
 
     async def confirm_order(self, confirm: Confirmed[OrderConfirm]) -> ShopOrder:
-        """The buyer said yes on the shop's confirmation call (D88): `new` → `confirmed`."""
+        """The buyer said yes on the shop's confirmation call: `new` → `confirmed`."""
         found = await self.order(confirm.value.number)
         if found is None:
             raise NotFound("There's no such order.")
@@ -560,6 +566,7 @@ class ShopStore(Store):
         """The owner moves an order along (or the buyer cancels it). A cancelled order's items
         go back in stock."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # cancelled twice at once, its items would go back twice
             order = await self._one(s, ShopOrder, order_id)
             if status != order.status:
                 self._move(order, status)
@@ -567,8 +574,10 @@ class ShopStore(Store):
                     await self._stock(s, order.lines, +1)
         return order
 
-    async def settle(self, order_id: str, paid_in: bool | None, reason: str | None) -> ShopOrder:
-        """Once an order ended (D131): whether the rider's cash reached the shop, and why it
+    async def record_outcome(
+        self, order_id: str, paid_in: bool | None, reason: str | None
+    ) -> ShopOrder:
+        """Once an order ended: whether the rider's cash reached the shop, and why it
         came back or was cancelled. Raises InvalidTransition before then."""
         async with self.sessions() as s, s.begin():
             order = await self._one(s, ShopOrder, order_id)
@@ -583,7 +592,7 @@ class ShopStore(Store):
 
     async def _stock(self, s: AsyncSession, lines: list[dict[str, Any]], sign: int) -> None:
         """Takes the lines' quantities out of stock (sign -1) or puts them back (+1): from the
-        product's own stock, or from the variant of its size and colour (D56). What isn't
+        product's own stock, or from the variant of its size and colour. What isn't
         counted is left alone."""
         rows = {
             row.code: row
@@ -609,7 +618,7 @@ class ShopStore(Store):
             product, row = products[code], rows[code]
             left = product.count(counter)
             if sign < 0 and left < quantity:
-                short.append(f"{product.what(counter)} ({left} left)")
+                short.append(f"{product.display_name(counter)} ({left} left)")
             if counter == OWN:
                 row.stock = left + sign * quantity
             else:  # a new list: a JSON column doesn't see a change in place

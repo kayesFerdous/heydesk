@@ -30,8 +30,9 @@ from heydesk.models import (
     Turn,
     Visitor,
     WooLink,
+    Workspace,
 )
-from heydesk.models.taken import UNPAID, Taken, next_number
+from heydesk.models.customer_request import UNPAID, CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.tool import Tool
@@ -41,9 +42,9 @@ if TYPE_CHECKING:  # only a type here: services import the desks
     from heydesk.services.photos import PhotoService
 
 PAGE = 100  # the most rows a list returns at once (newest first)
-BROWSER = ("web", "voice")  # one browser's token is the contact on both (D114)
-MAX_NOTES = 20  # what the agent remembers about one visitor, at most (D124)
-NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales (D144)
+BROWSER = ("web", "voice")  # one browser's token is the contact on both
+MAX_NOTES = 20  # what the agent remembers about one visitor, at most
+NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
 
 
 class SheetLinked(Conflict):
@@ -72,20 +73,20 @@ class NewMessage:
 
 @dataclass(frozen=True)
 class Stats:
-    """What a business's agent did in a stretch of time, for the owner's dashboard (D144)."""
+    """What a business's agent did in a stretch of time, for the owner's dashboard."""
 
     conversations: int  # chats the agent answered in it
     handed_off: int  # of those, handed to a person; the rest the agent handled alone
     sales: int  # orders or bookings made in it, not cancelled or waiting for payment
     amount: int  # their total, minor units (bookings and appointments add nothing)
     bought: int  # chats that ended in one
-    sources: dict[str, int]  # where they came from: chat, page (D130) or team (D131)
-    leads: int  # call backs asked for in it and not sold (D139)
+    sources: dict[str, int]  # where they came from: chat, page or team
+    leads: int  # call backs asked for in it and not sold
 
 
 @dataclass(frozen=True)
 class NewLead:
-    """A call back the visitor asked for (D139), ready to save once they said yes to it."""
+    """A call back the visitor asked for, ready to save once they said yes to it."""
 
     call_at: datetime  # UTC
     note: str
@@ -99,7 +100,7 @@ class Store:
 
     Tools get one made for their conversation, so what they save is linked to it."""
 
-    SALES: ClassVar[tuple[type[Taken], ...]] = ()  # its tables the dashboard counts (D144)
+    SALES: ClassVar[tuple[type[CustomerRequest], ...]] = ()  # its tables the dashboard counts
 
     def __init__(
         self,
@@ -118,12 +119,11 @@ class Store:
         self.conversation_id = conversation_id
         self.knowledge = knowledge
         self.public_url = public_url  # where a link in a reply points: the payment page
-        self.photos = photos  # for the photo links in a shop's list (D102)
+        self.photos = photos  # for the photo links in a shop's list
 
     async def pays_first(self, config: AgentConfig) -> bool:
         """Whether the agent asks for payment before placing anything: the owner turned it on
-        (`pay_first`) and connected the business's SSLCommerz store or bKash account (D49,
-        D109). Without either, the agent takes orders as if it were off."""
+        (`pay_first`) and connected the business's SSLCommerz store or bKash account. Without either, the agent takes orders as if it were off."""
         if not getattr(config, "pay_first", False):
             return False
         async with self.sessions() as s:
@@ -133,7 +133,7 @@ class Store:
         return found is not None
 
     def pay_link(self, record_id: str) -> str:
-        """The visitor's link to pay for something saved unpaid (D47). It starts a new payment
+        """The visitor's link to pay for something saved unpaid. It starts a new payment
         each time, so it doesn't run out; the id is long and random, so no one guesses another."""
         return f"{self.public_url}/pay/{record_id}"
 
@@ -153,7 +153,7 @@ class Store:
         return saved.code
 
     async def missed(self, question: str) -> None:
-        """A question it couldn't answer (D143), for the owner to teach."""
+        """A question it couldn't answer, for the owner to teach."""
         question = " ".join(question.split())[:300]
         if not question:
             return
@@ -181,8 +181,8 @@ class Store:
             )
             return list(reversed(rows.all()))
 
-    async def taught(self, ids: list[str]) -> None:
-        """These questions have an answer now: off the list (D143)."""
+    async def mark_answered(self, ids: list[str]) -> None:
+        """These questions have an answer now: off the list."""
         async with self.sessions() as s, s.begin():
             rows = await s.scalars(
                 select(MissedQuestion).where(
@@ -201,7 +201,7 @@ class Store:
         return saved.code
 
     async def open_ticket(self, reason: str) -> tuple[Ticket, bool]:
-        """A complaint in this chat (D138): its open ticket, or a new one. No yes is asked:
+        """A complaint in this chat: its open ticket, or a new one. No yes is asked:
         it's the team's to-do, like a hand-off, not something the visitor is promised. Says
         whether it's new."""
         async with self.sessions() as s:
@@ -242,6 +242,7 @@ class Store:
     async def replace_rows(self, table: type[Any], items: Sequence[BaseModel]) -> None:
         """`table` becomes exactly these, in this order."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)  # an order taking stock meanwhile would lose its take
             await self._replace(s, table, items)
 
     async def _replace(self, s: AsyncSession, table: type[Any], items: Sequence[BaseModel]) -> None:
@@ -254,12 +255,12 @@ class Store:
     async def take_sheet(
         self, text: str, mapping: dict[str, str], seen: dict[str, Any]
     ) -> dict[str, Any]:
-        """The list becomes the linked sheet's rows (D58); returns what to remember for the
+        """The list becomes the linked sheet's rows; returns what to remember for the
         next time (`seen`). Raises InvalidConfig with the rows' problems, saving nothing."""
         raise NotFound("This agent has no list to keep in a sheet.")
 
     async def linked(self) -> bool:
-        """A Google Sheet (D58) or a WooCommerce store (D75) is the list."""
+        """A Google Sheet or a WooCommerce store is the list."""
         async with self.sessions() as s:
             for table in (SheetLink, WooLink):
                 found = await s.scalar(
@@ -270,15 +271,16 @@ class Store:
         return False
 
     async def not_linked(self) -> None:
-        """409 while a sheet or a store is the list: an edit here would be undone by it (D58)."""
+        """409 while a sheet or a store is the list: an edit here would be undone by it."""
         if await self.linked():
             raise SheetLinked()
 
-    # Shared by every table of things taken (`models.taken`)
+    # Shared by every table of things taken (`models.customer_request`)
 
-    async def add[T: Taken](self, table: type[T], **fields: Any) -> T:
+    async def add[T: CustomerRequest](self, table: type[T], **fields: Any) -> T:
         """Saves a new one with the business's next number."""
         async with self.sessions() as s, s.begin():
+            await self._lock(s)
             now = self.now()
             row = table(
                 workspace_id=self.workspace_id,
@@ -291,7 +293,7 @@ class Store:
             s.add(row)
         return row
 
-    async def find[T: Taken](
+    async def find[T: CustomerRequest](
         self,
         table: type[T],
         status: str | None = None,
@@ -324,8 +326,8 @@ class Store:
         async with self.sessions() as s:
             return list(await s.scalars(query.order_by(table.created_at.desc()).limit(limit)))
 
-    async def here[T: Taken](self, table: type[T]) -> list[T]:
-        """What was taken in this conversation, newest first (D55): the visitor needs no code
+    async def records_in_conversation[T: CustomerRequest](self, table: type[T]) -> list[T]:
+        """What was taken in this conversation, newest first: the visitor needs no code
         for it."""
         if self.conversation_id is None:
             return []
@@ -340,11 +342,11 @@ class Store:
             )
             return list(found)
 
-    async def before[T: Taken](self, table: type[T], limit: int = 1) -> list[T]:
-        """What this visitor had before, newest first (D81, D114): in this conversation or an
+    async def before[T: CustomerRequest](self, table: type[T], limit: int = 1) -> list[T]:
+        """What this visitor had before, newest first: in this conversation or an
         earlier one from the same chat on a messaging app, or the same browser on the web chat
-        and its calls. A second order in the same chat is offered the first one's details too
-        (D123). Only this conversation's when it has no `contact`."""
+        and its calls. A second order in the same chat is offered the first one's details too.
+        Only this conversation's when it has no `contact`."""
         here = await self._here()
         if here is None:
             return []
@@ -364,9 +366,9 @@ class Store:
             )
             return list(found)
 
-    # What the agent remembers about a visitor (D124): kept on their `Visitor` row
+    # What the agent remembers about a visitor: kept on their `Visitor` row
 
-    async def remembered(self) -> dict[str, str]:
+    async def visitor_notes(self) -> dict[str, str]:
         """The notes on this visitor, `{about: note}`, oldest first. Empty without a contact."""
         async with self.sessions() as s:
             visitor = await self._visitor(s)
@@ -397,7 +399,7 @@ class Store:
             return found
 
     async def _visitor(self, s: AsyncSession) -> Visitor | None:
-        """This conversation's visitor, keyed as the limits key them (D51): `web:<token>` for
+        """This conversation's visitor, keyed as the limits key them: `web:<token>` for
         the web chat and calls, `messenger:<psid>` and so on."""
         here = await self._here()
         if here is None or here.contact is None:
@@ -411,25 +413,25 @@ class Store:
         )
         return found
 
-    async def get[T: Taken](self, table: type[T], row_id: str) -> T:
+    async def get[T: CustomerRequest](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:
             return await self._one(s, table, row_id)
 
-    async def by_number[T: Taken](self, table: type[T], number: int) -> T | None:
+    async def by_number[T: CustomerRequest](self, table: type[T], number: int) -> T | None:
         async with self.sessions() as s:
             found: T | None = await s.scalar(
                 select(table).where(table.workspace_id == self.workspace_id, table.number == number)
             )
             return found
 
-    async def set_status[T: Taken](self, table: type[T], row_id: str, status: str) -> T:
+    async def set_status[T: CustomerRequest](self, table: type[T], row_id: str, status: str) -> T:
         async with self.sessions() as s, s.begin():
             row = await self._one(s, table, row_id)
             self._move(row, status)
         return row
 
     async def lead_outcome(self, lead_id: str, status: str, why: str) -> Lead:
-        """The team tapped how a call back went (D139); a lost one keeps its why."""
+        """The team tapped how a call back went; a lost one keeps its why."""
         async with self.sessions() as s, s.begin():
             lead = await self._one(s, Lead, lead_id)
             self._move(lead, status)
@@ -437,7 +439,7 @@ class Store:
         return lead
 
     async def lost_why(self) -> list[tuple[str, int]]:
-        """Why sales were lost (D139): each lost lead's why, with how many, most first."""
+        """Why sales were lost: each lost lead's why, with how many, most first."""
         async with self.sessions() as s:
             rows = await s.execute(
                 select(Lead.why, func.count())
@@ -448,7 +450,7 @@ class Store:
             return [(why or "no reason given", n) for why, n in rows.all()]
 
     async def stats(self, start: datetime, end: datetime) -> Stats:
-        """The dashboard's numbers from `start` up to `end` (D144), added up from the rows we
+        """The dashboard's numbers from `start` up to `end`, added up from the rows we
         keep: the turns, the desk's `SALES` tables and the leads."""
         ws = self.workspace_id
         async with self.sessions() as s:
@@ -487,7 +489,16 @@ class Store:
             leads=leads or 0,
         )
 
-    def _move(self, row: Taken, status: str) -> None:
+    async def _lock(self, s: AsyncSession) -> None:
+        """Waits until no other transaction is numbering this business's records or changing
+        its stock, and holds them off until this one ends. Two saves at the same moment would
+        otherwise both read the same highest number, or both take the last one. Postgres
+        locks the business's row; SQLite writes one transaction at a time anyway."""
+        await s.execute(
+            select(Workspace.id).where(Workspace.id == self.workspace_id).with_for_update()
+        )
+
+    def _move(self, row: CustomerRequest, status: str) -> None:
         """`row.move`, with its problems as the errors the owner's routes return."""
         try:
             row.move(status, self.now())
@@ -496,7 +507,7 @@ class Store:
         except ValueError as error:
             raise InvalidTransition(str(error)) from None
 
-    async def _one[T: Taken](self, s: AsyncSession, table: type[T], row_id: str) -> T:
+    async def _one[T: CustomerRequest](self, s: AsyncSession, table: type[T], row_id: str) -> T:
         row: T | None = await s.scalar(
             select(table).where(table.id == row_id, table.workspace_id == self.workspace_id)
         )
@@ -513,9 +524,9 @@ class Desk:
     description: ClassVar[str]  # for the owner, in plain words
     config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
     tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
-    takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop, D57)
-    takes_voice: ClassVar[bool] = False  # a visitor can call it (the receptionist and clinic, D108)
-    columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet (D53, D58)
+    takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop)
+    takes_voice: ClassVar[bool] = False  # a visitor can call it (the receptionist and clinic)
+    columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet
 
     def store(
         self,
@@ -562,7 +573,7 @@ class Desk:
         return missing_basics(config)
 
     def read_list(self, text: str, mapping: dict[str, str] | None) -> Sequence[BaseModel]:
-        """Its list from a CSV's text, without saving it: problems per row (D50, D58)."""
+        """Its list from a CSV's text, without saving it: problems per row."""
         raise NotFound("This agent has no list to keep in a sheet.")
 
     async def seed(self, store: Any, data: dict[str, Any]) -> None:

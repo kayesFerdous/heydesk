@@ -1,5 +1,5 @@
-"""A shop's WooCommerce store (D75): its products, read when its webhooks say something
-changed (D78), and our orders, written into it so its stock takes them off."""
+"""A shop's WooCommerce store: its products, read when its webhooks say something
+changed, and our orders, written into it so its stock takes them off."""
 
 from dataclasses import dataclass
 from typing import Any, Protocol

@@ -1,4 +1,4 @@
-"""A desk's list kept in a Google Sheet (D58): the owner links it once, it's read every few
+"""A desk's list kept in a Google Sheet: the owner links it once, it's read every few
 minutes, and while it's linked the list is changed in the sheet."""
 
 from datetime import datetime
@@ -43,7 +43,7 @@ def sheet_out(link: SheetLink) -> SheetOut:
 
 @router.post("/api/agent/sheet/suggest")
 async def suggest_sheet_columns(body: SheetUrl, ws: Workspace, services: Svc) -> Suggestion:
-    """Reads the sheet and suggests which of its columns is which of the list's fields (D53)."""
+    """Reads the sheet and suggests which of its columns is which of the list's fields."""
     return await services.sheets.suggest(ws, body.url)
 
 

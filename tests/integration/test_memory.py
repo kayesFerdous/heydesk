@@ -1,4 +1,4 @@
-"""What the agent remembers about a visitor (D124): a note they gave on their own, kept with
+"""What the agent remembers about a visitor: a note they gave on their own, kept with
 `remember` and in the prompt of their next conversations from the same chat or browser."""
 
 from heydesk.ports.llm import ToolCall
@@ -18,7 +18,7 @@ async def test_a_note_is_in_the_next_conversations_prompt(world: World) -> None:
     await talk.reply(agent, "telegram", "chat-1", "ami dark colour pochondo kori")
     assert SECTION not in world.llm.requests[0].system
 
-    world.clock.advance(hours=13)  # the same chat, started afresh (D157)
+    world.clock.advance(hours=13)  # the same chat, started afresh
     world.llm.script = ["Welcome back!"]
     await talk.reply(agent, "telegram", "chat-1", "hi")
     assert "- colours: likes dark colours" in world.llm.requests[-1].system

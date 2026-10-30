@@ -1,4 +1,4 @@
-"""Documents through the API (D34): added as text or a file, listed, deleted, and private."""
+"""Documents through the API: added as text or a file, listed, deleted, and private."""
 
 import io
 

@@ -1,9 +1,9 @@
-"""A desk's list kept in a Google Sheet, read every few minutes (D58).
+"""A desk's list kept in a Google Sheet, read every few minutes.
 
-The owner shares the sheet by link and checks which column is which (as an import, D53). Then
+The owner shares the sheet by link and checks which column is which (as an import). Then
 the list is the sheet's: each sync reads it as CSV, and when its text changed, the desk's store
 takes it (`Store.take_sheet`: the shop keeps its own count where the sheet's didn't change, and
-the products it has from elsewhere, D120). A
+the products it has from elsewhere). A
 sheet with a problem keeps the old list, and the owner hears once.
 """
 
@@ -94,7 +94,7 @@ class SheetService:
                 url=url.strip(),
                 mapping=mapping,
                 seen=seen,
-                checked=digest(text),
+                checked=hash_text(text),
                 synced_at=store.now(),
             )
             s.add(link)
@@ -124,8 +124,11 @@ class SheetService:
             text = await self.fetch(csv_url(link.url))
         except SheetUnreadable as error:  # read it all again once it's back
             text, problem, checked = "", str(error), ""
-        if text and digest(text) != link.checked:  # the same text as last time: nothing to do
-            problem, checked = "", digest(text)  # a problem too isn't read again until it changes
+        if text and hash_text(text) != link.checked:  # the same text as last time: nothing to do
+            problem, checked = (
+                "",
+                hash_text(text),
+            )  # a problem too isn't read again until it changes
             try:
                 seen = await store.take_sheet(text, link.mapping, link.seen)
             except InvalidConfig as error:  # a row the desk can't read: the old list stays
@@ -161,5 +164,5 @@ class SheetService:
             raise InvalidConfig({"url": str(error)}) from None
 
 
-def digest(text: str) -> str:
+def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()

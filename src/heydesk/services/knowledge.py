@@ -1,4 +1,4 @@
-"""The knowledge base (D34): a business's documents, chunked, embedded and searched.
+"""The knowledge base: a business's documents, chunked, embedded and searched.
 
 The text of each document is saved in SQL; its chunks and vectors go to Qdrant through the
 `KnowledgeStore` port. Nothing is saved unless the whole document was embedded and stored, and

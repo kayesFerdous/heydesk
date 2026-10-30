@@ -36,7 +36,7 @@ notes/
 # Qdrant local mode (development, when QDRANT_URL is empty)
 qdrant_local/
 
-# Sample product photos for trying photo search, and uploaded photos (D57)
+# Sample product photos for trying photo search, and uploaded photos
 photos/
 media/
 

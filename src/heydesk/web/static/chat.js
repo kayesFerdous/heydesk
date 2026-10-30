@@ -38,7 +38,7 @@ const pair = (label, value, cls = "") => {
   return node;
 };
 
-// A tool's card (D110). Every value is Python's: the page only lays it out
+// A tool's card. Every value is Python's: the page only lays it out
 const drawCard = (kind, d) => {
   const box = add("info", "");
   const heading = [d.title, d.number].filter(Boolean).join(" · ");
@@ -54,7 +54,7 @@ const drawCard = (kind, d) => {
   for (const doc of d.doctors ?? []) {
     const item = el("div", `${doc.name}, ${doc.speciality}`, "item");
     item.append(el("div", `${doc.days} · ${doc.hours} · fee ${doc.fee.text}`, "dim"));
-    item.append(button("Book", () => say(doc.book)));  // a tap is only its words (D99)
+    item.append(button("Book", () => say(doc.book)));  // a tap is only its words
     box.append(item);
   }
   for (const text of [d.status, d.note].filter(Boolean)) box.append(el("div", text, "dim"));
@@ -64,7 +64,7 @@ const drawCard = (kind, d) => {
     pay.target = "_blank";
     box.append(pay);
   }
-  if (d.order_url) {  // the order's own page (D130)
+  if (d.order_url) {  // the order's own page
     const follow = el("a", "Follow your order");
     follow.href = d.order_url;
     follow.target = "_blank";
@@ -99,13 +99,13 @@ const handle = (event, data, reply) => {
       for (const how of [data.phone, data.email].filter(Boolean)) card.append("\n" + how);
       break;
     }
-    case "photos": {  // products a tool showed (D57): a card each in a row (D125)
+    case "photos": {  // products a tool showed: a card each in a row
       const row = add("photos", "");
       for (const item of data.items) {
         const card = el("div", "", "photo");
-        const page = document.createElement("a");  // opens the product's page (D121)
-        // `c`: this chat, where the page's Buy now sends the receipt (D130)
-        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?from=web&c=${conversationId}`;
+        const page = document.createElement("a");  // opens the product's page
+        // `c`: this chat, where the page's Buy now sends the receipt
+        page.href = `/p/${AGENT_KEY}/${encodeURIComponent(item.code)}?c=${conversationId}`;
         page.target = "_blank";
         if (item.url) {  // a product with no photo is a card with no picture
           const img = document.createElement("img");
@@ -114,13 +114,13 @@ const handle = (event, data, reply) => {
           page.append(img);
         }
         page.append(el("div", `${item.name} · ${item.price}`));
-        // Order this says "Order [code]", as the button on Messenger does (D123)
+        // Order this says "Order [code]", as the button on Messenger does
         const taps = el("div", "", "taps");
         const details = el("a", "Details");
         details.href = page.href;
         details.target = "_blank";
         taps.append(button("Order this", () => say(`Order [${item.code}]`)), details);
-        if (item.video) {  // its first video (D125)
+        if (item.video) {  // its first video
           const video = el("a", "Video");
           video.href = item.video;
           video.target = "_blank";
@@ -131,11 +131,11 @@ const handle = (event, data, reply) => {
       }
       break;
     }
-    case "card":  // what a tool showed (D110): a summary, a receipt, tracking or doctors
+    case "card":  // what a tool showed: a summary, a receipt, tracking or doctors
       drawCard(data.kind, data.data);
       reply.node = null;  // the words after it go under it
       break;
-    case "choices": {  // buttons under the reply: a tap sends its words (D99)
+    case "choices": {  // buttons under the reply: a tap sends its words
       const row = add("choices", "");
       for (const text of data.items) row.append(button(text, () => { row.remove(); say(text); }));
       break;
@@ -203,7 +203,7 @@ $("form").addEventListener("submit", (e) => {
 });
 
 // What the business said meanwhile (a payment came in, the order is ready): the server adds it
-// to the conversation, and the page asks for it every few seconds (D43, D66)
+// to the conversation, and the page asks for it every few seconds
 setInterval(async () => {
   if (!conversationId) return;
   const res = await fetch(`/api/chat/${AGENT_KEY}/${conversationId}/team`).catch(() => null);
@@ -221,14 +221,14 @@ $("restart").addEventListener("click", () => {
   $("input").focus();
 });
 
-// The greeting shows at once; the first turn stores it as the first assistant message (D8)
+// The greeting shows at once; the first turn stores it as the first assistant message
 (async () => {
   try {
     const res = await fetch(`/api/chat/${AGENT_KEY}`);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const agent = await res.json();
     $("agent-name").textContent = agent.name;
-    $("call").hidden = !agent.voice;  // only a receptionist or a clinic takes calls (D108)
+    $("call").hidden = !agent.voice;  // only a receptionist or a clinic takes calls
     greeting = agent.greeting;
     add("agent", greeting);
   } catch (failure) {

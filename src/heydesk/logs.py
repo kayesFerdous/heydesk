@@ -1,6 +1,6 @@
 """JSON log lines carrying the ids of whatever is running.
 
-Ids only: never message text, names or phone numbers (D10). Pass extra fields
+Ids only: never message text, names or phone numbers. Pass extra fields
 with `log.info("turn finished", extra={"conversation_id": "…"})`.
 """
 

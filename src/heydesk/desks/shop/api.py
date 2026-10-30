@@ -1,5 +1,5 @@
 """A shop's own routes: its products, and the orders the agent took; and a product's public
-page (D121), its *Buy now* form and an order's page (D130)."""
+page, its *Buy now* form and an order's page."""
 
 import logging
 from datetime import datetime, timedelta
@@ -64,34 +64,34 @@ class ShopOrderOut(BaseModel):
     id: str
     code: str  # what the buyer was told: "O-101"
     conversation_id: str | None
-    source: str  # where it was placed: chat, page or team (D144)
+    source: str  # where it was placed: chat, page or team
     status: str  # new → confirmed → shipped → delivered or returned; or cancelled
     name: str
     phone: str
     lines: list[dict[str, Any]]  # {code, name, size, colour, quantity, price}
     subtotal: int  # minor units
     delivery_charge: int
-    discount: int  # a coupon took this off the items (D133)
+    discount: int  # a coupon took this off the items
     coupon: str  # its code; "" none
     total: int  # the whole order
-    paid: int  # paid online first (D47); the rider collects `total - paid`
+    paid: int  # paid online first; the rider collects `total - paid`
     payment_ref: str  # the payment gateway's id for it
     currency: str
     zone: str
     address: str
     note: str
-    parcel_id: str  # booked with the courier (D112); "" not booked
+    parcel_id: str  # booked with the courier; "" not booked
     courier_status: str  # the courier's last words about it
-    paid_in: bool  # once it ended: the rider's cash reached the shop (D131)
-    reason: str  # why it came back or was cancelled: "refused", "damaged" (D131)
-    buyer: BuyerRecord = BuyerRecord()  # this mobile's orders with the shop, this one too (D132)
+    paid_in: bool  # once it ended: the rider's cash reached the shop
+    reason: str  # why it came back or was cancelled: "refused", "damaged"
+    buyer: BuyerRecord = BuyerRecord()  # this mobile's orders with the shop, this one too
     created_at: datetime
     updated_at: datetime
 
 
 class OrderChange(BaseModel):
     status: str | None = None  # where it may go depends on where it is: see the 409 message
-    paid_in: bool | None = None  # once it's delivered, returned or cancelled (D131)
+    paid_in: bool | None = None  # once it's delivered, returned or cancelled
     reason: str | None = Field(default=None, max_length=200)  # the same
 
 
@@ -106,8 +106,8 @@ async def replace_products(
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
     from the next message. While a Google Sheet or WooCommerce store is linked too: a product
-    that came from it changes back when it changes there (D120). Only a photo new to the
-    list is checked: one saved before stays, from wherever it was kept then (D101)."""
+    that came from it changes back when it changes there. Only a photo new to the
+    list is checked: one saved before stays, from wherever it was kept then."""
     had = {url for p in await store.products() for url in p.photos}
     wrong = {
         f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
@@ -132,8 +132,8 @@ async def add_product_photo(
     ws: Workspace,
     _: Shop,
 ) -> PhotoOut:
-    """Adds a product photo: saved as a JPEG and indexed, so a visitor's photo can find it
-    (D57). It belongs to a product once that product's `photos` are saved with its URL."""
+    """Adds a product photo: saved as a JPEG and indexed, so a visitor's photo can find it.
+    It belongs to a product once that product's `photos` are saved with its URL."""
     photo = await services.photos.add_product_photo(ws, await file.read())
     return PhotoOut(url=photo.url)
 
@@ -141,13 +141,13 @@ async def add_product_photo(
 @router.post("/api/products/import/suggest")
 async def suggest_products_columns(body: SuggestIn, _: Shop) -> Suggestion:
     """The file's columns, a few rows and our fields, with a guess at which column is which
-    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    field. The owner checks it, then imports with that `mapping`."""
     return suggest(body.csv, PRODUCT_COLUMNS)
 
 
 @router.post("/api/products/import")
 async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
-    """Adds the CSV's rows to the products (D120): a row with the code, or else the name, of
+    """Adds the CSV's rows to the products: a row with the code, or else the name, of
     one we have updates it, and the rest are added; none is deleted. Problems come back per
     row, and nothing is saved until the whole file is clean. `dry_run` only checks it."""
     found = products_from_csv(body.csv, body.mapping)  # a dry run shows the photo links
@@ -175,7 +175,7 @@ async def product(
     services: Svc,
     via: Annotated[str, Query(alias="from")] = "web",
 ) -> HTMLResponse:
-    """A product's public page (D121), linked from its card in a chat (`from`: the app it was
+    """A product's public page, linked from its card in a chat (`from`: the app it was
     sent on; `c`: the chat, which only the form's post reads). Only that shop's product, as
     HTML; anything else is the same 404."""
     found = await _product(services, public_key, code)
@@ -184,8 +184,13 @@ async def product(
     agent, item = found
     config = cast(ShopConfig, agent.config)
     back = await services.channels.chat_link(agent.workspace_id, via)
+    image = (
+        services.channels.absolute_url(item.photos[0]) if item.photos else ""
+    )  # a link's preview
     return html_page(
-        page.product_page(item, config.business_name, config.currency, back, config.delivery)
+        page.product_page(
+            item, config.business_name, config.currency, back, config.delivery, image=image
+        )
     )
 
 
@@ -198,7 +203,7 @@ async def buy(
     via: Annotated[str, Query(alias="from")] = "web",
     chat: Annotated[str, Query(alias="c")] = "",
 ) -> HTMLResponse | RedirectResponse:
-    """*Buy now* (D130). The first post shows the order read back; *Place order* posts it
+    """*Buy now*. The first post shows the order read back; *Place order* posts it
     again with `heard`, that read-back, and the order is saved only if Python's read-back of
     these details is still the same (`confirm`): the buyer's yes. The owner hears of it as
     of a chat's order; the chat it came from (`c`) gets the receipt."""
@@ -253,18 +258,18 @@ async def buy(
         )
         said = card_text(Card(receipt["kind"], receipt["data"]), "web")  # plain words
         await services.team.tell_visitor(conv.id, said)
-    if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid (D47)
+    if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid
         alert = await order_alert(shop, saved.code, read_back, order.phone, order.lines)
         await (services.team.alert(conv, alert) if conv else services.team.notify(ws, alert))
-        services.woo.push_soon(ws)  # into a linked WooCommerce store now (D77)
+        services.woo.push_soon(ws)  # into a linked WooCommerce store now
     log.info("page order", extra={"workspace_id": ws, "order_id": saved.id})
     return RedirectResponse(f"/o/{saved.id}", status_code=303)  # on this same server
 
 
 @router.get("/o/{order_id}", response_model=None, include_in_schema=False)
 async def order_status(order_id: str, services: Svc) -> HTMLResponse:
-    """An order's page, linked from its receipt (D130): the id is long and random, as the
-    payment link's is (D47), so no one guesses another."""
+    """An order's page, linked from its receipt: the id is long and random, as the
+    payment link's is, so no one guesses another."""
     found = await services.payments.find(order_id)
     if not isinstance(found, ShopOrder):
         return html_page(page.not_found(), 404)
@@ -299,23 +304,23 @@ async def change_order(
     order_id: str, body: OrderChange, store: Shop, services: Svc
 ) -> ShopOrderOut:
     """Move it along (`{"status": "confirmed"}` after calling the buyer, `packed`, `on_hold`,
-    `shipped` once the owner has booked a courier by hand; D112 books it in development).
+    `shipped` once the owner has booked a courier by hand; in development the fake courier books it).
     Cancelling puts its items back in stock. The buyer hears it in their chat when it's
-    confirmed, shipped or cancelled, as the team's message (D66). Once it ended, `paid_in` and
-    `reason` too (D131), in the same request or later."""
+    confirmed, shipped or cancelled, as the team's message. Once it ended, `paid_in` and
+    `reason` too, in the same request or later."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status)
     if moved.status != found.status and moved.conversation_id and (line := moved.news()):
         await services.team.tell_visitor(moved.conversation_id, line)
     if body.paid_in is not None or body.reason is not None:
-        moved = await store.settle(order_id, body.paid_in, body.reason)
+        moved = await store.record_outcome(order_id, body.paid_in, body.reason)
     [out] = await with_buyers(store, [moved])
     return out
 
 
 @router.post("/api/shop/orders", status_code=201)
 async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) -> ShopOrderOut:
-    """An order the team types for a buyer who called (D131): checked and added up as the
+    """An order the team types for a buyer who called: checked and added up as the
     chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
     The owner hears of it as of any new order."""
     config = cast(ShopConfig, (await services.agents.by_workspace(ws)).config)
@@ -335,7 +340,7 @@ async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) 
 
 
 async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrderOut]:
-    """Each order with its buyer's record (D132), counted for all of them at once."""
+    """Each order with its buyer's record, counted for all of them at once."""
     records = await store.records({o.phone for o in orders})
     return [
         ShopOrderOut.model_validate(o).model_copy(update={"buyer": records[o.phone]})
@@ -345,7 +350,7 @@ async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrd
 
 @router.get("/api/shop/coupons")
 async def coupons(store: Shop) -> list[Coupon]:
-    """The shop's coupon codes, with how many orders used each (D133)."""
+    """The shop's coupon codes, with how many orders used each."""
     return await store.coupons()
 
 
@@ -362,7 +367,7 @@ async def delete_coupon(code: str, store: Shop) -> None:
 
 
 class OfferIn(BaseModel):
-    """An offer to everyone who wrote in the last 24 hours (D140)."""
+    """An offer to everyone who wrote in the last 24 hours."""
 
     text: str = Field(min_length=1, max_length=500)  # sent as it is: "Free delivery till 10 pm!"
     kind: Literal["percent", "amount", "free_delivery"]
@@ -379,7 +384,7 @@ class OfferOut(BaseModel):
 async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     """Sends the offer to each chat where the buyer wrote in the last 24 hours, inside the
     app's window (`tell_in_window`), and saves it as a coupon only those chats may use, until
-    `ends_at`; `update_cart` takes it off by itself (D140)."""
+    `ends_at`; `update_cart` takes it off by itself."""
     now = store.now()
     if body.ends_at <= now:
         raise InvalidConfig({"ends_at": "Pick an end time that's still to come."})
@@ -415,20 +420,20 @@ class PostTagIn(BaseModel):
 
 @router.get("/api/shop/posts")
 async def posts(store: Shop) -> list[PostOut]:
-    """The Page's posts the agent knows (D142): what each is about, for its comments."""
+    """The Page's posts the agent knows: what each is about, for its comments."""
     return [PostOut.model_validate(p) for p in await store.posts()]
 
 
 @router.put("/api/shop/posts/{post_id}")
 async def tag_post(post_id: str, body: PostTagIn, store: Shop) -> PostOut:
-    """The owner says which products a post has; its next comments use them (D142)."""
+    """The owner says which products a post has; its next comments use them."""
     return PostOut.model_validate(await store.tag_post(post_id, body.products))
 
 
 @router.get("/api/shop/buyers")
 async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
     """The shop's buyers by mobile, the latest to order first, with how their orders ended,
-    what they spent and where they wrote from (D132). `q`: a mobile or a name."""
+    what they spent and where they wrote from. `q`: a mobile or a name."""
     return await store.buyers(q, limit=page.limit)
 
 
@@ -436,7 +441,7 @@ async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
 async def orders_csv(
     store: Shop, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
 ) -> Response:
-    """The orders the list shows with this `status` and `q`, as a spreadsheet's file (G6):
+    """The orders the list shows with this `status` and `q`, as a spreadsheet's file:
     money in taka, times in the business's own time."""
     tz = (await services.agents.by_workspace(ws)).config.timezone
     found = await store.find(ShopOrder, status, q, limit=EXPORT_ROWS)

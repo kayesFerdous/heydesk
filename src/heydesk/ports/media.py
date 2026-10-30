@@ -1,4 +1,4 @@
-"""The `MediaStore` port: where photo files are kept (D101). The server's disk, or Cloudflare R2.
+"""The `MediaStore` port: where photo files are kept. The server's disk, or Cloudflare R2.
 
 A file is known by its key, `<workspace_id>/<folder>/<id>.jpg`. Browsers fetch it at the
 store's `url` + "/" + key: `/media/...` from this server, or the bucket's public address.
@@ -16,7 +16,7 @@ class ImageUnreachable(Exception):
     """A photo's link couldn't be downloaded: a bad address, a private one, too big, or gone."""
 
 
-type FetchImage = Callable[[str], Awaitable[bytes]]  # a photo's link → its bytes (D102)
+type FetchImage = Callable[[str], Awaitable[bytes]]  # a photo's link → its bytes
 
 
 class MediaStore(Protocol):

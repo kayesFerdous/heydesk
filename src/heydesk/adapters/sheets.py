@@ -1,4 +1,4 @@
-"""Google Sheets' CSV export over httpx (D58): a sheet shared as "Anyone with the link" is
+"""Google Sheets' CSV export over httpx: a sheet shared as "Anyone with the link" is
 read with no Google keys. A private one answers with Google's sign-in page, not CSV."""
 
 import httpx

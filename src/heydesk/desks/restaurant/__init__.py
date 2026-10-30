@@ -135,7 +135,7 @@ class RestaurantDesk(Desk):
         menu = "# Menu\n" + menu_text(await store.menu(), config.currency)
         sections += ["\n".join(about), menu]
         before = await returning_facts(store)
-        if before:  # a guest back again (D114)
+        if before:  # a guest back again
             sections.append(returning("Their last visit", before))
         return "\n\n".join(sections)
 

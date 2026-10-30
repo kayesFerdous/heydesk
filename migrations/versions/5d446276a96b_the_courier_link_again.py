@@ -1,4 +1,4 @@
-"""the courier link again (D113)
+"""the courier link again
 
 Revision ID: 5d446276a96b
 Revises: 6064a4ef3d7e

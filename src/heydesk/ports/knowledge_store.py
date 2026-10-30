@@ -1,4 +1,4 @@
-"""The `KnowledgeStore` port: where a business's document chunks are searched (D33).
+"""The `KnowledgeStore` port: where a business's document chunks are searched.
 
 Every call carries the workspace: a store may never answer across businesses (rule 6).
 """

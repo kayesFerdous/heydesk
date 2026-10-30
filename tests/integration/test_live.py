@@ -1,4 +1,4 @@
-"""The inbox hears about a chat the moment it changes (D158)."""
+"""The inbox hears about a chat the moment it changes."""
 
 from fastapi import FastAPI
 from httpx import AsyncClient

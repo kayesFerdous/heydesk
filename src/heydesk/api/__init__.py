@@ -35,13 +35,13 @@ def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:
     app.include_router(documents.router)
     app.include_router(conversations.router)
     app.include_router(courier.router)
-    app.include_router(members.router)  # the business's moderators (D97)
-    app.include_router(calls.router)  # the shop's calls to confirm orders (D89)
+    app.include_router(members.router)  # the business's moderators
+    app.include_router(calls.router)  # the shop's calls to confirm orders
     app.include_router(telegram.router)
     app.include_router(messenger.router)
     app.include_router(whatsapp.router)
     app.include_router(payments.router)
-    app.include_router(billing.router)  # paying HeyDesk for a plan (D106)
+    app.include_router(billing.router)  # paying HeyDesk for a plan
     app.include_router(sheets.router)
     app.include_router(woo.router)
     app.include_router(restaurant.router)  # each desk's own routes

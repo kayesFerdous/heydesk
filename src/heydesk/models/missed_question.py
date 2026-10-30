@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class MissedQuestion(Base):
-    """A question the agent couldn't answer (D143): its documents had nothing, or it handed
+    """A question the agent couldn't answer: its documents had nothing, or it handed
     the chat off for it. Kept until the owner teaches the answer (`taught_at`)."""
 
     __tablename__ = "missed_questions"

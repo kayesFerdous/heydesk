@@ -1,4 +1,4 @@
-"""The courier (D90, D112): with no courier linked, the fake one books only a confirmed order,
+"""The courier: with no courier linked, the fake one books only a confirmed order,
 once, and its last word makes it delivered; the buyer hears each move in their chat. A linked
 courier is checked when saved, books with the cash still owed, and a refused booking stays
 confirmed and is tried again."""
@@ -100,7 +100,7 @@ async def told(world: World, conversation_id: str, words: str) -> int:
 
 async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world: World) -> None:
     """The fake courier's "Out for delivery" brings one reminder with the cash to keep ready;
-    a day after delivery, one question with 👍 / 👎 (D134)."""
+    a day after delivery, one question with 👍 / 👎."""
     agent = await world.agent("shop")
     await buy(world, agent, KURTI)
     [order] = await orders(world)
@@ -125,7 +125,7 @@ async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world:
 
 async def test_nothing_is_sent_outside_messengers_window(world: World) -> None:
     """On Messenger the business writes first only within 24 hours of the buyer's last
-    message: past it the reminder isn't sent, and isn't tried again (D134)."""
+    message: past it the reminder isn't sent, and isn't tried again."""
     agent = await world.agent("shop")
     await buy(world, agent, KURTI)
     [order] = await orders(world)

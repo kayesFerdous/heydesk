@@ -1,4 +1,4 @@
-// Who this browser is, for the chat's limits (D51): a random token kept in the browser.
+// Who this browser is, for the chat's limits: a random token kept in the browser.
 // The web chat and the Call button both send it.
 export const visitorId = (() => {
   try {

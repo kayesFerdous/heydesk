@@ -1,4 +1,4 @@
-"""The agent stops answering a spammer (I2): the team blocks a visitor or turns the AI off for
+"""The agent stops answering a spammer: the team blocks a visitor or turns the AI off for
 them, and a flood on a messaging app blocks them by itself."""
 
 from typing import Any

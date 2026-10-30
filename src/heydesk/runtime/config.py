@@ -10,7 +10,7 @@ from heydesk.runtime.schedule import WeeklyHours
 # a customer's notes may contain braces.
 PLACEHOLDERS = ("business_name",)
 
-# One of ours, saved by PhotoService: on this server's disk, or in R2 at its public address (D101)
+# One of ours, saved by PhotoService: on this server's disk, or in R2 at its public address
 LOGO = r"^((/media|https://[\w.-]+)/[\w-]+/logo/[0-9a-f]{32}\.jpg)?$"
 
 
@@ -18,12 +18,12 @@ class Handoff(BaseModel):
     message: str = "Let me get a member of our team to help you."
     phone: str | None = None
     email: str | None = None
-    # a hand-off goes to the joined moderator with the fewest open chats (I1)
+    # a hand-off goes to the joined moderator with the fewest open chats
     auto_assign: bool = False
 
 
 class Widget(BaseModel):
-    """How the chat looks on the business's own website (D82): the bubble and its window."""
+    """How the chat looks on the business's own website: the bubble and its window."""
 
     colour: str = Field(default="#0f766e", pattern=r"^#[0-9a-fA-F]{6}$")  # the bubble and header
     side: Literal["right", "left"] = "right"
@@ -54,18 +54,18 @@ class AgentConfig(BaseModel):
     faq: str = Field(default="", max_length=20000)
     handoff: Handoff = Handoff()
     widget: Widget = Widget()  # a desk sets its own starters
-    # The team's saved replies, picked from the inbox's reply box (D136); never the model's
+    # The team's saved replies, picked from the inbox's reply box; never the model's
     saved_replies: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
         default=[], max_length=50
     )
 
-    # Practice mode (D143): on Telegram, Messenger and WhatsApp the agent answers only these
+    # Practice mode: on Telegram, Messenger and WhatsApp the agent answers only these
     # visitors ("messenger:<psid>") until the owner goes live; the web chat answers everyone.
     # A new business's agent starts in it
     practice: bool = False
     testers: list[Annotated[str, Field(max_length=100)]] = Field(default=[], max_length=20)
 
-    def practicing(self, channel: str, visitor: str) -> bool:
+    def stays_silent_for(self, channel: str, visitor: str) -> bool:
         """Whether this visitor gets no answer: practice mode, a messaging app, not a tester."""
         apps = ("telegram", "messenger", "whatsapp")
         return self.practice and channel in apps and visitor not in self.testers

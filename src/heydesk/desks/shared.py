@@ -1,6 +1,6 @@
 """The tools every desk gets: hand off to a person, take a message for the team, and search
-the business's documents (only when it has some, D35). And what a desk's writing tool and
-prompt say when the business takes payment first (D47)."""
+the business's documents (only when it has some). And what a desk's writing tool and
+prompt say when the business takes payment first."""
 
 from datetime import UTC
 from typing import Any
@@ -10,11 +10,11 @@ from pydantic import BaseModel, Field
 from heydesk.desks.base import NewLead, NewMessage, Store
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
-from heydesk.runtime.tool import Checks, Tool, ToolContext, ToolResult
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 
 
 def pay_first_rule(pay_for: str, tool: str) -> str:
-    """The prompt's line for a business that takes payment first (D47)."""
+    """The prompt's line for a business that takes payment first."""
     return (
         f"{pay_for[0].upper()}{pay_for[1:]} is paid online first, by the link {tool} gives. "
         "Nothing is placed or confirmed until that payment comes in: never say it is before a "
@@ -30,7 +30,7 @@ RETURNING_RULE = (
 
 
 def returning(heading: str, facts: list[str]) -> str:
-    """The prompt's section for a visitor back from the same chat or browser (D81, D114): what
+    """The prompt's section for a visitor back from the same chat or browser: what
     they had before, to offer again instead of asking for it all."""
     return "\n".join(
         [
@@ -50,7 +50,7 @@ def awaiting_payment(
     state: dict[str, Any] | None = None,
     card: dict[str, Any] | None = None,
 ) -> ToolResult:
-    """What a writing tool returns once it saved something unpaid (D47): a link to pay, no
+    """What a writing tool returns once it saved something unpaid: a link to pay, no
     alert. Only the payment check places it; no tool can. `card`: its receipt, with the link."""
     return ToolResult(
         ok=True,
@@ -76,7 +76,7 @@ class HandoffInput(BaseModel):
 
 
 async def handoff_to_human(ctx: ToolContext[Store], args: HandoffInput) -> ToolResult:
-    if args.unanswered.strip():  # for the owner to teach (D143)
+    if args.unanswered.strip():  # for the owner to teach
         await ctx.store.missed(args.unanswered)
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
@@ -106,7 +106,7 @@ class ComplaintInput(BaseModel):
 
 
 async def flag_complaint(ctx: ToolContext[Store], args: ComplaintInput) -> ToolResult:
-    """A complaint (D138): a hand-off (D43) that opens a ticket for the team, once a chat."""
+    """A complaint: a hand-off that opens a ticket for the team, once a chat."""
     ticket, new = await ctx.store.open_ticket(args.reason)
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
@@ -148,7 +148,7 @@ OFFER_CONTACT = (
 
 async def take_message(ctx: ToolContext[Store], args: TakeMessageInput) -> ToolResult:
     """Only the message is needed. A name and phone are optional, but checked when given."""
-    check = Checks()
+    check = ArgumentChecker()
     body = check.take("message", args.message, parse.text)
     name = check.take("name", args.name, parse.name) if args.name.strip() else ""
     phone = check.take("phone", args.phone, parse.phone) if args.phone.strip() else ""
@@ -204,9 +204,9 @@ class TakeLeadInput(BaseModel):
 
 
 async def take_lead(ctx: ToolContext[Store], args: TakeLeadInput) -> ToolResult:
-    """A call back at a time (D139): Python reads the day and time (rule 1), then the read-back
+    """A call back at a time: Python reads the day and time (rule 1), then the read-back
     and a yes, like a message."""
-    check = Checks()
+    check = ArgumentChecker()
     when = check.take(
         "when", args.when, lambda said: parse.day_and_time(said, ctx.local_now, ctx.agent.hours)
     )
@@ -258,7 +258,7 @@ class SearchKnowledgeInput(BaseModel):
 async def search_knowledge(ctx: ToolContext[Store], args: SearchKnowledgeInput) -> ToolResult:
     found = await ctx.store.search_knowledge(args.question)
     if not found:
-        await ctx.store.missed(args.question)  # for the owner to teach (D143)
+        await ctx.store.missed(args.question)  # for the owner to teach
         return ToolResult(
             ok=True,
             data={
@@ -308,7 +308,7 @@ class RememberInput(BaseModel):
 
 
 async def remember(ctx: ToolContext[Store], args: RememberInput) -> ToolResult:
-    """Keeps a note on the visitor for their next conversations (D124). A note on the same
+    """Keeps a note on the visitor for their next conversations. A note on the same
     `about` replaces the old one, so a changed taste isn't kept twice."""
     about = " ".join(args.about.lower().split())
     kept = await ctx.store.remember(about, " ".join(args.note.split()))
@@ -343,7 +343,7 @@ class OffTopicInput(BaseModel):
 
 async def off_topic(ctx: ToolContext[Store], args: OffTopicInput) -> ToolResult:
     """Says the model's line as it is and ends the turn: no second model call. Each call is a
-    strike; enough in a row block the visitor for a while (D51)."""
+    strike; enough in a row block the visitor for a while."""
     return ToolResult(ok=True, data={"said": True}, reply=" ".join(args.reply.split()))
 
 

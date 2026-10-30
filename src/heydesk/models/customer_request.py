@@ -14,10 +14,10 @@ from heydesk.domain.values import record_code
 
 FIRST_NUMBER = 101  # a business's first order; "order 1" sounds like a test
 FIRST_STATUS = "new"  # what's waiting for the business
-UNPAID = "unpaid"  # waiting for its payment online; only the payment check moves it on (D47)
+UNPAID = "unpaid"  # waiting for its payment online; only the payment check moves it on
 
 
-class Taken:
+class CustomerRequest:
     """A mixin for the tables. A subclass sets `LETTER` ("A" for A-104) and `FLOW`."""
 
     LETTER: ClassVar[str]
@@ -54,7 +54,7 @@ class Taken:
 
 
 class Payable:
-    """A mixin for a table whose rows a visitor can be asked to pay for online first (D47):
+    """A mixin for a table whose rows a visitor can be asked to pay for online first:
     a shop's delivery charge, a restaurant's order, a clinic's doctor's fee. Such a row is
     saved `unpaid`, and only `PaymentService.settle` moves it on, to `PAID_STATUS`."""
 
@@ -66,7 +66,7 @@ class Payable:
     payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
 
     @property
-    def due(self) -> int:
+    def amount_due(self) -> int:
         """What's paid online first, in minor units."""
         raise NotImplementedError
 
@@ -79,7 +79,8 @@ class Payable:
         raise NotImplementedError
 
 
-async def next_number(s: AsyncSession, table: type[Taken], workspace_id: str) -> int:
-    """The business's next number in this table: 101, 102…"""
+async def next_number(s: AsyncSession, table: type[CustomerRequest], workspace_id: str) -> int:
+    """The business's next number in this table: 101, 102… Call it after `Store._lock`,
+    or two saves at once get the same number."""
     last = await s.scalar(select(func.max(table.number)).where(table.workspace_id == workspace_id))
     return last + 1 if last else FIRST_NUMBER

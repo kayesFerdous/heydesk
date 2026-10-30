@@ -10,7 +10,7 @@ LIVE = (RINGING, TALKING)
 
 
 class Call(Base):
-    """A call to confirm a shop order (D88, D89): the queue is the calls that aren't `done`.
+    """A call to confirm a shop order: the queue is the calls that aren't `done`.
 
     queued → ringing → talking → done, or ringing → queued again when it wasn't answered and
     tries are left. `outcome` says how it ended: confirmed, cancelled, no_answer, no_decision,

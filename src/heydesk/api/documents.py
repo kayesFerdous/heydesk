@@ -1,4 +1,4 @@
-"""The documents a business adds to its agent's knowledge (D34): text or a file, listed, deleted.
+"""The documents a business adds to its agent's knowledge: text or a file, listed, deleted.
 
 A document is read, cut up and indexed before the call returns, so it is searchable at once.
 Nothing is saved if any step fails.
@@ -95,7 +95,7 @@ class TeachIn(BaseModel):
 
 @router.get("/api/agent/missed")
 async def missed(services: Svc, ws: Workspace) -> list[MissedOut]:
-    """What the agent couldn't answer, grouped by likeness, the most asked first (D143)."""
+    """What the agent couldn't answer, grouped by likeness, the most asked first."""
     store = await services.agents.store(ws)
     rows = await store.missed_list()
     return [
@@ -112,10 +112,10 @@ async def missed(services: Svc, ws: Workspace) -> list[MissedOut]:
 @router.post("/api/agent/missed/teach", status_code=status.HTTP_201_CREATED)
 async def teach(body: TeachIn, services: Svc, ws: Workspace) -> DocumentOut:
     """*Teach it*: the answer becomes a knowledge entry, so `search_knowledge` finds it next
-    time, and the group leaves the list (D143)."""
+    time, and the group leaves the list."""
     agent = await services.agents.get(ws)
     text = f"{body.question}\n\n{body.answer}"
     document = await services.knowledge.add(ws, agent.id, body.question, text)
     store = await services.agents.store(ws)
-    await store.taught(body.ids)
+    await store.mark_answered(body.ids)
     return DocumentOut.model_validate(document)

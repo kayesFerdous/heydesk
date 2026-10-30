@@ -50,9 +50,9 @@ class AppointmentOut(BaseModel):
     at: datetime  # UTC
     deposit: int  # the clinic's when it was booked; minor units
     currency: str
-    paid: int  # paid online first (D47)
+    paid: int  # paid online first
     payment_ref: str  # the payment gateway's id for it
-    trx_id: str  # a deposit sent by hand: its bKash or Nagad TrxID; "" none (D145)
+    trx_id: str  # a deposit sent by hand: its bKash or Nagad TrxID; "" none
     trx_checked: bool  # the clinic found it in its account
     created_at: datetime
     updated_at: datetime
@@ -66,7 +66,7 @@ async def doctors(store: Clinic) -> list[Doctor]:
 @router.put("/api/doctors")
 async def replace_doctors(body: list[Doctor], store: Clinic) -> list[Doctor]:
     """The clinic's doctors become exactly these, in this order. Live from the next message.
-    A 409 while a Google Sheet is the list (D58)."""
+    A 409 while a Google Sheet is the list."""
     await store.not_linked()
     await store.replace_doctors(body)
     return body
@@ -86,7 +86,7 @@ async def appointments(
 async def appointments_csv(
     store: Clinic, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
 ) -> Response:
-    """The appointments the list shows, as a spreadsheet's file (G6)."""
+    """The appointments the list shows, as a spreadsheet's file."""
     tz = (await services.agents.by_workspace(ws)).config.timezone
     rows = [
         [
@@ -121,14 +121,14 @@ class TrxIn(BaseModel):
 
 @router.put("/api/appointments/{appointment_id}/trx")
 async def trx_checked(appointment_id: str, body: TrxIn, store: Clinic) -> AppointmentOut:
-    """The clinic ticks the deposit's TrxID as found in its bKash or Nagad account (D145)."""
+    """The clinic ticks the deposit's TrxID as found in its bKash or Nagad account."""
     return AppointmentOut.model_validate(await store.trx_checked(appointment_id, body.checked))
 
 
 @router.post("/api/doctors/import/suggest")
 async def suggest_doctors_columns(body: SuggestIn, _: Clinic) -> Suggestion:
     """The file's columns, a few rows and our fields, with a guess at which column is which
-    field (D115). The owner checks it, then imports with that `mapping` (D53)."""
+    field. The owner checks it, then imports with that `mapping`."""
     return suggest(body.csv, DOCTOR_COLUMNS)
 
 

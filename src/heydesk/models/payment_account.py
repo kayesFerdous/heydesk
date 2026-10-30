@@ -7,8 +7,8 @@ from heydesk.db import Base, Encrypted, new_id, utcnow
 
 
 class PaymentAccount(Base):
-    """A business's own account with a gateway (D49): payments for its orders go to it. One
-    SSLCommerz store and one bKash account at most (D109).
+    """A business's own account with a gateway: payments for its orders go to it. One
+    SSLCommerz store and one bKash account at most.
 
     SSLCommerz uses `store_id` and `password`; bKash `app_key`, `app_secret`, `username` and
     `password`. The secrets take payments in the business's name, so they never leave the
@@ -21,7 +21,7 @@ class PaymentAccount(Base):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"))
     provider: Mapped[str] = mapped_column(String(20), default="sslcommerz")  # or "bkash"
     store_id: Mapped[str] = mapped_column(String(100), default="")
-    password: Mapped[str] = mapped_column(Encrypted())  # encrypted in the database (D74)
+    password: Mapped[str] = mapped_column(Encrypted())  # encrypted in the database
     app_key: Mapped[str] = mapped_column(String(100), default="")
     app_secret: Mapped[str | None] = mapped_column(Encrypted())  # None for SSLCommerz
     username: Mapped[str] = mapped_column(String(100), default="")

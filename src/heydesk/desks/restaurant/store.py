@@ -21,7 +21,7 @@ from heydesk.desks.restaurant.values import (
 )
 from heydesk.domain.values import Confirmed
 from heydesk.errors import NotFound
-from heydesk.models.taken import FIRST_STATUS, UNPAID
+from heydesk.models.customer_request import FIRST_STATUS, UNPAID
 
 
 class RestaurantStore(Store):
@@ -40,7 +40,7 @@ class RestaurantStore(Store):
         return {}
 
     async def place_order(self, order: Confirmed[NewOrder]) -> Order:
-        """Saves the order: `new`, or `unpaid` when its delivery charge is paid first (D48)."""
+        """Saves the order: `new`, or `unpaid` when its delivery charge is paid first."""
         o = order.value
         return await self.add(
             Order,
@@ -57,8 +57,8 @@ class RestaurantStore(Store):
         )
 
     async def orders_here(self) -> list[Order]:
-        """The orders placed in this conversation, newest first (D65)."""
-        return await self.here(Order)
+        """The orders placed in this conversation, newest first."""
+        return await self.records_in_conversation(Order)
 
     async def order(self, number: int) -> Order | None:
         return await self.by_number(Order, number)

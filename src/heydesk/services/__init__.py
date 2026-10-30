@@ -24,14 +24,14 @@ from heydesk.services.woo import WooService
 class Services:
     admin: AdminService
     agents: AgentService
-    billing: BillingService  # paying HeyDesk for a plan (D106)
-    calls: CallService  # the shop's call to confirm an order, to a /phone page (D88)
+    billing: BillingService  # paying HeyDesk for a plan
+    calls: CallService  # the shop's call to confirm an order, to a /phone page
     channels: ChannelService
     conversations: ConversationService
-    courier: CourierService  # books and follows a shop's parcels (D90, D112)
+    courier: CourierService  # books and follows a shop's parcels
     knowledge: KnowledgeService
-    live: LiveHub  # tells an open inbox a chat changed (D158)
-    members: MemberService  # the business's moderators and what its team did (D97)
+    live: LiveHub  # tells an open inbox a chat changed
+    members: MemberService  # the business's moderators and what its team did
     payments: PaymentService
     photos: PhotoService
     rate_limits: RateLimiter
@@ -39,4 +39,4 @@ class Services:
     team: TeamService  # the owner's alerts, and the business's lines to a visitor
     users: UserService
     visitors: VisitorService
-    woo: WooService  # a shop's linked WooCommerce store (D75)
+    woo: WooService  # a shop's linked WooCommerce store

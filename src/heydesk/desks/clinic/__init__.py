@@ -48,7 +48,7 @@ class ClinicDesk(Desk):
     config_model = ClinicConfig
     tools = TOOLS
     columns = DOCTOR_COLUMNS
-    takes_voice = True  # a visitor can call it (D108)
+    takes_voice = True  # a visitor can call it
 
     def store(self, *args: Any, **kwargs: Any) -> ClinicStore:
         return ClinicStore(*args, **kwargs)
@@ -66,7 +66,7 @@ class ClinicDesk(Desk):
         if await store.pays_first(config):
             deposit = money(config.deposit, config.currency)
             about.append(pay_first_rule(f"a deposit of {deposit}", "request_appointment"))
-        elif config.deposit and config.advance_number.strip():  # by hand (D145)
+        elif config.deposit and config.advance_number.strip():  # by hand
             deposit = money(config.deposit, config.currency)
             about.append(
                 f"Deposit: each request needs a deposit of {deposit}, sent by bKash or Nagad "
@@ -80,7 +80,7 @@ class ClinicDesk(Desk):
         listed += [d.line(config.currency) for d in doctors] or ["No doctors listed yet."]
         sections = [ROLE, "\n".join(about), "\n".join(listed)]
         past = await store.before(Appointment, limit=3)
-        if past:  # a patient back again (D114): someone may book for their family
+        if past:  # a patient back again: someone may book for their family
             facts = [f"{a.code}: {a.doctor_name}, for {a.name}, phone {a.phone}" for a in past]
             sections.append(returning("Their past appointments", facts))
         return "\n\n".join(sections)
