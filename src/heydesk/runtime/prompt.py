@@ -3,7 +3,7 @@
 Platform rules come first and override the rest. Then the desk's own section (who the agent
 is, how it works, what it knows: each kind of business writes its own), the owner's notes,
 the FAQ, the documents, and last the channel and the date. A desk may add a short note from
-the conversation state (the restaurant's current order), rebuilt before every model call.
+the conversation state (the shop's current cart), rebuilt before every model call.
 """
 
 from datetime import datetime, timedelta

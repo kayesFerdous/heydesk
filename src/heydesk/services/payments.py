@@ -1,5 +1,4 @@
-"""Paying online before something is placed: a shop's or restaurant's delivery
-charge, a clinic's deposit. Each is a `Payable` table, and each business is paid into its own
+"""Paying online before something is placed: a shop's delivery charge. Each is a `Payable` table, and each business is paid into its own
 SSLCommerz store, its own bKash account, or both, which its owner connects here.
 
 A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
@@ -21,8 +20,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.desks.clinic.models import Appointment
-from heydesk.desks.restaurant.models import Order
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import Conversation, PaymentAccount
@@ -43,8 +40,8 @@ log = logging.getLogger(__name__)
 
 NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # SSLCommerz's own post, server to server
 NAMES = {"sslcommerz": "SSLCommerz", "bkash": "bKash"}
-type Payable = ShopOrder | Order | Appointment
-PAYABLE: tuple[type[Payable], ...] = (ShopOrder, Order, Appointment)
+type Payable = ShopOrder
+PAYABLE: tuple[type[Payable], ...] = (ShopOrder,)
 
 
 class PaymentService:
@@ -138,7 +135,7 @@ class PaymentService:
     # Paying
 
     async def find(self, record_id: str) -> Payable | None:
-        """The order or appointment with this id, whichever table it's in."""
+        """The order with this id."""
         async with self.sessions() as s:
             for table in PAYABLE:
                 found: Payable | None = await s.get(table, record_id)
@@ -147,7 +144,7 @@ class PaymentService:
         return None
 
     async def start(self, record: Payable, provider: Provider) -> str:
-        """The gateway's page for paying an unpaid order or appointment. SSLCommerz posts the
+        """The gateway's page for paying an unpaid order. SSLCommerz posts the
         visitor back to `/pay/<id>/back`; bKash sends them to `/pay/<id>/bkash`."""
         base = self.settings.public_url
         back = "back" if provider == "sslcommerz" else "bkash"
@@ -221,8 +218,7 @@ class PaymentService:
             f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
             f"{record.about()}; name {record.name}; phone {record.phone}",
         )
-        if isinstance(record, ShopOrder):  # it holds stock: into a linked Woo store now
-            self.woo.push_soon(record.workspace_id)
+        self.woo.push_soon(record.workspace_id)
 
     async def _alert(self, record: Payable, text: str) -> None:
         if record.conversation_id is None:

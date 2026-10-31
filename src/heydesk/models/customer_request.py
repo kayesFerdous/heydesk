@@ -1,4 +1,4 @@
-"""What the agent took for a business: an order, an appointment, a message. Each kind has its
+"""What the agent took for a business: an order, a message. Each kind has its
 own table; they share these columns, a number per business, and a status that moves along
 the table's `FLOW`."""
 
@@ -55,7 +55,7 @@ class CustomerRequest:
 
 class Payable:
     """A mixin for a table whose rows a visitor can be asked to pay for online first:
-    a shop's delivery charge, a restaurant's order, a clinic's doctor's fee. Such a row is
+    a shop's delivery charge. Such a row is
     saved `unpaid`, and only `PaymentService.settle` moves it on, to `PAID_STATUS`."""
 
     PAY_FOR: ClassVar[str]  # what the payment is for: "the delivery charge"

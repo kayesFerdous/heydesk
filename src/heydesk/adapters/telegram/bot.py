@@ -53,7 +53,7 @@ class TelegramBot:
         self, token: str, chat_id: str, html: str, buttons: list[dict[str, str]]
     ) -> None:
         params: dict[str, Any] = {"chat_id": chat_id, "text": html, "parse_mode": "HTML"}
-        if buttons:  # one to a row: a doctor's Book button is long
+        if buttons:  # one to a row: a button's words can be long
             keyboard = [
                 [{"text": b["title"], "url": b["url"]}]
                 if "url" in b

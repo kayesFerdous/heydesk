@@ -1,5 +1,5 @@
-"""Voice is only for the receptionist and the clinic: the chat page's info says so,
-and a call to any other desk is refused before it starts."""
+"""Voice is off for the shop for now: the chat page's info says so, and a call is refused
+before it starts. With voice on, a call starts."""
 
 from typing import Any
 
@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from heydesk.api import voice
-from tests.conftest import SEEDS
+from heydesk.desks.shop import ShopDesk
+from tests.conftest import DEV_KEY
 
 OFFER = {"sdp": "v=0", "type": "offer"}  # the browser's offer; the handshake itself is faked
+CALL = {"key": DEV_KEY, "visitor": "test-visitor"}
 
 
 @pytest.fixture
@@ -29,25 +31,19 @@ def calls(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return started
 
 
-async def test_a_clinic_call_starts(app: FastAPI, client: AsyncClient, calls: list[str]) -> None:
-    await app.state.services.agents.ensure_dev_agent("clinic", SEEDS / "clinic.yaml")
-    assert (await client.get("/api/chat/dev-clinic")).json()["voice"] is True
+async def test_a_call_starts_when_the_desk_takes_voice(
+    client: AsyncClient, calls: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ShopDesk, "takes_voice", True)
+    assert (await client.get(f"/api/chat/{DEV_KEY}")).json()["voice"] is True
 
-    res = await client.post(
-        "/api/voice/offer", params={"key": "dev-clinic", "visitor": "test-visitor"}, json=OFFER
-    )
+    res = await client.post("/api/voice/offer", params=CALL, json=OFFER)
     assert (res.status_code, calls) == (200, ["call"])
 
 
-@pytest.mark.parametrize("kind", ["shop", "restaurant"])
-async def test_a_shop_or_restaurant_call_is_refused(
-    app: FastAPI, client: AsyncClient, calls: list[str], kind: str
-) -> None:
-    await app.state.services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
-    assert (await client.get(f"/api/chat/dev-{kind}")).json()["voice"] is False  # no Call button
+async def test_a_call_to_the_shop_is_refused_for_now(client: AsyncClient, calls: list[str]) -> None:
+    assert (await client.get(f"/api/chat/{DEV_KEY}")).json()["voice"] is False  # no Call button
 
-    res = await client.post(
-        "/api/voice/offer", params={"key": f"dev-{kind}", "visitor": "test-visitor"}, json=OFFER
-    )
+    res = await client.post("/api/voice/offer", params=CALL, json=OFFER)
     assert (res.status_code, res.json()["error"]["code"]) == (403, "no_voice")
     assert calls == []

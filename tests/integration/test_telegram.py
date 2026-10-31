@@ -2,10 +2,12 @@
 
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
 
+from heydesk.desks.shop import ShopDesk
 from heydesk.models import Channel, Conversation
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
@@ -112,7 +114,7 @@ async def test_start_sends_the_greeting_and_starts_afresh(
     await send(client, path, secret, message("/start"))
     await send(client, path, secret, message("hello"))
 
-    assert sent(app)[1][1].startswith("Hi, welcome to Spice Garden!")
+    assert sent(app)[1][1].startswith("Assalamu alaikum! Welcome to Nakshi Threads.")
     [conv] = await telegram_conversations(app)  # the same chat, started afresh
     remembered = conv.messages[conv.history_from :]
     assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first
@@ -244,8 +246,11 @@ async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
     assert fake.choices == [(str(CHAT), ["M", "XL", "XXL"])]  # L in Navy is sold out
 
 
-async def test_a_photo_to_a_desk_that_takes_none(app: FastAPI, client: AsyncClient) -> None:
-    path, secret = await connect(app, client)  # the restaurant
+async def test_a_photo_to_a_desk_that_takes_none(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ShopDesk, "takes_photos", False)
+    path, secret = await connect(app, client)
     await send(client, path, secret, with_photo())
     assert sent(app) == [
         (str(CHAT), "I can only read text messages for now. Please type your question.")

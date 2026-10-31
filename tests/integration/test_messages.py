@@ -1,5 +1,5 @@
-"""Messages for the team: every desk takes them, only after a yes; the receptionist is built on
-them alone; the owner sees them in /api/messages."""
+"""Messages for the team: every desk takes them, only after a yes; the owner sees them in
+/api/messages."""
 
 from datetime import UTC, datetime
 
@@ -8,7 +8,6 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from heydesk.desks import DESKS, tools_for
-from heydesk.desks.receptionist import RECEPTIONIST
 from heydesk.desks.shared import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
 from heydesk.models import Conversation, Lead, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
@@ -71,22 +70,6 @@ async def test_a_name_and_phone_are_optional(world: World) -> None:
     bad = ToolCall("c", "take_message", {"message": "Call me", "phone": "12"})
     conv = await world.say(agent, None, [bad, "What's your number?"])
     assert "doesn't look like a phone number" in await world.tool_said(conv)
-
-
-async def test_the_receptionist_answers_from_its_own_fields(world: World) -> None:
-    agent = await world.agent("receptionist")
-    text = await RECEPTIONIST.prompt(agent.config, world.store(agent))
-
-    assert "You are the receptionist for {business_name}." in text
-    assert "Company registration, ৳40,000" in text
-    assert [t.name for t in tools_for(agent.desk, agent.config, has_documents=False)] == [
-        "take_message",
-        "take_lead",
-        "handoff_to_human",
-        "flag_complaint",
-        "off_topic",
-        "remember",
-    ]
 
 
 async def test_the_owner_sees_messages_and_marks_them_handled(

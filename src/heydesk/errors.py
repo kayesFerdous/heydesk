@@ -37,7 +37,7 @@ class Unavailable(NotFound):
 
 
 class NoVoice(Forbidden):
-    """A call to an agent whose desk takes none: only the receptionist and the clinic do."""
+    """A call to an agent whose desk takes none: the shop takes none for now."""
 
     code = "no_voice"
 

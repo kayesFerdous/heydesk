@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from heydesk.models import Workspace
 from tests.conftest import emailed_code, new_business
-from tests.integration.test_restaurant import place_an_order
+from tests.integration.test_shop import place_an_order
 
 NEW = {"email": "Second@Example.com", "password": "another long one", "workspace_name": "Cafe"}
 
@@ -23,7 +23,7 @@ async def test_a_second_account_cant_see_the_first_accounts_agent(
     # Each account's /api/agent is its own, and the second has none
     assert (await second.get("/api/agent")).status_code == 404
     assert (await second.patch("/api/agent", json={"faq": "x"})).status_code == 404
-    assert (await second.get("/api/menu")).status_code == 404
+    assert (await second.get("/api/products")).status_code == 404
     assert (await client.get("/api/agent")).json()["config"]["faq"] != "x"
     await second.aclose()
 
@@ -64,17 +64,17 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     app: FastAPI, client: AsyncClient
 ) -> None:
     conv_id = await place_an_order(app, client)
-    [order] = (await client.get("/api/orders")).json()
+    [order] = (await client.get("/api/shop/orders")).json()
     second = await as_second_account(app)
 
-    await second.post("/api/agent", json={"kind": "restaurant"})  # a restaurant too
-    for path in ("/api/orders", "/api/messages", "/api/conversations"):
+    await second.post("/api/agent", json={"kind": "shop"})  # a shop too
+    for path in ("/api/shop/orders", "/api/messages", "/api/conversations"):
         assert (await second.get(path)).json() == [], path
     assert (await second.get(f"/api/conversations/{conv_id}")).status_code == 404
-    assert (await second.get(f"/api/orders/{order['id']}")).status_code == 404
-    moved = await second.patch(f"/api/orders/{order['id']}", json={"status": "cancelled"})
+    assert (await second.get(f"/api/shop/orders/{order['id']}")).status_code == 404
+    moved = await second.patch(f"/api/shop/orders/{order['id']}", json={"status": "cancelled"})
     assert moved.status_code == 404
-    assert (await client.get("/api/orders")).json()[0]["status"] == "new"
+    assert (await client.get("/api/shop/orders")).json()[0]["status"] == "new"
     await second.aclose()
 
 

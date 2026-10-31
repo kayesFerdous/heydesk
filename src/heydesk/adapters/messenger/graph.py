@@ -18,7 +18,7 @@ def carousel(cards: list[dict[str, str]]) -> dict[str, Any]:
     elements = []
     for c in cards:
         element: dict[str, Any] = {"title": c["name"][:80], "subtitle": c["price"][:80]}
-        if c.get("url"):  # a doctor has no photo
+        if c.get("url"):  # a product may have no photo
             element["image_url"] = c["url"]
         buttons = []
         if c.get("choice"):  # its tap is a postback with the choice as payload

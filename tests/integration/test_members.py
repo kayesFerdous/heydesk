@@ -61,14 +61,14 @@ async def test_a_moderator_runs_the_inbox_and_reads_but_doesnt_change_the_settin
     moderator = await join(app)
     for path in (
         "/api/conversations",
-        "/api/orders",
-        "/api/menu",
+        "/api/shop/orders",
+        "/api/products",
         "/api/agent",
         "/api/agent/documents",
     ):
         assert (await moderator.get(path)).status_code == 200, path
-    menu = (await moderator.get("/api/menu")).json()
-    assert (await moderator.put("/api/menu", json=menu)).status_code == 200
+    products = (await moderator.get("/api/products")).json()
+    assert (await moderator.put("/api/products", json=products)).status_code == 200
     for method, path in (
         ("PATCH", "/api/agent"),
         ("POST", "/api/agent/documents"),
@@ -89,9 +89,11 @@ async def test_a_removed_moderator_is_out_at_once_and_their_changes_stay(
 ) -> None:
     user_id = await invite(client)
     moderator = await join(app)
-    menu = (await moderator.get("/api/menu")).json()
-    await moderator.put("/api/menu", json=menu)
-    assert (await moderator.patch("/api/orders/nope", json={"status": "ready"})).status_code == 404
+    products = (await moderator.get("/api/products")).json()
+    await moderator.put("/api/products", json=products)
+    assert (
+        await moderator.patch("/api/shop/orders/nope", json={"status": "ready"})
+    ).status_code == 404
 
     assert (await client.delete(f"/api/team/members/{user_id}")).status_code == 204
     assert (await moderator.get("/api/conversations")).status_code == 401
@@ -100,7 +102,7 @@ async def test_a_removed_moderator_is_out_at_once_and_their_changes_stay(
 
     activity = (await client.get("/api/team/activity")).json()
     done = [(e["actor_email"], e["action"]) for e in activity]
-    assert (MOD, "PUT /api/menu") in done  # kept, with the email they had
+    assert (MOD, "PUT /api/products") in done  # kept, with the email they had
     assert all("orders" not in action for _, action in done)  # a write that failed isn't there
     assert ("owner@example.com", "DELETE /api/team/members/{user_id}") in done
 

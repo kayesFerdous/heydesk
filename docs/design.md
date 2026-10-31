@@ -10,11 +10,11 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 
 ## 1. What it is
 
-A business picks its **kind** (a restaurant, a clinic, a receptionist for an office, an online shop), fills in
-its details (address, hours, its menu, doctors or products, FAQ) and adds its own notes, and it has an AI
-front-desk agent. Each kind is a **desk** with its own prompt, tools and tables (D41). Visitors talk to it by **web chat** or (a receptionist or a clinic, D108) **voice** in the
+An online shop fills in its details (products, delivery areas, FAQ) and adds its own notes, and it
+has an AI front-desk agent. The shop is a **desk** with its own prompt, tools and tables (D41); it
+is the only one now (D164). Visitors talk to it by **web chat** in the
 browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60), or on its **WhatsApp** number (D103). It answers questions, takes orders and messages, and hands over to a
-person when needed. The business sees orders, appointments and messages through the API, which
+person when needed. The business sees orders and messages through the API, which
 the separate frontend (`../heydesk-frontend`) uses.
 
 **The model talks; code guarantees.** The model writes the words. Python
@@ -25,14 +25,14 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Desk | A kind of business (`restaurant`, `clinic`, `receptionist`, `shop`): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
+| Desk | A kind of business (`shop`, the only one, D164): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
 | Agent | A business's agent: one desk's config, which the business edits. Edits are live on the next message |
-| Store | A business's data as its desk sees it (`ClinicStore`: doctors, appointments, messages), always scoped to one workspace |
+| Store | A business's data as its desk sees it (`ShopStore`: products, orders, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
-| Tool | Something the model can call: `update_order`, `request_appointment`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
-| Note | A desk's line from the conversation state (the restaurant's order so far), added to the system prompt before every model call |
+| Tool | Something the model can call: `update_cart`, `place_order`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
+| Note | A desk's line from the conversation state (the shop's order so far), added to the system prompt before every model call |
 
 ## 3. The rules
 
@@ -67,12 +67,9 @@ src/heydesk/
 ├── desks/               one folder per kind of business (D41)
 │   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
 │   ├── shared.py        take_message, handoff_to_human, off_topic, search_knowledge
-│   ├── restaurant/      __init__ (config, prompt) · tools · values · models · store · api
-│   ├── clinic/          the same
-│   ├── shop/            the same
-│   ├── receptionist/    __init__ only: no tools or tables of its own
+│   ├── shop/            __init__ (config, prompt) · tools · values · models · store · api
 │   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53, D115)
-├── models/              the shared tables; `customer_request.py` is what orders, appointments and messages share
+├── models/              the shared tables; `customer_request.py` is what orders and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
 │                        knowledge, photos (D57), sheets (D58), woo (D75), channels (Telegram,
 │                        Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43), payments (D47)
@@ -93,38 +90,33 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | File | What's in it |
 |---|---|
 | `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
-| `tools.py` | Its tools: the restaurant's `update_order`, `place_order`, `track_order`, `change_order`, `cancel_order` (D65), and `book_table` and `cancel_booking` when it takes bookings (D64); the clinic's `find_doctor`, `request_appointment`, `cancel_appointment`, `reschedule_appointment`; the shop's `find_product` (D80), `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
-| `values.py` | Its shapes, no database: `MenuItem`, `NewOrder`, `NewBooking`, `has_room()`, `free_times()`; `Doctor` (with `works_at`), `NewAppointment`; `Product`, `Zone`, `match_zone()`, `ShopConfig`, `mobile()`; `districts.py`, Bangladesh's 64 districts and their old spellings (D98) |
-| `models.py` | Its tables: `menu_items`, `orders` and `bookings`; `doctors` and `appointments`; `products` and `shop_orders` |
+| `tools.py` | Its tools: the shop's `find_product` (D80), `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
+| `values.py` | Its shapes, no database: `Product`, `Zone`, `match_zone()`, `ShopConfig`, `mobile()`; `districts.py`, Bangladesh's 64 districts and their old spellings (D98) |
+| `models.py` | Its tables: `products`, `coupons` and `shop_orders` |
 | `store.py` | Its data access, for its tools and its owner routes, always one workspace |
-| `api.py` | Its owner routes: `/api/menu`, `/api/orders`, `/api/bookings`; `/api/doctors`, `/api/appointments`; `/api/products`, `/api/shop/orders` |
+| `api.py` | Its owner routes: `/api/products`, `/api/shop/…` |
 
 `desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, config, has_documents)` is a desk's
-tools for this business (`Desk.own_tools(config)`: the restaurant adds its booking tools only
-when `takes_bookings` is on, D64) then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
+tools for this business (`Desk.own_tools(config)`) then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
 `search_knowledge` when the business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
-subclasses it: the clinic adds `emergency_phone` and `policies`, the receptionist `about` and
-`services`, the shop `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; `calls.enabled` needs it, D92), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); the restaurant `delivers` and `delivery_charge` (one charge to any address), and `takes_bookings` (off by default), `seats`, `table_minutes` (default 90) and `max_party` (default 10) for table bookings, where `takes_bookings` needs `seats` (D64); the clinic `deposit`; and the restaurant and clinic each `pay_first` (D47, D48), which needs something to take (a 422 otherwise), where the shop has it per delivery area (D92); each sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
+subclasses it: the shop adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; `calls.enabled` needs it, D92), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
-**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"kind": "restaurant"}`:
+**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"kind": "shop"}`:
 the business name comes from signup. `GET /api/agent` then says what's `missing`, in plain words
-("Add your address.", "Add your menu."); it's empty when the agent is set up. There's no publish
+("Add your products.", "Add your delivery areas and charges."); it's empty when the agent is set up. There's no publish
 step (D15): the agent answers from the start, and what's not filled in is simply not in its prompt.
 
-**The menu and the doctors are tables, and they're all in the prompt.** A restaurant's
-`menu_items` (code, name, description, price, category, tags, available) and a clinic's `doctors`
-(code, name, speciality, fee, `days`, `start`, `end`, languages, description, available) are
-replaced whole with `PUT`. The prompt lists them all, one line each; there's no search for a
-long list (D41).
+**The products are a table, and they're in the prompt.** `PUT /api/products` replaces them
+whole. The prompt lists them, one line each, up to `LONG_LIST` (D80).
 
 **One agent per business** (D22). `agents.workspace_id` is unique and `agents.kind` names its
 desk, so a business's agent is just "the agent": no ids in the URLs. Creating a second is a 409.
-A desk's routes answer 404 for another kind (a restaurant has no doctors).
+A desk's routes answer 404 for an agent of another kind.
 
 **`AgentService`** (`services/agents.py`): `create`, `update` (validates; live from the next
 message), `get` (with `missing`), `by_key` (a `LiveAgent`: its desk, config and document titles),
@@ -132,7 +124,7 @@ message), `get` (with `missing`), `by_key` (a `LiveAgent`: its desk, config and 
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev` workspace and the
 agent `dev-<kind>` from `DEV_AGENT_KIND` + `DEV_AGENT_SEED`; the desk's `seed()` takes its own
-list (`menu:`, `doctors:`) out of the seed file. Edit the seed and restart, and the agent is updated.
+list (`products:`) out of the seed file. Edit the seed and restart, and the agent is updated.
 
 ## 6. One turn
 
@@ -153,7 +145,7 @@ the turn is saved when it ends.
 1. System prompt: platform rules → the desk's own sections (its role, what it can do, its facts)
    → owner's notes → FAQ → documents → **right now** (channel style, date and time, open or
    closed today, the next 14 days with the closed ones marked, D40) → the desk's **note**
-   (the restaurant's order so far), rebuilt before every model call and never stored
+   (the shop's order so far), rebuilt before every model call and never stored
 2. Tool specs: the desk's tools and the shared ones
 3. The conversation: the **greeting** first (D8), then every message so far
 
@@ -185,22 +177,22 @@ also end the turn with its own `reply`, said as it is (`off_topic`, D51).
 
 ```
 # The order so far
-2 × Chicken Biryani, 1 × Borhani, total ৳1,030
+2 × Cotton Kurti (M, Black), subtotal ৳1,900
 ```
 
-That's the restaurant's note, empty until there's an order. The other desks have none: what's
+That's part of the shop's note, empty until there's an order. What's
 still needed comes back from the writing tool itself (§7).
 
 ## 7. Tools
 
-The contract lives in `runtime/tool.py`; the tools live in their desk (`desks/clinic/tools.py`)
+The contract lives in `runtime/tool.py`; the tools live in their desk (`desks/shop/tools.py`)
 or in `desks/shared.py`. A tool reaches the database only through `ctx.store`, its desk's store.
 
 ```python
 @dataclass(frozen=True)
 class ToolContext[S]:
     agent: AgentConfig             # the desk's own config
-    store: S                       # the desk's store: ClinicStore, RestaurantStore
+    store: S                       # the desk's store: ShopStore
     state: dict                    # the conversation state so far (the cart)
     now: datetime                  # when the turn started, UTC
     heard: str                     # the last read-back the visitor heard, before this turn
@@ -224,24 +216,13 @@ merged into the conversation's `state`, saved with the turn.
 
 1. **Something's missing or wrong**: `{"problems": {...}, "still_needed": [...], "next": "Ask for
    the name…"}`. Each detail is checked by Python as it's taken (`ArgumentChecker.take`); the model may call
-   as soon as it has a part, so a closed hour or a doctor's day off is caught early.
+   as soon as it has a part, so a wrong mobile or an area it doesn't deliver to is caught early.
 2. **Everything's there, no yes yet**: `{"read_back": "...", "next": "Read this back and ask for a
    clear yes…"}` (`ask_for_yes`).
 3. **A call after a clear yes**: saved, with its number or code.
 
 | Tool | Desk | Writes? | What it does |
 |---|---|---|---|
-| `update_order` | restaurant | no | Sets the whole order (codes and quantities). Checks the dishes exist and are available; Python adds up the total. Refuses on a closed day (pickup is today only, D40). The cart goes in `state["cart"]` |
-| `place_order` | restaurant | **yes** | `delivery` (when the restaurant `delivers`), `time`, `address` (for a delivery), `name`, `phone`, `note`. The time must be later today and inside the hours; a delivery adds `delivery_charge` to the total. Returns the order code, `O-101` (D65), and an alert for the owner (D43). With `pay_first`, a delivery order is saved `unpaid` and it returns a `pay_link` for the delivery charge instead, and no alert; pickup pays nothing first (D48) |
-| `track_order` | restaurant | no | The order placed in this chat with no code; otherwise its code and the phone it was placed with, one answer for a wrong code and a wrong phone (as the shop, D55). Its status in words, dishes, total, time; a `pay_link` while unpaid (D65) |
-| `change_order` | restaurant | **yes** | Found the same way; only while `new`. A new `time` (later today, inside the hours), `address` (a delivery only) or `note`; reads back old → new. The store checks it's still `new` when saving. The dishes can't change: cancel and order again. An alert for the owner (D65) |
-| `cancel_order` | restaurant | **yes** | Found the same way; while `unpaid` or `new`. An alert for the owner, which says to refund it when it was paid online (D65) |
-| `book_table` | restaurant | **yes** | Only when `takes_bookings` (D64). `people`, `time` (a day and a time in the next 14 days, inside the hours: `parse.day_and_time`), `name`, `phone`, `note`. `people` at most `max_party`. As soon as the people and the time are known, Python counts the seats: no more than `seats` people at any moment, each booking holding its seats for `table_minutes` (one shared count, not real tables). A full slot is refused with up to 3 free times nearby on the same day, 30 minutes apart. Saved `new`, code `T-101`; the visitor is told the restaurant will confirm it in the chat; an alert for the owner |
-| `cancel_booking` | restaurant | **yes** | Only when `takes_bookings`. The code (`T-101`) and the name it's under, as the clinic's `cancel_appointment` (D38); while `new` or `confirmed`. An alert for the owner |
-| `find_doctor` | clinic | no | Doctors by `speciality`, `day` (today, tomorrow, a weekday) and `language`. Python turns the day into a date and keeps the doctors who work it |
-| `request_appointment` | clinic | **yes** | `doctor`, `time`, `name`, `phone`. The doctor is matched by code or name words; the time is a day and a time in the next 14 days, inside the clinic's hours and the doctor's `days`/`start`–`end`. Returns its code, `A-104`, and an alert for the owner (D105); the clinic phones to confirm. With `pay_first`, it saves the request `unpaid` with the clinic's `deposit` and returns a `pay_link` instead, and no alert: the payment's alert says it (D48). Moving an unpaid one keeps it unpaid |
-| `cancel_appointment` | clinic | **yes** | The code (`A-104`, `a104`, `a 104` all work) and the name it's under; a wrong code and a wrong name get the same answer, so nothing leaks (D38). An alert for the owner, which says to refund a deposit paid online (D105) |
-| `reschedule_appointment` | clinic | **yes** | The same, plus a new time checked like a new request. A moved appointment is `new` again. An alert for the owner (D105) |
 | `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends a card for each product it found, photo or not, as `show_photos` does, and names them in `shown` (D102, D125) |
@@ -453,11 +434,6 @@ Every table has `workspace_id` (except `workspaces`).
 | `payment_accounts` | provider (`sslcommerz`/`bkash`), store_id, app_key, app_secret and password (both encrypted, D74), username, sandbox: the business's own SSLCommerz store or bKash account, one of each per business (D49, D109). No route returns a secret |
 | `documents` | agent_id, title, filename, kind (`text`/`markdown`/`pdf`), text, chunk_count (D34). Its chunks are in Qdrant, not here |
 | `team_messages` | the shared columns, body, best_time. Code `M-104`; new ↔ handled |
-| `menu_items` | code (unique per business), name, description, price, category, tags JSON, available, position |
-| `orders` | the shared columns, the paid columns, lines JSON, total (with the delivery charge), pickup_at (pickup or delivery time), note, address (empty: pickup), delivery_charge. Code `O-101` (D65); unpaid → new (the delivery charge was paid, D48) → ready → collected for a pickup, or ready → out_for_delivery → delivered for a delivery (D66); unpaid, new, ready or out_for_delivery → cancelled |
-| `bookings` | the shared columns, at (UTC), people, note, reminded (the day-before line was tried, D145). Code `T-101`; new → confirmed → seated → done; new or confirmed → cancelled; confirmed → no_show. New, confirmed and seated hold their seats (D64) |
-| `doctors` | code (unique per business), name, speciality, fee, days JSON, start, end, languages JSON, description, available, position |
-| `appointments` | the shared columns, the paid columns, doctor_code, doctor_name, at, deposit (the clinic's when booked), trx_id and trx_checked (a deposit sent by hand: the bKash or Nagad TrxID the patient typed, and the clinic's tick, D145), reminded (D145). Code `A-104`; unpaid → new (the deposit was paid, D48) → confirmed → done, or cancelled |
 | `products` | code (unique per business), name, description, price, was_price (before a sale; empty: not on sale, D54), category, sizes JSON, colours JSON, stock (empty: not counted), variants JSON (`{size, colour, stock}` per size and colour; an empty size or colour means any; when there are any they hold the stock and `stock` is empty; a size and colour none matches isn't counted, D56), photos JSON (up to 3 photo URLs, the media store's url + `/<workspace_id>/products/<id>.jpg`; their vectors are in Qdrant, D57, D101), position |
 | `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131), source (where it was placed: `chat`, `page` for *Buy now* or `team`, D144). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
@@ -507,18 +483,13 @@ SQLAlchemy doesn't see in-place edits.
 | PUT | `/api/auth/me/available` | `{available}`: switch yourself on or off for new hand-offs (D149) |
 | GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
-| GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders or bookings, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
+| GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
 | GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST | `/api/agent/logo` | The business's logo (multipart): saved as a 256 px JPEG (transparent is white) and set as `widget.logo` → `{url}` (D82) |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
-| GET/PUT | `/api/menu` | A restaurant's menu, replaced whole |
-| POST | `/api/menu/import`, `/api/doctors/import`, `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
-| POST | `/api/menu/import/suggest`, `/api/doctors/import/suggest`, `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and a suggested match by the column names for the owner to check (D53, D115) |
-| GET/PATCH | `/api/orders…` | A restaurant's orders, newest first (`?status=&q=`); one; move its status (the visitor hears ready, on its way or cancelled in their chat, D66) |
-| GET/PATCH | `/api/bookings…` | A restaurant's table bookings, newest first (`?status=&q=`); one; move its status (D64; the visitor hears confirmed or cancelled in their chat, D66) |
-| GET/PUT | `/api/doctors` | A clinic's doctors, replaced whole |
-| GET/PATCH | `/api/appointments…` | A clinic's appointment requests; one; move its status. `PUT …/{id}/trx {checked}` ticks a deposit's TrxID as found (D145) |
+| POST | `/api/products/import` | The same list from a CSV file's text; problems per row, nothing saved until it's clean; `dry_run` only checks (D50); `mapping` says which of the file's columns is which of our fields (D53) |
+| POST | `/api/products/import/suggest` | The file's columns, a few sample rows, our fields, and a suggested match by the column names for the owner to check (D53, D115) |
 | GET/PUT | `/api/products` | A shop's products, with their stock and `variants`, replaced whole. A variant's size or colour that isn't the product's is a 422, and so is a photo new to the list that isn't one of ours (one saved before is kept, D122). Its CSV import adds and updates instead (D120) |
 | GET | `/p/{public_key}/{code}` | A product's public page, HTML, no login (D121) |
 | POST | `/p/{public_key}/{code}?c=` | Its *Buy now* form: the check page, then with `heard` *Place order* saves it and goes to `/o/<id>`; the receipt goes to chat `c` (D130) |
@@ -531,7 +502,7 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/shop/offers` | `{text, kind, value, ends_at, within_hours}`: sent to every chat that wrote in the last `within_hours` (24 by default, up to 168), inside the window, and saved as a coupon only they may use until it ends; `{code, sent_to}` (D140) |
 | GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
-| GET | `/api/shop/orders.csv`, `/api/orders.csv`, `/api/bookings.csv`, `/api/appointments.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
+| GET | `/api/shop/orders.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
 | GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
 | GET/PATCH | `/api/tickets…` | Complaints the agent flagged (`?status=open`), each with who has its chat; `PATCH {status}` solves one or opens it again (D138) |
 | GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127); `?limit=` gives only the newest lines and `?before=<index>` the ones before a line, with `more`, `count` (every line), each line's `index` and `history_from` (D157). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128); `PUT …/{id}/takeover {on}` takes the chat over or gives it back (D135); `PUT …/{id}/labels {labels}`, `?label=` filters; `GET/POST …/{id}/notes {text}` the team's notes; `POST …/{id}/reply {text}` answers from the inbox and takes the chat over (D136); `POST …/{id}/assist {kind, question}` is the model's summary, answer or draft for the team, `{text}` (D137); `GET …/live` is a stream of `changed {conversation_id}` frames for the inbox, one per chat that changed in this business, and a `ping` every 20 seconds (D158) |
@@ -550,7 +521,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/whatsapp` | The business's WhatsApp number: its id; connect it with its business account's id, the number's id and a system user's token; disconnect it (D103) |
 | GET, POST | `/api/agent/whatsapp/login`, `/api/agent/whatsapp/signup` | Connect with WhatsApp: our app's id and the Embedded Signup configuration; connect the number from the popup's code and ids (D155) |
 | GET/POST | `/api/whatsapp` | WhatsApp's webhook, one for every number: checked as Messenger's (the same verify token and app secret), each message routed by its `phone_number_id`, answered after the response (D103) |
-| GET | `/pay/{id}` | The visitor's payment link: off to the gateway to pay for an unpaid order or appointment (D47, D48); with both connected, a button for each, then `?via=sslcommerz` or `?via=bkash` (D109) |
+| GET | `/pay/{id}` | The visitor's payment link: off to the gateway to pay for an unpaid order (D47, D48); with both connected, a button for each, then `?via=sslcommerz` or `?via=bkash` (D109) |
 | GET | `/pay/{id}/bkash` | bKash sends the visitor back here with `paymentID` and `status`; only a `success`, executed with the business's bKash account, counts (D109) |
 | POST | `/pay/{id}/back` | SSLCommerz sends the visitor back here (paid, failed or cancelled); a page says which |
 | POST | `/api/payments/sslcommerz/{id}` | SSLCommerz's IPN: the same check, for when the buyer closed the tab |
@@ -563,7 +534,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET/PUT/DELETE | `/api/agent/bkash` | The business's own bKash account: `{app_key, app_secret, username, password, sandbox}`; connect it (checked by granting a token); disconnect it (D109). Only the username and test mode come back |
 | GET | `/health` | DB reachable |
 
-Lists that grow (orders, appointments, shop orders, messages, conversations, the
+Lists that grow (shop orders, messages, conversations, the
 audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, default
 100) and `?before=` the last row's time (`created_at`; `updated_at` for
 conversations; `at` for the audit log). Fewer than `limit` rows means it was the
@@ -574,7 +545,7 @@ Everything under `/api` except chat, desks, auth and the Telegram, Messenger, Wh
 
 **Three roles** (D23, D97). An **owner** belongs to one business: the token says which
 (rule 6), and they only ever see it. A **moderator** is someone the owner added to it:
-they run the inbox (conversations, messages, orders, bookings, appointments, calls, the
+they run the inbox (conversations, messages, orders, calls, the
 lists) and can read the settings, knowledge and channels, but a change under `/api/agent`,
 `/api/billing` and anything under `/api/team` are a 403 for them (`deps.owners_only`), the
 saved replies included (D151, D153). The Telegram
@@ -774,7 +745,7 @@ their file ─► 1. read: rows as {their column: text}            csv_import.pe
            ─► 3. a row becomes our item: Product, MenuItem…     the desk's own row(), as before
 ```
 
-**A desk lists its fields once:** `PRODUCT_COLUMNS`, `MENU_COLUMNS`, `DOCTOR_COLUMNS` in its
+**A desk lists its fields once:** `PRODUCT_COLUMNS` in its
 `values.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
 plain words, for the owner's screen; `aliases` are the other names sheets give it, in English,
 Bangla and Banglish (`"mrp"`, `"dam"`, `"দাম"`). The required ones are what `parse` needs.
@@ -821,7 +792,7 @@ one is a Google Sheet that stays linked (D58, below); the second, a WooCommerce 
 Most small shops and chambers keep their list on paper or in Excel, not in software with an
 API. A Google Sheet is the next step up for them, and it's an import that repeats: the same
 three steps as above, every few minutes, with the owner's match saved. The list it fills is
-the desk's own (`products`, `menu_items`, `doctors`), so the agent, its tools and the prompt
+the desk's own (`products`), so the agent, its tools and the prompt
 don't change: they read our table as before.
 
 ```
@@ -847,8 +818,8 @@ every SHEET_SYNC_MINUTES (5):
   and stops with the app. `POST /api/agent/sheet/sync` syncs one now.
 - **Same text, no work.** `checked` is the SHA-256 of the last text fetched. Most syncs stop
   there: no parse, no write.
-- **Everything comes from the sheet, except the shop's stock.** Names, prices, sizes, a
-  doctor's days, `available`: the sheet's, every time, since nothing else changes them. Stock
+- **Everything comes from the sheet, except the shop's stock.** Names, prices, sizes,
+  `available`: the sheet's, every time, since nothing else changes them. Stock
   is changed by both: the owner in the sheet, and our orders (`place_order` takes it off,
   cancelling puts it back). So a product's stock comes from the sheet **only when its stock
   cell changed** since the last sync: the owner counted or restocked it. Otherwise ours stays,
@@ -881,7 +852,7 @@ every SHEET_SYNC_MINUTES (5):
   A new product, or one whose cell changed, takes the sheet's count less what's held. A
   changed price alone doesn't reset the count. A product gone from the sheet is gone from the
   list; past orders keep their own lines. The first sync takes every count from the sheet,
-  less what's held. The menu and doctors have no stock, so they are only replaced. The owner's
+  less what's held. The owner's
   screen says it in one line: *"Write what's on your shelf. We take off the orders you haven't
   shipped yet."*
 - **A problem keeps the old list.** A row the desk's `row()` can't read (as an import: nothing
@@ -891,15 +862,13 @@ every SHEET_SYNC_MINUTES (5):
   `TeamService.notify(ws, text)`: an alert with no conversation, so no `Ref:` line).
   A sheet that can't be fetched is read whole again once it's back.
   The next clean sync clears it.
-- **While a sheet is linked, the sheet is the list.** `PUT /api/menu`, `PUT /api/doctors` and
-  their CSV imports are a 409 `sheet_linked` (`Store.not_linked`), so an edit in HeyDesk isn't
-  silently undone 5 minutes later. *A shop's isn't, since D120:* its sheet adds and updates
-  only its own products (below), so `PUT /api/products` and its import still work.
+- **A linked sheet adds and updates only its own products** (D120, below), so `PUT
+  /api/products` and its import still work while it's linked.
 - **One sheet per agent**, because an agent is one desk with one list. The desk names its
   fields (`Desk.columns`, the same as the import's) and its store takes the sheet's text
-  (`Store.take_sheet(text, mapping, seen) -> seen`): the menu and doctors are replaced; the
+  (`Store.take_sheet(text, mapping, seen) -> seen`): the
   shop merges, in one transaction with reading the orders that hold stock (`merge`,
-  `take_off`, `HOLDS` in `values.py`). The receptionist has no list, so no sheet.
+  `take_off`, `HOLDS` in `values.py`).
 
 **Routes:**
 
@@ -1113,7 +1082,7 @@ an unknown code is the same 404 page.
 A visitor is the same chat on a messaging app, or the same browser on the web chat and its calls.
 Two things make them feel known:
 
-- **Their last order, booking or message** (`Store.before`): in an earlier conversation *or this
+- **Their last order or message** (`Store.before`): in an earlier conversation *or this
   one*, so a second order in the same Messenger chat is offered the first one's name, phone and
   address instead of asking again (D123). The desk's `returning()` section says to offer them
   once, when the details are needed.
@@ -1454,10 +1423,9 @@ a tool's result ─► ToolResult.card {kind, data} ─► the loop yields a Car
 
 | Kind | From | `data` |
 |------|------|--------|
-| `summary` | `ask_for_yes(read_back, tool, card)`: shop `place_order`, `change_order`; restaurant `place_order`, `change_order`, `book_table`; clinic `request_appointment`, `reschedule_appointment` | `{title, lines: [{label, qty?, amount?}], rows: [{label, value, at?}], total?}` |
-| `receipt` | the same writing tools once they saved: an order, a booking, an appointment | `{title, number, status, rows, total?, pay_url?}` |
-| `tracking` | `track_order` (shop, restaurant) | `{number, steps: [{label, done, current}], note}` |
-| `doctors` | clinic `find_doctor` | `{doctors: [{name, speciality, days, hours, fee, book}]}` |
+| `summary` | `ask_for_yes(read_back, tool, card)`: shop `place_order`, `change_order` | `{title, lines: [{label, qty?, amount?}], rows: [{label, value, at?}], total?}` |
+| `receipt` | the same writing tools once they saved: an order | `{title, number, status, rows, total?, pay_url?}` |
+| `tracking` | `track_order` | `{number, steps: [{label, done, current}], note}` |
 
 - **Amounts and times:** an amount is `{minor, currency, text}` (`text` from `speech.money`;
   nothing to pay is "free"); a row with a time has `at`, ISO 8601 in UTC, beside its display
@@ -1465,11 +1433,9 @@ a tool's result ─► ToolResult.card {kind, data} ─► the loop yields a Car
 - **The read-back stays in the words.** A summary shows the same details as the read-back, but
   the yes is still to the read-back string (D107), and voice and plain-text channels need it.
   The model isn't told about cards: it says what it says without them.
-- **Buttons stay `choices`** (D99): Yes and Change under a summary. A doctor's `book` is the
-  words a Book button sends ("Book with Dr. Imran Hasan"): a tap is only words.
+- **Buttons stay `choices`** (D99): Yes and Change under a summary: a tap is only words.
 - **A receipt's `pay_url`** is the `/pay/<id>` link a row saved unpaid gets (D47).
-- **Tracking:** a desk lists its steps (`STEPS` for the shop; `PICKUP_STEPS` or
-  `DELIVERY_STEPS` for the restaurant); a status off them (unpaid, cancelled, returned) is one
+- **Tracking:** a desk lists its steps (`STEPS` for the shop); a status off them (unpaid, cancelled, returned) is one
   step on its own. `note` is the status in words.
 - **Not kept:** a card is shown when the tool runs; it isn't saved on the message like
   `photos`, so a reloaded chat or the owner's view doesn't show it (§12).
@@ -1486,14 +1452,12 @@ escaped; WhatsApp's `*stars*`; Messenger has no bold), a summary's lines as "2 �
 | `summary` | the text, with Yes and Change | the text, with Yes and Change as quick replies | the text, with Yes and Change as reply buttons |
 | `receipt` | the text, with a "💳 Pay now" URL button when `pay_url` | the text; with `pay_url`, a button template with a "Pay now" web_url button (`send_link`) | the text; with `pay_url`, an interactive `cta_url` "Pay now" (`send_link`) |
 | `tracking` | "Order O-106", then "✅ Received → 🔵 Confirmed → ⚪ With the courier", then the note | the same, plain | the same, the title in bold |
-| `doctors` | one message, each doctor's name, speciality, days, hours and fee, and a "Book with …" button each | a carousel (`send_cards`, no photo), each with a Book postback | a list (`send_list`): a row each, the name as title (24), "speciality · days · hours · fee" as description (72) |
 
 - **The summary carries the buttons.** The words go first without buttons, then the summary
   with Yes and Change under it. The read-back is in both: the model isn't told about cards, and
   the yes is to the read-back's words (D107), so they stay; the card is what the buttons confirm.
   Any other card leaves the turn's choices on the words.
-- **A tap is words**, as for every button (D99): a Book button's or a list row's id is the
-  doctor's `book` ("Book with Dr. Imran Hasan"), a callback's data on Telegram (64 bytes, else
+- **A tap is words**, as for every button (D99): a callback's data on Telegram (64 bytes, else
   no button), a postback on Messenger.
 - If a card fails to send, it's logged; the words have gone already. Text past a button
   template's 640 characters or an interactive message's 1,024 is cut.
@@ -1564,16 +1528,12 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
 - Given up: WhatsApp's own app (the Cloud API number has none to type in; the inbox switch
   covers it). The buyer sees the "." itself.
 
-- **Telling a restaurant's visitor (D66):** when the owner moves an order or a booking with
-  `PATCH /api/orders/{id}` or `/api/bookings/{id}`, the row's `news()` gives a line, and
+- **Telling the buyer (D66, D105):** when the owner moves an order with
+  `PATCH /api/shop/orders/{id}`, the row's `news()` gives a line, and
   `TeamService.tell_visitor` adds it to that conversation as the team's (the web page fetches
   it, the bot or the Page sends it, the model sees it next turn; the conversation stays with
-  the agent). Lines: a pickup `ready` ("Your order O-101 is ready to pick up."), a delivery
-  `out_for_delivery` ("…is on its way."), a booking `confirmed` ("Your table for 4 is
-  confirmed (T-101)."), and an order or booking the owner `cancelled`. Nothing for the other
-  steps. A shop order the owner moves with `PATCH /api/shop/orders/{id}` does the same
-  (D105): `confirmed` ("…is confirmed and will be sent out."), `shipped` ("…is with the
-  courier. The delivery man calls before he comes.") and `cancelled`. `Services.team` is the `TeamService`, for the routes.
+  the agent): `confirmed` ("…is confirmed and will be sent out."), `shipped` ("…is with the
+  courier. The delivery man calls before he comes.") and `cancelled`; nothing for the other steps. `Services.team` is the `TeamService`, for the routes.
 
 - After a hand-off the agent keeps answering until the owner replies, so no one waits in
   silence. A phone call can't be answered this way; the owner is told to call back.
@@ -1581,7 +1541,7 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
 
 ### Paying first (D47–D49, D109)
 
-A restaurant, clinic or shop can set `pay_first`: the visitor pays online through SSLCommerz or
+A shop can set `pay_first`: the visitor pays online through SSLCommerz or
 bKash, into the business's **own** account, before anything is placed. The shop sets it per delivery area
 (`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the table's
 `Payable.due`, and the payment moves the row to its `PAID_STATUS`:
@@ -1589,10 +1549,8 @@ bKash, into the business's **own** account, before anything is placed. The shop 
 | Desk | Pays first (`PAY_FOR`) | Then |
 |---|---|---|
 | Shop | the delivery charge, in an area with `pay_first` | `confirmed`, with no call: the advance is the confirmation (D92); the rest in cash on delivery |
-| Restaurant | the delivery charge, for a delivery (pickup pays nothing first) | the rest on delivery |
-| Clinic | a deposit the owner sets, copied onto the appointment | the clinic phones to confirm |
 
-Nothing to pay (free delivery, a pickup) saves it `new` as before. The owner turns it on and
+Nothing to pay (free delivery) saves it as before. The owner turns it on and
 off, sets the amounts and connects the gateways on the frontend's Agent → Payments section.
 
 **Each business's own accounts (D49, D109).** `payment_accounts` holds one row per gateway
@@ -1627,8 +1585,7 @@ bKash sends the browser to /pay/<id>/bkash?paymentID=…&status=success (failure
        the bot sends it on Telegram) and the owner's alert
 ```
 
-- The agent can't mark anything paid: no tool moves `unpaid` (moving an unpaid appointment
-  keeps it unpaid), and the prompt says nothing is placed until a message says so. What the
+- The agent can't mark anything paid: no tool moves `unpaid`, and the prompt says nothing is placed until a message says so. What the
   browser posts is never trusted; only `val_id` or `paymentID`, asked about with the
   business's own account.
 - bKash (Tokenized Checkout, `adapters/payments/bkash.py`) grants a fresh token for each call
@@ -1729,32 +1686,11 @@ needs `call_to_confirm` (a 422 otherwise).
 `GET /api/stats` adds up rows we already keep, in `Store.stats(start, end)`; the route asks for
 today, yesterday and the last `days` days in the agent's `timezone`. **Chats** are the
 conversations with a turn in the stretch, and **handed off** those with a turn that handed off;
-the rest the agent handled alone. **Sales** are the rows of the desk's `SALES` tables (a shop's
-orders; a restaurant's orders and bookings; a clinic's appointments; none for the receptionist)
-made in it and not `cancelled` or `unpaid`; their **amount** adds each row's `total` (a booking
-or appointment has none). **Bought** counts the chats those sales belong to. A shop order's
+the rest the agent handled alone. **Sales** are the rows of the desk's `SALES` tables (the shop's
+orders) made in it and not `cancelled` or `unpaid`; their **amount** adds each row's `total`. **Bought** counts the chats those sales belong to. A shop order's
 `source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
 are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
 as the admin's overview is (D72).
-
-### Reminders the day before, and a deposit sent by hand (D145)
-
-- **The reminder.** The snooze round (`ConversationService.remind_tomorrow`, every
-  `SNOOZE_CHECK_SECONDS`) finds table bookings and appointments that are `new` or `confirmed`,
-  in a chat, and less than 24 hours away. Each gets one line in its chat ("⏰ A reminder: your
-  appointment A-104 with Dr. Hasan is on Wed 30 Sep, 7:00 pm."), the time in the business's
-  timezone, and `reminded` is set whether it went or not. One booked less than a day ahead is
-  marked and skipped. It goes through `tell_in_window`: always on Telegram and the web chat,
-  on Messenger and WhatsApp only within 24 hours of the visitor's last message. Meta lets a
-  Page send outside that window only with a message tag (`CONFIRMED_EVENT_UPDATE`) and
-  WhatsApp only with an approved template; neither is used yet.
-- **The TrxID.** A clinic sets `advance_number` (its bKash or Nagad number) and a `deposit`.
-  Unless it takes the deposit online first (D48, which wins), `# The clinic` tells the agent to
-  ask the patient to send the deposit there and give the TrxID. `request_appointment` then
-  needs `trx_id`: 8 to 12 letters and digits, in capitals (`trx_id()` in `clinic/values.py`),
-  read back with the rest and saved on the appointment, which stays `new`. The clinic finds it
-  in its own account and ticks `trx_checked` (`PUT /api/appointments/{id}/trx`). Python can't
-  check a TrxID: there's no API for a personal bKash or Nagad number.
 
 ### The same order twice (D146)
 
@@ -1806,7 +1742,7 @@ orders came to, and the chats they ordered from. Only this shop's orders count (
 - Given up: the courier's own fraud record. Steadfast's public API has no fraud check; the
   packages that offer one log in to its merchant website with the owner's password and read
   the page, which breaks when the page changes. Pathao has none either. The buyers list is
-  the shop's only; a restaurant's or clinic's customers wait for G17's second half.
+  the shop's only.
 
 ### The courier (D112, D113)
 
@@ -1850,10 +1786,10 @@ WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
 after 0.5s of silence, D39; `STT_PROVIDER=whisper` to our Whisper, D87) and Piper for
 text-to-speech.
 
-- **Only the receptionist and the clinic (D108):** `Desk.takes_voice`, like `takes_photos`.
-  `GET /api/chat/{key}` says `voice: true` for them, so the page shows its Call button;
-  `POST /api/voice/offer` for any other desk is a 403 `no_voice`. A shop's buyers and a
-  restaurant's guests use the web chat and the messaging apps.
+- **Off for now (D108, D164):** `Desk.takes_voice`, like `takes_photos`, is off for the shop, so
+  `GET /api/chat/{key}` says `voice: false`, the page shows no Call button, and
+  `POST /api/voice/offer` is a 403 `no_voice`. The code stays for the shop's confirmation
+  calls (below): turning it on is the one switch.
 - **Bangla (D84, D86):** the server's `VOICE_LANGUAGE` (`bn`, the default, or `en`) says what
   every call hears and speaks, whatever the agent. A `bn` call asks Deepgram for Bangla
   (`language=bn`) and speaks with our Bangla voice:
@@ -1950,10 +1886,9 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
 
 - Unit tests for `runtime/` and `domain/` with `FakeLLM` and the fixed clock
   (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
-- A test file per desk (`tests/integration/test_restaurant.py`, `test_clinic.py`,
-  `test_messages.py`): its tools against its real store on in-memory SQLite, its prompt, its
-  routes, and whole conversations scripted with `FakeLLM` (an order or appointment saved only
-  after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
+- A test file per desk (`tests/integration/test_shop.py`, and `test_messages.py` for the shared
+  tools): its tools against its real store on in-memory SQLite, its prompt, its routes, and
+  whole conversations scripted with `FakeLLM` (an order saved only after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
 - Live runs against Groq only with `-m live`, and only when asked: they cost quota.
 
 ### CI and deploying
@@ -1989,7 +1924,7 @@ version handles them.
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
-| Searching a long menu or doctor list; a shop's search that knows Banglish ("lal" for Red) or meanings | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41). A shop over `LONG_LIST` (60) products, such as a linked WooCommerce store, lists only its groups, and `find_product` matches plain words (D80) |
+| A shop's search that knows Banglish ("lal" for Red) or meanings | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41). A shop over `LONG_LIST` (60) products, such as a linked WooCommerce store, lists only its groups, and `find_product` matches plain words (D80) |
 | Knowing a returning visitor on a shared computer | The web chat and a call use the browser's token as the `contact` (D114), so someone else on the same browser is offered the last visitor's name, phone and address, and gets their notes (D124). Clearing the browser's data makes a new visitor |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |
@@ -1997,13 +1932,9 @@ version handles them.
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Clearing old `turns`, a price for Gigalogy, Gemini embeddings and speech-to-text | Every turn is kept; a turn's cost is Groq's alone (Gigalogy reports tokens, no price), so a Gigalogy turn's cost is 0, meaning unknown (D71) |
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
-| Real bookings (a free slot, a calendar) | The clinic takes an appointment *request*; the clinic phones to confirm |
-| Restaurant: finding an order by a phone written another way (+880 for 0), changing an order's dishes | The phone must match as it was given; to change the dishes, cancel and order again (D65) |
-| Restaurant: telling a visitor who called (voice), an SMS when nobody is on the chat | A call can't get the line; the owner phones them. Web, Telegram and Messenger only (D66) |
-| Restaurant bookings: real tables and their layout, deposits, a waitlist, a booking that must end before closing, a list by day, two visitors taking the last seats in the same second | One shared count of `seats`; a booking's start is inside the hours; no money is taken; a full slot offers other times; the owner filters the list on the frontend; the second of two at once could overbook by a table (D64) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
-| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, for a receptionist or a clinic (D108); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, and off for now (D108, D164); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `TAKEOVER_QUIET_MINUTES` (D135); after `CONVERSATION_IDLE_HOURS` the agent starts afresh in the same chat (D157) |
@@ -2013,11 +1944,11 @@ version handles them.
 | Shop: Instagram | Web chat, voice, Telegram, Messenger and WhatsApp for now (D45, D60, D103) |
 | WhatsApp: Embedded Signup to connect a number, its `wa.me` link, templates (a message after the 24-hour window), voice notes | The owner pastes a system user's token and the two ids from Meta's settings; they know their own number. Text, photos and Python's buttons (D103) |
 | Messenger: Facebook Login to connect a Page, the Get Started button, a reply after the 24-hour window, the Page's own replies from its inbox | The owner pastes a Page access token made in our Meta app; a visitor's first message starts the chat; text, photos (D62) and Python's buttons (D99). A reply after 24 hours fails and is logged. The agent doesn't see what a person wrote in the Page's inbox (D60) |
-| Photos: several in one message, a photo sent as a file on Telegram, a photo with no product to match it (the restaurant, the clinic), deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
+| Photos: several in one message, a photo sent as a file on Telegram, deleting a photo's file when the owner removes it | Web chat, Messenger (D62) and Telegram (D63), one photo a message, the shop only; a removed photo's file and vector stay, and search skips it (D57) |
 | Photos: who can see one | A photo's URL is public but has a random id, like the chat link; a visitor's photo is kept for the owner's view (D57) |
 | Import: saving a business's column match, one column split into two fields ("Size/Colour"), a limit on suggest calls, Shopify or a POS | The screen asks again on each upload (the suggestion makes that quick); the owner splits the column in the sheet; CSV only for now (D53). Matching by what a column holds (a column of links is `photos`) waits until names miss (D115) |
 | Linked sheet: writing the stock back to the sheet, a private sheet (a Google service account), checking the stock again just before an order is saved, Excel on OneDrive | The sheet is read only; the owner updates a count when they restock or recount, and an order packed but not yet marked shipped is taken off once more (mark it shipped first). Shared by link, so the owner keeps private columns elsewhere. The list is at most `SHEET_SYNC_MINUTES` old. Sheets only (D58). A sync and an order at the same moment take turns (D162) |
 | WooCommerce: reading a webhook's body (it only starts a sync), a store on plain HTTP or with plain permalinks, reading back a change made to our order in Woo's admin, a returned order's stock, a variation's own photo (the product's are taken, D102), attributes other than size and colour as variants, a store with thousands of products, Shopify | A webhook starts a whole sync, which is simple and catches everything; HTTPS with `/wp-json/` only, which nearly every store has; HeyDesk is where our orders move; a returned order is left as it is in Woo and the owner restocks there; a variation's photo is rarely different enough to matter; other attributes are a line in the description; a sync is one call per 100 products plus one per variable product; Woo first (D75) |
 | Website chat: only the business's own websites may show its bubble, removing a logo's file | Anyone can paste a business's line, as anyone can share its chat link; the daily limits (D51) and rate limits (D52) keep the cost small. A replaced logo's file stays (D82) |
-| Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once, restaurant and clinic calls | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89), and off while the shop takes no voice (D108) |
-| Payments: refunds, a restaurant's charge per area, an unpaid order that expires | The owner refunds in the gateway's panel (a payment for a cancelled one is an alert saying so); one restaurant delivery charge to any address; the owner cancels what was never paid |
+| Confirmation calls: a phone carrier, who may open `/phone` for a number, a call per business at once | No carrier is planned: the page on a phone is the phone. Dev only, like the Call button: anyone who opens `/phone` with a mobile gets that mobile's calls, which say the order's code and total. In production, which serves no `/phone`, no call is queued and the owner's "Call to confirm" is a 409, so a call is never only missed (D105). One call at a time for the whole server. The shop only (D88, D89), and off while the shop takes no voice (D108) |
+| Payments: refunds, an unpaid order that expires | The owner refunds in the gateway's panel (a payment for a cancelled one is an alert saying so); the owner cancels what was never paid |

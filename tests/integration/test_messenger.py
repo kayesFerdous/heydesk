@@ -6,10 +6,12 @@ import hmac
 import json
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from heydesk.desks.shop import ShopDesk
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.models import Conversation
 from heydesk.ports.llm import ToolCall
@@ -101,11 +103,12 @@ def image(**payload: Any) -> dict[str, Any]:
 
 
 async def test_echoes_and_photos_to_a_desk_that_takes_none(
-    app: FastAPI, client: AsyncClient
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(ShopDesk, "takes_photos", False)
     await connect(client)
     await post(client, message("from the page", is_echo=True))
-    await post(client, message(None, **image()))  # the restaurant takes no photos
+    await post(client, message(None, **image()))
 
     assert sent(app) == [(PSID, NOT_TEXT)]
 
@@ -171,8 +174,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
     assert "/api/" not in body and "workspace" not in body
     assert "m.me" not in (await client.get("/p/dev-shop/kurti")).text
 
-    await services.agents.ensure_dev_agent("restaurant", SEEDS / "restaurant.yaml")
-    for wrong in ("/p/dev-shop/no-such", "/p/nobody/kurti", "/p/dev-restaurant/kurti"):
+    for wrong in ("/p/dev-shop/no-such", "/p/nobody/kurti"):
         missing = await client.get(wrong)
         assert missing.status_code == 404 and "Not found" in missing.text
 
@@ -180,7 +182,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
 async def test_a_page_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "restaurant"})).status_code == 201
+    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
     res = await other.put("/api/agent/messenger", json={"token": TOKEN, "page_id": PAGE})
     assert res.status_code == 422
 

@@ -96,45 +96,36 @@ async def test_a_sheet_with_a_problem_keeps_the_old_list(world: World) -> None:
     assert link.problem == "" and await stock(world, agent, "panjabi-silk") == 7
 
 
-async def test_while_a_sheet_is_linked_the_list_is_changed_there(
+async def test_a_sheet_is_checked_then_linked_and_a_bad_row_alerts_once(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    sheet = Sheet("Item,Price,Code\nBiryani,450,biryani\nBorhani,130,borhani\n")
+    sheet = Sheet(products(silk="5"))
     app.state.services.sheets.fetch = sheet
-    mapping = {"name": "Item", "price": "Price", "code": "Code"}
 
     suggested = (await client.post("/api/agent/sheet/suggest", json={"url": LINK})).json()
-    assert suggested["headers"] == ["Item", "Price", "Code"]
+    assert suggested["headers"] == ["Code", "Item", "Price", "Qty"]
     wrong = await client.put("/api/agent/sheet", json={"url": LINK, "mapping": {"name": "Item"}})
     assert wrong.status_code == 422  # no price: nothing is linked
     assert (await client.get("/api/agent/sheet")).status_code == 404
 
-    body = {"url": LINK, "mapping": mapping}
+    body = {"url": LINK, "mapping": MAPPING}
     checked = (await client.put("/api/agent/sheet", json=body | {"dry_run": True})).json()
     assert (checked["saved"], checked["count"]) == (False, 2)
     assert (await client.get("/api/agent/sheet")).status_code == 404  # only checked
     linked = (await client.put("/api/agent/sheet", json=body)).json()
     assert (linked["saved"], linked["count"]) == (True, 2)
     assert (await client.get("/api/agent/sheet")).json()["problem"] == ""
-    assert [d["name"] for d in (await client.get("/api/menu")).json()] == ["Biryani", "Borhani"]
-    refused = await client.put("/api/menu", json=[])
-    assert refused.status_code == 409 and refused.json()["error"]["code"] == "sheet_linked"
-
-    sheet.text += "Lassi,120,lassi\n"
-    await client.post("/api/agent/sheet/sync")
-    assert len((await client.get("/api/menu")).json()) == 3
 
     await link_owner(app, client)
-    sheet.text += "Kulfi,,kulfi\n"  # no price
+    sheet.text += "kulfi,Kulfi,,\n"  # no price
     for _ in range(2):
         synced = (await client.post("/api/agent/sheet/sync")).json()
-    assert "row 5" in synced["problem"]
+    assert "row 4" in synced["problem"]
     alerts = [t for t in to(app, OWNER) if "Google Sheet" in t]
     assert len(alerts) == 1  # once, not on every sync
-    assert len((await client.get("/api/menu")).json()) == 3
+    assert "kulfi" not in [p["code"] for p in (await client.get("/api/products")).json()]
 
     assert (await client.delete("/api/agent/sheet")).status_code == 204
-    assert (await client.put("/api/menu", json=[])).status_code == 200
 
 
 async def test_a_linked_shop_still_takes_edits_and_imports_here(

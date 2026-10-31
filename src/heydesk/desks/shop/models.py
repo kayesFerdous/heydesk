@@ -110,8 +110,7 @@ class ShopOrder(CustomerRequest, Payable, Base):
         return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
 
     def news(self) -> str:
-        """What the buyer is told in their chat when the owner or the courier moves it here; "" for nothing
-        (as the restaurant's)."""
+        """What the buyer is told in their chat when the owner or the courier moves it here; "" for nothing."""
         if self.status == "confirmed":
             return f"✅ Your order {self.code} is confirmed and will be sent out."
         if self.status == "shipped":
