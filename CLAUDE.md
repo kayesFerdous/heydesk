@@ -38,6 +38,9 @@ design.md **and** adds a line to decisions.md, in the same change.
 - A day that builds a gap from [docs/competitor-gaps.md](docs/competitor-gaps.md)
   (G1, G2, …) also ticks that gap there, with the date and D-number.
 - Code blocks in design.md are sketches: follow their shape and names, not every line.
+- Every feature or fix gets its own branch (`feat/<short-name>`,
+  `fix/<short-name>`), never work on `main`. When the work is done, push the
+  branch and open a PR with a short, simple title.
 - Commit only when asked. Before any commit: `scripts/check.sh`.
 - **Commits and PRs have no AI attribution**: no `Co-Authored-By: Claude`
   trailer, no Claude or Anthropic email, no "Generated with Claude Code" line.
