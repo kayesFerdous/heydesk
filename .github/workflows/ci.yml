@@ -92,7 +92,7 @@ jobs:
           URL: ${{ vars.RENDER_URL }}  # https://….onrender.com, a repository variable
         run: |
           for _ in $(seq 90); do  # up to 15 minutes: Render builds the image first
-            if curl -fs "$URL/health" | grep -q "\"commit\":\"$GITHUB_SHA\""; then
+            if curl -fs --max-time 10 "$URL/health" | grep -q "\"commit\":\"$GITHUB_SHA\""; then
               echo "live: $GITHUB_SHA"
               exit 0
             fi
