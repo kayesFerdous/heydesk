@@ -59,8 +59,7 @@ async def desks() -> list[DeskOut]:
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
 async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
-    # a new agent practises on its owner's test accounts until they go live
-    await services.agents.create(ws, body.kind, {"practice": True, **body.config})
+    await services.agents.create(ws, body.kind, body.config)
     return agent_out(await services.agents.get(ws))
 
 
