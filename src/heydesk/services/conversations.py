@@ -8,7 +8,7 @@ from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import ColumnElement, String, cast, func, or_, select
+from sqlalchemy import ColumnElement, ScalarSelect, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
@@ -25,7 +25,7 @@ from heydesk.errors import (
     NotFound,
     UnreadablePhoto,
 )
-from heydesk.models import Agent, Conversation, Note, Turn, User
+from heydesk.models import Agent, Conversation, Note, TeamMessage, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
@@ -391,16 +391,30 @@ class ConversationService:
             return list(await s.scalars(query))
 
     async def counts(self, ws: str, user_id: str) -> dict[str, int]:
-        """How many shown chats wait for a person: all of them, the caller's, and no one's."""
+        """How many shown chats wait for a person: all of them, the caller's, and no one's.
+        And the orders and messages still new, so the inbox counts them without listing them."""
         waiting = Conversation.status == "needs_human"
+
+        def new(table: type[ShopOrder | TeamMessage]) -> ScalarSelect[int]:
+            where = table.workspace_id == ws, table.status == "new"
+            return select(func.count()).where(*where).scalar_subquery()
+
         query = select(
             func.count().filter(waiting),
             func.count().filter(waiting, Conversation.assigned_to == user_id),
             func.count().filter(waiting, Conversation.assigned_to.is_(None)),
+            new(ShopOrder),
+            new(TeamMessage),
         ).where(Conversation.workspace_id == ws, *self._showing())
         async with self.sessions() as s:
-            needs_human, mine, unassigned = (await s.execute(query)).one()
-        return {"needs_human": needs_human, "mine": mine, "unassigned": unassigned}
+            needs_human, mine, unassigned, orders, messages = (await s.execute(query)).one()
+        return {
+            "needs_human": needs_human,
+            "mine": mine,
+            "unassigned": unassigned,
+            "orders_new": orders,
+            "messages_new": messages,
+        }
 
     async def open_chats(self, ws: str) -> dict[str, int]:
         """Each team member's open chats, the number a hand-off goes by; none: not there."""

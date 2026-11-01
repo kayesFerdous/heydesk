@@ -54,7 +54,7 @@ from heydesk.desks.shop.values import (
     stock_cell,
     with_district,
 )
-from heydesk.models import Conversation, Lead, Turn
+from heydesk.models import Conversation, Lead, TeamMessage, Turn
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext, ToolResult
@@ -1591,3 +1591,20 @@ def test_the_district_is_in_the_saved_address_once() -> None:
     assert with_district("House 12, Mirpur 10", "dhaka district") == "House 12, Mirpur 10, Dhaka"
     assert with_district("Zindabazar, Sylhet", "Sylhet") == "Zindabazar, Sylhet"
     assert with_district("জিন্দাবাজার, সিলেট", "Sylhet") == "জিন্দাবাজার, সিলেট"
+
+
+async def test_the_inbox_counts_new_orders_and_messages_and_shows_the_last_line(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    conv_id = await place_an_order(app, client)
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID)
+    await store.add(TeamMessage, name="", phone="", body="Call me", best_time="")
+
+    counts = (await client.get("/api/conversations/counts")).json()
+    assert (counts["orders_new"], counts["messages_new"]) == (1, 1)
+    [message] = (await client.get("/api/messages")).json()
+    await client.patch(f"/api/messages/{message['id']}", json={"status": "handled"})
+    assert (await client.get("/api/conversations/counts")).json()["messages_new"] == 0
+
+    [row] = (await client.get("/api/conversations")).json()
+    assert (row["id"], row["preview"]) == (conv_id, "Done! Your order number is O-101.")
