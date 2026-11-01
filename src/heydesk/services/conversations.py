@@ -146,8 +146,8 @@ class ConversationService:
         runs_ai = await self.visitors.check_not_blocked(
             agent, visitor
         )  # a 429 when they're blocked
-        # practice mode: a stranger's message waits for the team, like AI off
-        runs_ai = runs_ai and not agent.config.stays_silent_for(channel, visitor)
+        # AI off for all: the message waits for the team, like AI off for one visitor
+        runs_ai = runs_ai and not agent.config.ai_off
         # Read before anything is saved, so a file that isn't a photo changes nothing
         saved = await self.photos.save(agent.workspace_id, "chat", photo) if photo else None
         conv = None
@@ -254,13 +254,13 @@ class ConversationService:
 
     async def answers(self, agent: LiveAgent, channel: str, contact: str) -> bool:
         """Whether the agent will answer the contact's next message on a messaging app, so the
-        app shows "typing…" only then: not blocked, the AI on for them, not practice mode, and
+        app shows "typing…" only then: not blocked, the AI on for them and for the business, and
         not a chat the team has."""
         visitor = f"{channel}:{contact}"
         found = await self.visitors.find(agent.workspace_id, visitor)
         if found is not None and (found.ai_off or is_blocked(found, self.now())):
             return False
-        if agent.config.stays_silent_for(channel, visitor):
+        if agent.config.ai_off:
             return False
         latest = await self._latest(agent, channel, contact)
         return latest is None or not self._team_has(latest)

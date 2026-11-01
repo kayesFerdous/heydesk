@@ -5078,7 +5078,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "reply",
-     "label": "conversations.reply on all lines (typing… every 4 s, only if conversations.answers: not AI off, blocked, practice or taken over)",
+     "label": "conversations.reply on all lines (typing… every 4 s, only if conversations.answers: not AI off (one visitor or all), blocked or taken over)",
      "shape": "step",
      "code": "reply = await self.conversations.reply(agent, channel.kind, chat_id, '\\n'.join(lines), photo, name)"
     },

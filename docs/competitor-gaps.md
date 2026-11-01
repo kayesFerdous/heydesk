@@ -338,7 +338,7 @@ courier booking with status news to the buyer (D112, D113); remembering a return
     editable prompt section; the owner sees a test chat with the new version, then *Save* or
     *Undo*. Keep the last few versions on the agent (this bends D15's "no versions", so it needs
     a decision).
-- [x] **G46 Practice mode** · S
+- [x] **G46 Practice mode** · S (removed again, D166)
   - A new agent answers only the owner's own test accounts (listed ids) until they tap *Go live*.
   - 26 Oct, D143: built (day R17), on the messaging apps.
 - [x] **G4** (owner's dashboard) goes here, plus: AI-handled vs handed-off, and where each order
