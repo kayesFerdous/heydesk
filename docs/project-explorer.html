@@ -417,7 +417,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Inbox API",
    "type": "api",
    "file": "src/heydesk/api/conversations.py",
-   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), the counts waiting per tab (D129), one transcript, hand back to the agent, who has it (D126); messages for the team; the owner's dashboard `GET /api/stats` (today, yesterday, last N days: chats, handed off, sales and total, chats that bought, order sources, open leads; D144).",
+   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), each with its last line as `preview` (D167), the counts waiting per tab with the orders and messages still new (D129, D167), one transcript, hand back to the agent, who has it (D126); messages for the team; the owner's dashboard `GET /api/stats` (today, yesterday, last N days: chats, handed off, sales and total, chats that bought, order sources, open leads; D144).",
    "inputs": "filters; days",
    "outputs": "ConversationOut, MessageOut, DashboardOut",
    "fn": "conversation"
@@ -7116,7 +7116,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/services/live.py",
    "where": "`LiveHub.pages` (workspace → one queue per open inbox stream), filled by `GET /api/conversations/live`",
    "written": "`watch`: `after_flush` collects the changed conversations, `after_commit` publishes them",
-   "sync": "One server process only (D158). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page fetches that chat, and the list again after a reconnect.",
+   "sync": "One server process only (D158). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page groups the frames that come together, then fetches the counts and the list once (D167), and the list again after a reconnect.",
    "failure": "A restart or a dropped connection ends the stream; the page reconnects and fetches the list. A page 100 events behind loses the oldest."
   },
   {

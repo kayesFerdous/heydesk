@@ -30,21 +30,28 @@ class ConversationOut(BaseModel):
     done_at: datetime | None  # Done: hidden until the visitor writes again
     snoozed_until: datetime | None  # hidden until then
     labels: list[str]  # the team's own words for it
+    preview: str = ""  # the last thing said, cut short, for the list's row
     created_at: datetime
     updated_at: datetime
+
+
+PREVIEW = 120  # characters of the last line a list row shows
 
 
 async def conversations_out(
     services: Services, ws: str, convs: list[Conversation]
 ) -> list[ConversationOut]:
-    """The conversations with the email of whoever has each."""
+    """The conversations with the email of whoever has each, and the last thing said."""
     emails = {u.id: u.email for u in await services.members.members(ws)}
-    return [
-        ConversationOut.model_validate(c).model_copy(
-            update={"assigned_email": emails.get(c.assigned_to or "")}
-        )
-        for c in convs
-    ]
+    out = []
+    for c in convs:
+        said = [line.text for line in lines(c) if line.text]
+        update = {
+            "assigned_email": emails.get(c.assigned_to or ""),
+            "preview": said[-1][:PREVIEW] if said else "",
+        }
+        out.append(ConversationOut.model_validate(c).model_copy(update=update))
+    return out
 
 
 class Line(BaseModel):
@@ -53,6 +60,22 @@ class Line(BaseModel):
     text: str  # empty for photos the agent showed
     photo: str = ""  # the photo the visitor sent with it
     photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url}
+
+
+def lines(conv: Conversation) -> list[Line]:
+    """What the team sees of a chat, oldest first: tool calls and results left out."""
+    said = []
+    for i, m in enumerate(conv.messages):
+        if m.get("photos"):  # a tool's result, kept only for the photos it showed
+            said.append(Line(index=i, role="assistant", text="", photos=m["photos"]))
+        elif (
+            m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+            and m["content"].strip()
+            and not m.get("tool_calls")
+        ):
+            said.append(Line(index=i, role=m["role"], text=m["content"], photo=m.get("photo", "")))
+    return said
 
 
 class VisitorOut(BaseModel):
@@ -157,11 +180,14 @@ class CountsOut(BaseModel):
     needs_human: int  # shown chats waiting for a person
     mine: int  # of those, the caller's
     unassigned: int  # of those, no one's yet
+    orders_new: int  # shop orders still new
+    messages_new: int  # messages for the team still new
 
 
 @router.get("/api/conversations/counts")
 async def counts(services: Svc, ws: Workspace, principal: User) -> CountsOut:
-    """The inbox's numbers: how many chats wait for a person, the caller's and no one's."""
+    """The inbox's numbers: how many chats wait for a person, the caller's and no one's,
+    and the orders and messages still new."""
     return CountsOut(**await services.conversations.counts(ws, principal.user_id))
 
 
@@ -218,18 +244,7 @@ async def conversation(
     """The chat with what was said. `limit`: only the newest that many lines, before the line
     `before` if given; the screen loads older ones as the team scrolls up."""
     conv = await services.conversations.get(ws, conversation_id)
-    said = []
-    for i, m in enumerate(conv.messages):
-        if m.get("photos"):  # a tool's result, kept only for the photos it showed
-            said.append(Line(index=i, role="assistant", text="", photos=m["photos"]))
-        elif (
-            m.get("role") in ("user", "assistant")
-            and isinstance(m.get("content"), str)
-            and m["content"].strip()
-            and not m.get("tool_calls")
-        ):
-            line = Line(index=i, role=m["role"], text=m["content"], photo=m.get("photo", ""))
-            said.append(line)
+    said = lines(conv)
     count = len(said)
     if before is not None:
         said = [line for line in said if line.index < before]

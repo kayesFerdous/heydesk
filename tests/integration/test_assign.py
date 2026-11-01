@@ -93,10 +93,10 @@ async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
     llm.script = ["Hello!"]
     await chat(app, client, "visitor-two")  # the agent has it: no one waits
 
-    counts = {"needs_human": 1, "mine": 0, "unassigned": 1}
+    counts = {"needs_human": 1, "mine": 0, "unassigned": 1, "orders_new": 0, "messages_new": 0}
     assert (await rafi.get("/api/conversations/counts")).json() == counts
     assert await assign(rafi, waiting, rafi_id) == 200
-    counts = {"needs_human": 1, "mine": 1, "unassigned": 0}
+    counts = {"needs_human": 1, "mine": 1, "unassigned": 0, "orders_new": 0, "messages_new": 0}
     assert (await rafi.get("/api/conversations/counts")).json() == counts
     team = (await client.get("/api/team/members")).json()
     assert {m["id"]: m["open_chats"] for m in team}[rafi_id] == 1
