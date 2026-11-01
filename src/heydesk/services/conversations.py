@@ -7,7 +7,6 @@ from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,8 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.desks import tools_for
 from heydesk.desks.base import Store
-from heydesk.desks.clinic.models import Appointment
-from heydesk.desks.restaurant.models import Booking
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import (
     AssistUnavailable,
@@ -31,7 +28,6 @@ from heydesk.errors import (
 from heydesk.models import Agent, Conversation, Note, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import Runtime, TurnInput, run_turn
-from heydesk.runtime.parse import day_time
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import CallService
@@ -77,7 +73,6 @@ ASSIST_NOTE = (
 # A shop order read back and never said yes to gets one nudge this long after
 NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
 NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
-REMIND_BEFORE = timedelta(hours=24)  # a booking or appointment is reminded of then
 DHAKA = "Asia/Dhaka"  # an agent config saved before it had a timezone
 MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed
 OPEN = ("needs_human", "human")  # a chat that's open for its team member: waiting, or theirs
@@ -493,7 +488,6 @@ class ConversationService:
             try:
                 await self.wake_snoozed()
                 await self.nudge_unfinished()
-                await self.remind_tomorrow()
             except Exception:
                 log.exception("snooze and nudge round failed")
 
@@ -537,40 +531,6 @@ class ConversationService:
         for conversation_id in due:
             await self.team.tell_in_window(conversation_id, NUDGE, ["Yes", "Change"])
             log.info("nudged", extra={"conversation_id": conversation_id})
-
-    async def remind_tomorrow(self) -> None:
-        """A table booking or an appointment in the next 24 hours, not cancelled, gets one
-        line in its chat: once each, tried and marked whether it went or not, and only
-        inside the app's window (`tell_in_window`). One booked less than a day ahead gets none."""
-        now = self.now()
-        due: list[tuple[str, str]] = []
-        async with self.sessions() as s, s.begin():
-            for table in (Appointment, Booking):
-                rows = await s.execute(
-                    select(table, Agent.config)
-                    .join(Agent, Agent.workspace_id == table.workspace_id)
-                    .where(
-                        table.reminded.is_(False),
-                        table.status.in_(("new", "confirmed")),
-                        table.conversation_id.is_not(None),
-                        table.at.between(now, now + REMIND_BEFORE),
-                    )
-                )
-                for row, config in rows.all():
-                    row.reminded = True  # tried, sent or not: never twice
-                    if row.at - row.created_at < REMIND_BEFORE:  # booked within the day
-                        continue
-                    at = row.at if row.at.tzinfo else row.at.replace(tzinfo=UTC)
-                    when = day_time(at.astimezone(ZoneInfo(config.get("timezone", DHAKA))))
-                    what = (
-                        f"your appointment {row.code} with {row.doctor_name}"
-                        if isinstance(row, Appointment)
-                        else f"your table for {row.people} ({row.code})"
-                    )
-                    due.append((str(row.conversation_id), f"⏰ A reminder: {what} is on {when}."))
-        for conversation_id, line in due:
-            await self.team.tell_in_window(conversation_id, line)
-            log.info("reminded", extra={"conversation_id": conversation_id})
 
     async def wake_snoozed(self) -> None:
         """Each snoozed chat that's due is back in the list, and the owner hears about it."""

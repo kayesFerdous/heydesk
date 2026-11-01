@@ -1,21 +1,16 @@
 """Paying first: with `pay_first` on, what a desk takes is saved unpaid, and only a
 payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
-charge in the areas that pay first, and that payment confirms the order; the restaurant
-takes its delivery charge, the clinic a deposit the owner sets."""
+charge in the areas that pay first, and that payment confirms the order."""
 
 from typing import Any, cast
 
-import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import text
 
 from heydesk.adapters.payments.fake import FakePayments
-from heydesk.desks.clinic import CLINIC
-from heydesk.desks.restaurant import RESTAURANT
 from heydesk.desks.shop import SHOP
 from heydesk.desks.shop.tools import FindOrderInput, track_order
-from heydesk.errors import InvalidConfig
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Account, Paid
 from heydesk.services import Services
@@ -46,9 +41,7 @@ async def paying_first(
 
 
 def pay_first(services: Services, kind: str) -> dict[str, Any]:
-    """The setting that turns paying first on: the shop's is each area's."""
-    if kind != "shop":
-        return {"pay_first": True}
+    """The setting that turns paying first on: each area's."""
     zones = [
         {"name": "Inside Dhaka", "charge": 6000, "districts": ["Dhaka"], "pay_first": True},
         {"name": "Outside Dhaka", "charge": 12000},
@@ -129,64 +122,6 @@ async def test_a_shop_takes_the_advance_only_in_the_areas_that_pay_first(world: 
     assert "pay_link" not in await world.tool_said(conv)
     [order] = await world.store(agent, conv).orders_here()
     assert (order.zone, order.status, order.total) == ("Outside Dhaka", "new", 107000)
-
-
-async def test_the_restaurant_takes_the_delivery_charge_first_but_not_for_pickup(
-    world: World,
-) -> None:
-    with pytest.raises(InvalidConfig, match="turn on delivery and set its charge"):
-        await paying_first(world.services, "restaurant")  # pickup only: nothing to pay first
-    agent, gateway = await paying_first(
-        world.services, "restaurant", delivers=True, delivery_charge=6000
-    )
-    prompt = await RESTAURANT.prompt(agent.config, world.store(agent))
-    assert "ask whether it's pickup or delivery" in prompt and "Delivery: ৳60" in prompt
-
-    lines = {"lines": [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]}
-    order = [ToolCall("c1", "update_order", lines)]
-    details = {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}
-    delivery = details | {"delivery": True, "address": "House 4, Road 2, Dhanmondi"}
-    conv = await take(world, agent, order, ToolCall("c2", "place_order", delivery))
-    read_back = "delivery ৳60 paid online now; total ৳1,090, the rest ৳1,030 paid on delivery"
-    assert read_back in str((await world.conversation(conv)).messages)
-    saved = await found(world, conv)
-    assert (saved.status, saved.amount_due, saved.total) == ("unpaid", 6000, 109000)
-
-    gateway.paid["v1"] = Paid(saved.id, 6000, "BDT", "B1")
-    await world.services.payments.settle(saved.id, "v1")
-    assert (await found(world, conv)).status == "new"
-    told = (await world.conversation(conv)).messages[-1]["content"]
-    assert told == (
-        "✅ Payment received: ৳60 for the delivery charge. Your order O-101 is placed. The rest, "
-        "৳1,030, is paid on delivery."
-    )
-
-    pickup = await take(world, agent, order, ToolCall("c3", "place_order", details))
-    assert "pay_link" not in await world.tool_said(pickup)  # pickup pays nothing first
-
-
-async def test_the_clinic_request_waits_for_its_deposit_even_when_moved(world: World) -> None:
-    with pytest.raises(InvalidConfig, match="set how much it is"):
-        await paying_first(world.services, "clinic")
-    agent, gateway = await paying_first(world.services, "clinic", deposit=50000)
-    prompt = await CLINIC.prompt(agent.config, world.store(agent))
-    assert "A deposit of ৳500 is paid online first" in prompt
-
-    details = {"doctor": "Dr. Hasan", "time": "tomorrow at 7 pm", "name": "Kayes"}
-    request = ToolCall("c", "request_appointment", details | {"phone": "01712345678"})
-    conv = await take(world, agent, [], request)
-    appointment = await found(world, conv)
-    assert (appointment.status, appointment.amount_due) == ("unpaid", 50000)
-
-    move = {"code": "A-101", "name": "Kayes", "new_time": "tuesday at 8 pm"}
-    await world.say(agent, None, [ToolCall("m", "reschedule_appointment", move), "Moved."], "yes")
-    assert (await found(world, conv)).status == "unpaid"  # moving it doesn't pay for it
-
-    gateway.paid["v1"] = Paid(appointment.id, 50000, "BDT", "B1")
-    await world.services.payments.settle(appointment.id, "v1")
-    assert (await found(world, conv)).status == "new"
-    told = (await world.conversation(conv)).messages[-1]["content"]
-    assert told.startswith("✅ Payment received: ৳500 for the deposit. Your appointment request")
 
 
 async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(

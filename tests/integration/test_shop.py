@@ -4,6 +4,7 @@ tracking it (the one from this chat, by the buyer's mobile, or with its code), c
 its items or details and cancelling it; an exchange request once it's delivered; the owner's products and orders routes; and photos: the owner's, a visitor's sent to
 find a product, and the ones the agent shows."""
 
+import asyncio
 import base64
 import csv
 import html
@@ -21,7 +22,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from heydesk.desks import csv_import
-from heydesk.desks.shop import SHOP
+from heydesk.desks.shop import SHOP, ShopDesk
 from heydesk.desks.shop.api import OfferIn, send_offer
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.tools import (
@@ -88,6 +89,30 @@ async def stock(
     product = next(p for p in await world.store(agent).products() if p.code == code)
     counter = product.counter(size, colour)
     return None if counter is None else product.count(counter)
+
+
+async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
+    """A whole order on the chat API, with a yes. Returns the conversation id."""
+    runtime = app.state.services.conversations.runtime
+    runtime.llm.script = [
+        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
+        ToolCall("c2", "place_order", DETAILS),
+        READ_BACK,
+        ToolCall("c3", "place_order", DETAILS),
+        "Done! Your order number is O-101.",
+    ]
+    first = await client.post(
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a black kurti…"}
+    )
+    conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]
+    await client.post(
+        f"/api/chat/{DEV_KEY}",
+        json={"visitor_id": "test-visitor", "message": "yes", "conversation_id": conv_id},
+    )
+    # the turn's Woo push runs in the background on the test's one shared
+    # connection: a session they close mid-test would roll back the test's own writes
+    await asyncio.gather(*app.state.services.woo.tasks)
+    return conv_id
 
 
 async def buy(world: World, agent: LiveAgent, *lines: dict[str, object]) -> str:
@@ -810,16 +835,17 @@ async def test_a_photo_that_cant_be_checked_still_gets_an_answer(world: World) -
     assert said == "[Photo. It couldn't be checked: ask what it is.]"
 
 
-async def test_only_the_shop_takes_photos_and_only_real_ones(
-    app: FastAPI, client: AsyncClient
+async def test_only_a_desk_that_takes_photos_gets_them_and_only_real_ones(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = {"visitor_id": "test-visitor", "message": "hi", "photo": as_base64(photo("red"))}
-    to_restaurant = await client.post(f"/api/chat/{DEV_KEY}", json=body)
-    assert to_restaurant.status_code == 422 and "can't take photos" in to_restaurant.text
+    with monkeypatch.context() as off:
+        off.setattr(ShopDesk, "takes_photos", False)
+        no_photos = await client.post(f"/api/chat/{DEV_KEY}", json=body)
+    assert no_photos.status_code == 422 and "can't take photos" in no_photos.text
 
-    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
     not_a_photo = {**body, "photo": as_base64(b"hello, not a picture")}
-    refused = await client.post(f"/api/chat/{agent.public_key}", json=not_a_photo)
+    refused = await client.post(f"/api/chat/{DEV_KEY}", json=not_a_photo)
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "unreadable_photo"
 
 
@@ -1261,8 +1287,6 @@ async def test_orders_export_as_the_list_shows_them(app: FastAPI, client: AsyncC
     assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
     theirs = await other.get("/api/shop/orders.csv")
     assert len(list(csv.reader(io.StringIO(theirs.text.removeprefix("﻿"))))) == 1
-    for path in ("/api/orders.csv", "/api/bookings.csv", "/api/appointments.csv"):
-        assert (await client.get(path)).status_code == 404  # a shop has none of these
 
 
 async def test_each_order_shows_its_buyers_record_and_buyers_are_listed(

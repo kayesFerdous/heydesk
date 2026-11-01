@@ -12,7 +12,7 @@ from heydesk.errors import Conflict
 from heydesk.models import Conversation, Turn, User, Workspace
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from tests.conftest import DEV_KEY, FIXED_NOW, new_business
-from tests.integration.test_restaurant import place_an_order
+from tests.integration.test_shop import place_an_order
 from tests.integration.test_telegram import connect
 
 ADMIN = {"email": "admin@heydesk.test", "password": "an admin password"}
@@ -70,7 +70,7 @@ async def test_what_an_admin_changes_or_opens_is_in_the_audit_log(
     conv_id = await place_an_order(app, client)
     admin = await as_admin(app, DEV_WORKSPACE_ID)
 
-    await admin.get("/api/orders")  # a list: not logged
+    await admin.get("/api/shop/orders")  # a list: not logged
     await admin.get(f"/api/conversations/{conv_id}")  # one chat opened
     await admin.patch("/api/agent", json={"faq": "Open on Eid."})  # a write
 
@@ -103,7 +103,7 @@ async def test_a_suspended_business_is_unavailable_but_its_owner_can_log_in(
     await admin.patch(f"/api/admin/businesses/{DEV_WORKSPACE_ID}", json={"status": "active"})
     assert (await client.get(f"/api/chat/{DEV_KEY}")).status_code == 200
     rows = (await admin.get("/api/admin/businesses")).json()
-    assert [(r["name"], r["status"], r["kind"]) for r in rows] == [("Dev", "active", "restaurant")]
+    assert [(r["name"], r["status"], r["kind"]) for r in rows] == [("Dev", "active", "shop")]
     await admin.aclose()
 
 
@@ -204,7 +204,7 @@ async def test_a_business_at_a_glance_for_the_admin(app: FastAPI, client: AsyncC
 
     page = (await admin.get(f"/api/admin/businesses/{DEV_WORKSPACE_ID}")).json()
 
-    assert (page["name"], page["status"], page["kind"]) == ("Dev", "active", "restaurant")
+    assert (page["name"], page["status"], page["kind"]) == ("Dev", "active", "shop")
     assert page["public_key"] == DEV_KEY
     assert [o["email"] for o in page["owners"]] == ["owner@example.com"]
     assert [(c["kind"], c["address"]) for c in page["channels"]] == [

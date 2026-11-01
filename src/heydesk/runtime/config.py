@@ -37,8 +37,8 @@ class Widget(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """The fields every kind of business has. A desk's config subclasses this: the clinic adds
-    `emergency_phone`, the restaurant `policies`, and each sets its own `greeting`."""
+    """The fields every kind of business has. A desk's config subclasses this: the shop adds
+    `delivery` and `policies`, and sets its own `greeting`."""
 
     model_config = ConfigDict(extra="forbid")  # a field this desk doesn't have is a 422
 

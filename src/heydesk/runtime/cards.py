@@ -1,13 +1,12 @@
 """Cards: what a tool shows on a screen next to its words. The website chat draws them;
 Messenger, Telegram and WhatsApp will send them their own way. Every value is Python's
 (rule 1): an amount comes in minor units with its display form, a time in UTC with its display
-form. A card is `{kind, data}`; there are four kinds:
+form. A card is `{kind, data}`; there are three kinds:
 
 - summary: the read-back before the yes.
   `{title, lines: [{label, qty?, amount?}], rows: [{label, value, at?}], total?}`
 - receipt: what was just saved. `{title, number, status, rows, total?, pay_url?, order_url?}`
 - tracking: where an order is. `{number, steps: [{label, done, current}], note}`
-- doctors: who fits. `{doctors: [{name, speciality, days, hours, fee, book}]}`
 
 An amount is `{minor, currency, text}`; `at` is ISO 8601 in UTC. Voice gets no cards.
 """
@@ -30,7 +29,7 @@ def amount(minor: int, currency: str) -> dict[str, Any]:
 
 
 def line(label: str, qty: int | None = None, cost: dict[str, Any] | None = None) -> dict[str, Any]:
-    """One line of a summary: "Chicken Biryani", 2, the two of them's amount."""
+    """One line of a summary: "Cotton Kurti", 2, the two of them's amount."""
     found: dict[str, Any] = {"label": label}
     if qty is not None:
         found["qty"] = qty
@@ -91,7 +90,3 @@ def tracking(number: str, flow: list[tuple[str, str]], status: str, note: str = 
     else:
         steps = [{"label": status.replace("_", " ").capitalize(), "done": True, "current": True}]
     return {"kind": "tracking", "data": {"number": number, "steps": steps, "note": note}}
-
-
-def doctors(found: list[dict[str, Any]]) -> Card:
-    return {"kind": "doctors", "data": {"doctors": found}}

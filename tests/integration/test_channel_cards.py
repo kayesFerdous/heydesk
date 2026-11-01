@@ -36,16 +36,6 @@ TRACKING = Card(
         "Confirmed: it's being packed.",
     )
 )
-DOCTOR = {
-    "name": "Dr. Imran Hasan",
-    "speciality": "Medicine",
-    "days": "Sun, Tue",
-    "hours": "5:00 pm–9:00 pm",
-    "fee": cards.amount(80000, "BDT"),
-    "book": "Book with Dr. Imran Hasan",
-}
-DOCTORS = Card(**cards.doctors([DOCTOR]))
-ABOUT = "Medicine · Sun, Tue · 5:00 pm–9:00 pm · ৳800"
 
 
 def channel(kind: str) -> Channel:
@@ -150,44 +140,3 @@ async def test_tracking_is_its_steps(app: FastAPI) -> None:
     assert channels.whatsapp.sent == [
         ("880", f"*Order O-106*\n{steps}\nConfirmed: it's being packed.")
     ]
-
-
-async def test_doctors_have_a_book_button_each(app: FastAPI) -> None:
-    channels = app.state.services.channels
-
-    await channels._send_card(channel(TELEGRAM), "555", DOCTORS, [])
-    await channels._send_card(channel(MESSENGER), "9001", DOCTORS, [])
-    await channels._send_card(channel(WHATSAPP), "880", DOCTORS, [])
-
-    book = "Book with Dr. Imran Hasan"
-    assert channels.telegram.cards == [
-        (
-            "555",
-            "<b>Dr. Imran Hasan</b> — Medicine\nSun, Tue · 5:00 pm–9:00 pm · ৳800",
-            [{"title": book, "choice": book}],
-        )
-    ]
-    shown = {"name": "Dr. Imran Hasan", "price": ABOUT, "choice": book, "button": "Book"}
-    assert channels.messenger.cards == [("9001", [shown])]
-    row = {"id": book, "title": "Dr. Imran Hasan", "description": ABOUT}
-    assert channels.whatsapp.lists == [("880", "Choose a doctor to book.", [row])]
-
-
-async def test_a_tapped_book_is_its_words(app: FastAPI, client: AsyncClient) -> None:
-    llm = app.state.services.conversations.runtime.llm
-    book = "Book with Dr. Imran Hasan"
-    path, secret = await telegram.connect(app, client)
-    await whatsapp.connect(client)
-    await messenger.connect(client)
-
-    chat = {"id": telegram.CHAT, "type": "private"}
-    tapped = {"id": "q1", "data": book, "message": {"chat": chat}}
-    await telegram.send(client, path, secret, {"update_id": 2, "callback_query": tapped})
-    assert llm.requests[-1].messages[-1]["content"] == book
-
-    row = {"type": "list_reply", "list_reply": {"id": book, "title": "Dr. Imran Hasan"}}
-    await whatsapp.post(client, whatsapp.message(type="interactive", interactive=row))
-    assert llm.requests[-1].messages[-1]["content"] == book
-
-    await messenger.post(client, messenger.postback(book))
-    assert llm.requests[-1].messages[-1]["content"] == book

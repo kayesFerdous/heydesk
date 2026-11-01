@@ -14,7 +14,7 @@ class Agent(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), unique=True)
-    kind: Mapped[str] = mapped_column(String(50))  # its desk: "clinic", "restaurant"
+    kind: Mapped[str] = mapped_column(String(50))  # its desk: "shop"
     name: Mapped[str] = mapped_column(String(200))
     public_key: Mapped[str] = mapped_column(String(64), unique=True)  # in the chat URL
     config: Mapped[dict[str, Any]] = mapped_column(JSON)  # its desk's config

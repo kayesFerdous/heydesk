@@ -5,6 +5,7 @@ from httpx import AsyncClient
 
 from heydesk.ports.llm import ToolCall
 from tests.conftest import DEV_KEY
+from tests.integration.test_shop import DETAILS, KURTI, READ_BACK
 
 
 def parse(body: str) -> list[tuple[str, dict[str, object]]]:
@@ -21,10 +22,10 @@ async def test_the_page_gets_the_agents_name_and_greeting(client: AsyncClient) -
     info = res.json()
     del info["widget"]  # the website chat's look: tests in test_agents_api.py
     assert info == {
-        "name": "Spice Garden assistant",
-        "greeting": "Hi, welcome to Spice Garden! Hungry? I can help with the menu or take your order.",
-        "photos": False,  # only a shop takes photos
-        "voice": False,  # only a receptionist or a clinic takes calls
+        "name": "Nakshi Threads assistant",
+        "greeting": "Assalamu alaikum! Welcome to Nakshi Threads. How can we help you?",
+        "photos": True,
+        "voice": False,  # the shop takes no calls for now
     }
 
 
@@ -57,7 +58,7 @@ async def test_a_tool_shows_a_status_line_and_a_hand_off_shows_the_card(
     assert order == ["open", "status", "token", "handoff", "done"]  # the status comes first
     frames = dict(parse(res.text))
     assert frames["status"] == {"label": "Getting someone from the team…"}
-    assert frames["handoff"]["phone"] == "+880 1700 000000"
+    assert frames["handoff"]["phone"] == "+880 1800 000000"
 
 
 async def test_the_next_message_continues_the_conversation(client: AsyncClient) -> None:
@@ -96,12 +97,12 @@ async def test_a_read_back_sends_its_card_and_the_yes_buttons(
 ) -> None:
     llm = app.state.services.conversations.runtime.llm
     llm.script = [
-        ToolCall("c1", "update_order", {"lines": [{"code": "chk-biryani", "quantity": 2}]}),
-        ToolCall("c2", "place_order", {"time": "7:30 pm", "name": "Kayes", "phone": "01712345678"}),
-        "2 Chicken Biryani, ৳900, at 7:30 pm. Shall I place it?",
+        ToolCall("c1", "update_cart", {"lines": [KURTI]}),
+        ToolCall("c2", "place_order", DETAILS),
+        READ_BACK,
     ]
     res = await client.post(
-        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "two biryanis"}
+        f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a black kurti"}
     )
 
     frames = parse(res.text)
@@ -109,5 +110,5 @@ async def test_a_read_back_sends_its_card_and_the_yes_buttons(
     assert events[-2:] == ["choices", "done"]  # the buttons come with the end of the reply
     card = dict(frames)["card"]
     assert card["kind"] == "summary"
-    assert card["data"]["total"] == {"minor": 90000, "currency": "BDT", "text": "৳900"}
+    assert card["data"]["total"] == {"minor": 101000, "currency": "BDT", "text": "৳1,010"}
     assert dict(frames)["choices"] == {"items": ["Yes", "Change"]}

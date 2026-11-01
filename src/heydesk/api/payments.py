@@ -1,6 +1,6 @@
 """Payments. The owner connects the business's own SSLCommerz store at
 `/api/agent/sslcommerz` and its bKash account at `/api/agent/bkash`, one or both. The
-visitor's pages need no login: the order's or appointment's id is the key. `/pay/<id>` sends
+visitor's pages need no login: the order's id is the key. `/pay/<id>` sends
 them to the gateway, or with both connected lets them pick one.
 
 SSLCommerz sends them back to `/pay/<id>/back`, and tells the server itself at NOTIFY_PATH;
