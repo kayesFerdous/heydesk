@@ -42,6 +42,9 @@ class AgentConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")  # a field this desk doesn't have is a 422
 
+    # The owner's master switch: true turns the AI off for every visitor on every channel.
+    # Messages wait for the team, as with AI off for one visitor
+    ai_off: bool = False
     name: str
     business_name: str
     timezone: str = "Asia/Dhaka"
@@ -58,17 +61,6 @@ class AgentConfig(BaseModel):
     saved_replies: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
         default=[], max_length=50
     )
-
-    # Practice mode: on Telegram, Messenger and WhatsApp the agent answers only these
-    # visitors ("messenger:<psid>") until the owner goes live; the web chat answers everyone.
-    # A new business's agent starts in it
-    practice: bool = False
-    testers: list[Annotated[str, Field(max_length=100)]] = Field(default=[], max_length=20)
-
-    def stays_silent_for(self, channel: str, visitor: str) -> bool:
-        """Whether this visitor gets no answer: practice mode, a messaging app, not a tester."""
-        apps = ("telegram", "messenger", "whatsapp")
-        return self.practice and channel in apps and visitor not in self.testers
 
     def fill(self, text: str) -> str:
         """Customer text with `{business_name}` and friends filled in."""

@@ -286,13 +286,11 @@ ask: the agent calls search_knowledge(question) ─► Gemini embeds the questio
   the list, so the next time `search_knowledge` finds it (a business with no documents gets the
   tool from its first).
 
-**Practice mode (D143).** `practice` and `testers` on the config. A business's new agent
-(`POST /api/agent`) starts practising: on Telegram, Messenger and WhatsApp it answers only the
-visitors in `testers` (`messenger:<psid>`), and a stranger's message waits for the team, as
-with AI off (I2); comments on posts are skipped too. The web chat and calls answer everyone, as
-that's where the owner tries it. `POST /api/conversations/{id}/tester` (*This is me*) adds a
-chat's visitor and gives it back to the agent; *Go live* is `PATCH /api/agent {practice:
-false}`. The dev agents and agents made before don't practise.
+**AI off for all (D165).** `ai_off` on the config is the owner's master switch, in the agent's
+settings: `PATCH /api/agent {ai_off: true}`. Every visitor on
+every channel is treated as having the AI off, so a message waits for the team exactly as with AI off for one visitor (I2), the
+web chat and calls included, and comments on posts get no reply. Turning it off again lets the
+agent answer from the next message.
 
 ### Photos (D57)
 
@@ -1225,7 +1223,7 @@ a message ─► (Messenger: "Seen" at once) ─► _gather: waits CHAT_WAIT_SEC
 ```
 
 - **"typing…" only when the agent answers** (`ConversationService.answers`): not for a visitor
-  who is blocked or has the AI off (I2), a stranger in practice mode (D143), or a chat the team
+  who is blocked or has the AI off (I2) or the business turned it off for all (D165), or a chat the team
   has taken over (D135), since no reply is coming from us. WhatsApp's "typing…" also marks
   their last message read, and lasts until the reply, so it's sent once.
 

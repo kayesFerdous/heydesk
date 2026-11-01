@@ -435,7 +435,7 @@ class ChannelService:
         if not commenter or commenter == channel.address or not post_id:
             return
         agent = await self.agents.by_id(channel.agent_id)
-        if agent.config.stays_silent_for(MESSENGER, f"{MESSENGER}:{commenter}"):
+        if agent.config.ai_off:
             return
         try:
             async with self.sessions() as s, s.begin():

@@ -570,17 +570,3 @@ async def lead_outcome(lead_id: str, body: LeadIn, services: Svc, ws: Workspace)
     """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
     store = await services.agents.store(ws)
     return LeadOut.model_validate(await store.lead_outcome(lead_id, body.status, body.why))
-
-
-@router.post("/api/conversations/{conversation_id}/tester")
-async def add_tester(conversation_id: str, services: Svc, ws: Workspace) -> dict[str, list[str]]:
-    """*This is me*: the chat's visitor is one of the owner's test accounts, answered while the
-    agent practises. Says who the testers are now."""
-    conv = await services.conversations.get(ws, conversation_id)
-    agent = await services.agents.by_workspace(ws)
-    key = f"{conv.channel}:{conv.contact}"
-    testers = list(dict.fromkeys([*agent.config.testers, key]))
-    await services.agents.update(ws, {"testers": testers})
-    if conv.status != "active":  # its practice messages waited for the team: the agent's now
-        await services.conversations.hand_back(ws, conversation_id)
-    return {"testers": testers}

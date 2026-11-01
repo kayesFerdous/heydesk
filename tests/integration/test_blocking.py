@@ -118,3 +118,22 @@ async def test_a_flood_on_a_messaging_app_blocks_for_a_day(
     [row] = (await client.get("/api/visitors/blocked")).json()
     assert row["blocked_why"] == "flooding" and row["blocked_until"] is not None
     assert row["channel"] == "telegram"
+
+
+async def test_ai_off_for_all_sends_every_visitor_to_the_team(
+    app: FastAPI, client: AsyncClient
+) -> None:
+    llm = app.state.services.conversations.runtime.llm
+    llm.script = ["Hello!", "Welcome back."]
+    conv = conv_id(await web(client))
+
+    assert (await client.patch("/api/agent", json={"ai_off": True})).json()["config"]["ai_off"]
+    asked = len(llm.requests)
+    assert (await web(client, "where is my parcel?", conv)).status_code == 200
+    assert len(llm.requests) == asked  # no turn, nothing paid
+    opened = (await client.get(f"/api/conversations/{conv}")).json()
+    assert opened["status"] == "human"
+
+    await client.patch("/api/agent", json={"ai_off": False})
+    assert (await web(client, "hello again", conv)).status_code == 200
+    assert len(llm.requests) == asked + 1  # the agent answers again
