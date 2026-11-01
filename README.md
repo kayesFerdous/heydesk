@@ -1,10 +1,9 @@
 # HeyDesk
 
-An AI front desk a small business can set up in minutes. It picks its kind of business (a
-restaurant, a clinic, a receptionist for an office, an online shop), fills in its menu, doctors
-or products, hours and FAQ, and adds its own notes. Customers talk to the agent by web chat, by
-voice, on Telegram, Facebook Messenger or WhatsApp. It answers questions, takes orders, bookings and
-messages, and hands over to a person when needed.
+An AI front desk an online shop can set up in minutes. It fills in its products, delivery
+areas and FAQ, and adds its own notes. Customers talk to the agent by web chat, on Telegram,
+Facebook Messenger or WhatsApp. It answers questions, takes orders and messages, and hands over
+to a person when needed.
 
 **The model talks; code guarantees.** The model writes the words. Python decides every price,
 total, date and stock count, and nothing is saved until the agent has read it back and heard a
@@ -12,9 +11,9 @@ clear yes, checked by a separate model that fails closed.
 
 ## Status
 
-Built and tested: four desks (restaurant, clinic, receptionist, shop), web chat, voice, Telegram,
+Built and tested: the shop desk, web chat, voice (off for now), Telegram,
 Messenger, WhatsApp, photo search in the shop, coupons and offers to recent chats, online payments, a Google Sheet as a product list, the
-owner's API and the admin panel. Each desk passed a live run on a real model. What's next is in
+owner's API and the admin panel. The shop passed a live run on a real model. What's next is in
 **[PLAN.md](PLAN.md)**. The owner's and admin's screens are a separate Vue app,
 `../heydesk-frontend`.
 
@@ -159,14 +158,14 @@ scripts/check.sh   # tests, lint, format, types, import rules: what CI runs
 The tests are offline and free: fake models, an in-memory database and Qdrant's in-memory mode.
 `uv run pytest -m live` calls the real providers and costs quota.
 
-## Switching the kind of business
+## Switching the seed
 
-The dev agent is one desk (`restaurant`, `clinic`, `receptionist` or `shop`) and a seed file.
-For the shop, set these in `.env` and restart:
+The dev agent is the shop desk and a seed file. For the Banglish shop, set these in `.env` and
+restart:
 
 ```bash
 DEV_AGENT_KIND=shop
-DEV_AGENT_SEED=examples/agents/shop.yaml
+DEV_AGENT_SEED=examples/agents/shop-bn.yaml
 ```
 
 Edit the seed (`examples/agents/*.yaml`) and restart to change the dev agent. Any agent can be
@@ -190,11 +189,11 @@ Each prints a token. In Swagger, press **Authorize** and paste it. Forgot a pass
 |---|---|
 | `POST /api/auth/signup` | A new business and its owner; it never sees another business's data |
 | `GET /api/desks` | The kinds of business, and the fields each one's agent has |
-| `POST /api/agent` | Create your agent: `{"kind": "restaurant"}` is enough. `GET /api/agent` then lists what is `missing` |
+| `POST /api/agent` | Create your agent: `{"kind": "shop"}` is enough. `GET /api/agent` then lists what is `missing` |
 | `PATCH /api/agent` | Edit it: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message |
 | `POST /api/agent/documents` | Add text, or a `.txt`, `.md` or `.pdf` (`/file`), to the agent's knowledge |
-| `GET/PUT /api/menu` · `/api/doctors` · `/api/products` | A desk's list, replaced whole; each also takes a CSV at `…/import` |
-| `GET /api/orders` · `/api/bookings` · `/api/appointments` · `/api/shop/orders` · `/api/messages` | What the agent took, newest first. `PATCH …/{id}` with `{"status": …}` moves one along its flow |
+| `GET/PUT /api/products` | The products, replaced whole; also takes a CSV at `…/import` |
+| `GET /api/shop/orders` · `/api/messages` | What the agent took, newest first. `PATCH …/{id}` with `{"status": …}` moves one along its flow |
 | `GET /api/conversations/{id}` | What was said |
 | `PUT /api/agent/telegram` · `/api/agent/messenger` | Put the agent on Telegram or Messenger (needs `PUBLIC_URL`) |
 | `GET /api/admin/…` | Admins only: businesses, the overview, failed turns. Act inside a business with an `X-Business: <id>` header |

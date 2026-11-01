@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ToolContext[S]:
-    """What a tool gets. `store` is its desk's data (a `ClinicStore`, a `RestaurantStore`):
+    """What a tool gets. `store` is its desk's data (a `ShopStore`):
     the only way a tool reaches the database, always scoped to one business."""
 
     agent: AgentConfig  # the desk's own config class

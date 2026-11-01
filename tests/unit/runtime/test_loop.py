@@ -2,9 +2,9 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from pydantic import BaseModel
+
 from heydesk.adapters.llm.fake import FakeLLM
-from heydesk.desks.restaurant import RESTAURANT
-from heydesk.desks.restaurant.tools import UPDATE_ORDER
 from heydesk.desks.shared import HANDOFF, HandoffInput
 from heydesk.ports.llm import (
     ChatRequest,
@@ -18,8 +18,40 @@ from heydesk.ports.llm import (
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
+from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult
-from tests.conftest import AGENT, FIXED_NOW, MenuStore
+from tests.conftest import AGENT, FIXED_NOW
+
+PRICES = {"chk-biryani": ("Chicken Biryani", 45000), "borhani": ("Borhani", 13000)}
+
+
+class Line(BaseModel):
+    code: str
+    quantity: int
+
+
+class OrderInput(BaseModel):
+    lines: list[Line]
+
+
+async def update_order(ctx: ToolContext[Any], args: OrderInput) -> ToolResult:
+    """A cart tool just for these tests: Python adds up the lines into the state."""
+    lines = [(PRICES[line.code][0], line.quantity) for line in args.lines]
+    total = sum(PRICES[line.code][1] * line.quantity for line in args.lines)
+    cart = {"lines": lines, "total": total}
+    return ToolResult(ok=True, data={"total": money(total, "BDT")}, state={"cart": cart})
+
+
+UPDATE_ORDER = Tool(
+    "update_order", "Sets the order.", OrderInput, update_order, "Updating your order…"
+)
+
+
+def note(state: dict[str, Any]) -> str:
+    if "cart" not in state:
+        return ""
+    lines = ", ".join(f"{qty} × {name}" for name, qty in state["cart"]["lines"])
+    return f"\n# The order so far\n{lines}, total {money(state['cart']['total'], 'BDT')}\n"
 
 
 def make_turn(text: str = "hi", **kw: object) -> TurnInput:
@@ -30,7 +62,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
         "user_text": text,
         "channel": "web",
         "agent": AGENT,
-        "store": MenuStore(),
+        "store": None,
         "tools": [],
         "now": FIXED_NOW,
     }
@@ -152,7 +184,7 @@ async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
 
 async def test_the_desks_note_is_rebuilt_before_every_model_call() -> None:
     llm = FakeLLM([ORDER, "That's ৳1,030."])
-    turn = make_turn(tools=[UPDATE_ORDER], note=lambda state: RESTAURANT.note(AGENT, state))
+    turn = make_turn(tools=[UPDATE_ORDER], note=note)
     await collect(turn, llm)
 
     first, second = (request.system for request in llm.requests)

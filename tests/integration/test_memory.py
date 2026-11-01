@@ -29,7 +29,7 @@ async def test_a_note_is_in_the_next_conversations_prompt(world: World) -> None:
 
 
 async def test_a_note_on_the_same_thing_replaces_the_old_one(world: World) -> None:
-    agent = await world.agent("restaurant")
+    agent = await world.agent()
     talk = world.services.conversations
     world.llm.script = [note("diet", "eats no beef"), note("spice", "likes it mild"), "Noted."]
     await talk.reply(agent, "messenger", "psid-1", "no beef, and not too spicy")
@@ -44,7 +44,7 @@ async def test_a_note_on_the_same_thing_replaces_the_old_one(world: World) -> No
 
 
 async def test_the_web_chat_and_a_call_from_one_browser_share_the_notes(world: World) -> None:
-    agent = await world.agent("clinic")
+    agent = await world.agent()
     talk = world.services.conversations
 
     async def say(channel: str, script: list[object]) -> None:

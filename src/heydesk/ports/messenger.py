@@ -33,8 +33,7 @@ class MessengerApi(Protocol):
     async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
         """Products as one carousel: each card `{name, price, url}`, the photo's full URL,
         and maybe `choice`: an Order button whose tap comes back as a postback with it.
-        Doctors use it too: no `url`, `price` is the line under the name, and `button`
-        names the button ("Book"; a product's is "Order this"). A product's `page` and `video`
+        `button` names the button (a product's is "Order this"). A product's `page` and `video`
         are link buttons; a card with no `url` has no photo. Returns the
         carousel's message id, so a reply to it is known."""
         ...

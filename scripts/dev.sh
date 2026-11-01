@@ -25,7 +25,7 @@
 #   --cf            a throwaway Cloudflare link, even with PUBLIC_URL
 #   --fake          offline: fake model and embedder (canned lines, nothing is saved)
 #   --groq          talk with Groq instead of .env's LLM_PROVIDER
-#   --desk NAME     the agent at / is another desk: restaurant, clinic, receptionist, shop
+#   --desk NAME     the agent at / from another seed: shop, shop-bn
 #   -o, --open      open the browser when it's up
 #   --no-reload     don't restart the backend when the code changes
 #
@@ -198,7 +198,7 @@ start() { # api | web | all, then options
       --groq) export LLM_PROVIDER=groq ;;
       --desk)
         [[ -f examples/agents/${2:-}.yaml ]] || die "--desk takes one of: $(desks)"
-        export DEV_AGENT_KIND=$2 DEV_AGENT_SEED=examples/agents/$2.yaml
+        export DEV_AGENT_KIND=shop DEV_AGENT_SEED=examples/agents/$2.yaml
         shift
         ;;
       -o | --open) open=1 ;;
@@ -271,7 +271,7 @@ start() { # api | web | all, then options
   echo
   echo "$line"
   printf ' %sHeyDesk is up%s   %smodel: %s · desk: %s%s\n' "$B$G" "$N" "$D" \
-    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND restaurant)" "$N"
+    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND shop)" "$N"
   [[ -n $api ]] && printf '   Backend    %shttp://localhost:%s%s   %s/ chat · /docs API%s\n' "$C" $API_PORT "$N" "$D" "$N"
   [[ -n $web ]] && printf '   Frontend   %shttp://localhost:%s%s\n' "$M" $WEB_PORT "$N"
   if [[ -n $LINK ]]; then
@@ -458,7 +458,7 @@ menu() {
   if [[ -n $(setting PUBLIC_URL) ]]; then tunnel_name="ngrok"; else tunnel_name="Cloudflare"; fi
   echo
   printf ' %sHeyDesk%s   %smodel: %s · desk: %s%s\n' "$B" "$N" "$D" \
-    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND restaurant)" "$N"
+    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND shop)" "$N"
   show_status
   echo
   echo "  ${B}1${N}  Backend"
@@ -511,7 +511,7 @@ custom() {
   if [[ $what != web ]]; then
     read -rsn1 -p "  Model: ↵ from .env ($(setting LLM_PROVIDER gigalogy)) · g Groq · f fake, offline  › " k && echo "$k"
     case $k in g) opts="$opts --groq" ;; f) opts="$opts --fake" ;; esac
-    read -rp "  Desk: ↵ from .env ($(setting DEV_AGENT_KIND restaurant)) or one of: $(desks) › " k
+    read -rp "  Desk: ↵ from .env ($(setting DEV_AGENT_KIND shop)) or one of: $(desks) › " k
     [[ -n $k ]] && opts="$opts --desk $k"
   fi
   read -rsn1 -p "  Public link: ↵ none · n ngrok · c Cloudflare  › " k && echo "$k"

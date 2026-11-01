@@ -34,7 +34,7 @@ class Photos:
 
 @dataclass(frozen=True)
 class Card:
-    """A card a tool showed the visitor: a summary, a receipt, tracking or doctors.
+    """A card a tool showed the visitor: a summary, a receipt or tracking.
     `data` is built by Python; its shape for each kind is in `runtime/cards.py`."""
 
     kind: str

@@ -104,7 +104,7 @@ def column_match_score(header: str, name: str) -> float:
 
 
 def split_words(text: str) -> list[str]:
-    """ "Doctor's Name (Bangla)" → ["doctor", "s", "name"]; Bangla letters are kept."""
+    """ "Product's Name (Bangla)" → ["product", "s", "name"]; Bangla letters are kept."""
     plain = re.sub(r"\(.*?\)", "", text).lower()
     return re.findall(r"[a-z0-9\u0980-\u09ff]+", plain)
 

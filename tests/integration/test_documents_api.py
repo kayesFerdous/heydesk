@@ -94,7 +94,7 @@ async def test_a_business_sees_only_its_own_documents(app: FastAPI, client: Asyn
     ).json()
     other = await new_business(app)
     try:
-        await other.post("/api/agent", json={"kind": "restaurant"})
+        await other.post("/api/agent", json={"kind": "shop"})
 
         assert (await other.get("/api/agent/documents")).json() == []
         assert (await other.get(f"/api/agent/documents/{mine['id']}")).status_code == 404

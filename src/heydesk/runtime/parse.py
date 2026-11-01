@@ -162,7 +162,7 @@ def day_of(said: str, now: datetime, at: time | None = None) -> date:
         if ahead == 0 and at is not None and at <= now.time():
             ahead = 7  # that time today has passed: the same day next week
         return today + timedelta(days=ahead)
-    if len(words) > 1 and words[0] in WEEKDAYS:  # "sunday 18 oct", as find_doctor writes it
+    if len(words) > 1 and words[0] in WEEKDAYS:  # "sunday 18 oct"
         day = day_of(" ".join(words[1:]), now, at)
         if day.weekday() != WEEKDAYS[words[0]]:
             raise ValueError(

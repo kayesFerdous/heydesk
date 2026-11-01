@@ -103,11 +103,6 @@ def card_text(card: Card, channel: str) -> str:
         if data["note"]:
             said.append(esc(data["note"]))
         return "\n".join(said)
-    if card.kind == "doctors":
-        for d in data["doctors"]:
-            said.append(f"{bold(esc(d['name']))} — {esc(d['speciality'])}")
-            said.append(esc(f"{d['days']} · {d['hours']} · {d['fee']['text']}") + "\n")
-        return "\n".join(said).strip()
     if card.kind == "receipt":
         said.append(bold(esc(f"{data['title']} · {data['number']}")))
         said.append(esc(f"Status: {data['status']}"))
@@ -130,13 +125,6 @@ def step_icon(step: dict[str, Any], last: bool) -> str:
     if step["current"] and not last:
         return "🔵"
     return "✅" if step["done"] else "⚪"
-
-
-def about(doctor: dict[str, Any]) -> str:
-    """A doctor's line under their name: "Medicine · Sun, Tue · 5:00 pm–9:00 pm · ৳800"."""
-    return (
-        f"{doctor['speciality']} · {doctor['days']} · {doctor['hours']} · {doctor['fee']['text']}"
-    )
 
 
 def card_words(card: dict[str, str]) -> str:
@@ -910,32 +898,15 @@ class ChannelService:
     ) -> None:
         """A tool's card, after the words, each app its own way: on Telegram
         HTML with buttons; on Messenger and WhatsApp the words with `choices`, a receipt with
-        a Pay button, doctors as a carousel or a list. A doctor's Book sends its `book` words.
-        If it fails, the words have gone already."""
+        a Pay button. If it fails, the words have gone already."""
         text = card_text(card, channel.kind)
         pay_url = card.data.get("pay_url", "")
-        doctors = card.data.get("doctors", [])[:10]
         try:
             if channel.kind == TELEGRAM:
-                taps = choices + [d["book"] for d in doctors if len(d["book"].encode()) <= 64]
-                keys = [{"title": t, "choice": t} for t in taps]
+                keys = [{"title": t, "choice": t} for t in choices]
                 if pay_url:
                     keys.append({"title": "💳 Pay now", "url": pay_url})
                 await self.telegram.send_card(channel.token, chat_id, text, keys)
-            elif doctors and channel.kind == MESSENGER:
-                cards = [
-                    {"name": d["name"], "price": about(d), "choice": d["book"], "button": "Book"}
-                    for d in doctors
-                ]
-                await self.messenger.send_cards(channel.token, chat_id, cards)
-            elif doctors:  # WhatsApp: a tapped row's id is its words
-                rows = [
-                    {"id": d["book"], "title": d["name"][:24], "description": about(d)[:72]}
-                    for d in doctors
-                ]
-                await self.whatsapp.send_list(
-                    channel.token, channel.address, chat_id, "Choose a doctor to book.", rows
-                )
             elif pay_url and channel.kind == MESSENGER:
                 await self.messenger.send_link(channel.token, chat_id, text, "Pay now", pay_url)
             elif pay_url:

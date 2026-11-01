@@ -2,9 +2,6 @@
 tables and routes. To add one: a new folder with a `Desk`, and a line here."""
 
 from heydesk.desks.base import Desk
-from heydesk.desks.clinic import CLINIC
-from heydesk.desks.receptionist import RECEPTIONIST
-from heydesk.desks.restaurant import RESTAURANT
 from heydesk.desks.shared import (
     COMPLAINT,
     HANDOFF,
@@ -18,7 +15,7 @@ from heydesk.desks.shop import SHOP
 from heydesk.runtime.config import AgentConfig
 from heydesk.runtime.tool import Tool
 
-DESKS: dict[str, Desk] = {desk.kind: desk for desk in (RESTAURANT, CLINIC, RECEPTIONIST, SHOP)}
+DESKS: dict[str, Desk] = {desk.kind: desk for desk in (SHOP,)}
 
 
 def tools_for(desk: Desk, config: AgentConfig, has_documents: bool) -> list[Tool]:

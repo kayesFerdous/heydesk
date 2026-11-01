@@ -136,7 +136,7 @@ class AgentService:
 
     async def store(self, ws: str, kind: str | None = None) -> Store:
         """The business's data, for its owner's routes. With a `kind`, 404 unless its agent is
-        of that kind (a restaurant has no doctors)."""
+        of that kind."""
         async with self.sessions() as s:
             agent = await self._get(s, ws)
         if kind and agent.kind != kind:
@@ -174,7 +174,7 @@ class AgentService:
 
     async def ensure_dev_agent(self, kind: str, seed_path: str | Path) -> LiveAgent:
         """The `.env` agent (design §5): the dev workspace's one agent, from its seed file,
-        updated from the seed on every start (its menu or doctors too). Its key is `dev-<kind>`."""
+        updated from the seed on every start (its products too). Its key is `dev-<kind>`."""
         desk = desk_of(kind)
         text = await asyncio.to_thread(Path(seed_path).read_text, encoding="utf-8")
         seed: dict[str, Any] = yaml.safe_load(text)

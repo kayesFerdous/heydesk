@@ -58,7 +58,7 @@ class SslCommerz:
             "cus_name": checkout.name,
             "cus_email": NO_EMAIL,
             "cus_phone": checkout.phone,
-            "cus_add1": checkout.address or "Bangladesh",  # required; a clinic has none
+            "cus_add1": checkout.address or "Bangladesh",  # required
             "cus_city": "Bangladesh",
             "cus_country": "Bangladesh",
         }

@@ -1,4 +1,4 @@
-"""What a desk is: one kind of business (a clinic, a restaurant), written as plain Python.
+"""What a desk is: one kind of business (the shop), written as plain Python.
 
 A desk owns everything that makes that business different: its config fields, its prompt
 (who the agent is and how it thinks), its tools, its tables and its owner routes. What every
@@ -18,18 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
-from heydesk.errors import Conflict, HeyDeskError, InvalidTransition, NotFound
+from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
 from heydesk.models import (
     Conversation,
     Lead,
     MissedQuestion,
     PaymentAccount,
-    SheetLink,
     TeamMessage,
     Ticket,
     Turn,
     Visitor,
-    WooLink,
     Workspace,
 )
 from heydesk.models.customer_request import UNPAID, CustomerRequest, next_number
@@ -45,15 +43,6 @@ PAGE = 100  # the most rows a list returns at once (newest first)
 BROWSER = ("web", "voice")  # one browser's token is the contact on both
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most
 NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
-
-
-class SheetLinked(Conflict):
-    code = "sheet_linked"
-
-    def __init__(self) -> None:
-        super().__init__(
-            "Your list comes from your Google Sheet or WooCommerce store: change it there."
-        )
 
 
 class TooLate(ValueError):
@@ -77,8 +66,8 @@ class Stats:
 
     conversations: int  # chats the agent answered in it
     handed_off: int  # of those, handed to a person; the rest the agent handled alone
-    sales: int  # orders or bookings made in it, not cancelled or waiting for payment
-    amount: int  # their total, minor units (bookings and appointments add nothing)
+    sales: int  # orders made in it, not cancelled or waiting for payment
+    amount: int  # their total, minor units
     bought: int  # chats that ended in one
     sources: dict[str, int]  # where they came from: chat, page or team
     leads: int  # call backs asked for in it and not sold
@@ -227,7 +216,7 @@ class Store:
     ) -> list[TeamMessage]:
         return await self.find(TeamMessage, status, q, limit=limit, before=before)
 
-    # A desk's list (the menu, the doctors, the products): replaced whole, kept in order
+    # A desk's list (the products): replaced whole, kept in order
 
     async def rows_of[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
         """Every row of `table` (it has a `position`) as `model`, in the business's order."""
@@ -258,22 +247,6 @@ class Store:
         """The list becomes the linked sheet's rows; returns what to remember for the
         next time (`seen`). Raises InvalidConfig with the rows' problems, saving nothing."""
         raise NotFound("This agent has no list to keep in a sheet.")
-
-    async def linked(self) -> bool:
-        """A Google Sheet or a WooCommerce store is the list."""
-        async with self.sessions() as s:
-            for table in (SheetLink, WooLink):
-                found = await s.scalar(
-                    select(table.id).where(table.workspace_id == self.workspace_id)
-                )
-                if found is not None:
-                    return True
-        return False
-
-    async def not_linked(self) -> None:
-        """409 while a sheet or a store is the list: an edit here would be undone by it."""
-        if await self.linked():
-            raise SheetLinked()
 
     # Shared by every table of things taken (`models.customer_request`)
 
@@ -519,13 +492,13 @@ class Store:
 class Desk:
     """One kind of business. A desk subclasses this and fills in the class attributes."""
 
-    kind: ClassVar[str]  # "clinic": saved on the agent
-    label: ClassVar[str]  # "Clinic front desk"
+    kind: ClassVar[str]  # "shop": saved on the agent
+    label: ClassVar[str]  # "Online shop"
     description: ClassVar[str]  # for the owner, in plain words
     config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
     tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
     takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop)
-    takes_voice: ClassVar[bool] = False  # a visitor can call it (the receptionist and clinic)
+    takes_voice: ClassVar[bool] = False  # a visitor can call it (none for now)
     columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet
 
     def store(
@@ -552,7 +525,7 @@ class Desk:
 
     def own_tools(self, config: Any) -> list[Tool]:
         """Its tools for this business. A desk whose tools depend on a switch in its config
-        (the restaurant's `takes_bookings`) adds them here."""
+        adds them here."""
         return self.tools
 
     async def prompt(self, config: Any, store: Any) -> str:
@@ -577,7 +550,7 @@ class Desk:
         raise NotFound("This agent has no list to keep in a sheet.")
 
     async def seed(self, store: Any, data: dict[str, Any]) -> None:
-        """The dev agent's own lists from its seed file (`menu:`, `doctors:`), popped from `data`."""
+        """The dev agent's own lists from its seed file (`products:`), popped from `data`."""
 
 
 def missing_basics(config: AgentConfig) -> list[str]:

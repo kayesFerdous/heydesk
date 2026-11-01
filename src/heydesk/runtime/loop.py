@@ -2,8 +2,8 @@
 
 A step is one model call. If it asks for tools, they run and their results go
 back to the model in the next step; a step with no tool calls is the reply.
-Before every step the desk's note on the conversation state (the restaurant's
-current order) is added to the system prompt, so the model sees it up to date.
+Before every step the desk's note on the conversation state (the shop's
+current cart) is added to the system prompt, so the model sees it up to date.
 """
 
 import asyncio

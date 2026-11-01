@@ -39,6 +39,10 @@ qdrant_local/
 # Sample product photos for trying photo search, and uploaded photos
 photos/
 media/
+images/
+
+CLAUDE.local*
+
 
 # Logs from scripts/dev.sh
 .logs/

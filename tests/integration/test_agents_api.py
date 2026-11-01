@@ -8,17 +8,14 @@ from PIL import Image
 
 from tests.conftest import DEV_KEY, new_business
 
-DISH = {"code": "tea", "name": "Tea", "price": 3000, "category": "Drinks"}
+PRODUCT = {"code": "kurti", "name": "Cotton Kurti", "price": 95000, "category": "Women"}
 
 
 async def test_the_desks_list_their_own_fields(client: AsyncClient) -> None:
     desks = {d["kind"]: d for d in (await client.get("/api/desks")).json()}
 
-    assert set(desks) == {"restaurant", "clinic", "receptionist", "shop"}
+    assert set(desks) == {"shop"}
     assert "delivery" in desks["shop"]["config_schema"]["properties"]
-    assert "policies" in desks["restaurant"]["config_schema"]["properties"]
-    assert "emergency_phone" in desks["clinic"]["config_schema"]["properties"]
-    assert "emergency_phone" not in desks["restaurant"]["config_schema"]["properties"]
 
 
 async def test_a_business_starts_from_just_its_kind_and_is_told_what_is_missing(
@@ -26,26 +23,24 @@ async def test_a_business_starts_from_just_its_kind_and_is_told_what_is_missing(
 ) -> None:
     shop = await new_business(app)
     try:
-        created = await shop.post("/api/agent", json={"kind": "restaurant"})
+        created = await shop.post("/api/agent", json={"kind": "shop"})
         agent = created.json()
 
         assert created.status_code == 201
-        assert agent["kind"] == "restaurant"
+        assert agent["kind"] == "shop"
         assert agent["config"]["business_name"] == "Cafe"  # from signup
         assert agent["config"]["name"] == "Cafe assistant"
         assert agent["missing"] == [
-            "Add your address.",
-            "Add your opening hours.",
+            "Add your products.",
+            "Add your delivery areas and charges.",
             "Add a phone number or email for when someone needs a person.",
-            "Add your menu.",
         ]
-        again = await shop.post("/api/agent", json={"kind": "clinic"})
+        again = await shop.post("/api/agent", json={"kind": "shop"})
         assert again.status_code == 409  # one agent per business
 
-        await shop.patch("/api/agent", json={"address": "1 Lake Road"})
-        await shop.patch("/api/agent", json={"hours": {"mon": ["09:00", "17:00"]}})
+        await shop.patch("/api/agent", json={"delivery": [{"name": "Anywhere", "charge": 6000}]})
         await shop.patch("/api/agent", json={"handoff": {"phone": "+880 1700 000000"}})
-        await shop.put("/api/menu", json=[DISH])
+        await shop.put("/api/products", json=[PRODUCT])
 
         assert (await shop.get("/api/agent")).json()["missing"] == []
     finally:
@@ -99,7 +94,7 @@ async def test_an_owner_cant_set_what_the_desk_doesnt_have(client: AsyncClient) 
     assert role.status_code == 422 and "instructions" in role.json()["error"]["fields"]
 
     other_desk = await client.patch("/api/agent", json={"emergency_phone": "999"})
-    assert other_desk.status_code == 422  # a restaurant has no emergency number
+    assert other_desk.status_code == 422  # the shop has no emergency number
 
 
 async def test_an_unknown_kind_is_refused(app: FastAPI) -> None:
@@ -128,7 +123,7 @@ async def test_the_chat_info_has_the_desks_own_starters(client: AsyncClient) -> 
         "colour": "#0f766e",
         "side": "right",
         "nudge": "Hi! Can I help you?",
-        "starters": ["What's on the menu?", "I'd like to order", "Are you open now?"],
+        "starters": ["What's new?", "Track my order", "What's the delivery charge?"],
         "logo": "",
     }
 

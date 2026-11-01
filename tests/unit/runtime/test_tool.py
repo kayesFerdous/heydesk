@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from heydesk.desks.restaurant.tools import UPDATE_ORDER
+from heydesk.desks.shop.tools import UPDATE_CART
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime import parse
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, run_tool
@@ -56,7 +56,7 @@ async def test_problems_come_back_as_data_never_raised() -> None:
 
 
 def test_the_schema_the_model_sees_has_nested_models_written_out() -> None:
-    schema = UPDATE_ORDER.spec.input_schema
+    schema = UPDATE_CART.spec.input_schema
     assert "$ref" not in json.dumps(schema) and "$defs" not in schema
     assert schema["properties"]["lines"]["items"]["required"] == ["code", "quantity"]
 

@@ -25,7 +25,7 @@ async def say(world: World, text: str, conversation_id: str | None = None) -> st
 
 
 async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
-    world.llm.script = ["Biryani is our favourite.", "Two it is."]
+    world.llm.script = ["The kurti is our favourite.", "Two it is."]
     conv_id = await say(world, "What's good?")
     await say(world, "Two of those, please", conv_id)
 
@@ -33,9 +33,9 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
         conv = await s.get(Conversation, conv_id)
     assert conv is not None and conv.workspace_id == DEV_WORKSPACE_ID
     assert [(m["role"], m["content"][:12]) for m in conv.messages] == [
-        ("assistant", "Hi, welcome "),  # the greeting the visitor saw
+        ("assistant", "Assalamu ala"),  # the greeting the visitor saw
         ("user", "What's good?"),
-        ("assistant", "Biryani is o"),
+        ("assistant", "The kurti is"),
         ("user", "Two of those"),
         ("assistant", "Two it is."),
     ]
@@ -72,25 +72,27 @@ async def test_an_unknown_conversation_is_not_found(world: World) -> None:
 
 
 async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: World) -> None:
-    lines = [{"code": "chk-biryani", "quantity": 2}, {"code": "borhani", "quantity": 1}]
-    world.llm.script = [ToolCall("call_1", "update_order", {"lines": lines}), "That's ৳1,030."]
-    conv_id = await say(world, "two biryanis and a borhani")
+    kurti = {"code": "kurti", "quantity": 2, "size": "m", "colour": "black"}
+    world.llm.script = [ToolCall("call_1", "update_cart", {"lines": [kurti]}), "That's ৳1,900."]
+    conv_id = await say(world, "two black kurtis, size M")
 
     async with world.sessions() as s:
         conv = await s.get(Conversation, conv_id)
-    assert conv is not None and conv.state["cart"]["total"] == 103000
-    assert '"total": "৳1,030"' in conv.messages[3]["content"]  # the tool result the model read
-    # The menu is in the prompt; the order so far is added once there is one
+    assert conv is not None and conv.state["cart"]["subtotal"] == 190000
+    assert "৳1,900" in conv.messages[3]["content"]  # the tool result the model read
+    # The products are in the prompt; the order so far is added once there is one
     request = world.llm.requests[0]
-    assert "Chicken Biryani [chk-biryani] ৳450" in request.system
+    assert "Cotton Kurti [kurti]" in request.system
     assert [t.name for t in request.tools] == [
-        "update_order",
+        "find_product",
+        "update_cart",
         "place_order",
         "track_order",  # after the order
         "change_order",
         "cancel_order",
-        "book_table",  # the seed takes bookings
-        "cancel_booking",
+        "confirm_order",
+        "request_exchange",
+        "show_photos",
         "take_message",
         "take_lead",
         "handoff_to_human",
@@ -99,7 +101,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
         "remember",
     ]
     assert "# The order so far" not in request.system
-    assert "# The order so far\n2 × Chicken Biryani" in world.llm.requests[1].system
+    assert "# The order so far\n2 × Cotton Kurti" in world.llm.requests[1].system
 
 
 async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
@@ -107,8 +109,8 @@ async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
     mine = world.store(agent)
     other = agent.desk.store(world.sessions, "someone-else", world.clock)
 
-    assert len(await mine.menu()) == 10
-    assert await other.menu() == []  # rule 6: workspace_id on every query
+    assert len(await mine.products()) == 6
+    assert await other.products() == []  # rule 6: workspace_id on every query
 
 
 async def turns(world: World) -> list[Turn]:

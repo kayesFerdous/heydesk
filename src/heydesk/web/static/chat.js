@@ -31,7 +31,7 @@ const button = (text, onclick) => {
   return node;
 };
 
-// A label on the left, a value on the right: "2 × Chicken Biryani   ৳900"
+// A label on the left, a value on the right: "2 × Cotton Kurti   ৳1,900"
 const pair = (label, value, cls = "") => {
   const node = el("div", "", "pair " + cls);
   node.append(el("span", label), el("span", value));
@@ -50,12 +50,6 @@ const drawCard = (kind, d) => {
   if (d.total) box.append(pair("Total", d.total.text, "total"));
   for (const step of d.steps ?? []) {
     box.append(el("div", `${step.done ? "●" : "○"} ${step.label}`, step.current ? "now" : ""));
-  }
-  for (const doc of d.doctors ?? []) {
-    const item = el("div", `${doc.name}, ${doc.speciality}`, "item");
-    item.append(el("div", `${doc.days} · ${doc.hours} · fee ${doc.fee.text}`, "dim"));
-    item.append(button("Book", () => say(doc.book)));  // a tap is only its words
-    box.append(item);
   }
   for (const text of [d.status, d.note].filter(Boolean)) box.append(el("div", text, "dim"));
   if (d.pay_url) {
@@ -131,7 +125,7 @@ const handle = (event, data, reply) => {
       }
       break;
     }
-    case "card":  // what a tool showed: a summary, a receipt, tracking or doctors
+    case "card":  // what a tool showed: a summary, a receipt or tracking
       drawCard(data.kind, data.data);
       reply.node = null;  // the words after it go under it
       break;
@@ -228,7 +222,7 @@ $("restart").addEventListener("click", () => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const agent = await res.json();
     $("agent-name").textContent = agent.name;
-    $("call").hidden = !agent.voice;  // only a receptionist or a clinic takes calls
+    $("call").hidden = !agent.voice;  // only a desk that takes voice
     greeting = agent.greeting;
     add("agent", greeting);
   } catch (failure) {

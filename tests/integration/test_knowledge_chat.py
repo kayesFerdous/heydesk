@@ -58,7 +58,7 @@ async def test_another_business_never_gets_the_documents(app: FastAPI, client: A
     await client.post("/api/agent/documents", json={"title": "Secret", "text": POLICY})
     other = await new_business(app)
     try:
-        agent = (await other.post("/api/agent", json={"kind": "restaurant"})).json()
+        agent = (await other.post("/api/agent", json={"kind": "shop"})).json()
         live = await app.state.services.agents.by_key(agent["public_key"])
         assert live.documents == []
         assert "search_knowledge" not in {
