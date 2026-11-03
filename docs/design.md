@@ -102,7 +102,7 @@ tools for this business (`Desk.own_tools(config)`) then the shared ones: `take_m
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
 name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
-subclasses it: the shop adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; `calls.enabled` needs it, D92), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
+subclasses it: the shop adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; turning it off turns `calls.enabled` off too, D92, D168), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. The console shows a text's tags (`{business_name}`, and the call's `{items}`, `{total}`, `{code}`) as coloured pills the owner adds with buttons and may delete (D169). Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
 there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
@@ -1657,11 +1657,11 @@ Each order is confirmed **one** way, as Bangladeshi f-commerce shops do it:
 | The order | Confirmed by | It's saved | The buyer hears |
 |---|---|---|---|
 | Its area has `pay_first` (and a store is connected) | the advance: the delivery charge paid online | `unpaid`, then `confirmed` by the payment | "Payment received… your order is confirmed; pay the rest to the delivery man" |
-| Cash on delivery, `call_to_confirm` on (the default) | the shop's call, by hand (`calls`, D89, is off for now: D108) | `new`, then `confirmed` after the call | "The shop will call … to confirm it before sending it" |
+| Cash on delivery, `call_to_confirm` on (the default) | the shop's call, by hand or by `calls` (D89, D168) | `new`, then `confirmed` after the call | "The shop will call … to confirm it before sending it" |
 | Cash on delivery, `call_to_confirm` off | nothing | `confirmed` at once, for the owner to send (D95) | "It's confirmed and will be sent out" |
 
-A paid order is never queued for a call: the queue takes only `new` orders. `calls.enabled`
-needs `call_to_confirm` (a 422 otherwise).
+A paid order is never queued for a call: the queue takes only `new` orders. With
+`call_to_confirm` off no order is `new`, so saving it off also turns `calls.enabled` off (D168).
 
 ### Orders the team types, and the end of an order (D131)
 
@@ -1832,9 +1832,9 @@ text-to-speech.
 
 ### Confirmation calls (D88, D89)
 
-**Off for now (D108):** the shop takes no voice, so no call is queued for an order and the
-owner's "Call to confirm" is a 409, the same refusal as production's (D105). The code below
-stays, unused, for when a shop takes calls again.
+**On again (D168):** the calls are the shop's own, so they don't need `takes_voice`: a visitor
+still can't call the shop (no Call button, D108), but a shop with `calls.enabled` rings its
+buyers. Production still serves no `/phone` page, so there it's the 409 of D105.
 
 A shop can turn on calls (`calls.enabled`, off by default): the agent then phones each buyer
 who placed an order, reads it back and asks them to confirm it. There is no phone carrier, and
@@ -1861,10 +1861,14 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
 
 - **The shop's settings** (`ShopConfig.calls`, edited like the rest of the config):
   `enabled`, `wait_minutes` (1), `start` and `end` (10:00–20:00, the business's time), `tries`
-  (2), `retry_minutes` (30), and `opening`, the call's first line, with `{code}` and `{total}`
-  filled in by Python: "Hello, this is {business_name} calling about your order {code}, total
-  {total}, paid in cash on delivery. Shall we confirm it and send it out?" The Bangla seed has it
-  in Bangla letters. It is the read-back `confirm_order` checks.
+  (2), `retry_minutes` (30), and `opening`, the call's first line, with the tags
+  `{business_name}`, `{items}`, `{total}` and `{code}` filled in by Python (str.replace):
+  "Assalamu alaikum, this is {business_name}. You ordered {items}, {total} with delivery, cash on
+  delivery. Shall we send it out?" `{items}` is `spoken_items`: "a black Cotton Kurti in size M
+  and 2 Caps". The default names what was bought, as the shop's staff would, not the code (D169).
+  The console shows the tags as coloured pills; the owner may delete any, at their own choice.
+  The Bangla seed has it in Bangla letters, without `{items}` (the voice drops Latin letters). It
+  is the read-back `confirm_order` checks.
 - **The queue** is the `calls` table: `status` queued → ringing → talking → done; `outcome`
   confirmed, cancelled, no_answer, no_decision, skipped (the order moved on first) or stopped
   (the owner cancelled the call); `tries`, `next_try_at`, `priority` (1 after "Call now"). An
@@ -1933,7 +1937,7 @@ version handles them.
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
-| Billing, phone numbers, hosting | No plans or billing; voice in the browser only, and off for now (D108, D164); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only: the shop's confirmation calls, and no Call button (D108, D164, D168); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `TAKEOVER_QUIET_MINUTES` (D135); after `CONVERSATION_IDLE_HOURS` the agent starts afresh in the same chat (D157) |

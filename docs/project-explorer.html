@@ -238,7 +238,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "/phone page",
    "type": "client",
    "file": "src/heydesk/web/static/phone.js",
-   "purpose": "A web page on a real phone that stands in for the buyer's phone during the shop's confirmation call (no phone carrier). Unused for now: the shop takes no voice (D108).",
+   "purpose": "A web page on a real phone that stands in for the buyer's phone during the shop's confirmation call (no phone carrier). Rings when the shop has calls on (D168).",
    "inputs": "rings over SSE",
    "outputs": "answer → /api/voice/offer?call=; decline"
   },
@@ -617,7 +617,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "CallService",
    "type": "service",
    "file": "src/heydesk/services/calls.py",
-   "purpose": "Queue of calls that confirm new shop orders; rings the buyer's /phone page; retries; outcome from the order. Not in production, which serves no /phone page (D105), and off while the shop takes no voice (D108).",
+   "purpose": "Queue of calls that confirm new shop orders; rings the buyer's /phone page; retries; outcome from the order. Not in production, which serves no /phone page (D105); needs only calls.enabled, not takes_voice (D168).",
    "inputs": "new orders, rings",
    "outputs": "Call rows, voice conversation",
    "fn": "tick"
@@ -4115,7 +4115,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "desk",
      "file": "src/heydesk/desks/shop/__init__.py",
      "fn": "ShopDesk.note",
-     "text": "# This call\nThe shop phoned the buyer about order {code}. Your first line was: \"{said}\" It read the order back and asked them to confirm. If they say yes, call confirm_order. If they want to cancel it, or to change the address or mobile, use cancel_order or change_order with no code. Then thank them and say goodbye. Don't greet them again.",
+     "text": "# This call\nYou work at the shop and phoned the buyer about the order they placed. Your first line was: \"{said}\" It read the order back and asked them to confirm. Talk like a friendly shop assistant on the phone: short, warm sentences, one thing at a time, and call the order by what they bought, never by its code unless they ask for it. If they say yes, call confirm_order. If they want to cancel it, or to change the address or mobile, use cancel_order or change_order with no code. Then thank them and say goodbye. Don't greet them again.\n",
      "when": {
       "desk": "shop",
       "channel": "voice",
@@ -4123,7 +4123,7 @@ tr.hl td { background: var(--accent-soft); }
      },
      "vars": [
       [
-       "{code} {said}",
+       "{said}",
        "state['calling'] set by CallService.answer"
       ]
      ]
@@ -4186,7 +4186,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "owner",
      "file": "src/heydesk/runtime/loop.py",
      "fn": "opening_messages",
-     "text": "Hi, welcome to {business_name}! Hungry? I can help with the menu or take your order.",
+     "text": "Assalamu alaikum! Welcome to {business_name}. How can we help you?",
      "when": {
       "first_turn": true
      },
@@ -4196,7 +4196,7 @@ tr.hl td { background: var(--accent-soft); }
        "AgentConfig.fill(): config.business_name, by str.replace (never str.format)"
       ]
      ],
-     "note": "Not in the system prompt: stored as the transcript's first message so the model never greets twice (D8)."
+     "note": "Not in the system prompt: stored as the transcript's first message so the model never greets twice (D8). The console shows the tag as a coloured pill (D169)."
     },
     {
      "id": "photo-line",
@@ -4271,22 +4271,26 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "owner",
      "file": "src/heydesk/desks/shop/values.py",
      "fn": "CallSettings.opening",
-     "text": "Hello, this is {business_name} calling about your order {code}, total {total}, paid in cash on delivery. Shall we confirm it and send it out?",
+     "text": "Assalamu alaikum, this is {business_name}. You ordered {items}, {total} with delivery, cash on delivery. Shall we send it out?",
      "vars": [
       [
        "{business_name}",
        "AgentConfig.fill()"
       ],
       [
-       "{code}",
-       "order.code, by str.replace in CallService.answer"
+       "{items}",
+       "spoken_items(order.lines): \"a black Cotton Kurti in size M\", by str.replace in CallService.answer"
       ],
       [
        "{total}",
        "money(order.total), by str.replace"
+      ],
+      [
+       "{code}",
+       "order.code, by str.replace (not in the default: a person names the products)"
       ]
      ],
-     "note": "Stored as the new voice conversation's first assistant message, so it is also the read-back that confirm_order checks."
+     "note": "The console shows the tags as coloured pills the owner adds or deletes. Stored as the new voice conversation's first assistant message, so it is also the read-back that confirm_order checks (D169)."
     },
     {
      "id": "state",
@@ -4909,9 +4913,9 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "call",
-     "label": "Shop takes voice + calls on + order new + no call → queue a call",
+     "label": "Shop + calls on + order new + no call → queue a call",
      "shape": "decision",
-     "code": "if agent.desk.kind != 'shop' or not agent.desk.takes_voice or not self.rings: return  # no voice for the shop (D108); rings: not production (D105)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
+     "code": "if agent.desk.kind != 'shop' or not self.rings: return  # rings: not production (D105); no takes_voice needed (D168)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
      "file": "src/heydesk/services/calls.py",
      "fn": "after_turn"
     },
