@@ -221,11 +221,13 @@ class CallSettings(BaseModel):
     end: time = time(20)
     tries: int = Field(default=2, ge=1, le=5)  # rings before it gives up
     retry_minutes: int = Field(default=30, ge=1, le=1440)  # between them
-    # The call's first line; Python fills in {code} and {total}. The buyer says yes to it.
+    # The call's first line; the buyer says yes to it. Python fills in the tags the owner kept:
+    # {business_name}, {items} (what they bought), {total} and {code}. It names the products, as
+    # a shop's staff would, not the order code.
     opening: str = Field(
         default=(
-            "Hello, this is {business_name} calling about your order {code}, total {total}, "
-            "paid in cash on delivery. Shall we confirm it and send it out?"
+            "Assalamu alaikum, this is {business_name}. You ordered {items}, {total} with "
+            "delivery, cash on delivery. Shall we send it out?"
         ),
         min_length=1,
         max_length=500,
@@ -263,9 +265,11 @@ class ShopConfig(AgentConfig):
         return any(zone.pay_first for zone in self.delivery)
 
     @model_validator(mode="after")
-    def calls_need_call_to_confirm(self) -> Self:
+    def no_calls_without_call_to_confirm(self) -> Self:
+        """Off, every order is confirmed when placed or paid, so there is nothing to call
+        about: turning it off turns the calls off too, instead of refusing the change."""
         if self.calls.enabled and not self.call_to_confirm:
-            raise ValueError("Calls confirm orders: turn on call_to_confirm to use them.")
+            self.calls = self.calls.model_copy(update={"enabled": False})
         return self
 
     @model_validator(mode="after")
@@ -476,6 +480,20 @@ def lines_text(lines: list[dict[str, Any]]) -> str:
         return f"{line['quantity']} × {line['name']}" + (f" ({picked})" if picked else "")
 
     return ", ".join(one(line) for line in lines)
+
+
+def spoken_items(lines: list[dict[str, Any]]) -> str:
+    """The order's items as said on a call: "a black Cotton Kurti in size M and 2 Caps".
+    `lines_text`'s "1 × … (M, Black)" reads well but sounds odd out loud."""
+
+    def one(line: dict[str, Any]) -> str:
+        count = "a" if line["quantity"] == 1 else str(line["quantity"])
+        colour = f" {line['colour'].lower()}" if line["colour"] else ""
+        size = f" in size {line['size']}" if line["size"] else ""
+        return f"{count}{colour} {line['name']}{size}"
+
+    said = [one(line) for line in lines]
+    return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
 
 
 STATUS_WORDS = {  # what track_order says about each status

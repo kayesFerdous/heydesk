@@ -517,8 +517,8 @@ async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: 
     assert order.status == "confirmed"  # ready for the owner to send
 
     calls = agent.config.calls.model_copy(update={"enabled": True})
-    with pytest.raises(ValueError, match="turn on call_to_confirm"):
-        type(no_call).model_validate(no_call.model_dump() | {"calls": calls.model_dump()})
+    saved = type(no_call).model_validate(no_call.model_dump() | {"calls": calls.model_dump()})
+    assert not saved.calls.enabled  # nothing waits for a call, so the calls go off with it
 
 
 async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(

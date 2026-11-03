@@ -722,8 +722,8 @@ async def confirm_order(ctx: Ctx, args: ConfirmOrderInput) -> ToolResult:
     return ToolResult(
         ok=True,
         data={
-            "next": f"Thank them: order {found.code} is confirmed and will be sent out.{takes} "
-            "Then say goodbye."
+            "next": f"Thank them: it's confirmed and will be sent out.{takes} Then say goodbye, "
+            "warmly and briefly. Don't say the order code."
         },
         state=_call_over(ctx),
         alert=f"✅ Order {found.code} confirmed by the buyer on the shop's call",

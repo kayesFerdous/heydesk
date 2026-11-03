@@ -194,11 +194,15 @@ last message; Banglish gets Banglish, with an example without a price), then
 ignored: Banglish got English or Bangla letters. At the end it held for Banglish, Bangla
 letters and English (13 Oct).
 
-On the shop's confirmation call (D88; off for now, since the shop takes no voice, D108), the note also has `# This call`: the shop phoned the
-buyer about order O-104, and its first line (quoted) already read the order back and asked them
-to confirm. A clear yes → `confirm_order`; a cancel or a change → `cancel_order` or
-`change_order` with no code; then thank them and say goodbye. Without it the model would greet again
-and ask how it can help, as on a call the visitor makes.
+On the shop's confirmation call (D88, D168), the note also has `# This call`: the model works at
+the shop and phoned the buyer about the order they placed, and its first line (quoted) already
+read the order back and asked them to confirm. It talks like a friendly shop assistant on the
+phone: short, warm sentences, one thing at a time, and calls the order by what they bought,
+never by its code unless they ask (D169: a person calling about an order names the products; a
+code like O-104 sounds like a machine). A clear yes → `confirm_order`, whose `next` also says
+not to read the code; a cancel or a change → `cancel_order` or `change_order` with no code; then
+thank them and say goodbye. Without it the model would greet again and ask how it can help, as on
+a call the visitor makes.
 
 ## Backed by Python, not just the prompt
 

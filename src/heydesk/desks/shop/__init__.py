@@ -210,11 +210,14 @@ class ShopDesk(Desk):
         calling = state.get("calling")
         if calling:  # the shop's call to confirm an order
             note += (
-                f"\n# This call\nThe shop phoned the buyer about order {calling['code']}. Your "
-                f'first line was: "{calling["said"]}" It read the order back and asked them to '
-                "confirm. If they say yes, call confirm_order. If they want to cancel it, or to "
-                "change the address or mobile, use cancel_order or change_order "
-                "with no code. Then thank them and say goodbye. Don't greet them again.\n"
+                f"\n# This call\nYou work at the shop and phoned the buyer about the order they "
+                f'placed. Your first line was: "{calling["said"]}" It read the order back and '
+                "asked them to confirm. Talk like a friendly shop assistant on the phone: short, "
+                "warm sentences, one thing at a time, and call the order by what they bought, "
+                "never by its code unless they ask for it. If they say yes, call confirm_order. "
+                "If they want to cancel it, or to change the address or mobile, use cancel_order "
+                "or change_order with no code. Then thank them and say goodbye. Don't greet them "
+                "again.\n"
             )
         return note
 

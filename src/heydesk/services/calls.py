@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.desks.shop.models import ShopOrder
 from heydesk.desks.shop.store import ShopStore
-from heydesk.desks.shop.values import CallSettings, ShopConfig, mobile
+from heydesk.desks.shop.values import CallSettings, ShopConfig, mobile, spoken_items
 from heydesk.errors import Conflict, HeyDeskError, NotFound
 from heydesk.models import Call, Conversation
 from heydesk.models.call import DONE, LIVE, QUEUED, RINGING, TALKING
@@ -93,8 +93,8 @@ class CallService:
     async def after_turn(self, agent: LiveAgent, conversation_id: str) -> None:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
         An order is queued by itself once; the owner can call it again.
-        Unused for now: the shop takes no voice."""
-        if agent.desk.kind != "shop" or not agent.desk.takes_voice or not self.rings:
+        Only the shop's own calls: a visitor still can't call the shop (`takes_voice`)."""
+        if agent.desk.kind != "shop" or not self.rings:
             return
         calls = cast(ShopConfig, agent.config).calls
         if not calls.enabled:
@@ -108,8 +108,6 @@ class CallService:
         agent = await self.agents.by_workspace(ws)
         if agent.desk.kind != "shop":
             raise NotFound("Only a shop calls its buyers.")
-        if not agent.desk.takes_voice:  # the shop has no voice for now
-            raise Conflict("Calls to confirm are off: a shop takes no calls for now.")
         if not self.rings:
             raise Conflict("Calls ring the /phone page, which this server doesn't serve.")
         if not cast(ShopConfig, agent.config).calls.enabled:
@@ -301,6 +299,7 @@ class CallService:
         # str.replace, never str.format: the owner's line may hold other braces
         said = agent.config.fill(calls.opening).replace("{code}", order.code)
         said = said.replace("{total}", money(order.total, order.currency))
+        said = said.replace("{items}", spoken_items(order.lines))
         now = self.now()
         conv = Conversation(
             workspace_id=agent.workspace_id,
