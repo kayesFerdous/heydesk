@@ -93,7 +93,6 @@ def create_app(
             asyncio.create_task(
                 app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
             ),
-            # the comment nudge, as often as the snooze round
             asyncio.create_task(app.state.services.channels.run(settings.SNOOZE_CHECK_SECONDS)),
         ]
         yield

@@ -435,33 +435,6 @@ def mobile(said: str) -> str:
     return digits
 
 
-def post_products(products: list[Product], post: str) -> list[str]:
-    """The codes of the products a post names, in the order it names them. The
-    longest names are looked for first, and each found name is taken out, so "Silk Panjabi"
-    isn't also a "Panjabi"."""
-    words, found = post.lower(), []
-    for p in sorted(products, key=lambda p: -len(p.name)):
-        at = words.find(p.name.lower())
-        if at < 0:
-            code = re.search(rf"\b{re.escape(p.code)}\b", words)
-            at = code.start() if code else -1
-            end = code.end() if code else 0
-        else:
-            end = at + len(p.name)
-        if at >= 0:
-            found.append((at, p.code))
-            words = words[:at] + " " * (end - at) + words[end:]
-    return [code for _, code in sorted(found)]
-
-
-def price_range(products: list[Product], currency: str) -> str:
-    """ "৳950" or "৳950–৳3,200": what a post's products cost, for its comments."""
-    low, high = min(p.price for p in products), max(p.price for p in products)
-    if low == high:
-        return money(low, currency)
-    return f"{money(low, currency)}–{money(high, currency)}"
-
-
 def cart_text(cart: dict[str, Any], currency: str) -> str:
     """The cart `update_cart` keeps in the state: "2 × Cotton Panjabi (L, White), …, subtotal
     ৳3,700", and its coupon: "coupon EID10 −৳370" or "coupon SHIPFREE: free delivery"."""

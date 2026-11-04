@@ -811,7 +811,7 @@ the owner. The leads screen is still to build.)
 and its bill. [ ] (26 Oct: green, 460 tests. The dev chat check is the owner's; 30 Oct: its form is on the Coupons
 page in `../heydesk-frontend`, and the owner picks how far back it reaches, 24 hours to 7 days, D163.)
 
-### Day R15: comment to inbox (G1, G43)
+### Day R15: comment to inbox (G1, G43) (removed 4 Nov, D171)
 
 - [x] Subscribe the Page's `feed`; a new comment gets one public reply and one private reply
       that opens the Messenger chat with the post's product (D141: named from the post's words)
@@ -824,7 +824,7 @@ page in `../heydesk-frontend`, and the owner picks how far back it reaches, 24 h
 gets both replies. [ ] (26 Oct: green, 461 tests. A Page already connected must connect again
 to subscribe its `feed`; the permissions need App Review, and the real post is the owner's.)
 
-### Day R16: posts with many products, and one more nudge (G41, G42)
+### Day R16: posts with many products, and one more nudge (G41, G42) (removed 4 Nov, D171)
 
 - [x] A post → products map: the owner tags it, or its photos are matched (D57) (D142: found
       once at the first comment and kept, its words first; later commenters reuse it)

@@ -50,3 +50,4 @@ CLAUDE.local*
 # Presentation material, kept outside the repo
 proposal_uml/
 *.pdf
+presentation-draft.md

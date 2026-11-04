@@ -487,7 +487,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Shop routes",
    "type": "api",
    "file": "src/heydesk/desks/shop/api.py",
-   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133). Offers to the chats from the last 24 h, or as far back as the owner picks (D163): /api/shop/offers, a coupon only they may use (D140). A post's products: /api/shop/posts, tag one (D142).",
+   "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133). Offers to the chats from the last 24 h, or as far back as the owner picks (D163): /api/shop/offers, a coupon only they may use (D140).",
    "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
    "fn": "change_order"
@@ -517,7 +517,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ChannelService",
    "type": "service",
    "file": "src/heydesk/services/channels.py",
-   "purpose": "Connect Telegram/Messenger/WhatsApp (Telegram webhooks are set again a minute after start, refresh_telegram, so button taps and a new tunnel address reach us); answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111). A Page post's comment: one public and one private reply, into the buyer's Messenger chat (answer_comment, D141). What the post is about is found once and kept (page_post, page_posts table): later commenters reuse it; many products get the range and a carousel; one more reply after 2 h quiet (nudge_comments, run) (D142).",
+   "purpose": "Connect Telegram/Messenger/WhatsApp (Telegram webhooks are set again a minute after start, refresh_telegram, so button taps and a new tunnel address reach us); answer their messages as one whole reply with buttons and photos, then the turn's card in each app's own way (card_text, _send_card; a summary carries Yes/Change, D111).",
    "inputs": "webhook payloads",
    "outputs": "messages sent",
    "fn": "_answer"
@@ -1614,11 +1614,6 @@ tr.hl td { background: var(--accent-soft); }
    "source": "a-messenger",
    "target": "s-channels",
    "label": "answer_messenger"
-  },
-  {
-   "source": "a-messenger",
-   "target": "s-channels",
-   "label": "answer_comment (a post's comment, D141)"
   },
   {
    "source": "a-whatsapp",
@@ -5020,7 +5015,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "bg",
      "label": "200 OK now, turn in background",
      "shape": "step",
-     "code": "background.add_task(services.channels.answer_messenger, channel, event)\n# Messenger: mark_seen first (D117)\n# a feed comment: answer_comment, one public + one private reply (D141)"
+     "code": "background.add_task(services.channels.answer_messenger, channel, event)\n# Messenger: mark_seen first (D117)"
     },
     {
      "id": "owner1",

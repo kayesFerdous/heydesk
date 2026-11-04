@@ -72,7 +72,7 @@ PLANS = {
     "trial": Plan("Free trial", 0, 200, 1),
     "starter": Plan("Starter", 249_000, 3_000, 1),
     "growth": Plan("Growth", 599_000, 12_000, 3),
-    "pro": Plan("Pro", 1_299_000, 35_000, 10),
+    "pro": Plan("Pro", 1_299_000, 30_000, 10),
 }
 
 

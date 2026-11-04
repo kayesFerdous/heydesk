@@ -715,35 +715,6 @@ class ConversationService:
             if saved.taken_over_at is not None:
                 saved.taken_over_at = self.now()
 
-    async def handle_post_comment(
-        self, agent: LiveAgent, contact: str, said: str, answer: str, name: str | None
-    ) -> str:
-        """A comment on the Page's post and our private reply to it, added to the
-        buyer's Messenger chat as their line and the agent's, so their reply there carries on
-        from it. The chat they have, started afresh if it's full or quiet; else a new one."""
-        async with self.sessions() as s, s.begin():
-            conv = await s.scalar(
-                select(Conversation)
-                .where(
-                    Conversation.workspace_id == agent.workspace_id,
-                    Conversation.agent_id == agent.agent_id,
-                    Conversation.channel == "messenger",
-                    Conversation.contact == contact,
-                )
-                .order_by(Conversation.updated_at.desc())
-                .limit(1)
-                .with_for_update()  # as `_get_by_id(lock=True)`
-            )
-            if conv is None:
-                conv = self._new(agent, "messenger", contact, name)
-                s.add(conv)
-            elif self._stale(conv):
-                conv.history_from, conv.state, conv.nudged = len(conv.messages), {}, False
-            llm = self.runtime.llm
-            conv.messages = [*conv.messages, llm.user_message(said), llm.assistant_message(answer)]
-            conv.updated_at = self.now()
-        return conv.id
-
     async def _given_back(self, conv: Conversation) -> bool:
         """A chat the team took over and then left quiet is the agent's again, and so is
         one that was the team's while the AI was off for the visitor."""
