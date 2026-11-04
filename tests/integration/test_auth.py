@@ -67,7 +67,7 @@ async def test_a_second_account_sees_none_of_the_firsts_records(
     [order] = (await client.get("/api/shop/orders")).json()
     second = await as_second_account(app)
 
-    await second.post("/api/agent", json={"kind": "shop"})  # a shop too
+    await second.post("/api/agent", json={})  # a shop too
     for path in ("/api/shop/orders", "/api/messages", "/api/conversations"):
         assert (await second.get(path)).json() == [], path
     assert (await second.get(f"/api/conversations/{conv_id}")).status_code == 404

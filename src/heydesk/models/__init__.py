@@ -1,5 +1,5 @@
-"""The tables every business has. Each desk keeps its own tables in its folder
-(`desks/shop/models.py`); importing `heydesk.desks` registers those."""
+"""The tables outside the shop's own (`shop/models.py`); importing `heydesk.shop` registers
+those."""
 
 from heydesk.models.agent import Agent
 from heydesk.models.audit import AuditEvent

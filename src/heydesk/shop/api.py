@@ -3,7 +3,7 @@ page, its *Buy now* form and an order's page."""
 
 import logging
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -21,23 +21,6 @@ from heydesk.api.deps import (
     csv_file,
     phone_cell,
 )
-from heydesk.desks.csv_import import Suggestion, suggest
-from heydesk.desks.shop import page
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import OutOfStock, ShopStore
-from heydesk.desks.shop.tools import CartLine, TeamOrder, checked_order, order_alert
-from heydesk.desks.shop.values import (
-    PRODUCT_COLUMNS,
-    STATUS_WORDS,
-    Buyer,
-    BuyerRecord,
-    BuyForm,
-    Coupon,
-    Product,
-    ShopConfig,
-    lines_text,
-    products_from_csv,
-)
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card
@@ -45,14 +28,30 @@ from heydesk.runtime.guards import confirm
 from heydesk.runtime.speech import local_time
 from heydesk.services.agents import LiveAgent
 from heydesk.services.channels import card_text
+from heydesk.shop import page
+from heydesk.shop.csv_import import Suggestion, suggest
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.store import OutOfStock, ShopStore
+from heydesk.shop.tools import CartLine, TeamOrder, checked_order, order_alert
+from heydesk.shop.values import (
+    PRODUCT_COLUMNS,
+    STATUS_WORDS,
+    Buyer,
+    BuyerRecord,
+    BuyForm,
+    Coupon,
+    Product,
+    lines_text,
+    products_from_csv,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])
 
 
 async def shop_store(services: Svc, ws: Workspace) -> ShopStore:
-    """404 unless the business's agent is a shop."""
-    return cast(ShopStore, await services.agents.store(ws, "shop"))
+    """404 until the business has an agent."""
+    return await services.agents.store(ws)
 
 
 type Shop = Annotated[ShopStore, Depends(shop_store)]
@@ -161,7 +160,7 @@ async def _product(services: Svc, public_key: str, code: str) -> tuple[LiveAgent
     """The shop's agent and the product; None for a wrong key or code."""
     try:
         agent = await services.agents.by_key(public_key)
-        store = cast(ShopStore, await services.agents.store(agent.workspace_id, "shop"))
+        store = await services.agents.store(agent.workspace_id)
     except NotFound:
         return None
     found = next((p for p in await store.products() if p.code == code), None)
@@ -182,7 +181,7 @@ async def product(
     if found is None:
         return html_page(page.not_found(), 404)
     agent, item = found
-    config = cast(ShopConfig, agent.config)
+    config = agent.config
     back = await services.channels.chat_link(agent.workspace_id, via)
     image = (
         services.channels.absolute_url(item.photos[0]) if item.photos else ""
@@ -211,10 +210,9 @@ async def buy(
     if found is None:
         return html_page(page.not_found(), 404)
     agent, item = found
-    config = cast(ShopConfig, agent.config)
+    config = agent.config
     back = await services.channels.chat_link(agent.workspace_id, via)
-    store, conv = await services.conversations.store_for(agent, chat)
-    shop = cast(ShopStore, store)
+    shop, conv = await services.conversations.store_for(agent, chat)
 
     def again(problem: str = "") -> HTMLResponse:  # the product page, the form filled in
         return html_page(
@@ -323,7 +321,7 @@ async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) 
     """An order the team types for a buyer who called: checked and added up as the
     chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
     The owner hears of it as of any new order."""
-    config = cast(ShopConfig, (await services.agents.by_workspace(ws)).config)
+    config = (await services.agents.by_workspace(ws)).config
     checked = await checked_order(store, config, body.lines, body)
     if isinstance(checked, str):
         raise InvalidConfig({"order": checked})

@@ -6,14 +6,12 @@ import hmac
 import json
 from typing import Any
 
-import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from heydesk.desks.shop import ShopDesk
-from heydesk.desks.shop.models import ShopOrder
 from heydesk.ports.llm import ToolCall
+from heydesk.shop.models import ShopOrder
 from tests.conftest import SEEDS, new_business
 from tests.integration.test_shop import DETAILS, KURTI, kurti_with_photo, photo
 from tests.integration.test_team import from_owner, link_owner, to
@@ -101,22 +99,18 @@ def image(**payload: Any) -> dict[str, Any]:
     return {"attachments": [{"type": "image", "payload": {"url": CDN, **payload}}]}
 
 
-async def test_echoes_and_photos_to_a_desk_that_takes_none(
-    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(ShopDesk, "takes_photos", False)
+async def test_an_echo_gets_no_reply(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
     await post(client, message("from the page", is_echo=True))
-    await post(client, message(None, **image()))
 
-    assert sent(app) == [(PSID, NOT_TEXT)]
+    assert sent(app) == []
 
 
 async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     url = await kurti_with_photo(client)
     await connect(client)
     fake = services.channels.messenger
@@ -155,7 +149,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
     """The page shows what a buyer may see, as HTML, with the way back to the chat; anything
     else, another business's agent included, is the same 404."""
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     url = await kurti_with_photo(client)
     await connect(client)
     products = (await client.get("/api/products")).json()
@@ -181,7 +175,7 @@ async def test_a_products_card_opens_its_public_page(app: FastAPI, client: Async
 async def test_a_page_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    assert (await other.post("/api/agent", json={})).status_code == 201
     res = await other.put("/api/agent/messenger", json={"token": TOKEN, "page_id": PAGE})
     assert res.status_code == 422
 
@@ -252,7 +246,7 @@ async def test_a_yes_tapped_with_no_read_back_saves_nothing(
 
 
 async def services_shop(app: FastAPI) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
 
 
 async def test_three_quick_messages_get_one_reply_after_seen_and_typing(

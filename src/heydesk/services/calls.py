@@ -13,16 +13,13 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal, cast
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import ShopStore
-from heydesk.desks.shop.values import CallSettings, ShopConfig, mobile, spoken_items
 from heydesk.errors import Conflict, HeyDeskError, NotFound
 from heydesk.models import Call, Conversation
 from heydesk.models.call import DONE, LIVE, QUEUED, RINGING, TALKING
@@ -30,6 +27,9 @@ from heydesk.ports.llm import LanguageModel
 from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService, LiveAgent
 from heydesk.services.team import TeamService
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.store import ShopStore
+from heydesk.shop.values import CallSettings, mobile, spoken_items
 
 log = logging.getLogger(__name__)
 
@@ -93,10 +93,10 @@ class CallService:
     async def after_turn(self, agent: LiveAgent, conversation_id: str) -> None:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
         An order is queued by itself once; the owner can call it again.
-        Only the shop's own calls: a visitor still can't call the shop (`takes_voice`)."""
-        if agent.desk.kind != "shop" or not self.rings:
+        Only the shop's own calls: a visitor still can't call the shop (`TAKES_VOICE`)."""
+        if not self.rings:
             return
-        calls = cast(ShopConfig, agent.config).calls
+        calls = agent.config.calls
         if not calls.enabled:
             return
         for order in await self._store(agent, conversation_id).orders_here():
@@ -106,11 +106,9 @@ class CallService:
     async def call_order(self, ws: str, order_id: str) -> Call:
         """The owner's "Call to confirm": first in the queue."""
         agent = await self.agents.by_workspace(ws)
-        if agent.desk.kind != "shop":
-            raise NotFound("Only a shop calls its buyers.")
         if not self.rings:
             raise Conflict("Calls ring the /phone page, which this server doesn't serve.")
-        if not cast(ShopConfig, agent.config).calls.enabled:
+        if not agent.config.calls.enabled:
             raise Conflict("Calls are off. Turn them on in Settings, Calls.")
         order = await self._store(agent).get(ShopOrder, order_id)  # 404 if it isn't theirs
         if order.status != "new":
@@ -233,7 +231,7 @@ class CallService:
     async def _ring(self, call: Call) -> bool:
         """Rings the call's page, if it's time. False when it didn't ring."""
         agent = await self.agents.by_id(call.agent_id)
-        calls = cast(ShopConfig, agent.config).calls
+        calls = agent.config.calls
         if not calls.enabled or not in_hours(calls, agent.config.timezone, self.now()):
             return False  # it waits: until calls are on again, or the morning
         order = await self._store(agent).get(ShopOrder, call.order_id)
@@ -266,7 +264,7 @@ class CallService:
         if call.status != RINGING:
             return
         agent = await self.agents.by_id(call.agent_id)
-        calls = cast(ShopConfig, agent.config).calls
+        calls = agent.config.calls
         gave_up = call.tries >= calls.tries
         async with self.sessions() as s, s.begin():
             row = await self._get(s, call_id)
@@ -295,7 +293,7 @@ class CallService:
             raise NotFound("This call has ended.")
         agent = await self.agents.by_id(call.agent_id)
         order = await self._store(agent).get(ShopOrder, call.order_id)
-        calls = cast(ShopConfig, agent.config).calls
+        calls = agent.config.calls
         # str.replace, never str.format: the owner's line may hold other braces
         said = agent.config.fill(calls.opening).replace("{code}", order.code)
         said = said.replace("{total}", money(order.total, order.currency))
@@ -362,10 +360,9 @@ class CallService:
         return call
 
     def _store(self, agent: LiveAgent, conversation_id: str | None = None) -> ShopStore:
-        store = agent.desk.store(
+        return ShopStore(
             self.sessions, agent.workspace_id, self.now, conversation_id=conversation_id
         )
-        return cast(ShopStore, store)
 
 
 # Who's called next: the live ones first, then "Call now", then the earliest due, the oldest

@@ -23,11 +23,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.desks.shared import OFF_TOPIC
 from heydesk.errors import NotFound, VisitorLimited, VisitorSilenced
 from heydesk.models import Visitor
 from heydesk.services.agents import LiveAgent
 from heydesk.services.billing import plan_problem
+from heydesk.shop.shared import OFF_TOPIC
 
 log = logging.getLogger(__name__)
 

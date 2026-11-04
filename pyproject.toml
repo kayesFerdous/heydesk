@@ -77,7 +77,7 @@ plugins = ["pydantic.mypy"]
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]            # the layers whose guarantees are types: Confirmed[T], Protocols, tools
-module = ["heydesk.domain.*", "heydesk.ports.*", "heydesk.runtime.*", "heydesk.desks.*"]
+module = ["heydesk.domain.*", "heydesk.ports.*", "heydesk.runtime.*", "heydesk.shop.*"]
 strict = true
 
 [[tool.mypy.overrides]]            # Pipecat's decorators and hooks aren't typed

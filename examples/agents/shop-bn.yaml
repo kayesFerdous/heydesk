@@ -1,4 +1,4 @@
-# The shop of shop.yaml with a Bangla greeting: DEV_AGENT_KIND=shop, DEV_AGENT_SEED=this
+# The shop of shop.yaml with a Bangla greeting: DEV_AGENT_SEED=this
 # file. Calls are in Bangla when VOICE_LANGUAGE is `bn`, and the local VITS voice drops Latin
 # letters, so an English greeting would open its calls in silence.
 greeting: আসসালামু আলাইকুম, নকশি থ্রেডসে আপনাকে স্বাগতম। আমি কীভাবে সাহায্য করতে পারি?

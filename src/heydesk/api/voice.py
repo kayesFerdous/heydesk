@@ -18,6 +18,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
 )
 
+from heydesk import shop
 from heydesk.api.sse import frame
 from heydesk.errors import NoVoice
 from heydesk.voice.call import run_call
@@ -66,7 +67,7 @@ async def offer(
         agent = answered.agent
     else:
         agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
-        if not agent.desk.takes_voice:
+        if not shop.TAKES_VOICE:
             raise NoVoice("This agent takes no calls: chat with it instead.")
         await state.services.visitors.count_turn(
             agent, f"web:{visitor}", count=False

@@ -9,10 +9,10 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from heydesk.desks import csv_import
-from heydesk.desks.shop.districts import DISTRICTS, district
 from heydesk.runtime.config import AgentConfig, Widget
 from heydesk.runtime.speech import money
+from heydesk.shop import csv_import
+from heydesk.shop.districts import DISTRICTS, district
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
 OWN = -1  # `Product.counter`: the product's own stock, not a variant's

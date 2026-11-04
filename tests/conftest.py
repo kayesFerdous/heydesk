@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-import heydesk.desks  # noqa: F401  (registers every desk's tables)
+import heydesk.shop  # noqa: F401  (registers the shop's tables)
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
@@ -22,13 +22,14 @@ from heydesk.adapters.telegram.fake import FakeTelegram
 from heydesk.adapters.whatsapp.fake import FakeWhatsApp
 from heydesk.config import Settings
 from heydesk.db import Base, make_engine
-from heydesk.desks.shop.values import ShopConfig
 from heydesk.main import create_app
 from heydesk.models import Conversation
 from heydesk.runtime.config import Handoff
 from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
+from heydesk.shop.store import ShopStore
+from heydesk.shop.values import ShopConfig
 from heydesk.wiring import build_services
 
 FIXED_NOW = datetime(2026, 9, 29, 8, 0, tzinfo=UTC)  # Tuesday, 14:00 in Dhaka
@@ -122,13 +123,13 @@ class World:
     clock: Clock
     embedder: FakeEmbedder
 
-    async def agent(self, kind: str = "shop") -> LiveAgent:
-        """The dev agent as a `kind` of desk, from its seed file."""
-        return await self.services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
+    async def agent(self) -> LiveAgent:
+        """The dev agent, from its seed file."""
+        return await self.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
 
-    def store(self, agent: LiveAgent, conversation_id: str | None = None) -> Any:
-        """The agent's desk store, as its tools get it."""
-        return agent.desk.store(
+    def store(self, agent: LiveAgent, conversation_id: str | None = None) -> ShopStore:
+        """The agent's store, as its tools get it."""
+        return ShopStore(
             self.sessions, agent.workspace_id, self.clock, conversation_id=conversation_id
         )
 
@@ -161,7 +162,7 @@ async def world() -> AsyncIterator[World]:
     llm, clock = FakeLLM(), Clock()
     embedder, store, photos = make_knowledge()
     services = build_services(sessions, llm, embedder, store, photos, make_test_settings(), clock)
-    await services.agents.ensure_dev_agent("shop", SEED)
+    await services.agents.ensure_dev_agent(SEED)
     yield World(services, sessions, llm, clock, embedder)
     await store.client.close()
     await engine.dispose()
@@ -183,7 +184,7 @@ async def app() -> AsyncIterator[FastAPI]:
     )
     async with LifespanManager(app):
         await create_tables(app.state.engine)
-        await app.state.services.agents.ensure_dev_agent("shop", SEED)
+        await app.state.services.agents.ensure_dev_agent(SEED)
         yield app
 
 

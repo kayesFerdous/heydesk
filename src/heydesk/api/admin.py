@@ -20,7 +20,7 @@ class BusinessRowOut(BaseModel):
     name: str
     status: Literal["active", "suspended"]
     suspended_reason: str  # for admins only; empty while active
-    kind: str | None  # its desk
+    kind: str | None  # "shop"; None: no agent yet
     owner_email: str | None
     conversations: int
     last_activity_at: datetime | None
@@ -63,7 +63,7 @@ class BusinessOut(BaseModel):
     name: str
     status: Literal["active", "suspended"]
     suspended_reason: str  # for admins only; empty while active
-    kind: str | None  # its desk; None: no agent yet
+    kind: str | None  # "shop"; None: no agent yet
     agent_name: str | None
     public_key: str | None  # the chat link is /chat/<public_key>
     created_at: datetime

@@ -1,4 +1,4 @@
-"""What every business edits about its agent (design §5). Each desk adds its own fields."""
+"""What every business edits about its agent (design §5). `ShopConfig` adds the shop's fields."""
 
 from typing import Annotated, Literal
 
@@ -29,7 +29,7 @@ class Widget(BaseModel):
     side: Literal["right", "left"] = "right"
     # The line that pops out of the bubble after a few seconds; empty: none
     nudge: str = Field(default="Hi! Can I help you?", max_length=120)
-    # Tap-to-ask buttons on the welcome screen; each desk has its own
+    # Tap-to-ask buttons on the welcome screen
     starters: list[Annotated[str, Field(min_length=1, max_length=60)]] = Field(
         default_factory=list, max_length=4
     )
@@ -40,7 +40,7 @@ class AgentConfig(BaseModel):
     """The fields every kind of business has. A desk's config subclasses this: the shop adds
     `delivery` and `policies`, and sets its own `greeting`."""
 
-    model_config = ConfigDict(extra="forbid")  # a field this desk doesn't have is a 422
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 422
 
     # The owner's master switch: true turns the AI off for every visitor on every channel.
     # Messages wait for the team, as with AI off for one visitor
@@ -56,7 +56,7 @@ class AgentConfig(BaseModel):
     notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
     faq: str = Field(default="", max_length=20000)
     handoff: Handoff = Handoff()
-    widget: Widget = Widget()  # a desk sets its own starters
+    widget: Widget = Widget()  # the shop sets its own starters
     # The team's saved replies, picked from the inbox's reply box; never the model's
     saved_replies: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
         default=[], max_length=50

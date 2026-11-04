@@ -8,7 +8,7 @@ from heydesk.models.customer_request import CustomerRequest
 
 
 class TeamMessage(CustomerRequest, Base):
-    """A message for the team or a call-back request: every desk can take one."""
+    """A message for the team or a call-back request."""
 
     __tablename__ = "team_messages"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)

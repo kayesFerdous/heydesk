@@ -5,7 +5,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from heydesk.adapters.llm.fake import FakeLLM
-from heydesk.desks.shared import HANDOFF, HandoffInput
 from heydesk.ports.llm import (
     ChatRequest,
     Finished,
@@ -20,6 +19,7 @@ from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, Tur
 from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult
+from heydesk.shop.shared import HANDOFF, HandoffInput
 from tests.conftest import AGENT, FIXED_NOW
 
 PRICES = {"chk-biryani": ("Chicken Biryani", 45000), "borhani": ("Borhani", 13000)}
@@ -182,7 +182,7 @@ async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
     assert json.loads(end.added[-2]["content"])["phone"] == "+880 1700 000000"
 
 
-async def test_the_desks_note_is_rebuilt_before_every_model_call() -> None:
+async def test_the_shops_note_is_rebuilt_before_every_model_call() -> None:
     llm = FakeLLM([ORDER, "That's ৳1,030."])
     turn = make_turn(tools=[UPDATE_ORDER], note=note)
     await collect(turn, llm)

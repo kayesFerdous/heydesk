@@ -1,4 +1,4 @@
-"""Paying first: with `pay_first` on, what a desk takes is saved unpaid, and only a
+"""Paying first: with `pay_first` on, an order is saved unpaid, and only a
 payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
 charge in the areas that pay first, and that payment confirms the order."""
 
@@ -9,13 +9,13 @@ from httpx import AsyncClient
 from sqlalchemy import text
 
 from heydesk.adapters.payments.fake import FakePayments
-from heydesk.desks.shop import SHOP
-from heydesk.desks.shop.tools import FindOrderInput, track_order
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Account, Paid
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.services.payments import Payable
+from heydesk.shop import shop_prompt
+from heydesk.shop.tools import FindOrderInput, track_order
 from tests.conftest import SEEDS, World, make_ctx
 
 SHOP_ORDER = {"lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}]}
@@ -27,20 +27,18 @@ SHOP_DETAILS = {
 }
 
 
-async def paying_first(
-    services: Services, kind: str, **settings: object
-) -> tuple[LiveAgent, FakePayments]:
-    """The dev agent as a `kind` with `pay_first` on (and `settings`) and an SSLCommerz store
+async def paying_first(services: Services, **settings: object) -> tuple[LiveAgent, FakePayments]:
+    """The dev agent with `pay_first` on (and `settings`) and an SSLCommerz store
     connected, and its fake gateway. A shop pays first inside Dhaka only."""
-    await services.agents.ensure_dev_agent(kind, SEEDS / f"{kind}.yaml")
-    await services.agents.update(DEV_WORKSPACE_ID, {**pay_first(services, kind), **settings})
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
+    await services.agents.update(DEV_WORKSPACE_ID, {**pay_first(services), **settings})
     store = Account("nakshi-test", "store-password", True)
     await services.payments.connect(DEV_WORKSPACE_ID, "sslcommerz", store)
-    agent = await services.agents.by_key(f"dev-{kind}")
+    agent = await services.agents.by_key("dev-shop")
     return agent, cast(FakePayments, services.payments.gateways["sslcommerz"])
 
 
-def pay_first(services: Services, kind: str) -> dict[str, Any]:
+def pay_first(services: Services) -> dict[str, Any]:
     """The setting that turns paying first on: each area's."""
     zones = [
         {"name": "Inside Dhaka", "charge": 6000, "districts": ["Dhaka"], "pay_first": True},
@@ -67,8 +65,8 @@ async def found(world: World, conv: str) -> Payable:
 async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge(
     world: World,
 ) -> None:
-    agent, gateway = await paying_first(world.services, "shop")
-    prompt = await SHOP.prompt(agent.config, world.store(agent))
+    agent, gateway = await paying_first(world.services)
+    prompt = await shop_prompt(agent.config, world.store(agent))
     assert "- Inside Dhaka: ৳60 (Dhaka); paid online first" in prompt
     assert (
         "- Outside Dhaka: ৳120 (everywhere else)\n" in prompt
@@ -115,7 +113,7 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
 
 
 async def test_a_shop_takes_the_advance_only_in_the_areas_that_pay_first(world: World) -> None:
-    agent, _ = await paying_first(world.services, "shop")
+    agent, _ = await paying_first(world.services)
     sylhet = SHOP_DETAILS | {"district": "Sylhet", "address": "Zindabazar, Sylhet"}
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
     conv = await take(world, agent, first, ToolCall("c2", "place_order", sylhet))
@@ -128,7 +126,7 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    agent, gateway = await paying_first(services, "shop")
+    agent, gateway = await paying_first(services)
     runtime = services.conversations.runtime
     runtime.llm.script = [
         ToolCall("c1", "update_cart", SHOP_ORDER),
@@ -173,10 +171,10 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
 
 async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world: World) -> None:
     services = world.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    await services.agents.update(DEV_WORKSPACE_ID, pay_first(services, "shop"))  # no store yet
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
+    await services.agents.update(DEV_WORKSPACE_ID, pay_first(services))  # no store yet
     agent = await services.agents.by_key("dev-shop")
-    assert "paid online first" not in await SHOP.prompt(agent.config, world.store(agent))
+    assert "paid online first" not in await shop_prompt(agent.config, world.store(agent))
     assert (
         "Connect SSLCommerz or bKash to take payments first."
         in (await services.agents.get(DEV_WORKSPACE_ID)).missing
@@ -191,7 +189,7 @@ async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world
 async def test_the_owner_connects_the_business_s_own_store(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     assert (await client.get("/api/agent/sslcommerz")).status_code == 404
 
     refused = await client.put(
@@ -227,7 +225,7 @@ BKASH = {
 
 
 async def test_the_owner_connects_bkash_too(app: FastAPI, client: AsyncClient) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     assert (await client.get("/api/agent/bkash")).status_code == 404
 
     refused = await client.put("/api/agent/bkash", json={**BKASH, "app_key": "bad"})
@@ -250,7 +248,7 @@ async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    agent, _ = await paying_first(services, "shop")
+    agent, _ = await paying_first(services)
     await client.put("/api/agent/bkash", json=BKASH)
     bkash = cast(FakePayments, services.payments.gateways["bkash"])
     services.conversations.runtime.llm.script = [

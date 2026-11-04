@@ -105,7 +105,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     url = await kurti_with_photo(client)
     await connect(client)
     fake(app).files["m1"] = photo("red")
@@ -150,7 +150,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
 async def test_a_number_belongs_to_one_business(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    assert (await other.post("/api/agent", json={})).status_code == 201
     body = {"token": TOKEN, "account_id": ACCOUNT, "phone_id": PHONE}
     assert (await other.put("/api/agent/whatsapp", json=body)).status_code == 422
 
@@ -181,7 +181,7 @@ async def test_a_bad_signup_code_or_a_taken_number_is_refused(
 
     await connect(client)
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    assert (await other.post("/api/agent", json={})).status_code == 201
     fake(app).codes["their-code"] = "EAAB-their-system-user-token"
     res = await other.post("/api/agent/whatsapp/signup", json=signup | {"code": "their-code"})
     assert res.status_code == 422 and "phone_id" in res.json()["error"]["fields"]
@@ -259,7 +259,7 @@ async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: Asy
 async def test_more_cards_than_photos_are_one_list(app: FastAPI, client: AsyncClient) -> None:
     """The cards with no photo (or past the first 3) are one list to tap."""
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await kurti_with_photo(client)
     await connect(client)
     llm = services.conversations.runtime.llm

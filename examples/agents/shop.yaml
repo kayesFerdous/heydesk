@@ -1,5 +1,5 @@
-# An online shop agent, a Facebook-page clothing shop (DEV_AGENT_KIND=shop, DEV_AGENT_SEED=this
-# file). Any field of the shop's config may be set here (desks/shop/values.py: ShopConfig); what's
+# An online shop agent, a Facebook-page clothing shop (DEV_AGENT_SEED=this
+# file). Any field of the shop's config may be set here (shop/values.py: ShopConfig); what's
 # left out has a default. Money is in paisa: 185000 = ৳1,850.
 name: Nakshi Threads assistant
 business_name: Nakshi Threads

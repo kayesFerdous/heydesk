@@ -11,8 +11,7 @@ when it's cheap or it would break the demo; otherwise it goes in §12 *Left out*
 ## 1. What it is
 
 An online shop fills in its details (products, delivery areas, FAQ) and adds its own notes, and it
-has an AI front-desk agent. The shop is a **desk** with its own prompt, tools and tables (D41); it
-is the only one now (D164). Visitors talk to it by **web chat** in the
+has an AI front-desk agent. HeyDesk serves only online shops, so there's no layer for kinds of business (D172). Visitors talk to it by **web chat** in the
 browser, or on **Telegram** with the business's own bot (D42), or on its Facebook Page's **Messenger** (D60), or on its **WhatsApp** number (D103). It answers questions, takes orders and messages, and hands over to a
 person when needed. The business sees orders and messages through the API, which
 the separate frontend (`../heydesk-frontend`) uses.
@@ -25,14 +24,13 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Desk | A kind of business (`shop`, the only one, D164): one folder in `desks/` with its own config fields, prompt, tools, tables and owner routes (D41) |
-| Agent | A business's agent: one desk's config, which the business edits. Edits are live on the next message |
-| Store | A business's data as its desk sees it (`ShopStore`: products, orders, messages), always scoped to one workspace |
+| Agent | A business's agent: its config (`ShopConfig`), which the business edits. Edits are live on the next message |
+| Store | A business's data (`ShopStore`: products, orders, messages), always scoped to one workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
-| Tool | Something the model can call: `update_cart`, `place_order`… A desk's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
-| Note | A desk's line from the conversation state (the shop's order so far), added to the system prompt before every model call |
+| Tool | Something the model can call: `update_cart`, `place_order`… The shop's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
+| Note | A line from the conversation state (the shop's order so far), added to the system prompt before every model call |
 
 ## 3. The rules
 
@@ -64,11 +62,10 @@ src/heydesk/
 │                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, bKash (D109), Google Sheets' CSV (D58), WooCommerce's REST API (D75),
 │                        photo files on the disk or in Cloudflare R2 (D101)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech, cards
-├── desks/               one folder per kind of business (D41)
-│   ├── base.py          Desk (what a desk is) and Store (its data: messages, documents search, its list replaced whole)
+├── shop/                the shop (D172): __init__ (prompt, note, tools_for) · tools · values · models · store · api · page
+│   ├── base.py          Store: the data that isn't products or orders (messages, documents search, a list replaced whole)
 │   ├── shared.py        take_message, handoff_to_human, off_topic, search_knowledge
-│   ├── shop/            __init__ (config, prompt) · tools · values · models · store · api
-│   └── csv_import.py    reading a CSV file into a desk's list; matching its columns to ours (D50, D53, D115)
+│   └── csv_import.py    reading a CSV file into the products; matching its columns to ours (D50, D53, D115)
 ├── models/              the shared tables; `customer_request.py` is what orders and messages share
 ├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
 │                        knowledge, photos (D57), sheets (D58), woo (D75), channels (Telegram,
@@ -79,34 +76,33 @@ src/heydesk/
 tts_server/              the Bangla voice: its own uv project, run beside HeyDesk (D84)
 ```
 
-Imports point inwards: `api`/`voice` → `services` → `desks` → `runtime` → `ports`. A desk's
+Imports point inwards: `api`/`voice` → `services` → `shop` → `runtime` → `ports`. The shop's
 tools reach the database only through its store, and only its `api.py` knows HTTP.
 `scripts/check_imports.sh` checks it.
 
-## 5. Agents and desks
+## 5. The agent and the shop
 
-**A desk is a kind of business, written as plain Python** (D41). Each folder in `desks/` has:
+**The shop is plain Python, in one folder** (D172). `shop/` has:
 
 | File | What's in it |
 |---|---|
-| `__init__.py` | The desk: its config class, its `ROLE` text, `prompt()` (its sections of the system prompt, with its facts), `note()`, `missing()` and `seed()` |
+| `__init__.py` | Its `ROLE` text, `shop_prompt()` (its sections of the system prompt, with its facts), `shop_note()`, `shop_missing()` and `tools_for()` |
 | `tools.py` | Its tools: the shop's `find_product` (D80), `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
 | `values.py` | Its shapes, no database: `Product`, `Zone`, `match_zone()`, `ShopConfig`, `mobile()`; `districts.py`, Bangladesh's 64 districts and their old spellings (D98) |
 | `models.py` | Its tables: `products`, `coupons` and `shop_orders` |
 | `store.py` | Its data access, for its tools and its owner routes, always one workspace |
 | `api.py` | Its owner routes: `/api/products`, `/api/shop/…` |
 
-`desks/__init__.py` lists them (`DESKS`), and `tools_for(desk, config, has_documents)` is a desk's
-tools for this business (`Desk.own_tools(config)`) then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
-`search_knowledge` when the business has documents (D35). To add a kind of business: a new folder, and a line in `DESKS`.
+`tools_for(has_documents)` is the shop's tools, then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
+`search_knowledge` when the business has documents (D35).
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
-name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. A desk
-subclasses it: the shop adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; turning it off turns `calls.enabled` off too, D92, D168), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. The console shows a text's tags (`{business_name}`, and the call's `{items}`, `{total}`, `{code}`) as coloured pills the owner adds with buttons and may delete (D169). Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons, each desk with its own) and `logo` (only one saved by `POST /api/agent/logo`). A field the desk doesn't have is a 422, so
-there's no role text to overwrite: it's the desk's code. Only the fields actually given are saved,
+name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. `ShopConfig`
+subclasses it and adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; turning it off turns `calls.enabled` off too, D92, D168), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. The console shows a text's tags (`{business_name}`, and the call's `{items}`, `{total}`, `{code}`) as coloured pills the owner adds with buttons and may delete (D169). Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons) and `logo` (only one saved by `POST /api/agent/logo`). An unknown field is a 422, so
+there's no role text to overwrite: it's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
 
-**Setup is one call and a list** (D26). `POST /api/agent` needs only `{"kind": "shop"}`:
+**Setup is one call and a list** (D26). `POST /api/agent` needs no fields:
 the business name comes from signup. `GET /api/agent` then says what's `missing`, in plain words
 ("Add your products.", "Add your delivery areas and charges."); it's empty when the agent is set up. There's no publish
 step (D15): the agent answers from the start, and what's not filled in is simply not in its prompt.
@@ -114,16 +110,16 @@ step (D15): the agent answers from the start, and what's not filled in is simply
 **The products are a table, and they're in the prompt.** `PUT /api/products` replaces them
 whole. The prompt lists them, one line each, up to `LONG_LIST` (D80).
 
-**One agent per business** (D22). `agents.workspace_id` is unique and `agents.kind` names its
-desk, so a business's agent is just "the agent": no ids in the URLs. Creating a second is a 409.
-A desk's routes answer 404 for an agent of another kind.
+**One agent per business** (D22). `agents.workspace_id` is unique,
+so a business's agent is just "the agent": no ids in the URLs. Creating a second is a 409.
+The frontend still reads `kind` on the agent and the admin's businesses, and `GET /api/desks` for the config's fields; `kind` is always `"shop"` (D172).
 
 **`AgentService`** (`services/agents.py`): `create`, `update` (validates; live from the next
-message), `get` (with `missing`), `by_key` (a `LiveAgent`: its desk, config and document titles),
-`store(ws, kind)` for the owner routes. There is no publish step and no versions (D15).
+message), `get` (with `missing`), `by_key` (a `LiveAgent`: its config and document titles),
+`store(ws)` for the owner routes. There is no publish step and no versions (D15).
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev` workspace and the
-agent `dev-<kind>` from `DEV_AGENT_KIND` + `DEV_AGENT_SEED`; the desk's `seed()` takes its own
+agent `dev-shop` from `DEV_AGENT_SEED`; it takes the products
 list (`products:`) out of the seed file. Edit the seed and restart, and the agent is updated.
 
 ## 6. One turn
@@ -142,11 +138,11 @@ the turn is saved when it ends.
 
 **What the model sees on every call**, in this order (each rule and why: [prompt-rules.md](prompt-rules.md)):
 
-1. System prompt: platform rules → the desk's own sections (its role, what it can do, its facts)
+1. System prompt: platform rules → the shop's own sections (its role, what it can do, its facts)
    → owner's notes → FAQ → documents → **right now** (channel style, date and time, open or
-   closed today, the next 14 days with the closed ones marked, D40) → the desk's **note**
+   closed today, the next 14 days with the closed ones marked, D40) → the shop's **note**
    (the shop's order so far), rebuilt before every model call and never stored
-2. Tool specs: the desk's tools and the shared ones
+2. Tool specs: the shop's tools and the shared ones
 3. The conversation: the **greeting** first (D8), then every message so far
 
 **Providers** (`LLM_PROVIDER`, D14). Every adapter keeps the transcript in the
@@ -185,14 +181,14 @@ still needed comes back from the writing tool itself (§7).
 
 ## 7. Tools
 
-The contract lives in `runtime/tool.py`; the tools live in their desk (`desks/shop/tools.py`)
-or in `desks/shared.py`. A tool reaches the database only through `ctx.store`, its desk's store.
+The contract lives in `runtime/tool.py`; the tools live in `shop/tools.py`
+or `shop/shared.py`. A tool reaches the database only through `ctx.store`.
 
 ```python
 @dataclass(frozen=True)
 class ToolContext[S]:
-    agent: AgentConfig             # the desk's own config
-    store: S                       # the desk's store: ShopStore
+    agent: AgentConfig             # a ShopConfig
+    store: S                       # a ShopStore
     state: dict                    # the conversation state so far (the cart)
     now: datetime                  # when the turn started, UTC
     heard: str                     # the last read-back the visitor heard, before this turn
@@ -221,10 +217,10 @@ merged into the conversation's `state`, saved with the turn.
    clear yes…"}` (`ask_for_yes`).
 3. **A call after a clear yes**: saved, with its number or code.
 
-| Tool | Desk | Writes? | What it does |
+| Tool | Where | Writes? | What it does |
 |---|---|---|---|
-| `take_message` | every desk | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
-| `search_knowledge` | every desk, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
+| `take_message` | shared | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
+| `search_knowledge` | shared, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
 | `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends a card for each product it found, photo or not, as `show_photos` does, and names them in `shown` (D102, D125) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45). `goes_with`: the prompt lines of up to 2 products the cart's products name in their `goes_with`, not in the cart, not sold out and not offered before in this chat (`state["offered"]`), so each is offered once (D125) |
 | `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`ArgumentChecker(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
@@ -233,11 +229,11 @@ merged into the conversation's `state`, saved with the turn.
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
 | `request_exchange` | shop | **yes** | Found like `change_order` (the mobile alone isn't enough: the code, or the order from this chat, or this buyer's last); only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
 | `show_photos` | shop | no | `products`: up to 10 codes. Sends a `photos` event with each one's card (name, price, first photo or none, first video or none), and says which were shown; a product with no photo is named in `no_photo` so the model describes it, and one with a video in `video`. Not on a call: there it says photos can't be shown here. Each channel shows the cards its way (D125), each with an Order button (D99) (D57) |
-| `handoff_to_human` | every desk | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone. Optional `unanswered`: their question, when it hands off for not knowing; saved as a missed question (D143) |
-| `flag_complaint` | every desk | no | `reason`. A hand-off (D43) that opens a ticket for the team, one per chat while open, and alerts "😠 Complaint C-101: reason" once; no yes is asked, as it's the team's to-do (D138) |
-| `take_lead` | every desk | **yes** | `when` (their words with the clock time, read by `parse.day_and_time`: the next 14 days, inside the hours), `phone`, optional `note` and `name`. Read back "We call you on Fri 2 Oct, 5:00 pm at …"; after the yes a lead `L-101` with `call_at` in UTC, and an alert "📞 Call back L-101". The team taps how it went (D139) |
-| `off_topic` | every desk | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
-| `remember` | every desk | no | `about` (a word or two) and `note`: something the visitor said on their own (a taste, a size, who they buy for, an allergy). Kept on their `visitors` row, replacing the note on the same `about`, newest 20; never asked for (D124) |
+| `handoff_to_human` | shared | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone. Optional `unanswered`: their question, when it hands off for not knowing; saved as a missed question (D143) |
+| `flag_complaint` | shared | no | `reason`. A hand-off (D43) that opens a ticket for the team, one per chat while open, and alerts "😠 Complaint C-101: reason" once; no yes is asked, as it's the team's to-do (D138) |
+| `take_lead` | shared | **yes** | `when` (their words with the clock time, read by `parse.day_and_time`: the next 14 days, inside the hours), `phone`, optional `note` and `name`. Read back "We call you on Fri 2 Oct, 5:00 pm at …"; after the yes a lead `L-101` with `call_at` in UTC, and an alert "📞 Call back L-101". The team taps how it went (D139) |
+| `off_topic` | shared | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
+| `remember` | shared | no | `about` (a word or two) and `note`: something the visitor said on their own (a taste, a size, who they buy for, an allergy). Kept on their `visitors` row, replacing the note on the same `about`, newest 20; never asked for (D124) |
 
 **The commit check** (`runtime/guards.py`, D107): a writing tool's first call returns its
 read-back (`ask_for_yes`), which goes into the conversation state as `read_back`. The talking
@@ -329,8 +325,7 @@ agent shows:  show_photos(products) ─► a `photos` event: each product's name
   every search filters by it. Saving products refuses a photo URL that isn't one of this
   business's product photos (a 422). A photo found that's on none of its products (one the owner
   removed) is skipped. A product a list gives no photo links keeps its photos by its code.
-- **Only the shop takes photos** (`Desk.takes_photos`). `GET /api/chat/{key}` says `photos: true`
-  for it, so the page shows the button; a photo sent to another desk is a 422.
+- `GET /api/chat/{key}` says `photos: true`, so the page shows the button.
 - **Limits.** 3 photos a product. A visitor's photo is at most 2 MB after the page shrinks it,
   an owner's 10 MB, and Pillow must read it (a 422 `unreadable_photo` otherwise). The services
   are `PhotoService` (`services/photos.py`), the `PhotoIndex` port and its Qdrant adapter, which
@@ -415,7 +410,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `audit_events` | actor_id, workspace_id, action, target, at: what an admin did in a business. Insert-only |
 | `team_events` | workspace_id, actor_id and actor_email (no foreign key: a removed moderator's changes stay), action, target, at: each write an owner or moderator made that succeeded, for the owner (D97). Insert-only |
 | `turns` | workspace_id, conversation_id, channel, llm, at, total_ms, first_output_ms, input/output tokens, cached_tokens (D154), cost_micros, tools, error, handed_off, interrupted: each agent turn's trace, for the admin's sums (D71). No one's words. Insert-only |
-| `agents` | kind (its desk), name, public_key (unique), config JSON |
+| `agents` | name, public_key (unique), config JSON |
 | `conversations` | agent_id, channel, contact (a messaging app's chat id, D42; the browser's token on the web chat and a call, D114), name (the visitor's name from Telegram or WhatsApp, D104), status (`active`/`needs_human`/`human`: the team is answering, D43), assigned_to (the team member who has it, or empty; a removed one's go back to empty, D126), done_at and snoozed_until (D128), taken_over_at (the team's last word while it took the chat over, D135), labels JSON (the team's own words for it, D136), history_from (where the agent's memory starts in messages, D157), nudged (the one nudge for an unfinished order went, D139), state JSON, messages JSON |
 | `tickets` | the shared columns, reason (the agent's words for what's wrong). Code `C-101`; open ↔ solved; one open ticket per chat; who has it is the chat's `assigned_to` (D138) |
 | `leads` | the shared columns, call_at (UTC), note (what they want), why (a lost one's reason, lower case). Code `L-101`; open → sold / not_now / lost, and back to open (D139) |
@@ -480,7 +475,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
 | GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
-| GET | `/api/desks` | The kinds of business and each one's config JSON Schema |
+| GET | `/api/desks` | The shop's label and config JSON Schema, for the frontend (D172) |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST | `/api/agent/logo` | The business's logo (multipart): saved as a 256 px JPEG (transparent is white) and set as `widget.logo` → `{url}` (D82) |
 | POST/GET/DELETE | `/api/agent/documents` | Add pasted text (JSON) or a file (`/documents/file`, multipart), list, read one, delete (D34) |
@@ -498,7 +493,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/api/shop/buyers?q=` | A shop's buyers by mobile, the latest to order first: orders, delivered, returned, cancelled, spent, name, channels, conversations (D132). Every shop order also has `buyer`, its mobile's counts |
 | POST | `/api/shop/orders` | An order the team types for a buyer who called: `{lines, name, phone, address, district, note}`, priced and checked as the chat's, saved `confirmed` with no yes, the owner alerted (D131) |
 | GET | `/api/shop/orders.csv` | The list as a spreadsheet's file, with the list's `status` and `q`: UTF-8 with a BOM, money in taka, the business's own time, a mobile as `01812-345678`, a cell that starts like a formula given a `'` (G6, D131) |
-| GET/PATCH | `/api/messages…` | Messages for the team, from any desk; one; move its status |
+| GET/PATCH | `/api/messages…` | Messages for the team; one; move its status |
 | GET/PATCH | `/api/tickets…` | Complaints the agent flagged (`?status=open`), each with who has its chat; `PATCH {status}` solves one or opens it again (D138) |
 | GET/PATCH | `/api/conversations…` | Conversations (`?status=` `active`, `needs_human` or `human`), and one with what was said: each line's `photo` (the visitor's) and `photos` (shown by the agent), D57; `PATCH {status: "active"}` marks a hand-off handled (D83). Each has `assigned_to` and `assigned_email`; `?assigned=me` or `none` filters by who has it; `PUT …/{id}/assignee {user_id \| null}` gives it to someone (D126); `GET …/counts` is `{needs_human, mine, unassigned}`, the chats waiting for a person (D129), with `orders_new` and `messages_new` (D167); each in a list has `preview`, the last thing said, cut to 120 characters (D167); one also has its `visitor` (`id`, `blocked` and why, by whom, until when, `ai_off`), for Block and AI off (D127); `?limit=` gives only the newest lines and `?before=<index>` the ones before a line, with `more`, `count` (every line), each line's `index` and `history_from` (D157). Done and snoozed chats are left out (`?done=true`: only the done ones); `?q=` searches every chat's name and what was said; `PUT …/{id}/done {done}` and `PUT …/{id}/snooze {until \| null}` (D128); `PUT …/{id}/takeover {on}` takes the chat over or gives it back (D135); `PUT …/{id}/labels {labels}`, `?label=` filters; `GET/POST …/{id}/notes {text}` the team's notes; `POST …/{id}/reply {text}` answers from the inbox and takes the chat over (D136); `POST …/{id}/assist {kind, question}` is the model's summary, answer or draft for the team, `{text}` (D137); `GET …/live` is a stream of `changed {conversation_id}` frames for the inbox, one per chat that changed in this business, and a `ping` every 20 seconds (D158) |
 | GET/PATCH | `/api/leads…` | Call backs the agent took (`?status=open`); `PATCH {status, why}` is the team's tap: `sold`, `not_now`, or `lost` with why; `GET /api/leads/why` counts the whys, most first: why we lose sales (D139) |
@@ -535,7 +530,7 @@ audit log) come a page at a time, newest first (D46): `?limit=` (1 to 100, defau
 conversations; `at` for the audit log). Fewer than `limit` rows means it was the
 last page.
 
-Everything under `/api` except chat, desks, auth and the Telegram, Messenger, WhatsApp and Woo webhooks needs
+Everything under `/api` except chat, `/api/desks`, auth and the Telegram, Messenger, WhatsApp and Woo webhooks needs
 `Authorization: Bearer <token>`.
 
 **Three roles** (D23, D97). An **owner** belongs to one business: the token says which
@@ -627,7 +622,7 @@ through the `Mailer` port (an HTML email, `services/email_code.html`, with the s
 production), or, without a key, printed in the terminal. A user made on the command line is
 verified already, and so is everyone from before D93 (the migration).
 An admin's page for one business (`GET /api/admin/businesses/{id}`, D69) has its
-desk, agent and chat key, owners, connected channels, payments (sandbox or live),
+agent and chat key, owners, connected channels, payments (sandbox or live),
 documents, a linked sheet's last sync and problem, and counts of conversations (all,
 the last 7 days, waiting for a person): counts and connections, never a customer's words,
 so opening it isn't audited.
@@ -738,11 +733,11 @@ Python's suggestion from the column names to start from (no model, D115). Three 
 ```
 their file ─► 1. read: rows as {their column: text}            csv_import.peek / parse
            ─► 2. match: {our field: their column}               Python suggests, the owner decides
-           ─► 3. a row becomes our item: Product, MenuItem…     the desk's own row(), as before
+           ─► 3. a row becomes our item: Product                the shop's row(), as before
 ```
 
-**A desk lists its fields once:** `PRODUCT_COLUMNS` in its
-`values.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
+**The fields are listed once:** `PRODUCT_COLUMNS` in
+`shop/values.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
 plain words, for the owner's screen; `aliases` are the other names sheets give it, in English,
 Bangla and Banglish (`"mrp"`, `"dam"`, `"দাম"`). The required ones are what `parse` needs.
 
@@ -776,7 +771,7 @@ same words ("Price (৳)" and `price`), 0.9 when they're inside it ("Selling Pri
 misspelling ("Catagory", "Colors") by `difflib` at 0.8 alike or more, scored below both. The best
 scores are taken first, each field and each column once; a field nothing fits is left for the
 owner. A new name owners use is one more alias. Turning "৳1,850" into 185000, "M; L" into a list
-or "yes" into `True` stays in the desk's `row()`.
+or "yes" into `True` stays in the shop's `row()`.
 
 **Later sources** (Shopify, a POS) are another step 1: something that returns rows as
 `{their field: text}`. Their field names are the same for every store, so their mapping is
@@ -788,14 +783,14 @@ one is a Google Sheet that stays linked (D58, below); the second, a WooCommerce 
 Most small shops and chambers keep their list on paper or in Excel, not in software with an
 API. A Google Sheet is the next step up for them, and it's an import that repeats: the same
 three steps as above, every few minutes, with the owner's match saved. The list it fills is
-the desk's own (`products`), so the agent, its tools and the prompt
+the shop's own (`products`), so the agent, its tools and the prompt
 don't change: they read our table as before.
 
 ```
 owner: pastes the sheet's link ─► suggest (as D53) ─► checks the match ─► PUT /api/agent/sheet
 every SHEET_SYNC_MINUTES (5):
   fetch the sheet as CSV ─► same text as last time? stop
-                         ─► parse with the saved mapping (the desk's row(), as an import)
+                         ─► parse with the saved mapping (the shop's row(), as an import)
                          ─► a row has a problem? keep the old list, note it, alert the owner once
                          ─► merge (the shop's stock, below) ─► replace the list
                             (a shop's: add to it, D120)
@@ -851,7 +846,7 @@ every SHEET_SYNC_MINUTES (5):
   less what's held. The owner's
   screen says it in one line: *"Write what's on your shelf. We take off the orders you haven't
   shipped yet."*
-- **A problem keeps the old list.** A row the desk's `row()` can't read (as an import: nothing
+- **A problem keeps the old list.** A row the shop's `row()` can't read (as an import: nothing
   saved until the whole sheet is clean), or a sheet that can't be fetched: the list stays as
   it was, `problem` says why (the first 3 rows' problems, or "couldn't open the sheet"), and the
   owner gets one Telegram alert when the problem first appears, not every 5 minutes (a new
@@ -860,8 +855,8 @@ every SHEET_SYNC_MINUTES (5):
   The next clean sync clears it.
 - **A linked sheet adds and updates only its own products** (D120, below), so `PUT
   /api/products` and its import still work while it's linked.
-- **One sheet per agent**, because an agent is one desk with one list. The desk names its
-  fields (`Desk.columns`, the same as the import's) and its store takes the sheet's text
+- **One sheet per agent**, because an agent has one list. `PRODUCT_COLUMNS` names its
+  fields, the same as the import's, and the store takes the sheet's text
   (`Store.take_sheet(text, mapping, seen) -> seen`): the
   shop merges, in one transaction with reading the orders that hold stock (`merge`,
   `take_off`, `HOLDS` in `values.py`).
@@ -880,7 +875,7 @@ every SHEET_SYNC_MINUTES (5):
 
 A shop with a website usually runs it on WooCommerce. Linked, its products are the shop's list,
 as with a sheet, and **our orders are written into WooCommerce**, so its stock takes them off
-and the owner sees every order in one place, the website's and the agent's. Shop desk only.
+and the owner sees every order in one place, the website's and the agent's.
 
 ```
 owner: pastes the store's address, a Read/Write key and its secret ─► PUT /api/agent/woo
@@ -1025,7 +1020,7 @@ Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<co
 `c=<chat>` when a chat sent it (D160). The owner's products list has *Open its page* and *Copy
 its link* on each product, for the team to paste the link in a reply.
 `public_key` is already public (it's in the chat link); the code is the product's. The page
-(`desks/shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
+(`shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
 sale), the sizes and colours in stock (`Product.in_stock`), the description, and "To order, go
 back to the chat and say *Order [code]*". No JSON and no `/api` link; a policy header lets
 nothing but its photos load and no script run. An unknown key, a key that isn't a shop's, or
@@ -1054,7 +1049,7 @@ an unknown code is the same 404 page.
   so `# Right now` tells the web chat too that a tapped button arrives as its words (`TAPS`).
 - **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
   stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
-  area's charge and days. It posts back to the page. `form_order` (`desks/shop/tools.py`)
+  area's charge and days. It posts back to the page. `form_order` (`shop/tools.py`)
   checks it as `place_order` does (`_priced`, `_short`, `match_zone`, `mobile`), and
   `new_order` builds the order and its read-back for both. The first post shows **Check your
   order**, the order read back, with the details and `heard` (that read-back) in hidden
@@ -1080,14 +1075,14 @@ Two things make them feel known:
 
 - **Their last order or message** (`Store.before`): in an earlier conversation *or this
   one*, so a second order in the same Messenger chat is offered the first one's name, phone and
-  address instead of asking again (D123). The desk's `returning()` section says to offer them
+  address instead of asking again (D123). The `returning()` section says to offer them
   once, when the details are needed.
 - **What they told the agent** (D124): the shared `remember` tool keeps a short note when the
   visitor mentions something worth keeping ("likes dark colours", "buying for her son, 8",
   "allergic to penicillin"). Notes live on the `visitors` row the limits already keep
   (`web:<token>`, `messenger:<psid>`…), as `{about: note}`: a note on the same `about` replaces
   the old one, and only the newest 20 stay. Every turn, `# What you remember about them` lists
-  them after the desk's sections; the rule says to use them naturally, not to read them out or
+  them after the shop's sections; the rule says to use them naturally, not to read them out or
   ask about them. They're the visitor's words, so they're never formatted (`fill`) and never
   logged. The owner can't see or clear them yet.
 
@@ -1294,8 +1289,8 @@ agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
                 the name, the price)
 ```
 
-- **Only the shop, only images.** A sticker arrives as an `image` with a `sticker_id`, so it's
-  skipped; audio, video, files and the other desks still get "I can only read text".
+- **Only images.** A sticker arrives as an `image` with a `sticker_id`, so it's
+  skipped; audio, video and files still get "I can only read text".
   Several images in one message: the first is used (one photo a message, as in D57). Facebook
   sends a photo and its words as two messages, so the photo's turn has no text, which the turn
   allows.
@@ -1339,7 +1334,7 @@ agent shows: Reply.photos ─► for each: PhotoService.read(url) ─► Telegra
 - **The caption is the words.** Telegram sends a photo and its caption in one message, so
   "eta ache?" comes with the photo, unlike Messenger.
 - A photo sent as a file (a document), a sticker or a voice note still gets "I can only read
-  text"; so does a photo to a desk that takes none. Bots can download up to 20 MB; ours stops
+  text". Bots can download up to 20 MB; ours stops
   at 10 MB. The port gains `download(token, file_id)` and `send_photo(token, chat_id, jpeg,
   caption)`; `ChannelService` takes `PhotoService` to read the files.
 
@@ -1362,7 +1357,7 @@ show_photos ─► each card gets an Order button whose tap says "Order [kurti]"
 
 - **Which buttons:** `update_cart` missing a size or colour offers the ones not sold out, with
   the colour or size already chosen (`Product.in_stock`); `ask_for_yes` offers Yes and Change,
-  for every desk. The last tool that ran in the turn decides; a hand-off or a stop sends none.
+  always. The last tool that ran in the turn decides; a hand-off or a stop sends none.
 - **A Yes button is a typed yes** (rule 2): the model judges it like any reply, and the next
   `place_order` still saves only the details last read back.
 - **The limits:** a choice is at most 20 characters (Messenger's quick reply) and 64 bytes
@@ -1403,7 +1398,7 @@ a tool's result ─► ToolResult.card {kind, data} ─► the loop yields a Car
   The model isn't told about cards: it says what it says without them.
 - **Buttons stay `choices`** (D99): Yes and Change under a summary: a tap is only words.
 - **A receipt's `pay_url`** is the `/pay/<id>` link a row saved unpaid gets (D47).
-- **Tracking:** a desk lists its steps (`STEPS` for the shop); a status off them (unpaid, cancelled, returned) is one
+- **Tracking:** `STEPS` lists the steps; a status off them (unpaid, cancelled, returned) is one
   step on its own. `note` is the status in words.
 - **Not kept:** a card is shown when the tool runs; it isn't saved on the message like
   `photos`, so a reloaded chat or the owner's view doesn't show it (§12).
@@ -1514,9 +1509,8 @@ bKash, into the business's **own** account, before anything is placed. The shop 
 (`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the table's
 `Payable.due`, and the payment moves the row to its `PAID_STATUS`:
 
-| Desk | Pays first (`PAY_FOR`) | Then |
-|---|---|---|
-| Shop | the delivery charge, in an area with `pay_first` | `confirmed`, with no call: the advance is the confirmation (D92); the rest in cash on delivery |
+The shop's order pays first the delivery charge (`PAY_FOR`), in an area with `pay_first`. It then
+becomes `confirmed`, with no call: the advance is the confirmation (D92); the rest is cash on delivery.
 
 Nothing to pay (free delivery) saves it as before. The owner turns it on and
 off, sets the amounts and connects the gateways on the frontend's Agent → Payments section.
@@ -1532,7 +1526,7 @@ prompt says nothing about paying, the tools place orders as before, and `missing
 "Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`, its `PAYABLE`
 tables), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
 provider (`Gateways`: `adapters/payments/sslcommerz.py` and `bkash.py`; `PAYMENTS=fake` for
-tests) do it. `desks/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
+tests) do it. `shop/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
 line (`pay_first_rule`).
 
 ```
@@ -1635,7 +1629,7 @@ A paid order is never queued for a call: the queue takes only `new` orders. With
 ### Orders the team types, and the end of an order (D131)
 
 - **A buyer who called:** *New order* on the inbox posts `/api/shop/orders`. `checked_order`
-  (`desks/shop/tools.py`, the product page's too) prices it and checks the stock, the area and
+  (`shop/tools.py`, the product page's too) prices it and checks the stock, the area and
   the mobile; `ShopStore.add_team_order` saves it `confirmed`, in no chat. It takes a plain
   `NewOrder`, not a `Confirmed`: the team member who typed it is the yes (rule 2's one
   exception, and the only writing method without one). The owner's alert says "typed by the
@@ -1654,7 +1648,7 @@ A paid order is never queued for a call: the queue takes only `new` orders. With
 `GET /api/stats` adds up rows we already keep, in `Store.stats(start, end)`; the route asks for
 today, yesterday and the last `days` days in the agent's `timezone`. **Chats** are the
 conversations with a turn in the stretch, and **handed off** those with a turn that handed off;
-the rest the agent handled alone. **Sales** are the rows of the desk's `SALES` tables (the shop's
+the rest the agent handled alone. **Sales** are the rows of the `SALES` tables (the shop's
 orders) made in it and not `cancelled` or `unpaid`; their **amount** adds each row's `total`. **Bought** counts the chats those sales belong to. A shop order's
 `source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
 are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
@@ -1754,7 +1748,7 @@ WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
 after 0.5s of silence, D39; `STT_PROVIDER=whisper` to our Whisper, D87) and Piper for
 text-to-speech.
 
-- **Off for now (D108, D164):** `Desk.takes_voice`, like `takes_photos`, is off for the shop, so
+- **Off for now (D108, D164):** `shop.TAKES_VOICE` is off, so
   `GET /api/chat/{key}` says `voice: false`, the page shows no Call button, and
   `POST /api/voice/offer` is a 403 `no_voice`. The code stays for the shop's confirmation
   calls (below): turning it on is the one switch.
@@ -1801,7 +1795,7 @@ text-to-speech.
 
 ### Confirmation calls (D88, D89)
 
-**On again (D168):** the calls are the shop's own, so they don't need `takes_voice`: a visitor
+**On again (D168):** the calls are the shop's own, so they don't need `TAKES_VOICE`: a visitor
 still can't call the shop (no Call button, D108), but a shop with `calls.enabled` rings its
 buyers. Production still serves no `/phone` page, so there it's the 409 of D105.
 
@@ -1858,8 +1852,8 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
 
 - Unit tests for `runtime/` and `domain/` with `FakeLLM` and the fixed clock
   (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
-- A test file per desk (`tests/integration/test_shop.py`, and `test_messages.py` for the shared
-  tools): its tools against its real store on in-memory SQLite, its prompt, its routes, and
+- `tests/integration/test_shop.py`, and `test_messages.py` for the shared
+  tools: the tools against its real store on in-memory SQLite, the prompt, the routes, and
   whole conversations scripted with `FakeLLM` (an order saved only after a yes). The `world` and `client` fixtures are in `tests/conftest.py`.
 - Live runs against Groq only with `-m live`, and only when asked: they cost quota.
 

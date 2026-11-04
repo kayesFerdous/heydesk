@@ -8,9 +8,10 @@ chat reads it, then *Place order*, the buyer's yes. The order's own page is `/o/
 
 import html
 
-from heydesk.desks.shop.districts import DISTRICTS
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.values import (
+from heydesk.runtime.speech import money
+from heydesk.shop.districts import DISTRICTS
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.values import (
     STATUS_WORDS,
     STEPS,
     BuyForm,
@@ -19,7 +20,6 @@ from heydesk.desks.shop.values import (
     Zone,
     lines_text,
 )
-from heydesk.runtime.speech import money
 
 FEW = 5  # "Only 3 left" at this many or fewer
 

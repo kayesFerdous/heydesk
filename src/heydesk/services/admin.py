@@ -36,7 +36,7 @@ class BusinessRow:
     name: str
     status: str
     suspended_reason: str
-    kind: str | None  # its desk; None: no agent yet
+    kind: str | None  # "shop"; None: no agent yet
     owner_email: str | None
     conversations: int
     last_activity_at: datetime | None
@@ -72,7 +72,7 @@ class BusinessDetail:
     name: str
     status: str
     suspended_reason: str  # empty while active
-    kind: str | None  # its desk; None: no agent yet
+    kind: str | None  # "shop"; None: no agent yet
     agent_name: str | None
     public_key: str | None  # the chat link's key
     created_at: datetime
@@ -190,7 +190,7 @@ class AdminService:
             .subquery()
         )
         query = (
-            select(Workspace, Agent.kind, owner.c.email, chats.c.n, chats.c.last)
+            select(Workspace, Agent.id, owner.c.email, chats.c.n, chats.c.last)
             .outerjoin(Agent, Agent.workspace_id == Workspace.id)
             .outerjoin(owner, owner.c.workspace_id == Workspace.id)
             .outerjoin(chats, chats.c.workspace_id == Workspace.id)
@@ -205,7 +205,7 @@ class AdminService:
                 ws.name,
                 ws.status,
                 ws.suspended_reason,
-                kind,
+                "shop" if agent_id else None,
                 email,
                 n or 0,
                 last,
@@ -213,7 +213,7 @@ class AdminService:
                 ws.plan,
                 ws.paid_until,
             )
-            for ws, kind, email, n, last in rows
+            for ws, agent_id, email, n, last in rows
         ]
 
     def since(self, days: int) -> datetime:
@@ -262,7 +262,7 @@ class AdminService:
                 name=ws.name,
                 status=ws.status,
                 suspended_reason=ws.suspended_reason,
-                kind=agent.kind if agent else None,
+                kind="shop" if agent else None,
                 agent_name=agent.name if agent else None,
                 public_key=agent.public_key if agent else None,
                 created_at=ws.created_at,

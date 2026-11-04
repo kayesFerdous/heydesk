@@ -2,7 +2,7 @@
 
 A step is one model call. If it asks for tools, they run and their results go
 back to the model in the next step; a step with no tool calls is the reply.
-Before every step the desk's note on the conversation state (the shop's
+Before every step the shop's note on the conversation state (the shop's
 current cart) is added to the system prompt, so the model sees it up to date.
 """
 
@@ -43,17 +43,17 @@ class Runtime:
 
 @dataclass
 class TurnInput:
-    system: str  # built for this turn; the desk's note is added before every model call
-    tools: list[Tool]  # the desk's tools
+    system: str  # built for this turn; the shop's note is added before every model call
+    tools: list[Tool]  # the shop's tools
     model: str
     history: list[Message]  # the transcript so far
     user_text: str  # what they typed: their yes, if there was one
     channel: str
     agent: AgentConfig
-    store: Any  # the desk's data, for its tools
+    store: Any  # the business's data, for its tools
     now: datetime  # when the turn started, in UTC
     state: dict[str, Any] = field(default_factory=dict)  # the conversation state so far
-    note: Callable[[dict[str, Any]], str] = lambda state: ""  # the desk's note on the state
+    note: Callable[[dict[str, Any]], str] = lambda state: ""  # the shop's note on the state
     is_first: bool = False  # the conversation's first turn: the greeting goes in first
     interrupt: asyncio.Event = field(default_factory=asyncio.Event)  # a barge-in sets it
     photo_url: str = ""  # the photo the visitor sent with it, if any

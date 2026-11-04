@@ -79,7 +79,6 @@ class Settings(BaseSettings):
     RING_SECONDS: int = 30
     MAX_LIVE_CALLS: int = 1
 
-    DEV_AGENT_KIND: str = "shop"  # its desk
     DEV_AGENT_SEED: str = "examples/agents/shop.yaml"
 
     MAX_MESSAGE_CHARS: int = 2000

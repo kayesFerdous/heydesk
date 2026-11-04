@@ -1,4 +1,4 @@
-"""Opening hours, shared by every desk."""
+"""Opening hours."""
 
 from datetime import date, datetime, time
 

@@ -502,19 +502,18 @@ class ChannelService:
         """One turn on the visitor's messages: their words a line each, a quoted message before
         the words that reply to it, and the last photo, theirs or a quoted one."""
         agent = await self.agents.by_id(channel.agent_id)
-        takes_photos = agent.desk.takes_photos
         lines: list[str] = []
         photo: bytes | None = None
         for message in messages:
             text = message.get("text")
-            sent = await self._photo(channel, message) if takes_photos else None
+            sent = await self._photo(channel, message)
             if sent is not None:  # its words, if any, are the caption
                 photo, text = sent, message.get("caption") or ""
             if text is None:
                 text = await self._voice(channel, message)
             if text is None:  # a sticker, a file, a voice note not understood
                 continue
-            words, quoted = await self._quoted(channel, message, takes_photos)
+            words, quoted = await self._quoted(channel, message)
             lines.append(f'(replying to: "{words}") {text}' if words else text)
             if quoted is not None and sent is None:
                 photo = quoted
@@ -562,11 +561,8 @@ class ChannelService:
         while len(self.cards_sent) > 10_000:  # the oldest go
             del self.cards_sent[next(iter(self.cards_sent))]
 
-    async def _quoted(
-        self, channel: Channel, message: dict[str, Any], takes_photos: bool
-    ) -> tuple[str, bytes | None]:
-        """The earlier message this one replies to: its words, and its photo if the desk
-        takes photos. Telegram sends the whole message; Messenger its id, so it's fetched;
+    async def _quoted(self, channel: Channel, message: dict[str, Any]) -> tuple[str, bytes | None]:
+        """The earlier message this one replies to: its words and its photo. Telegram sends the whole message; Messenger its id, so it's fetched;
         WhatsApp its id, so only a message this server kept is known: the buyer's own, or a
         product card the agent sent."""
         try:
@@ -585,7 +581,7 @@ class ChannelService:
             if not quoted:
                 return "", None
             words = (quoted.get("text") or quoted.get("caption") or "")[:300]
-            photo = await self._photo(channel, quoted) if takes_photos else None
+            photo = await self._photo(channel, quoted)
         except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable):
             return "", None  # the reply is read on its own
         return words, photo

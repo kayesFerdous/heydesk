@@ -76,9 +76,7 @@ def create_app(
         )
         if dev:
             try:
-                agent = await app.state.services.agents.ensure_dev_agent(
-                    settings.DEV_AGENT_KIND, settings.DEV_AGENT_SEED
-                )
+                agent = await app.state.services.agents.ensure_dev_agent(settings.DEV_AGENT_SEED)
             except OperationalError as error:
                 raise RuntimeError(
                     "Couldn't set up the dev agent. Is the database migrated? "

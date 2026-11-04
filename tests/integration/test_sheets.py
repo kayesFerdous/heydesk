@@ -1,4 +1,4 @@
-"""A desk's list kept in a linked Google Sheet: the link becomes its CSV, the list is the
+"""The products kept in a linked Google Sheet: the link becomes its CSV, the list is the
 sheet's, the shop's count is taken only when its cell changed (less the orders not shipped
 yet), a sheet with a problem keeps the old list, and while linked the list isn't edited here."""
 
@@ -47,7 +47,7 @@ def test_a_sheets_link_becomes_the_csv_of_its_tab() -> None:
 
 
 async def test_the_shelf_count_is_taken_only_when_the_owner_changes_it(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     sheet = Sheet(products(silk="5"))
     world.services.sheets.fetch = sheet
     await world.services.sheets.link(DEV_WORKSPACE_ID, LINK, MAPPING)
@@ -76,7 +76,7 @@ async def test_the_shelf_count_is_taken_only_when_the_owner_changes_it(world: Wo
 
 
 async def test_a_sheet_with_a_problem_keeps_the_old_list(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     sheet = Sheet(products(silk="5"))
     world.services.sheets.fetch = sheet
     await world.services.sheets.link(DEV_WORKSPACE_ID, LINK, MAPPING)
@@ -133,7 +133,7 @@ async def test_a_linked_shop_still_takes_edits_and_imports_here(
 ) -> None:
     """The sheet's products join the list; an edit or a file here adds to it, and a row deleted
     in the sheet leaves it, but nothing else does."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     seeded = [p["code"] for p in (await client.get("/api/products")).json()]
     sheet = Sheet(products(silk="5"))
     app.state.services.sheets.fetch = sheet

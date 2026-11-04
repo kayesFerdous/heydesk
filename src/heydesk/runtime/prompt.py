@@ -1,8 +1,8 @@
 """The system prompt, built for every turn (design §6).
 
-Platform rules come first and override the rest. Then the desk's own section (who the agent
-is, how it works, what it knows: each kind of business writes its own), the owner's notes,
-the FAQ, the documents, and last the channel and the date. A desk may add a short note from
+Platform rules come first and override the rest. Then the shop's own section (who the agent
+is, how it works, what it knows), the owner's notes,
+the FAQ, the documents, and last the channel and the date. The shop adds a short note from
 the conversation state (the shop's current cart), rebuilt before every model call.
 """
 
@@ -71,17 +71,17 @@ BANGLA_VOICE = (
 
 def build_system_prompt(
     agent: AgentConfig,
-    desk: str,
+    business: str,
     channel: str,
     now: datetime,
     documents: list[str],
     voice_language: str = "en",
     remembered: dict[str, str] | None = None,
 ) -> str:
-    """`desk` is the desk's own section, already written for this business. `voice_language`
+    """`business` is the shop's own section, already written for this business. `voice_language`
     is what calls speak, the server's `VOICE_LANGUAGE`. `remembered`: the notes the
     agent kept on this visitor."""
-    sections = [PLATFORM_RULES, agent.fill(desk).strip()]
+    sections = [PLATFORM_RULES, agent.fill(business).strip()]
     if remembered:
         sections.append(remembered_section(remembered))
     if agent.notes.strip():

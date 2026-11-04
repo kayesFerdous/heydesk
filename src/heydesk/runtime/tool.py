@@ -1,4 +1,4 @@
-"""The tool contract (design §7). The tools themselves live in each desk's `tools.py`.
+"""The tool contract (design §7). The tools themselves live in `shop/tools.py` and `shop/shared.py`.
 
 `run_tool` never raises: bad arguments, a timeout or a bug all come back as
 `ok=False` with a hint, so the model can recover or offer the hand-off.
@@ -22,10 +22,10 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ToolContext[S]:
-    """What a tool gets. `store` is its desk's data (a `ShopStore`):
+    """What a tool gets. `store` is the business's data (a `ShopStore`):
     the only way a tool reaches the database, always scoped to one business."""
 
-    agent: AgentConfig  # the desk's own config class
+    agent: AgentConfig  # a `ShopConfig`
     store: S
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     now: datetime  # when the turn started, in UTC

@@ -11,11 +11,11 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import Conflict, HeyDeskError, NotFound
 from heydesk.ports.llm import ToolCall
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
+from heydesk.shop.models import ShopOrder
 from tests.conftest import SEEDS, World
 from tests.integration.test_shop import DETAILS, KURTI, READ_BACK
 
@@ -24,7 +24,7 @@ MOBILE = "01712345678"  # the one in DETAILS
 
 async def shop_with_calls(services: Services, **settings: Any) -> LiveAgent:
     """The shop dev agent with calls on, at once unless `settings` say otherwise."""
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     calls = {"enabled": True, "wait_minutes": 0, **settings}
     await services.agents.update(DEV_WORKSPACE_ID, {"calls": calls})
     return await services.agents.by_key("dev-shop")
@@ -61,7 +61,7 @@ async def status_of(world: World, order_id: str) -> str:
 
 
 async def test_nothing_is_queued_while_calls_are_off(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await order(world.services, agent)
     assert await world.services.calls.find(DEV_WORKSPACE_ID) == []
     with pytest.raises(Conflict, match="Calls are off"):
@@ -187,7 +187,7 @@ async def test_a_declined_call_waits_and_an_order_settled_first_isnt_called(worl
 
 
 async def test_confirm_order_only_works_on_the_shops_call(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     placed = await order(world.services, agent)
     confirm = ToolCall("c", "confirm_order", {})
     await world.say(agent, placed.conversation_id, [confirm, "The shop will call."], "confirm it")

@@ -47,7 +47,7 @@ class Conversation(Base):
     nudged: Mapped[bool] = mapped_column(default=False)
     state: Mapped[dict[str, Any]] = mapped_column(
         JSON, default=dict
-    )  # what a desk keeps between turns: the cart
+    )  # what's kept between turns: the cart
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     # Where the agent's memory starts in `messages`. A messaging app's contact keeps
     # one chat: after CONVERSATION_IDLE_HOURS it moves here, and the team still sees it all

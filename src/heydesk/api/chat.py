@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from heydesk import shop
 from heydesk.api.deps import ClientIp, Svc
 from heydesk.api.sse import to_sse
 from heydesk.errors import UnreadablePhoto
@@ -46,8 +47,8 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
     return AgentOut(
         name=config.name,
         greeting=found.greeting,
-        photos=found.desk.takes_photos,
-        voice=found.desk.takes_voice,
+        photos=True,
+        voice=shop.TAKES_VOICE,
         widget=widget,
     )
 

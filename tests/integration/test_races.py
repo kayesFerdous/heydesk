@@ -15,10 +15,10 @@ from sqlalchemy import select, text, update
 
 from heydesk.adapters.llm.fake import FakeLLM
 from heydesk.db import Base, make_engine
-from heydesk.desks.shop.models import CouponRow, ProductRow, ShopOrder
-from heydesk.desks.shop.values import NewOrder
 from heydesk.models import Conversation, TeamMessage, Visitor
 from heydesk.services.agents import LiveAgent
+from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
+from heydesk.shop.values import NewOrder
 from heydesk.wiring import build_services
 from tests.conftest import SEEDS, Clock, World, make_knowledge, make_test_settings
 
@@ -55,7 +55,7 @@ async def pg() -> AsyncIterator[World]:
 
 async def shop(pg: World, stock: int | None) -> tuple[LiveAgent, NewOrder, str]:
     """The dev shop with one product left at `stock`, and an order for one of it."""
-    agent = await pg.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await pg.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     async with pg.sessions() as s, s.begin():
         row = await s.scalar(
             select(ProductRow).where(ProductRow.workspace_id == agent.workspace_id).limit(1)
@@ -96,7 +96,7 @@ async def test_the_last_one_goes_to_one_buyer(pg: World) -> None:
 
 
 async def test_records_saved_at_once_each_get_their_own_number(pg: World) -> None:
-    agent = await pg.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await pg.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     store = pg.store(agent)
 
     said = await at_once(
@@ -140,7 +140,7 @@ async def test_an_order_cancelled_twice_at_once_goes_back_in_stock_once(pg: Worl
 
 
 async def test_lines_added_to_a_chat_at_once_are_all_kept(pg: World) -> None:
-    agent = await pg.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await pg.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     conv = pg.services.conversations._new(agent, "web", "a-browser")
     async with pg.sessions() as s, s.begin():
         s.add(conv)
@@ -158,7 +158,7 @@ async def test_lines_added_to_a_chat_at_once_are_all_kept(pg: World) -> None:
 
 
 async def test_a_new_visitors_first_two_messages_at_once_both_count(pg: World) -> None:
-    agent = await pg.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await pg.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
 
     said = await at_once(
         pg.services.visitors.count_turn(agent, "messenger:new"),

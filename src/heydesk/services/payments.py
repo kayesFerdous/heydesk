@@ -20,7 +20,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import Conversation, PaymentAccount
 from heydesk.models.customer_request import UNPAID
@@ -35,6 +34,7 @@ from heydesk.ports.payments import (
 from heydesk.runtime.speech import money
 from heydesk.services.team import TeamService
 from heydesk.services.woo import WooService
+from heydesk.shop.models import ShopOrder
 
 log = logging.getLogger(__name__)
 

@@ -78,7 +78,7 @@ def receipt(
 
 
 def tracking(number: str, flow: list[tuple[str, str]], status: str, note: str = "") -> Card:
-    """`flow` is the desk's steps in order, `(status, label)`. A status off it (cancelled,
+    """`flow` is the steps in order, `(status, label)`. A status off it (cancelled,
     unpaid, returned) is shown plainly, as its one step."""
     statuses = [key for key, _ in flow]
     if status in statuses:

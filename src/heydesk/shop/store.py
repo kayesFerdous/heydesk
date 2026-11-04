@@ -1,4 +1,4 @@
-"""A shop's data: its products and orders, plus what every desk has (`Store`).
+"""A shop's data: its products and orders, plus the rest (`Store`).
 
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
 them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
@@ -11,9 +11,13 @@ from typing import Any, Literal
 from sqlalchemy import ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from heydesk.desks.base import PAGE, Store, TooLate
-from heydesk.desks.shop.models import CouponRow, ProductRow, ShopOrder
-from heydesk.desks.shop.values import (
+from heydesk.domain.values import Confirmed
+from heydesk.errors import Conflict, InvalidTransition, NotFound
+from heydesk.models import Conversation, Turn
+from heydesk.models.customer_request import next_number
+from heydesk.shop.base import PAGE, Store, TooLate
+from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
+from heydesk.shop.values import (
     CHANGEABLE,
     ENDED,
     HOLDS,
@@ -32,10 +36,6 @@ from heydesk.desks.shop.values import (
     stock_snapshot,
     take_off,
 )
-from heydesk.domain.values import Confirmed
-from heydesk.errors import Conflict, InvalidTransition, NotFound
-from heydesk.models import Conversation, Turn
-from heydesk.models.customer_request import next_number
 
 TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
 

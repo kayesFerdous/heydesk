@@ -7,6 +7,7 @@ from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.conversations import RunningTurn
 from heydesk.services.team import HUMAN
+from heydesk.shop.store import ShopStore
 from tests.conftest import DEV_KEY, World
 
 
@@ -107,7 +108,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
 async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
     agent = await world.services.agents.by_key(DEV_KEY)
     mine = world.store(agent)
-    other = agent.desk.store(world.sessions, "someone-else", world.clock)
+    other = ShopStore(world.sessions, "someone-else", world.clock)
 
     assert len(await mine.products()) == 6
     assert await other.products() == []  # rule 6: workspace_id on every query

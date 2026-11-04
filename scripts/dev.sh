@@ -25,11 +25,11 @@
 #   --cf            a throwaway Cloudflare link, even with PUBLIC_URL
 #   --fake          offline: fake model and embedder (canned lines, nothing is saved)
 #   --groq          talk with Groq instead of .env's LLM_PROVIDER
-#   --desk NAME     the agent at / from another seed: shop, shop-bn
+#   --seed NAME     the agent at / from another seed: shop, shop-bn
 #   -o, --open      open the browser when it's up
 #   --no-reload     don't restart the backend when the code changes
 #
-#   e.g.  scripts/dev.sh a --fake --desk shop      scripts/dev.sh p -o
+#   e.g.  scripts/dev.sh a --fake --seed shop      scripts/dev.sh p -o
 #
 # Whatever already runs on :8000 or :8080 is stopped first. Ctrl+C stops everything it started.
 # Each run's output is also kept in .logs/ (api.log, web.log, tunnel.log).
@@ -196,9 +196,9 @@ start() { # api | web | all, then options
       --ngrok) tunnel=ngrok ;;
       --fake) export LLM_PROVIDER=fake EMBEDDER=fake ;;
       --groq) export LLM_PROVIDER=groq ;;
-      --desk)
-        [[ -f examples/agents/${2:-}.yaml ]] || die "--desk takes one of: $(desks)"
-        export DEV_AGENT_KIND=shop DEV_AGENT_SEED=examples/agents/$2.yaml
+      --seed)
+        [[ -f examples/agents/${2:-}.yaml ]] || die "--seed takes one of: $(seeds)"
+        export DEV_AGENT_SEED=examples/agents/$2.yaml
         shift
         ;;
       -o | --open) open=1 ;;
@@ -270,8 +270,8 @@ start() { # api | web | all, then options
   local line="${D}────────────────────────────────────────────────────────────${N}"
   echo
   echo "$line"
-  printf ' %sHeyDesk is up%s   %smodel: %s · desk: %s%s\n' "$B$G" "$N" "$D" \
-    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND shop)" "$N"
+  printf ' %sHeyDesk is up%s   %smodel: %s · seed: %s%s\n' "$B$G" "$N" "$D" \
+    "$(setting LLM_PROVIDER gigalogy)" "$(basename "$(setting DEV_AGENT_SEED shop)" .yaml)" "$N"
   [[ -n $api ]] && printf '   Backend    %shttp://localhost:%s%s   %s/ chat · /docs API%s\n' "$C" $API_PORT "$N" "$D" "$N"
   [[ -n $web ]] && printf '   Frontend   %shttp://localhost:%s%s\n' "$M" $WEB_PORT "$N"
   if [[ -n $LINK ]]; then
@@ -398,7 +398,7 @@ admin_menu() {
   admin_menu
 }
 
-desks() { ls examples/agents | sed 's/\.yaml$//' | tr '\n' ' '; }
+seeds() { ls examples/agents | sed 's/\.yaml$//' | tr '\n' ' '; }
 
 doctor() {
   local fails=0
@@ -457,15 +457,15 @@ menu() {
   [[ -f $LOGS/last ]] && last=$(cat "$LOGS/last")
   if [[ -n $(setting PUBLIC_URL) ]]; then tunnel_name="ngrok"; else tunnel_name="Cloudflare"; fi
   echo
-  printf ' %sHeyDesk%s   %smodel: %s · desk: %s%s\n' "$B" "$N" "$D" \
-    "$(setting LLM_PROVIDER gigalogy)" "$(setting DEV_AGENT_KIND shop)" "$N"
+  printf ' %sHeyDesk%s   %smodel: %s · seed: %s%s\n' "$B" "$N" "$D" \
+    "$(setting LLM_PROVIDER gigalogy)" "$(basename "$(setting DEV_AGENT_SEED shop)" .yaml)" "$N"
   show_status
   echo
   echo "  ${B}1${N}  Backend"
   echo "  ${B}2${N}  Backend + frontend"
   echo "  ${B}3${N}  Backend + frontend + public link ${D}($tunnel_name)${N}"
   echo "  ${B}4${N}  Frontend only"
-  echo "  ${B}5${N}  Choose: offline / Groq, another desk, which link…"
+  echo "  ${B}5${N}  Choose: offline / Groq, another seed, which link…"
   [[ -n $last ]] && echo "  ${B}↵${N}  Again: ${D}$last${N}"
   echo
   echo "  ${B}s${N} stop all     ${B}i${N} status     ${B}l${N} logs       ${B}d${N} doctor"
@@ -511,8 +511,8 @@ custom() {
   if [[ $what != web ]]; then
     read -rsn1 -p "  Model: ↵ from .env ($(setting LLM_PROVIDER gigalogy)) · g Groq · f fake, offline  › " k && echo "$k"
     case $k in g) opts="$opts --groq" ;; f) opts="$opts --fake" ;; esac
-    read -rp "  Desk: ↵ from .env ($(setting DEV_AGENT_KIND shop)) or one of: $(desks) › " k
-    [[ -n $k ]] && opts="$opts --desk $k"
+    read -rp "  Seed: ↵ from .env ($(basename "$(setting DEV_AGENT_SEED shop)" .yaml)) or one of: $(seeds) › " k
+    [[ -n $k ]] && opts="$opts --seed $k"
   fi
   read -rsn1 -p "  Public link: ↵ none · n ngrok · c Cloudflare  › " k && echo "$k"
   case $k in n) opts="$opts --ngrok" ;; c) opts="$opts --cf" ;; esac
