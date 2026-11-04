@@ -23,7 +23,8 @@ async def test_a_business_starts_with_no_fields_and_is_told_what_is_missing(
 ) -> None:
     shop = await new_business(app)
     try:
-        created = await shop.post("/api/agent", json={"kind": "shop"})  # the frontend still sends it
+        # The frontend still sends a kind
+        created = await shop.post("/api/agent", json={"kind": "shop"})
         agent = created.json()
 
         assert created.status_code == 201
