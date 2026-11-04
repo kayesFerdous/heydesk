@@ -1,4 +1,4 @@
-"""The agent: a business has one, of one kind (its desk). Create it, edit it (design §5).
+"""The agent: a business has one. Create it, edit it (design §5).
 Edits are live from the next message."""
 
 import asyncio
@@ -11,18 +11,18 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.desks import DESKS
-from heydesk.desks.base import Desk, Store
 from heydesk.errors import Conflict, InvalidConfig, NotFound, Unavailable
 from heydesk.models import Agent, Workspace
-from heydesk.runtime.config import AgentConfig
 from heydesk.services.billing import dev_workspace
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
+from heydesk.shop import shop_missing
+from heydesk.shop.store import ShopStore
+from heydesk.shop.values import Product, ShopConfig
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +36,7 @@ class LiveAgent:
     workspace_id: str
     agent_id: str
     public_key: str
-    desk: Desk
-    config: AgentConfig  # the desk's own config class
+    config: ShopConfig
     documents: list[str]  # the titles of its documents; any means `search_knowledge`
 
     @property
@@ -51,21 +50,14 @@ class AgentInfo:
 
     id: str
     public_key: str
-    kind: str
-    config: AgentConfig
+    config: ShopConfig
     missing: list[str]  # what the owner still has to fill in, in plain words
 
 
-def desk_of(kind: str) -> Desk:
-    if kind not in DESKS:
-        raise InvalidConfig({"kind": f"there's no {kind!r} desk; use one of {', '.join(DESKS)}"})
-    return DESKS[kind]
-
-
-def validate(desk: Desk, data: dict[str, Any]) -> AgentConfig:
+def validate(data: dict[str, Any]) -> ShopConfig:
     """Runs on every save. Problems come back per field."""
     try:
-        return desk.config_model.model_validate(data)
+        return ShopConfig.model_validate(data)
     except ValidationError as error:
         raise InvalidConfig(
             {".".join(str(p) for p in e["loc"]): e["msg"] for e in error.errors()}
@@ -86,19 +78,17 @@ class AgentService:
         self.now = now
 
     async def create(
-        self, ws: str, kind: str, fields: dict[str, Any], *, public_key: str | None = None
+        self, ws: str, fields: dict[str, Any], *, public_key: str | None = None
     ) -> str:
         """The business's agent. A business has only one."""
-        desk = desk_of(kind)
         async with self.sessions() as s:
             business = await s.get(Workspace, ws)
         name = business.name if business else ws
-        # A business starts from just its kind: the name comes from signup
-        config = validate(desk, {"business_name": name, "name": f"{name} assistant", **fields})
+        # A business can start with no fields: the name comes from signup
+        config = validate({"business_name": name, "name": f"{name} assistant", **fields})
         now = self.now()
         agent = Agent(
             workspace_id=ws,
-            kind=kind,
             name=config.name,
             public_key=public_key or secrets.token_urlsafe(12),
             config=config.model_dump(mode="json", exclude_unset=True),
@@ -111,11 +101,11 @@ class AgentService:
             s.add(agent)
         return agent.id
 
-    async def update(self, ws: str, patch: dict[str, Any]) -> AgentConfig:
+    async def update(self, ws: str, patch: dict[str, Any]) -> ShopConfig:
         """Top-level fields in `patch` replace the config's. Live from the next message."""
         async with self.sessions() as s, s.begin():
             agent = await self._get(s, ws)
-            config = validate(DESKS[agent.kind], {**agent.config, **patch})
+            config = validate({**agent.config, **patch})
             agent.config = config.model_dump(
                 mode="json", exclude_unset=True
             )  # a new dict, so SQLAlchemy sees it
@@ -126,22 +116,18 @@ class AgentService:
     async def get(self, ws: str) -> AgentInfo:
         async with self.sessions() as s:
             agent = await self._get(s, ws)
-        desk = DESKS[agent.kind]
-        config = desk.config_model.model_validate(agent.config)
-        store = desk.store(self.sessions, ws, self.now)
-        missing = await desk.missing(config, store)
-        if getattr(config, "pay_first", False) and not await store.pays_first(config):
+        config = ShopConfig.model_validate(agent.config)
+        store = ShopStore(self.sessions, ws, self.now)
+        missing = await shop_missing(config, store)
+        if config.pay_first and not await store.pays_first(config):
             missing.append("Connect SSLCommerz or bKash to take payments first.")
-        return AgentInfo(agent.id, agent.public_key, agent.kind, config, missing)
+        return AgentInfo(agent.id, agent.public_key, config, missing)
 
-    async def store(self, ws: str, kind: str | None = None) -> Store:
-        """The business's data, for its owner's routes. With a `kind`, 404 unless its agent is
-        of that kind."""
+    async def store(self, ws: str) -> ShopStore:
+        """The business's data, for its owner's routes. 404 until it has an agent."""
         async with self.sessions() as s:
-            agent = await self._get(s, ws)
-        if kind and agent.kind != kind:
-            raise NotFound(f"This business's agent isn't a {kind}.")
-        return DESKS[agent.kind].store(self.sessions, ws, self.now, photos=self.photos)
+            await self._get(s, ws)
+        return ShopStore(self.sessions, ws, self.now, photos=self.photos)
 
     async def by_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
@@ -162,38 +148,35 @@ class AgentService:
             raise NotFound("There's no agent with that key.")
         if business.status != "active":
             raise Unavailable("This assistant isn't available right now.")
-        desk = DESKS[agent.kind]
         return LiveAgent(
             agent.workspace_id,
             agent.id,
             agent.public_key,
-            desk,
-            desk.config_model.model_validate(agent.config),
+            ShopConfig.model_validate(agent.config),
             await self.knowledge.titles(agent.id),
         )
 
-    async def ensure_dev_agent(self, kind: str, seed_path: str | Path) -> LiveAgent:
+    async def ensure_dev_agent(self, seed_path: str | Path) -> LiveAgent:
         """The `.env` agent (design §5): the dev workspace's one agent, from its seed file,
-        updated from the seed on every start (its products too). Its key is `dev-<kind>`."""
-        desk = desk_of(kind)
+        updated from the seed on every start (its products too). Its key is `dev-shop`."""
         text = await asyncio.to_thread(Path(seed_path).read_text, encoding="utf-8")
         seed: dict[str, Any] = yaml.safe_load(text)
-        key = f"dev-{kind}"
+        key = "dev-shop"
         async with self.sessions() as s, s.begin():
             if await s.get(Workspace, DEV_WORKSPACE_ID) is None:
                 s.add(dev_workspace(DEV_WORKSPACE_ID, self.now()))
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == DEV_WORKSPACE_ID))
-            if agent is not None:  # a changed DEV_AGENT_KIND keeps the one agent
+            if agent is not None:
                 agent.public_key = key
-                agent.kind = kind
-        store = desk.store(self.sessions, DEV_WORKSPACE_ID, self.now)
-        await desk.seed(store, seed)  # takes its own lists out of `seed`
+        store = ShopStore(self.sessions, DEV_WORKSPACE_ID, self.now)
+        products = seed.pop("products", [])  # the rest of the seed is the config
+        await store.replace_products(TypeAdapter(list[Product]).validate_python(products))
         if agent is None:
-            await self.create(DEV_WORKSPACE_ID, kind, seed, public_key=key)
+            await self.create(DEV_WORKSPACE_ID, seed, public_key=key)
         else:
             async with self.sessions() as s, s.begin():
                 saved = await self._get(s, DEV_WORKSPACE_ID)
-                saved.config = validate(desk, seed).model_dump(mode="json", exclude_unset=True)
+                saved.config = validate(seed).model_dump(mode="json", exclude_unset=True)
                 saved.name = str(saved.config["name"])
         log.info("dev agent ready", extra={"public_key": key})
         return await self.by_key(key)

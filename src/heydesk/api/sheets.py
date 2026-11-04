@@ -1,4 +1,4 @@
-"""A desk's list kept in a Google Sheet: the owner links it once, it's read every few
+"""The products kept in a Google Sheet: the owner links it once, it's read every few
 minutes, and while it's linked the list is changed in the sheet."""
 
 from datetime import datetime
@@ -8,8 +8,8 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from heydesk.api.deps import ImportOut, Svc, Workspace
-from heydesk.desks.csv_import import Suggestion
 from heydesk.models import SheetLink
+from heydesk.shop.csv_import import Suggestion
 
 router = APIRouter(tags=["sheet"])
 

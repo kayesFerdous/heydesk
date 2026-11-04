@@ -62,7 +62,7 @@ def place_order_script(app: FastAPI) -> None:
 
 
 async def shop(app: FastAPI) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
 
 
 async def test_a_summary_on_telegram_carries_yes_and_change(

@@ -12,7 +12,7 @@ def note(about: str, text: str) -> ToolCall:
 
 
 async def test_a_note_is_in_the_next_conversations_prompt(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     talk = world.services.conversations
     world.llm.script = [note("Colours", "likes dark colours"), "Dark ta valo hobe!"]
     await talk.reply(agent, "telegram", "chat-1", "ami dark colour pochondo kori")

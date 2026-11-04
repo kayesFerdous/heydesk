@@ -5,17 +5,17 @@ confirmed and is tried again."""
 
 import pytest
 
-from heydesk.desks.shop.tools import FindOrderInput, track_order
 from heydesk.errors import InvalidConfig
 from heydesk.models import Conversation
 from heydesk.ports.courier import CourierAccount, CourierError, Parcel, Tracked
 from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.shop.tools import FindOrderInput, track_order
 from tests.conftest import World, make_ctx
 from tests.integration.test_shop import KURTI, buy, orders
 
 
 async def test_a_confirmed_order_is_booked_followed_and_delivered(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     courier = world.services.courier
     await courier.sync(DEV_WORKSPACE_ID)
@@ -68,7 +68,7 @@ class Steadfast:
 
 
 async def test_a_linked_courier_is_checked_books_and_is_tried_again(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     courier, service = Steadfast(), world.services.courier
     service.apis["steadfast"] = courier
     with pytest.raises(InvalidConfig, match="refused the keys"):
@@ -101,7 +101,7 @@ async def told(world: World, conversation_id: str, words: str) -> int:
 async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world: World) -> None:
     """The fake courier's "Out for delivery" brings one reminder with the cash to keep ready;
     a day after delivery, one question with 👍 / 👎."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     [order] = await orders(world)
     await world.store(agent).move_order(order.id, "confirmed")
@@ -126,7 +126,7 @@ async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world:
 async def test_nothing_is_sent_outside_messengers_window(world: World) -> None:
     """On Messenger the business writes first only within 24 hours of the buyer's last
     message: past it the reminder isn't sent, and isn't tried again."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     [order] = await orders(world)
     assert order.conversation_id

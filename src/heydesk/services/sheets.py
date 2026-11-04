@@ -17,13 +17,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.desks import DESKS
-from heydesk.desks.csv_import import Suggestion, suggest
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
+from heydesk.shop.csv_import import Suggestion, suggest
+from heydesk.shop.values import PRODUCT_COLUMNS, products_from_csv
 
 log = logging.getLogger(__name__)
 
@@ -61,11 +61,9 @@ class SheetService:
         self.fetch = fetch
 
     async def suggest(self, ws: str, url: str) -> Suggestion:
-        """The sheet's columns and their match to the desk's fields, for the owner to check."""
-        columns = DESKS[(await self.agents.get(ws)).kind].columns
-        if not columns:
-            raise NotFound("This agent has no list to keep in a sheet.")
-        return suggest(await self._read(url), columns)
+        """The sheet's columns and their match to a product's fields, for the owner to check."""
+        await self.agents.get(ws)  # 404 until it has an agent
+        return suggest(await self._read(url), PRODUCT_COLUMNS)
 
     async def link(
         self, ws: str, url: str, mapping: dict[str, str], dry_run: bool = False
@@ -78,7 +76,7 @@ class SheetService:
             if await s.scalar(select(WooLink.id).where(WooLink.workspace_id == ws)):
                 raise Conflict("Unlink the WooCommerce store first: a list comes from one place.")
         text = await self._read(url)
-        found = DESKS[agent.kind].read_list(text, mapping)
+        found = products_from_csv(text, mapping)
         if dry_run:
             return found
         store = await self.agents.store(ws)

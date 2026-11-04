@@ -11,7 +11,7 @@ clear yes, checked by a separate model that fails closed.
 
 ## Status
 
-Built and tested: the shop desk, web chat, voice (off for now), Telegram,
+Built and tested: the shop, web chat, voice (off for now), Telegram,
 Messenger, WhatsApp, photo search in the shop, coupons and offers to recent chats, online payments, a Google Sheet as a product list, the
 owner's API and the admin panel. The shop passed a live run on a real model. What's next is in
 **[PLAN.md](PLAN.md)**. The owner's and admin's screens are a separate Vue app,
@@ -29,7 +29,7 @@ flowchart LR
     end
     W & V & T & M --> API[api/ · voice/<br/>routes]
     API --> S[services/<br/>limits · conversations · payments]
-    S --> D[desks/<br/>prompt · tools · store]
+    S --> D[shop/<br/>prompt · tools · store]
     D --> R[runtime/<br/>turn loop · commit check]
     R --> P[ports/<br/>Protocols]
     A[adapters/<br/>Maira · Groq · Gemini · Qdrant<br/>Telegram · Messenger · SSLCommerz · bKash] -. implement .-> P
@@ -38,12 +38,12 @@ flowchart LR
 ```
 
 - **One turn:** the visitor's message passes the limits, then the system prompt is built
-  from the business's current config. The model may call the desk's tools. A tool checks facts
+  from the business's current config. The model may call the shop's tools. A tool checks facts
   in Python, and a writing tool only saves after a read-back and a yes. Every turn is saved with
   its tokens, time and cost (never the customer's words) for the admin.
 - **Desks:** each kind of business is one folder in `src/heydesk/desks/` with its own prompt,
   tools, tables and routes. A new kind is a new folder.
-- **Layers:** imports point inwards (routes → services → desks → runtime → ports). `runtime/`
+- **Layers:** imports point inwards (routes → services → shop → runtime → ports). `runtime/`
   knows no framework, database or SDK; only `wiring.py` picks the adapters.
   `scripts/check_imports.sh` enforces this in CI.
 
@@ -104,7 +104,7 @@ Open <http://localhost:8000> to chat with the dev agent, or press **Call** to ta
 
 Or let `scripts/dev.sh` do it. On its own it shows a menu: the backend, the backend with the
 frontend (`../heydesk-frontend`), a public link, stop, status, logs and tests.
-`scripts/dev.sh help` lists the short forms, such as `scripts/dev.sh a --fake --desk shop`.
+`scripts/dev.sh help` lists the short forms, such as `scripts/dev.sh a --fake --seed shop`.
 
 In `.env`, pick the providers:
 
@@ -160,11 +160,10 @@ The tests are offline and free: fake models, an in-memory database and Qdrant's 
 
 ## Switching the seed
 
-The dev agent is the shop desk and a seed file. For the Banglish shop, set these in `.env` and
+The dev agent comes from a seed file. For the Banglish shop, set these in `.env` and
 restart:
 
 ```bash
-DEV_AGENT_KIND=shop
 DEV_AGENT_SEED=examples/agents/shop-bn.yaml
 ```
 
@@ -188,7 +187,7 @@ Each prints a token. In Swagger, press **Authorize** and paste it. Forgot a pass
 | | |
 |---|---|
 | `POST /api/auth/signup` | A new business and its owner; it never sees another business's data |
-| `GET /api/desks` | The kinds of business, and the fields each one's agent has |
+| `GET /api/desks` | The shop's label and the fields its agent has, for the frontend |
 | `POST /api/agent` | Create your agent: `{"kind": "shop"}` is enough. `GET /api/agent` then lists what is `missing` |
 | `PATCH /api/agent` | Edit it: `{"faq": "…"}`, or `{"notes": "Be formal."}` for tone and rules. Live on the next message |
 | `POST /api/agent/documents` | Add text, or a `.txt`, `.md` or `.pdf` (`/file`), to the agent's knowledge |

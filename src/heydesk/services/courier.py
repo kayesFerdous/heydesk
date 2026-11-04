@@ -15,15 +15,15 @@ from typing import cast
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import TO_BOOK, ShopStore
-from heydesk.desks.shop.values import lines_text
 from heydesk.errors import InvalidConfig, NotFound
 from heydesk.models import CourierLink
 from heydesk.ports.courier import CourierAccount, CourierApi, CourierError, Parcel
 from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.store import TO_BOOK, ShopStore
+from heydesk.shop.values import lines_text
 
 log = logging.getLogger(__name__)
 
@@ -84,8 +84,6 @@ class CourierService:
     async def link(self, ws: str, given: CourierAccount) -> CourierLink:
         """Checks the keys with the courier and links it, replacing one already there."""
         agent = await self.agents.get(ws)
-        if agent.kind != "shop":
-            raise NotFound("Only a shop can link a courier.")
         try:
             store_id = await self.apis[given.kind].check(given)
         except CourierError as error:
@@ -128,7 +126,7 @@ class CourierService:
         """Asks the buyers of yesterday's deliveries how it was; then books the confirmed
         and packed orders with no parcel, and asks about each shipped one, with the shop's
         courier, or the fallback when none is linked."""
-        shop = cast(ShopStore, await self.agents.store(ws, "shop"))
+        shop = await self.agents.store(ws)
         await self._ask_reviews(shop)
         try:
             link: CourierLink | None = await self.get(ws)

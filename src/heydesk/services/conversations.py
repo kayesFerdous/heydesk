@@ -12,9 +12,6 @@ from sqlalchemy import ColumnElement, ScalarSelect, String, cast, func, or_, sel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.desks import tools_for
-from heydesk.desks.base import Store
-from heydesk.desks.shop.models import ShopOrder
 from heydesk.errors import (
     AssistUnavailable,
     ConversationFull,
@@ -23,7 +20,6 @@ from heydesk.errors import (
     InvalidConfig,
     InvalidTransition,
     NotFound,
-    UnreadablePhoto,
 )
 from heydesk.models import Agent, Conversation, Note, TeamMessage, Turn, User
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
@@ -37,6 +33,10 @@ from heydesk.services.team import HUMAN, TEAM, TeamService, handoff_alert
 from heydesk.services.users import Principal
 from heydesk.services.visitors import VisitorService, is_blocked
 from heydesk.services.woo import WooService
+from heydesk.shop import shop_note, shop_prompt, tools_for
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.store import ShopStore
+from heydesk.shop.values import photo_line
 
 log = logging.getLogger(__name__)
 
@@ -137,10 +137,8 @@ class ConversationService:
         `visitor` is who is talking, for the limits: `web:<token>`, `telegram:<chat id>`.
         A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
         new conversation; the web chat and a call pass the browser's token. A web visitor
-        can send a `photo` with it, or instead of words, when the desk takes photos."""
+        can send a `photo` with it, or instead of words."""
         text = text.strip()
-        if photo is not None and not agent.desk.takes_photos:
-            raise UnreadablePhoto("This chat can't take photos.")
         if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
         runs_ai = await self.visitors.check_not_blocked(
@@ -169,8 +167,8 @@ class ConversationService:
                 s.add(conv)
 
         now = self.now()
-        desk, config = agent.desk, agent.config
-        store = desk.store(
+        config = agent.config
+        store = ShopStore(
             self.sessions,
             agent.workspace_id,
             self.now,
@@ -178,21 +176,21 @@ class ConversationService:
             knowledge=self.knowledge,
             public_url=self.settings.public_url,
         )
-        photo_line = ""
+        about_photo = ""
         if saved:  # kept for the owner's view; the model gets a line on its closest products
             matches = await self.photos.nearest(agent.workspace_id, saved.jpeg)
-            photo_line = await desk.photo_line(store, matches)
+            about_photo = photo_line(await store.products(), matches)
         turn = TurnInput(
             system=build_system_prompt(
                 config,
-                await desk.prompt(config, store),
+                await shop_prompt(config, store),
                 channel,
                 now,
                 agent.documents,
                 self.settings.VOICE_LANGUAGE,
                 await store.visitor_notes(),  # what they told the agent before
             ),
-            tools=tools_for(desk, config, has_documents=bool(agent.documents)),
+            tools=tools_for(has_documents=bool(agent.documents)),
             model=self.settings.MODEL,
             history=conv.messages[conv.history_from :],  # what the agent remembers
             user_text=text,
@@ -201,10 +199,10 @@ class ConversationService:
             store=store,
             now=now,
             state=conv.state,
-            note=lambda state: desk.note(config, state),
+            note=lambda state: shop_note(config, state),
             is_first=len(conv.messages) == conv.history_from,
             photo_url=saved.url if saved else "",
-            photo_line=photo_line,
+            photo_line=about_photo,
         )
         return RunningTurn(conv.id, self._run(turn, conv, agent, visitor), turn.interrupt)
 
@@ -319,7 +317,7 @@ class ConversationService:
 
     async def store_for(
         self, agent: LiveAgent, conversation_id: str
-    ) -> tuple[Store, Conversation | None]:
+    ) -> tuple[ShopStore, Conversation | None]:
         """The agent's data for an order from a product's page: linked to the chat the
         page was opened from when `conversation_id` is one of this agent's, else to none."""
         conv = None
@@ -327,7 +325,7 @@ class ConversationService:
             async with self.sessions() as s:
                 with suppress(NotFound):
                     conv = await self._get(s, agent, conversation_id)
-        store = agent.desk.store(
+        store = ShopStore(
             self.sessions,
             agent.workspace_id,
             self.now,
@@ -516,7 +514,6 @@ class ConversationService:
                 select(Conversation)
                 .join(Agent, Agent.id == Conversation.agent_id)
                 .where(
-                    Agent.kind == "shop",
                     Conversation.status == "active",
                     Conversation.nudged.is_(False),
                     Conversation.updated_at.between(now - NUDGE_BEFORE, now - NUDGE_AFTER),
@@ -633,13 +630,13 @@ class ConversationService:
         ws = agent.workspace_id
         async with self.sessions() as s:
             conv = await self._get_by_id(s, ws, conversation_id)
-        desk, config = agent.desk, agent.config
-        store = desk.store(self.sessions, ws, self.now, conversation_id=conv.id)
+        config = agent.config
+        store = ShopStore(self.sessions, ws, self.now, conversation_id=conv.id)
         asked = ASSIST[kind].replace("{question}", " ".join(question.split())[:500])
         turn = TurnInput(
             system=build_system_prompt(
                 config,
-                await desk.prompt(config, store),
+                await shop_prompt(config, store),
                 conv.channel,
                 self.now(),
                 agent.documents,
@@ -714,35 +711,6 @@ class ConversationService:
             saved.updated_at = self.now()
             if saved.taken_over_at is not None:
                 saved.taken_over_at = self.now()
-
-    async def handle_post_comment(
-        self, agent: LiveAgent, contact: str, said: str, answer: str, name: str | None
-    ) -> str:
-        """A comment on the Page's post and our private reply to it, added to the
-        buyer's Messenger chat as their line and the agent's, so their reply there carries on
-        from it. The chat they have, started afresh if it's full or quiet; else a new one."""
-        async with self.sessions() as s, s.begin():
-            conv = await s.scalar(
-                select(Conversation)
-                .where(
-                    Conversation.workspace_id == agent.workspace_id,
-                    Conversation.agent_id == agent.agent_id,
-                    Conversation.channel == "messenger",
-                    Conversation.contact == contact,
-                )
-                .order_by(Conversation.updated_at.desc())
-                .limit(1)
-                .with_for_update()  # as `_get_by_id(lock=True)`
-            )
-            if conv is None:
-                conv = self._new(agent, "messenger", contact, name)
-                s.add(conv)
-            elif self._stale(conv):
-                conv.history_from, conv.state, conv.nudged = len(conv.messages), {}, False
-            llm = self.runtime.llm
-            conv.messages = [*conv.messages, llm.user_message(said), llm.assistant_message(answer)]
-            conv.updated_at = self.now()
-        return conv.id
 
     async def _given_back(self, conv: Conversation) -> bool:
         """A chat the team took over and then left quiet is the agent's again, and so is

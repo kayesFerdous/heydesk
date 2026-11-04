@@ -26,14 +26,14 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import ShopStore
-from heydesk.desks.shop.values import products_from_woo, woo_ids
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.models import SheetLink, WooLink
 from heydesk.ports.woo import WooApi, WooStore, WooUnreachable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.store import ShopStore
+from heydesk.shop.values import products_from_woo, woo_ids
 
 log = logging.getLogger(__name__)
 
@@ -138,8 +138,6 @@ class WooService:
         """Checks the key can read the products and write orders (without writing one),
         saves the link, replacing one already there, and takes the list from the store."""
         agent = await self.agents.get(ws)
-        if agent.kind != "shop":
-            raise NotFound("Only a shop can link a WooCommerce store.")
         url = url.strip().rstrip("/")
         local = self.local_http and urlsplit(url).hostname in LOCAL
         if not url.startswith("https://") and not local:
@@ -158,7 +156,7 @@ class WooService:
             found, ids = products_from_woo(items)
         except ValueError as error:
             raise InvalidConfig({"products": str(error)}) from None
-        shop = await self._store(ws)
+        shop = await self.agents.store(ws)
         await shop.take_woo(found, set())
         hooks, hook_secret = await self._add_hooks(store, ws)
         async with self.sessions() as s, s.begin():
@@ -207,7 +205,7 @@ class WooService:
         """Pushes the orders that changed, then pulls the products. Never raises for the
         store's own problems: they're `problem`."""
         link = await self.get(ws)
-        shop = await self._store(ws)
+        shop = await self.agents.store(ws)
         store = WooStore(link.url, link.key, link.secret)
         async with self.lock:
             problem = await self._push(shop, store, link)
@@ -245,7 +243,7 @@ class WooService:
         try:
             async with self.lock:
                 await self._push(
-                    await self._store(ws), WooStore(link.url, link.key, link.secret), link
+                    await self.agents.store(ws), WooStore(link.url, link.key, link.secret), link
                 )
         except Exception:
             log.exception("woo push failed", extra={"workspace_id": ws})
@@ -375,11 +373,6 @@ class WooService:
                 return f"{order.code} wasn't written: {error}"
             await shop.woo_written(order.id, order.woo_id, order.status)  # nothing else to write
         return ""
-
-    async def _store(self, ws: str) -> ShopStore:
-        store = await self.agents.store(ws)
-        assert isinstance(store, ShopStore)
-        return store
 
 
 def hash_items(items: list[dict[str, Any]]) -> str:

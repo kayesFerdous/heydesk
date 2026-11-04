@@ -76,9 +76,7 @@ def create_app(
         )
         if dev:
             try:
-                agent = await app.state.services.agents.ensure_dev_agent(
-                    settings.DEV_AGENT_KIND, settings.DEV_AGENT_SEED
-                )
+                agent = await app.state.services.agents.ensure_dev_agent(settings.DEV_AGENT_SEED)
             except OperationalError as error:
                 raise RuntimeError(
                     "Couldn't set up the dev agent. Is the database migrated? "
@@ -93,7 +91,6 @@ def create_app(
             asyncio.create_task(
                 app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
             ),
-            # the comment nudge, as often as the snooze round
             asyncio.create_task(app.state.services.channels.run(settings.SNOOZE_CHECK_SECONDS)),
         ]
         yield

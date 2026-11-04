@@ -2,12 +2,10 @@
 
 from typing import Any
 
-import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
 
-from heydesk.desks.shop import ShopDesk
 from heydesk.models import Channel, Conversation
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
@@ -200,7 +198,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await kurti_with_photo(client)
     path, secret = await connect(app, client)
     fake = services.channels.telegram
@@ -231,7 +229,7 @@ async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     path, secret = await connect(app, client)
     fake = services.channels.telegram
     llm = services.conversations.runtime.llm
@@ -244,17 +242,6 @@ async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
     assert llm.requests[0].messages[-1]["content"] == "Order [panjabi-cotton]"
     assert sent(app) == [(str(CHAT), "Which size?")]  # the bot's photo wasn't taken as theirs
     assert fake.choices == [(str(CHAT), ["M", "XL", "XXL"])]  # L in Navy is sold out
-
-
-async def test_a_photo_to_a_desk_that_takes_none(
-    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(ShopDesk, "takes_photos", False)
-    path, secret = await connect(app, client)
-    await send(client, path, secret, with_photo())
-    assert sent(app) == [
-        (str(CHAT), "I can only read text messages for now. Please type your question.")
-    ]
 
 
 async def test_a_reply_to_an_earlier_message_quotes_it(app: FastAPI, client: AsyncClient) -> None:
@@ -286,7 +273,7 @@ async def test_more_cards_than_photos_are_one_message_to_tap(
 ) -> None:
     """A photo each for the first 3 with one, the rest one message with an Order each."""
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await kurti_with_photo(client)
     path, secret = await connect(app, client)
     fake = services.channels.telegram

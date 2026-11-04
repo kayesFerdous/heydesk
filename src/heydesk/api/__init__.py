@@ -21,7 +21,7 @@ from heydesk.api import (
     whatsapp,
     woo,
 )
-from heydesk.desks.shop import api as shop
+from heydesk.shop import api as shop
 
 
 def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:

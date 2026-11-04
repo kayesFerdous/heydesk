@@ -1,4 +1,4 @@
-"""A shop's data: its products and orders, plus what every desk has (`Store`).
+"""A shop's data: its products and orders, plus the rest (`Store`).
 
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
 them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
@@ -11,9 +11,13 @@ from typing import Any, Literal
 from sqlalchemy import ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from heydesk.desks.base import PAGE, Store, TooLate
-from heydesk.desks.shop.models import CouponRow, ProductRow, ShopOrder
-from heydesk.desks.shop.values import (
+from heydesk.domain.values import Confirmed
+from heydesk.errors import Conflict, InvalidTransition, NotFound
+from heydesk.models import Conversation, Turn
+from heydesk.models.customer_request import next_number
+from heydesk.shop.base import PAGE, Store, TooLate
+from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
+from heydesk.shop.values import (
     CHANGEABLE,
     ENDED,
     HOLDS,
@@ -32,10 +36,6 @@ from heydesk.desks.shop.values import (
     stock_snapshot,
     take_off,
 )
-from heydesk.domain.values import Confirmed
-from heydesk.errors import Conflict, InvalidTransition, NotFound
-from heydesk.models import Conversation, PagePost, Turn
-from heydesk.models.customer_request import next_number
 
 TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
 
@@ -355,38 +355,6 @@ class ShopStore(Store):
                 .distinct()
             )
             return list(found)
-
-    async def posts(self) -> list[PagePost]:
-        """The Page's posts that were commented on or tagged, newest first."""
-        async with self.sessions() as s:
-            rows = await s.scalars(
-                select(PagePost)
-                .where(PagePost.workspace_id == self.workspace_id)
-                .order_by(PagePost.created_at.desc())
-                .limit(PAGE)
-            )
-            return list(rows)
-
-    async def tag_post(self, post_id: str, codes: list[str]) -> PagePost:
-        """The owner says which products a post has: from now on its comments use these.
-        Raises NotFound for a code the list hasn't."""
-        listed = {p.code for p in await self.products()}
-        unknown = [code for code in codes if code not in listed]
-        if unknown:
-            raise NotFound(f"There's no product {', '.join(unknown)}.")
-        async with self.sessions() as s, s.begin():
-            post = await s.scalar(
-                select(PagePost).where(
-                    PagePost.workspace_id == self.workspace_id, PagePost.post_id == post_id
-                )
-            )
-            if post is None:
-                post = PagePost(
-                    workspace_id=self.workspace_id, post_id=post_id, created_at=self.now()
-                )
-                s.add(post)
-            post.products, post.tagged = list(dict.fromkeys(codes)), True
-        return post
 
     async def add_offer(self, coupon: Coupon, chats: list[str]) -> None:
         """An offer as a coupon only `chats` may use."""

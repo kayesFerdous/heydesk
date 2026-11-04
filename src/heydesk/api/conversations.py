@@ -1,4 +1,4 @@
-"""Conversations, and the messages for the team that every desk takes (design §9)."""
+"""Conversations, and the messages for the team (design §9)."""
 
 from dataclasses import asdict
 from datetime import datetime, time, timedelta

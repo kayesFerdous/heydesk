@@ -7,8 +7,8 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from heydesk import shop
 from heydesk.api import voice
-from heydesk.desks.shop import ShopDesk
 from tests.conftest import DEV_KEY
 
 OFFER = {"sdp": "v=0", "type": "offer"}  # the browser's offer; the handshake itself is faked
@@ -31,10 +31,10 @@ def calls(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return started
 
 
-async def test_a_call_starts_when_the_desk_takes_voice(
+async def test_a_call_starts_when_the_shop_takes_voice(
     client: AsyncClient, calls: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(ShopDesk, "takes_voice", True)
+    monkeypatch.setattr(shop, "TAKES_VOICE", True)
     assert (await client.get(f"/api/chat/{DEV_KEY}")).json()["voice"] is True
 
     res = await client.post("/api/voice/offer", params=CALL, json=OFFER)

@@ -10,7 +10,6 @@ In `.env`: the real providers (`LLM_PROVIDER=gigalogy`, `EMBEDDER=gemini`) and
 the shop as the dev agent:
 
 ```bash
-DEV_AGENT_KIND=shop
 DEV_AGENT_SEED=examples/agents/shop.yaml
 ```
 
@@ -75,7 +74,7 @@ In the admin's window:
 
 Show the README's diagram and say:
 
-- Each kind of business is one folder (`desks/shop/`): its prompt, tools, tables and routes.
+- The shop is one folder (`shop/`): its prompt, tools, tables and routes.
 - The engine (`runtime/`) knows no framework or database; the providers sit behind small
   interfaces, so Maira and Groq swap with one setting.
 - `scripts/check.sh` runs the tests (offline, about 15 seconds), lint, types and the layer

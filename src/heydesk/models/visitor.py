@@ -7,7 +7,7 @@ from heydesk.db import Base, new_id, utcnow
 
 
 class Visitor(Base):
-    """Someone talking to a business's desk, and how much they used it today.
+    """Someone talking to a business's agent, and how much they used it today.
 
     `key` says who it is on its channel: `web:<the browser's token>` for web chat and voice,
     `telegram:<chat id>` on Telegram. It's also who the agent remembers.

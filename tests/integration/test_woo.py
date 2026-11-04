@@ -12,13 +12,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from heydesk.desks.shop.values import products_from_woo
 from heydesk.errors import InvalidConfig
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Paid
 from heydesk.ports.woo import WooStore, WooUnreachable
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.woo import TOPICS, WOO_STATUS
+from heydesk.shop.values import products_from_woo
 from tests.conftest import SEEDS, World
 from tests.integration.test_payments import SHOP_DETAILS, found, paying_first, take
 from tests.integration.test_shop import buy, orders, stock
@@ -172,7 +172,7 @@ def test_woos_fields_become_ours() -> None:
 async def test_a_read_key_or_a_plain_address_is_refused_but_localhost_in_development(
     world: World,
 ) -> None:
-    await world.agent("shop")
+    await world.agent()
     woo = FakeWoo()
     world.services.woo.api = woo
     with pytest.raises(InvalidConfig, match="https"):
@@ -190,7 +190,7 @@ async def test_a_read_key_or_a_plain_address_is_refused_but_localhost_in_develop
 async def test_an_order_placed_here_is_written_into_woo_and_its_stock_follows(
     world: World,
 ) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     woo = FakeWoo()
     world.services.woo.api = woo
     await world.services.woo.link(DEV_WORKSPACE_ID, URL + "/", "ck_1", "cs_1")
@@ -233,7 +233,7 @@ async def test_an_order_placed_here_is_written_into_woo_and_its_stock_follows(
 
 
 async def test_an_order_is_in_woo_as_soon_as_it_is_saved(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     woo = FakeWoo()
     world.services.woo.api = woo
     await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
@@ -246,7 +246,7 @@ async def test_an_order_is_in_woo_as_soon_as_it_is_saved(world: World) -> None:
 
 
 async def test_an_order_paid_online_is_in_woo_as_soon_as_it_is_paid(world: World) -> None:
-    agent, gateway = await paying_first(world.services, "shop")
+    agent, gateway = await paying_first(world.services)
     woo = FakeWoo()
     world.services.woo.api = woo
     await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
@@ -270,7 +270,7 @@ async def pushed(world: World) -> None:
 
 
 async def test_a_pull_doesnt_undo_an_order_not_in_woo_yet(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     woo = FakeWoo()
     world.services.woo.api = woo
     await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
@@ -290,7 +290,7 @@ async def refuse(store: WooStore, body: dict[str, Any]) -> int:
 async def test_while_a_store_is_linked_the_list_is_changed_there(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     seeded = [p["code"] for p in (await client.get("/api/products")).json()]
     woo = FakeWoo()
     app.state.services.woo.api = woo
@@ -324,7 +324,7 @@ HOOKS = "https://heydesk.example.com/api/woo/hook"
 async def test_woos_webhooks_are_made_on_linking_and_a_signed_one_syncs(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     woo = FakeWoo()
     service = app.state.services.woo
     service.api, service.hook_base, service.hook_delay = woo, HOOKS, 0
@@ -351,7 +351,7 @@ async def test_woos_webhooks_are_made_on_linking_and_a_signed_one_syncs(
 
 
 async def test_the_safety_sync_puts_back_webhooks_woo_turned_off(world: World) -> None:
-    await world.agent("shop")
+    await world.agent()
     woo = FakeWoo()
     service = world.services.woo
     service.api, service.hook_base = woo, HOOKS
@@ -368,7 +368,7 @@ async def test_the_safety_sync_puts_back_webhooks_woo_turned_off(world: World) -
 
 
 async def test_a_store_linked_without_webhooks_gets_them_at_the_safety_sync(world: World) -> None:
-    await world.agent("shop")
+    await world.agent()
     woo = FakeWoo()
     service = world.services.woo
     service.api, service.hook_base = woo, ""  # no public address yet

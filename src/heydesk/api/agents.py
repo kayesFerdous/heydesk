@@ -1,4 +1,4 @@
-"""A business's agent: create it as one kind of desk, read it, edit it (design §9). One per business.
+"""A business's agent: create it, read it, edit it (design §9). One per business.
 
 Edits are live from the next message. Problems come back per field.
 """
@@ -9,26 +9,27 @@ from fastapi import APIRouter, File, UploadFile, status
 from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, Workspace
-from heydesk.desks import DESKS
 from heydesk.services.agents import AgentInfo
+from heydesk.shop.values import ShopConfig
 
 router = APIRouter(tags=["agents"])
 
 
 class DeskOut(BaseModel):
+    """`kind` here and on `AgentOut` is always "shop": the frontend still reads them."""
+
     kind: str
     label: str
     description: str
-    config_schema: dict[str, Any]  # the fields an agent of this kind has
+    config_schema: dict[str, Any]  # the fields an agent has
 
 
 class AgentIn(BaseModel):
-    kind: str  # shop: see GET /api/desks
     config: dict[str, Any] = {}  # its fields; what's left out has a default
 
 
 class AgentOut(BaseModel):
-    kind: str
+    kind: str = "shop"
     public_key: str  # the chat URL: /api/chat/{public_key}
     config: dict[str, Any]
     missing: list[str]  # what's still to fill in, in plain words; empty when set up
@@ -36,7 +37,6 @@ class AgentOut(BaseModel):
 
 def agent_out(agent: AgentInfo) -> AgentOut:
     return AgentOut(
-        kind=agent.kind,
         public_key=agent.public_key,
         config=agent.config.model_dump(mode="json"),
         missing=agent.missing,
@@ -45,21 +45,23 @@ def agent_out(agent: AgentInfo) -> AgentOut:
 
 @router.get("/api/desks")
 async def desks() -> list[DeskOut]:
-    """The kinds of business an agent can be."""
+    """What an agent is, for the frontend's setup page and settings form."""
     return [
         DeskOut(
-            kind=d.kind,
-            label=d.label,
-            description=d.description,
-            config_schema=d.config_model.model_json_schema(),
+            kind="shop",
+            label="Online shop",
+            description=(
+                "Answers questions about your products and prices, takes cash-on-delivery "
+                "orders, and tells buyers where their order is."
+            ),
+            config_schema=ShopConfig.model_json_schema(),
         )
-        for d in DESKS.values()
     ]
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
 async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
-    await services.agents.create(ws, body.kind, body.config)
+    await services.agents.create(ws, body.config)
     return agent_out(await services.agents.get(ws))
 
 

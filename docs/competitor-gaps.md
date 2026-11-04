@@ -44,7 +44,7 @@ Keep these in the pitch.
 
 ### Must have: buyers and shops expect these
 
-- [x] **G1 Comment-to-DM on Facebook posts and ads** · M · Meta
+- [ ] **G1 Comment-to-DM on Facebook posts and ads** · M · Meta
   - *Who has it:* Sellzy, LazyChat, Revora, ManyChat.
   - *Why:* f-commerce buyers comment "দাম কত?" under a post far more often than they inbox
     first. A comment left without a reply is a lost sale. Sellzy sells this first.
@@ -53,7 +53,7 @@ Keep these in the pitch.
     product, plus one short public reply ("Inbox e details dilam"). From then on it's our usual
     Messenger chat.
   - *Needs:* `pages_manage_engagement` and `pages_read_user_content` through App Review.
-  - 26 Oct, D141: built (day R15); App Review and a real post are next.
+  - 26 Oct, D141: built (day R15). 4 Nov, D171: removed; Meta sends no real comments until the app is published.
 - [x] **G2 Voice notes on Messenger and Telegram** · S–M *(built 26 Oct, D147, WhatsApp too)*
   - *Who has it:* LazyChat.
   - *Why:* many BD buyers send voice notes instead of typing. Today they get "I can only read
@@ -313,18 +313,18 @@ courier booking with status news to the buyer (D112, D113); remembering a return
 
 ### Then: comments (all need G1 first)
 
-- [x] **G1** first: one product's post → reply in the comment and in the inbox.
-- [x] **G41 Many products in one post** · S after G1
+- [ ] **G1** first: one product's post → reply in the comment and in the inbox.
+- [ ] **G41 Many products in one post** · S after G1
   - The comment gets the price range; the inbox gets the post's products as G25's cards.
   - Needs a post → products map: the owner tags it, or we match the post's photos (D57).
-  - 26 Oct, D142: built (day R16): found once from the post's words or photo and kept.
-- [x] **G42 One more nudge under the comment** · S after G1
+  - 26 Oct, D142: built (day R16). 4 Nov, D171: removed with G1.
+- [ ] **G42 One more nudge under the comment** · S after G1
   - If they don't answer the inbox in ~2 h, one more comment reply. Once.
-  - 26 Oct, D142: built (day R16).
-- [x] **G43 One buyer across comments and inbox** · S after G1
+  - 26 Oct, D142: built (day R16). 4 Nov, D171: removed with G1.
+- [ ] **G43 One buyer across comments and inbox** · S after G1
   - A comment's sender id is the same Page-scoped id as their Messenger chat, so the comment
     goes into that conversation's history. Mostly free once G1 stores it there.
-  - 26 Oct, D141: built with G1: the private reply's PSID is the chat's contact.
+  - 26 Oct, D141: built with G1. 4 Nov, D171: removed with G1.
 
 ### Then: teaching the agent
 

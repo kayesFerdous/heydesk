@@ -173,7 +173,7 @@ class StatusIn(BaseModel):
 
 
 class ImportIn(BaseModel):
-    """A CSV file for a desk's list (the products)."""
+    """A CSV file of products."""
 
     csv: str = Field(
         max_length=2_000_000, description="The file's text: a header row, then one per row"

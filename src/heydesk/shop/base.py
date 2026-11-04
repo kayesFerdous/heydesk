@@ -1,9 +1,6 @@
-"""What a desk is: one kind of business (the shop), written as plain Python.
-
-A desk owns everything that makes that business different: its config fields, its prompt
-(who the agent is and how it thinks), its tools, its tables and its owner routes. What every
-desk shares lives here (`Store`: messages for the team, the documents search) and in
-`desks/shared.py` (the shared tools).
+"""The data under the shop that isn't about products and orders (`Store`: messages for the
+team, the documents search, conversations). `shop/store.py` adds those; the tools that use
+only this part are in `shop/shared.py`.
 """
 
 from collections import Counter
@@ -16,7 +13,6 @@ from pydantic import BaseModel
 from sqlalchemy import ScalarResult, String, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.desks.csv_import import Column
 from heydesk.domain.values import Confirmed, parse_code
 from heydesk.errors import HeyDeskError, InvalidTransition, NotFound
 from heydesk.models import (
@@ -33,9 +29,8 @@ from heydesk.models import (
 from heydesk.models.customer_request import UNPAID, CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.tool import Tool
 
-if TYPE_CHECKING:  # only a type here: services import the desks
+if TYPE_CHECKING:  # only a type here: services import the shop
     from heydesk.services.knowledge import KnowledgeService
     from heydesk.services.photos import PhotoService
 
@@ -46,7 +41,7 @@ NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
 
 
 class TooLate(ValueError):
-    """An order moved on (the courier or the kitchen has it) since the visitor asked to
+    """An order moved on (the courier has it) since the visitor asked to
     change it."""
 
 
@@ -84,8 +79,8 @@ class NewLead:
 
 
 class Store:
-    """One business's data, for its desk's tools and its owner's routes (rule 6: every query
-    is scoped to `workspace_id`). A desk's store subclasses this and adds its own tables.
+    """One business's data, for its tools and its owner's routes (rule 6: every query is
+    scoped to `workspace_id`). `ShopStore` subclasses this and adds the shop's tables.
 
     Tools get one made for their conversation, so what they save is linked to it."""
 
@@ -131,7 +126,7 @@ class Store:
             return []
         return await self.knowledge.search(self.workspace_id, question)
 
-    # Messages for the team: every desk takes them
+    # Messages for the team
 
     async def save_message(self, message: Confirmed[NewMessage]) -> str:
         """Saves it and returns its code: "M-104"."""
@@ -216,7 +211,7 @@ class Store:
     ) -> list[TeamMessage]:
         return await self.find(TeamMessage, status, q, limit=limit, before=before)
 
-    # A desk's list (the products): replaced whole, kept in order
+    # The products: replaced whole, kept in order
 
     async def rows_of[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
         """Every row of `table` (it has a `position`) as `model`, in the business's order."""
@@ -424,7 +419,7 @@ class Store:
 
     async def stats(self, start: datetime, end: datetime) -> Stats:
         """The dashboard's numbers from `start` up to `end`, added up from the rows we
-        keep: the turns, the desk's `SALES` tables and the leads."""
+        keep: the turns, the `SALES` tables and the leads."""
         ws = self.workspace_id
         async with self.sessions() as s:
             turns = (
@@ -487,78 +482,3 @@ class Store:
         if row is None:
             raise NotFound("There's no such record.")
         return row
-
-
-class Desk:
-    """One kind of business. A desk subclasses this and fills in the class attributes."""
-
-    kind: ClassVar[str]  # "shop": saved on the agent
-    label: ClassVar[str]  # "Online shop"
-    description: ClassVar[str]  # for the owner, in plain words
-    config_model: ClassVar[type[AgentConfig]]  # its config: the shared fields and its own
-    tools: ClassVar[list[Tool]]  # its own; the shared ones are added (`desks.tools_for`)
-    takes_photos: ClassVar[bool] = False  # a visitor can send it a photo (the shop)
-    takes_voice: ClassVar[bool] = False  # a visitor can call it (none for now)
-    columns: ClassVar[list[Column]] = []  # its list's fields, for an import or a sheet
-
-    def store(
-        self,
-        sessions: async_sessionmaker[AsyncSession],
-        workspace_id: str,
-        now: Callable[[], datetime],
-        *,
-        conversation_id: str | None = None,
-        knowledge: "KnowledgeService | None" = None,
-        public_url: str = "",
-        photos: "PhotoService | None" = None,
-    ) -> Store:
-        """Its data. A desk with tables of its own returns its own store."""
-        return Store(
-            sessions,
-            workspace_id,
-            now,
-            conversation_id=conversation_id,
-            knowledge=knowledge,
-            public_url=public_url,
-            photos=photos,
-        )
-
-    def own_tools(self, config: Any) -> list[Tool]:
-        """Its tools for this business. A desk whose tools depend on a switch in its config
-        adds them here."""
-        return self.tools
-
-    async def prompt(self, config: Any, store: Any) -> str:
-        """Its section of the system prompt: who the agent is, how it works, what it knows."""
-        raise NotImplementedError
-
-    def note(self, config: Any, state: dict[str, Any]) -> str:
-        """A short note from the conversation state, added before every model call."""
-        return ""
-
-    async def photo_line(self, store: Any, matches: list[tuple[str, float]] | None) -> str:
-        """The line the model reads about a visitor's photo: what it's like, from `matches`
-        (the closest product photos, best first; None when they couldn't be searched)."""
-        return "[Photo.]"
-
-    async def missing(self, config: Any, store: Any) -> list[str]:
-        """What the owner still has to fill in, in their words. The agent answers meanwhile."""
-        return missing_basics(config)
-
-    def read_list(self, text: str, mapping: dict[str, str] | None) -> Sequence[BaseModel]:
-        """Its list from a CSV's text, without saving it: problems per row."""
-        raise NotFound("This agent has no list to keep in a sheet.")
-
-    async def seed(self, store: Any, data: dict[str, Any]) -> None:
-        """The dev agent's own lists from its seed file (`products:`), popped from `data`."""
-
-
-def missing_basics(config: AgentConfig) -> list[str]:
-    missing = []
-    if not config.address.strip():
-        missing.append("Add your address.")
-    if not config.hours.is_set():
-        missing.append("Add your opening hours.")
-    if not (config.handoff.phone or config.handoff.email):
-        missing.append("Add a phone number or email for when someone needs a person.")
-    return missing

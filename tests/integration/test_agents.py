@@ -19,14 +19,13 @@ async def test_the_dev_agent_comes_from_its_seed(world: World) -> None:
 
     assert agent.workspace_id == DEV_WORKSPACE_ID
     assert agent.greeting.startswith("Assalamu alaikum! Welcome to Nakshi Threads.")
-    assert agent.desk.kind == "shop"
 
 
 async def test_a_restart_updates_the_same_agent(world: World, tmp_path: Path) -> None:
     edited = tmp_path / "shop.yaml"
     edited.write_text(SEED.read_text().replace("before 5 pm", "before 6 pm"))
 
-    agent = await world.services.agents.ensure_dev_agent("shop", edited)
+    agent = await world.services.agents.ensure_dev_agent(edited)
 
     assert "before 6 pm" in agent.config.faq
     assert [await count(world, m) for m in (Workspace, Agent)] == [1, 1]

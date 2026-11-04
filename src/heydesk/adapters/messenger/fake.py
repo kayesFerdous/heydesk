@@ -17,12 +17,6 @@ class FakeMessenger:
         self.messages: dict[str, dict[str, Any]] = {}  # what `get_message` finds, by mid
         # a Facebook login's Pages, by its user token
         self.logins: dict[str, list[dict[str, str]]] = {}
-        self.posts: dict[str, dict[str, str]] = {}  # a post's text and picture, by id
-        self.fetched: list[str] = []  # the posts asked for, in order
-        self.public: list[tuple[str, str]] = []  # (comment id, text), in order
-        self.private: list[tuple[str, str]] = []  # (comment id, text), in order
-        self.private_cards: list[tuple[str, list[dict[str, str]]]] = []  # (comment id, cards)
-        self.commenter = "7001"  # who a private reply reaches: their id on the Page
 
     async def subscribe(self, token: str, page_id: str) -> None:
         if token.startswith("bad"):
@@ -61,21 +55,6 @@ class FakeMessenger:
 
     async def mark_seen(self, token: str, psid: str) -> None:
         self.actions.append((psid, "seen"))
-
-    async def get_post(self, token: str, post_id: str) -> dict[str, str]:
-        self.fetched.append(post_id)
-        return self.posts.get(post_id, {"text": "", "picture": ""})
-
-    async def reply_public(self, token: str, comment_id: str, text: str) -> None:
-        self.public.append((comment_id, text))
-
-    async def reply_private(
-        self, token: str, comment_id: str, text: str, cards: list[dict[str, str]] | None = None
-    ) -> str:
-        self.private.append((comment_id, text))
-        if cards:
-            self.private_cards.append((comment_id, cards))
-        return self.commenter
 
     async def get_message(self, token: str, mid: str) -> dict[str, Any]:
         if mid not in self.messages:

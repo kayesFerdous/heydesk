@@ -49,9 +49,8 @@ class MessengerGraph:
             "POST",
             f"{page_id}/subscribed_apps",
             token,
-            subscribed_fields="messages,messaging_postbacks,message_echoes,feed",
-        )  # a card's button is a postback; the Page's own messages are echoes;
-        # its posts' comments come in its feed
+            subscribed_fields="messages,messaging_postbacks,message_echoes",
+        )  # a card's button is a postback; the Page's own messages are echoes
 
     async def unsubscribe(self, token: str, page_id: str) -> None:
         await self._call("DELETE", f"{page_id}/subscribed_apps", token)
@@ -110,22 +109,6 @@ class MessengerGraph:
 
     async def mark_seen(self, token: str, psid: str) -> None:
         await self._send(token, psid, sender_action="mark_seen")
-
-    async def get_post(self, token: str, post_id: str) -> dict[str, str]:
-        body = await self._call("GET", post_id, token, fields="message,full_picture")
-        return {"text": body.get("message") or "", "picture": body.get("full_picture") or ""}
-
-    async def reply_public(self, token: str, comment_id: str, text: str) -> None:
-        await self._call("POST", f"{comment_id}/comments", token, json={"message": text})
-
-    async def reply_private(
-        self, token: str, comment_id: str, text: str, cards: list[dict[str, str]] | None = None
-    ) -> str:
-        # ponytail: a carousel as the private reply isn't tried on a real Page yet
-        message = carousel(cards) if cards else {"text": text}
-        body = {"recipient": {"comment_id": comment_id}, "message": {**message, "metadata": OURS}}
-        sent = await self._call("POST", "me/messages", token, json=body)
-        return str(sent["recipient_id"])
 
     async def get_message(self, token: str, mid: str) -> dict[str, Any]:
         body = await self._call("GET", mid, token, fields="message,attachments")

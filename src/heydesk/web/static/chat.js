@@ -222,7 +222,7 @@ $("restart").addEventListener("click", () => {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const agent = await res.json();
     $("agent-name").textContent = agent.name;
-    $("call").hidden = !agent.voice;  // only a desk that takes voice
+    $("call").hidden = !agent.voice;  // only when the shop takes calls
     greeting = agent.greeting;
     add("agent", greeting);
   } catch (failure) {

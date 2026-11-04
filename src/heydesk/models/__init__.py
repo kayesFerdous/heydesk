@@ -1,5 +1,5 @@
-"""The tables every business has. Each desk keeps its own tables in its folder
-(`desks/shop/models.py`); importing `heydesk.desks` registers those."""
+"""The tables outside the shop's own (`shop/models.py`); importing `heydesk.shop` registers
+those."""
 
 from heydesk.models.agent import Agent
 from heydesk.models.audit import AuditEvent
@@ -11,9 +11,7 @@ from heydesk.models.document import Document
 from heydesk.models.lead import Lead
 from heydesk.models.missed_question import MissedQuestion
 from heydesk.models.note import Note
-from heydesk.models.page_post import PagePost
 from heydesk.models.payment_account import PaymentAccount
-from heydesk.models.post_comment import PostComment
 from heydesk.models.sheet_link import SheetLink
 from heydesk.models.subscription_payment import SubscriptionPayment
 from heydesk.models.team_event import TeamEvent
@@ -36,9 +34,7 @@ __all__ = [
     "Lead",
     "MissedQuestion",
     "Note",
-    "PagePost",
     "PaymentAccount",
-    "PostComment",
     "SheetLink",
     "SubscriptionPayment",
     "TeamEvent",

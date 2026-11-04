@@ -1,9 +1,8 @@
 # CLAUDE.md
 
 HeyDesk is an **MVP**: an online shop creates an AI front-desk agent, edits it, and
-visitors talk to it by web chat or the messaging apps. The shop is a **desk**: one folder in
-`src/heydesk/desks/` with its own prompt, tools, tables and routes (D41), and the only one
-(D164). A new kind would be a new folder, not a new setting.
+visitors talk to it by web chat or the messaging apps. It serves only online shops: everything
+about the shop is in `src/heydesk/shop/`, with no layer for other kinds of business (D172).
 Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking
 and for judging the visitor's yes (D107). Maira has no native tool calls, so its adapter asks for them
 as JSON in the reply (D16).
@@ -90,8 +89,8 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 
 - Unit tests for `runtime/` and `domain/` with `FakeLLM`
   and the fixed clock (`FIXED_NOW` = Tue 29 Sep 2026 08:00 UTC = 14:00 in Dhaka).
-- A desk's tools are tested against its real store on in-memory SQLite: the `world` and
-  `client` fixtures in `tests/conftest.py`, one test file per desk.
+- The shop's tools are tested against its real store on in-memory SQLite: the `world` and
+  `client` fixtures in `tests/conftest.py`.
 - Test the normal path and the failures that matter (no yes → no order), not every edge.
 
 ## Gotchas

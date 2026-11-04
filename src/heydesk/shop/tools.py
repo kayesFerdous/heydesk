@@ -11,11 +11,16 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from heydesk.desks.base import NewMessage, TooLate
-from heydesk.desks.shared import awaiting_payment
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.store import CouponGone, OutOfStock, ShopStore
-from heydesk.desks.shop.values import (
+from heydesk.domain.values import parse_code
+from heydesk.runtime import cards, parse
+from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.speech import money
+from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
+from heydesk.shop.base import NewMessage, TooLate
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.shared import awaiting_payment
+from heydesk.shop.store import CouponGone, OutOfStock, ShopStore
+from heydesk.shop.values import (
     ADDRESS_LIMIT,
     CANCELLABLE,
     CARDS,
@@ -39,11 +44,6 @@ from heydesk.desks.shop.values import (
     mobile,
     with_district,
 )
-from heydesk.domain.values import parse_code
-from heydesk.runtime import cards, parse
-from heydesk.runtime.guards import ask_for_yes, confirm
-from heydesk.runtime.speech import money
-from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
 
 type Ctx = ToolContext[ShopStore]
 

@@ -1,4 +1,4 @@
-"""The tools every desk gets: hand off to a person, take a message for the team, and search
+"""The tools that aren't about products or orders: hand off to a person, take a message for the team, and search
 the business's documents (only when it has some). And what a desk's writing tool and
 prompt say when the business takes payment first."""
 
@@ -7,10 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from heydesk.desks.base import NewLead, NewMessage, Store
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
+from heydesk.shop.base import NewLead, NewMessage, Store
 
 
 def pay_first_rule(pay_for: str, tool: str) -> str:

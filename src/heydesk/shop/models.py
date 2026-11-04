@@ -5,9 +5,9 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.desks.shop.values import lines_text
 from heydesk.models.customer_request import CustomerRequest, Payable
 from heydesk.runtime.speech import money
+from heydesk.shop.values import lines_text
 
 
 class ProductRow(Base):

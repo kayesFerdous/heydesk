@@ -1,4 +1,4 @@
-"""The shop desk: products with sizes, colours and stock; a cash-on-delivery order Python adds
+"""The shop: products with sizes, colours and stock; a cash-on-delivery order Python adds
 up, saved only after a yes and taken out of stock, and confirmed by the shop's call or at once;
 tracking it (the one from this chat, by the buyer's mobile, or with its code), changing
 its items or details and cancelling it; an exchange request once it's delivered; the owner's products and orders routes; and photos: the owner's, a visitor's sent to
@@ -21,11 +21,16 @@ from httpx import AsyncClient
 from PIL import Image
 from sqlalchemy import select
 
-from heydesk.desks import csv_import
-from heydesk.desks.shop import SHOP, ShopDesk
-from heydesk.desks.shop.api import OfferIn, send_offer
-from heydesk.desks.shop.models import ShopOrder
-from heydesk.desks.shop.tools import (
+from heydesk.models import Conversation, Lead, TeamMessage, Turn
+from heydesk.ports.llm import ToolCall
+from heydesk.ports.media import ImageUnreachable
+from heydesk.runtime.tool import ToolContext, ToolResult
+from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent, dev_workspace
+from heydesk.services.photos import to_jpeg
+from heydesk.shop import csv_import, shop_missing, shop_note, shop_prompt
+from heydesk.shop.api import OfferIn, send_offer
+from heydesk.shop.models import ShopOrder
+from heydesk.shop.tools import (
     CartLine,
     ChangeOrderInput,
     ExchangeInput,
@@ -42,7 +47,7 @@ from heydesk.desks.shop.tools import (
     track_order,
     update_cart,
 )
-from heydesk.desks.shop.values import (
+from heydesk.shop.values import (
     LONG_LIST,
     PRODUCT_COLUMNS,
     STATUS_WORDS,
@@ -54,12 +59,6 @@ from heydesk.desks.shop.values import (
     stock_cell,
     with_district,
 )
-from heydesk.models import Conversation, Lead, TeamMessage, Turn
-from heydesk.ports.llm import ToolCall
-from heydesk.ports.media import ImageUnreachable
-from heydesk.runtime.tool import ToolContext, ToolResult
-from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent, dev_workspace
-from heydesk.services.photos import to_jpeg
 from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business, said_yes
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
@@ -138,8 +137,8 @@ def test_a_mobile_number_is_eleven_digits_however_it_is_typed() -> None:
 async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_cart(
     world: World,
 ) -> None:
-    agent = await world.agent("shop")
-    text = await SHOP.prompt(agent.config, world.store(agent))
+    agent = await world.agent()
+    text = await shop_prompt(agent.config, world.store(agent))
 
     assert "never ask them to message for the price" in text
     assert "Never switch to Bangla letters or to English." in text
@@ -156,18 +155,18 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
     assert "- Lawn Three-Piece [three-piece] ৳2,450 (was ৳2,900, on sale)" in text
     assert "# Size guide\nPanjabi, in inches" in text
     no_guide = agent.config.model_copy(update={"size_guide": ""})
-    assert "# Size guide" not in await SHOP.prompt(no_guide, world.store(agent))
+    assert "# Size guide" not in await shop_prompt(no_guide, world.store(agent))
     assert "# The shop" in text  # it has policies
-    assert await SHOP.missing(agent.config, world.store(agent)) == []
+    assert await shop_missing(agent.config, world.store(agent)) == []
 
     added = await update_cart(make_ctx(world.store(agent), agent=agent.config), cart(KURTI))
-    assert SHOP.note(agent.config, {}).startswith("\n# Language\nWrite your reply")
-    assert "# The order so far" not in SHOP.note(agent.config, {})
-    assert "1 × Cotton Kurti (M, Black), subtotal ৳950" in SHOP.note(agent.config, added.state)
+    assert shop_note(agent.config, {}).startswith("\n# Language\nWrite your reply")
+    assert "# The order so far" not in shop_note(agent.config, {})
+    assert "1 × Cotton Kurti (M, Black), subtotal ৳950" in shop_note(agent.config, added.state)
 
 
 async def test_python_checks_sizes_colours_and_stock_and_adds_up_the_cart(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     ctx = make_ctx(world.store(agent), agent=agent.config)
 
     added = await update_cart(ctx, cart(PANJABIS, KURTI, PANJABIS | {"quantity": 1}))
@@ -199,7 +198,7 @@ async def test_python_checks_sizes_colours_and_stock_and_adds_up_the_cart(world:
 
 async def test_the_buttons_for_a_size_or_colour_are_what_is_in_stock(world: World) -> None:
     """Python picks the buttons: L in Navy is sold out, so neither offers it."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     ctx = make_ctx(world.store(agent), agent=agent.config)
     panjabi = {"code": "panjabi-cotton", "quantity": 1}
 
@@ -214,7 +213,7 @@ async def test_the_buttons_for_a_size_or_colour_are_what_is_in_stock(world: Worl
 async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missing(
     world: World,
 ) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     kurti = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
 
@@ -263,7 +262,7 @@ async def test_place_order_gives_the_delivery_charge_then_asks_for_what_is_missi
 
 
 async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     first = [
         ToolCall(
             "c1",
@@ -285,7 +284,7 @@ async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: W
 
 
 async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     await buy(world, agent, KURTI)
     [first] = await orders(world)
@@ -309,7 +308,7 @@ async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world:
 
 
 async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     code = await buy(world, agent, PANJABIS)
     assert await stock(world, agent, "panjabi-cotton", "L", "White") == 1  # was 3
 
@@ -336,7 +335,7 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    agent = await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     assert (await client.get("/api/menu")).status_code == 404  # a shop has no menu
     assert len((await client.get("/api/products")).json()) == 6
 
@@ -376,7 +375,7 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
         "📦 Your order O-101 is with the courier. The delivery man calls before he comes.",
     ]
 
-    store = await services.agents.store(DEV_WORKSPACE_ID, "shop")
+    store = await services.agents.store(DEV_WORKSPACE_ID)
     found = FindOrderInput(code="O-101", phone="01712345678")
     tracked = await track_order(make_ctx(store, agent=agent.config), found)
     assert (tracked.data["status"], tracked.data["usually_takes"]) == (
@@ -386,7 +385,7 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
 
 
 async def test_products_come_from_a_csv(app: FastAPI, client: AsyncClient) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     seeded = [p["code"] for p in (await client.get("/api/products")).json()]
     csv = (
         "Name,Price (৳),Was price,Sizes,Colors,Stock\n"
@@ -425,7 +424,7 @@ async def test_a_second_source_updates_the_same_product_by_name(
     app: FastAPI, client: AsyncClient
 ) -> None:
     """Another source's code for a product we have: the same name is the same product."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await client.post("/api/products/import", json={"csv": "Name,Price\nCotton Lungi,450\n"})
     count = len((await client.get("/api/products")).json())
     mapping = {"code": "SKU", "name": "Title", "price": "Price"}
@@ -445,7 +444,7 @@ async def test_their_columns_are_matched_to_ours_and_imported(
 ) -> None:
     """Python matches the columns by their names, with no model; the owner's checked
     mapping is what the import takes."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     suggested = (await client.post("/api/products/import/suggest", json={"csv": SHEET})).json()
     assert suggested["mapping"] == {"name": "Item Title", "price": "MRP", "stock": "Qty"}
     assert suggested["headers"][0] == "Item Title"
@@ -480,7 +479,7 @@ def test_columns_match_by_other_names_bangla_and_misspellings() -> None:
 
 
 async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     [order] = await orders(world)
 
@@ -503,9 +502,9 @@ async def test_the_order_from_this_chat_needs_no_code(world: World) -> None:
 
 
 async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     no_call = agent.config.model_copy(update={"call_to_confirm": False})
-    assert "one is confirmed as soon as it's placed: the shop doesn't call" in await SHOP.prompt(
+    assert "one is confirmed as soon as it's placed: the shop doesn't call" in await shop_prompt(
         no_call, world.store(agent)
     )
     state = (await update_cart(make_ctx(world.store(agent), agent=no_call), cart(KURTI))).state
@@ -524,7 +523,7 @@ async def test_a_shop_that_doesnt_call_confirms_an_order_when_its_placed(world: 
 async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     world: World,
 ) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)  # ৳950 inside Dhaka: ৳60 delivery, ৳1,010
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
@@ -577,7 +576,7 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
 
 
 async def test_the_area_stays_once_its_charge_was_paid_online(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     [order] = await orders(world)
     async with world.sessions() as s, s.begin():  # as if the delivery charge was paid first
@@ -589,7 +588,7 @@ async def test_the_area_stays_once_its_charge_was_paid_online(world: World) -> N
 
 
 async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: World) -> None:
-    agent = await world.agent("shop")  # the seed takes exchanges for 3 days
+    agent = await world.agent()  # the seed takes exchanges for 3 days
     await buy(world, agent, PANJABIS)
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
@@ -623,10 +622,10 @@ async def test_an_exchange_is_asked_for_within_the_days_after_delivery(world: Wo
 
 
 async def test_stock_is_counted_per_size_and_colour(world: World) -> None:
-    agent = await world.agent("shop")  # Cotton Panjabi: M any colour 4, L/White 3, L/Navy 0,
+    agent = await world.agent()  # Cotton Panjabi: M any colour 4, L/White 3, L/Navy 0,
     store = world.store(agent)  # XL/White 2; the rest isn't counted
     ctx = make_ctx(store, agent=agent.config)
-    text = await SHOP.prompt(agent.config, store)
+    text = await shop_prompt(agent.config, store)
     assert (
         "Fits true to size. (sold out: L/Navy) (only 3 left: L/White) (only 2 left: XL/White)"
         in text
@@ -653,7 +652,7 @@ async def test_stock_is_counted_per_size_and_colour(world: World) -> None:
 
 
 async def test_an_exchange_to_a_sold_out_size_is_refused(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, PANJABIS)  # L/White
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
@@ -735,8 +734,8 @@ async def test_a_photo_saved_before_doesnt_block_saving_the_list(
 ) -> None:
     """A photo kept on the disk before R2 was set has a /media address R2's check refuses;
     saving the list keeps it, and only a new photo is checked."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
-    store = await app.state.services.agents.store(DEV_WORKSPACE_ID, "shop")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID)
     old = f"/media/{DEV_WORKSPACE_ID}/products/old.jpg"  # not a name the check takes
     products = await store.products()
     products[0] = products[0].model_copy(update={"photos": [old]})
@@ -757,7 +756,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     app: FastAPI, client: AsyncClient
 ) -> None:
     services = app.state.services
-    agent = await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     added = await client.post(
         "/api/products/photos", files={"file": ("kurti.png", photo("red"), "image/png")}
     )
@@ -807,10 +806,10 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
 
 
 async def test_another_business_never_sees_your_photos(app: FastAPI, client: AsyncClient) -> None:
-    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     second = await new_business(app)
     try:
-        await second.post("/api/agent", json={"kind": "shop"})
+        await second.post("/api/agent", json={})
         await second.post(
             "/api/products/photos", files={"file": ("tee.png", photo("green"), "image/png")}
         )
@@ -824,7 +823,7 @@ async def test_another_business_never_sees_your_photos(app: FastAPI, client: Asy
 
 
 async def test_a_photo_that_cant_be_checked_still_gets_an_answer(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     world.embedder.fail_queries = True  # Gemini is down
     world.llm.script = ["What is it?"]
     turn = await world.services.conversations.start_turn(
@@ -835,22 +834,18 @@ async def test_a_photo_that_cant_be_checked_still_gets_an_answer(world: World) -
     assert said == "[Photo. It couldn't be checked: ask what it is.]"
 
 
-async def test_only_a_desk_that_takes_photos_gets_them_and_only_real_ones(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    body = {"visitor_id": "test-visitor", "message": "hi", "photo": as_base64(photo("red"))}
-    with monkeypatch.context() as off:
-        off.setattr(ShopDesk, "takes_photos", False)
-        no_photos = await client.post(f"/api/chat/{DEV_KEY}", json=body)
-    assert no_photos.status_code == 422 and "can't take photos" in no_photos.text
-
-    not_a_photo = {**body, "photo": as_base64(b"hello, not a picture")}
+async def test_only_a_real_photo_is_taken(client: AsyncClient) -> None:
+    not_a_photo = {
+        "visitor_id": "test-visitor",
+        "message": "hi",
+        "photo": as_base64(b"hello, not a picture"),
+    }
     refused = await client.post(f"/api/chat/{DEV_KEY}", json=not_a_photo)
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "unreadable_photo"
 
 
 async def test_show_photos_works_everywhere_but_a_call(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     args = ShowPhotosInput(products=["kurti"])
     on_call = await show_photos(make_ctx(store, agent=agent.config, channel="voice"), args)
@@ -863,14 +858,14 @@ async def test_show_photos_works_everywhere_but_a_call(world: World) -> None:
 async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world: World) -> None:
     """A WooCommerce store can have hundreds of products: over LONG_LIST, the prompt lists
     only the groups, and find_product returns the closest lines."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     tees = [
         Product(code=f"tee-{n}", name=f"Basic Tee {n}", price=50000, category="T-shirts")
         for n in range(LONG_LIST)
     ]
     await store.replace_products([*await store.products(), *tees])
-    text = await SHOP.prompt(agent.config, store)
+    text = await shop_prompt(agent.config, store)
 
     assert "[kurti]" not in text and "[tee-1]" not in text
     assert "products, too many to list here. Groups: " in text
@@ -891,7 +886,7 @@ async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world
 async def test_a_buyer_back_on_telegram_is_offered_their_last_details(world: World) -> None:
     """A new Telegram conversation from the same chat has the last order's name, mobile, area
     and address in the prompt, to offer again. Its first conversation didn't."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     talk = world.services.conversations
     world.llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
@@ -924,7 +919,7 @@ async def test_a_second_order_in_the_same_chat_is_offered_the_first_ones_details
 ) -> None:
     """Still in the same Messenger conversation after an order, the next one is offered its
     details too: the agent shouldn't ask for them all again."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     talk = world.services.conversations
     world.llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
@@ -947,7 +942,7 @@ async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: Worl
     """A CSV's, a sheet's or a WooCommerce store's photo links become the shop's own photos:
     each downloaded the first time only, one that fails left out, and a product with
     no links keeps the photos it has."""
-    await world.agent("shop")
+    await world.agent()
     fetched: list[str] = []
 
     async def fetch(link: str) -> bytes:
@@ -981,7 +976,7 @@ async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: Worl
 
 async def test_find_product_shows_a_card_for_each_it_found(world: World) -> None:
     """A search shows its products as cards, photo or not, except on a call."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     url = "/media/dev/products/" + "b" * 32 + ".jpg"
     products = await store.products()
@@ -1009,7 +1004,7 @@ def bdt(minor: int, text: str) -> dict[str, object]:
 
 
 async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     kurti = (await update_cart(make_ctx(store, agent=agent.config), cart(KURTI))).state
     ctx = make_ctx(store, state=kurti, agent=agent.config)
@@ -1068,7 +1063,7 @@ async def test_an_order_shows_a_summary_a_receipt_and_its_steps(world: World) ->
 
 async def test_the_cart_offers_what_goes_with_it_once(world: World) -> None:
     """`goes_with`: one not in the cart, not sold out and in the shop, offered once."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     pairs = ["jamdani-saree", "lungi", "panjabi-cotton"]  # sold out, unknown, one to offer
     await store.replace_products(
@@ -1103,14 +1098,14 @@ def test_videos_and_goes_with_come_from_a_csv_and_stay_when_a_file_has_none() ->
 async def test_a_card_and_the_product_page_link_its_video(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     products = (await client.get("/api/products")).json()
     next(p for p in products if p["code"] == "kurti")["videos"] = ["https://youtu.be/kurti"]
     assert (await client.put("/api/products", json=products)).status_code == 200
 
     page = await client.get("/p/dev-shop/kurti")
     assert 'href="https://youtu.be/kurti"' in page.text and "Watch the video" in page.text
-    store = await app.state.services.agents.store(DEV_WORKSPACE_ID, "shop")
+    store = await app.state.services.agents.store(DEV_WORKSPACE_ID)
     shown = await show_photos(
         make_ctx(store, agent=agent.config), ShowPhotosInput(products=["kurti"])
     )
@@ -1123,7 +1118,7 @@ async def test_the_product_page_shows_the_sale_the_stock_and_a_preview(
 ) -> None:
     """The saving, how many are left, the sizes as chips to tap, and a pasted link's
     preview."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     url = await kurti_with_photo(client)
     products = (await client.get("/api/products")).json()
     next(p for p in products if p["code"] == "kurti").update(was_price=125000, stock=3)
@@ -1142,7 +1137,7 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     receipt goes into the chat the page was opened from and links the order's page, which
     doesn't show the buyer's details."""
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     services.conversations.runtime.llm.script = ["Hello!"]
     res = await client.post("/api/chat/dev-shop", json={"visitor_id": "a-buyer-1", "message": "hi"})
     conv = res.text.split('"conversation_id": "')[1].split('"')[0]
@@ -1192,7 +1187,7 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
 async def test_a_form_with_a_problem_comes_back_filled_in(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     form = {"size": "M", "colour": "Black", "name": "Kayes", "phone": "123"}
     again = await client.post("/p/dev-shop/kurti", data=form | {"address": "Mirpur 10"})
     assert "Please check your mobile number" in again.text and 'value="Kayes"' in again.text
@@ -1205,7 +1200,7 @@ async def test_the_team_types_an_order_and_takes_it_to_money_in(
     confirmed with no yes, and the owner hears of it. It goes on hold, then packed, and ends
     delivered with the cash in, or returned with a reason; not before it ends."""
     services = app.state.services
-    await services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     told: list[str] = []
 
     async def notify(ws: str, text: str) -> None:
@@ -1247,7 +1242,7 @@ async def test_the_team_types_an_order_and_takes_it_to_money_in(
 
 
 async def test_a_held_order_isnt_booked_with_the_courier(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     [order] = await orders(world)
     await world.store(agent).move_order(order.id, "on_hold")
@@ -1262,7 +1257,7 @@ async def test_a_held_order_isnt_booked_with_the_courier(world: World) -> None:
 async def test_orders_export_as_the_list_shows_them(app: FastAPI, client: AsyncClient) -> None:
     """The filtered rows, money in taka, Dhaka time, a formula kept as words; and no other
     business's."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     body = {
         "lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}],
         "name": "=HYPERLINK(1)",
@@ -1284,7 +1279,7 @@ async def test_orders_export_as_the_list_shows_them(app: FastAPI, client: AsyncC
     assert row["Date"].startswith(FIXED_NOW.astimezone(ZoneInfo("Asia/Dhaka")).strftime("%Y-%m-%d"))
 
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    assert (await other.post("/api/agent", json={})).status_code == 201
     theirs = await other.get("/api/shop/orders.csv")
     assert len(list(csv.reader(io.StringIO(theirs.text.removeprefix("﻿"))))) == 1
 
@@ -1294,7 +1289,7 @@ async def test_each_order_shows_its_buyers_record_and_buyers_are_listed(
 ) -> None:
     """By mobile: how many orders, and how they ended; another business's orders with the same
     mobile never count."""
-    await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     body = {
         "lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}],
         "name": "Rahim",
@@ -1309,7 +1304,7 @@ async def test_each_order_shows_its_buyers_record_and_buyers_are_listed(
     await client.post("/api/shop/orders", json=body | {"phone": "01712345678", "name": "Nila"})
 
     other = await new_business(app)
-    assert (await other.post("/api/agent", json={"kind": "shop"})).status_code == 201
+    assert (await other.post("/api/agent", json={})).status_code == 201
     await other.put("/api/products", json=[{"code": "kurti", "name": "Kurti", "price": 50000}])
     theirs = body | {"lines": [{"code": "kurti", "quantity": 1}]}
     everywhere = {"delivery": [{"name": "Everywhere", "charge": 5000}]}
@@ -1349,7 +1344,7 @@ async def coupon_order(world: World, agent: LiveAgent, code: str) -> ToolResult:
 async def test_a_coupon_takes_its_discount_off_the_bill(world: World) -> None:
     """Percent, amount and free delivery, each worked out by Python and read back; the order
     keeps the discount and the code counts a use."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     await store.add_coupon(Coupon(code="eid10", kind="percent", value=10))
     await store.add_coupon(Coupon(code="FLAT100", kind="amount", value=10000))
@@ -1382,7 +1377,7 @@ async def test_a_coupon_takes_its_discount_off_the_bill(world: World) -> None:
 
 
 async def test_an_ended_or_used_up_coupon_keeps_the_order_without_it(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
     await store.add_coupon(
         Coupon(code="OLD", kind="percent", value=10, ends_at=FIXED_NOW - timedelta(days=1))
@@ -1403,7 +1398,7 @@ async def test_an_ended_or_used_up_coupon_keeps_the_order_without_it(world: Worl
 async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> None:
     """1–3 hours after a read-back with no yes, the buyer gets one nudge with the read-back's
     buttons; never a second, and none for a chat whose order was placed."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     first = [ToolCall("c1", "update_cart", {"lines": [KURTI]})]
     waiting = await world.say(
         agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK]
@@ -1423,7 +1418,7 @@ async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> No
 
 
 async def test_a_placed_order_is_not_nudged(world: World) -> None:
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await buy(world, agent, KURTI)
     world.clock.advance(hours=2)
     await world.services.conversations.nudge_unfinished()
@@ -1434,7 +1429,7 @@ async def test_a_placed_order_is_not_nudged(world: World) -> None:
 async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: World) -> None:
     """The offer reaches the chats from the last 24 hours, and `update_cart` takes it off for
     them alone, until it ends."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     yesterday = await world.say(agent, None, ["Hello!"], "hi")
     world.clock.advance(hours=25)
     today = await world.say(agent, None, ["Hello!"], "hi")
@@ -1460,7 +1455,7 @@ async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: Worl
 
 async def test_an_offer_reaches_as_far_back_as_the_owner_picks(world: World) -> None:
     """`within_hours=48` reaches a web chat from yesterday too; the default doesn't."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     await world.say(agent, None, ["Hello!"], "hi")
     world.clock.advance(hours=30)
     ends = world.clock.now + timedelta(hours=12)
@@ -1476,7 +1471,7 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
     """Chats answered and handed off, sales and their total, chats that bought, where the
     orders came from and open leads, in Dhaka's days; another business's rows aren't
     counted."""
-    agent = await app.state.services.agents.ensure_dev_agent("shop", SEEDS / "shop.yaml")
+    agent = await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     yesterday = FIXED_NOW - timedelta(days=1)  # FIXED_NOW is 14:00 in Dhaka
     ws, other = DEV_WORKSPACE_ID, "other"
 
@@ -1568,7 +1563,7 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
 async def test_the_same_mobile_and_items_again_is_asked_about_first(world: World) -> None:
     """A second order of the same items from the same mobile within DUPLICATE_HOURS isn't
     read back until they say it's on purpose."""
-    agent = await world.agent("shop")
+    agent = await world.agent()
     store = world.store(agent)
 
     async def kurti_ctx() -> ToolContext[Any]:

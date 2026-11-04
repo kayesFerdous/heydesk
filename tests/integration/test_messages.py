@@ -1,4 +1,4 @@
-"""Messages for the team: every desk takes them, only after a yes; the owner sees them in
+"""Messages for the team: taken only after a yes; the owner sees them in
 /api/messages."""
 
 from datetime import UTC, datetime
@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from heydesk.desks import DESKS, tools_for
-from heydesk.desks.shared import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
 from heydesk.models import Conversation, Lead, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
+from heydesk.shop import tools_for
+from heydesk.shop.shared import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
 from tests.conftest import DEV_KEY, World, make_ctx, said_yes
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
@@ -22,19 +22,17 @@ async def messages(world: World) -> list[TeamMessage]:
         return list(await s.scalars(select(TeamMessage)))
 
 
-async def test_every_desk_takes_messages_hands_off_and_declines_timepass(world: World) -> None:
-    for desk in DESKS.values():
-        config = (await world.agent(desk.kind)).config
-        names = [t.name for t in tools_for(desk, config, has_documents=False)]
-        assert names[-6:] == [
-            "take_message",
-            "take_lead",
-            "handoff_to_human",
-            "flag_complaint",
-            "off_topic",
-            "remember",
-        ], desk.kind
-        assert "search_knowledge" in [t.name for t in tools_for(desk, config, True)]
+async def test_the_shop_takes_messages_hands_off_and_declines_timepass() -> None:
+    names = [t.name for t in tools_for(has_documents=False)]
+    assert names[-6:] == [
+        "take_message",
+        "take_lead",
+        "handoff_to_human",
+        "flag_complaint",
+        "off_topic",
+        "remember",
+    ]
+    assert "search_knowledge" in [t.name for t in tools_for(True)]
 
 
 async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:

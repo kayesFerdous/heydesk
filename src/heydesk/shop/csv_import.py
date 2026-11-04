@@ -2,7 +2,7 @@
 
 Their columns become our fields by a `mapping` the owner checked ({"price": "MRP"}).
 `suggest` makes the first one from the column names alone, and without a mapping
-columns match by name ("Price (৳)" → `price`). A desk turns each row into its own shape; every
+columns match by name ("Price (৳)" → `price`). The shop turns each row into a product; every
 row's problems come back at once, and nothing is saved unless the whole file is clean.
 """
 
@@ -23,7 +23,7 @@ CLOSE = 0.8  # how alike a misspelt column name must be ("prise", "colors") to c
 
 
 class Column(BaseModel):
-    """One of a desk's fields, as the owner sees it when matching columns."""
+    """One of a product's fields, as the owner sees it when matching columns."""
 
     name: str  # "price"
     about: str  # what it holds, in plain words: "its price: 1850 or ৳1,850"
