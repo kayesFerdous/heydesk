@@ -31,7 +31,7 @@ from heydesk.runtime.trace import Trace
 MAX_MODEL_CALLS = 6  # rule 9
 # Keys a stored message may have for the people who read it, never for the model: who wrote it
 # (the team), the photo a visitor sent and the photos a tool showed
-HIDDEN = ("by", "photo", "photos")
+HIDDEN_FIELDS = ("by", "photo", "photos")
 
 
 @dataclass(frozen=True)
@@ -60,13 +60,13 @@ class TurnInput:
     photo_line: str = ""  # Python's line on that photo, which the model reads before their text
 
 
-async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
+async def run_turn(turn: TurnInput, runtime: Runtime) -> AsyncGenerator[Event]:
     """Every path ends in exactly one `TurnEnded`: no early return, no yield in `finally`."""
     trace = Trace(channel=turn.channel)
-    trace.data["llm"] = rt.llm.name
-    added = opening_messages(turn, rt.llm)
+    trace.data["llm"] = runtime.llm.name
+    added = opening_messages(turn, runtime.llm)
     state = dict(turn.state)
-    heard = state.get("read_back", "")  # the last read-back, from an earlier turn (rule 2)
+    last_read_back = state.get("read_back", "")  # the last read-back, from an earlier turn (rule 2)
     tools = {tool.name: tool for tool in turn.tools}
     specs = [tool.spec for tool in turn.tools]
     streamed: list[str] = []  # text sent in this step, for safe_close
@@ -83,7 +83,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
             system = turn.system + turn.note(state)
             request = ChatRequest(system, specs, for_model([*turn.history, *added]), turn.model)
             with trace.step("model", n=n) as step:
-                async with aclosing(rt.llm.stream(request)) as stream:
+                async with aclosing(runtime.llm.stream(request)) as stream:
                     async for event in stream:
                         if isinstance(event, TextDelta):
                             if turn.interrupt.is_set():
@@ -116,7 +116,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                 turn.store,
                 state,
                 turn.now,
-                heard=heard,
+                last_read_back=last_read_back,
                 channel=turn.channel,
             )
             outcomes = []
@@ -144,14 +144,16 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
                     yield Card(result.card["kind"], result.card["data"])
                 shown.append(result.photos)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
-            results = rt.llm.tool_results(outcomes)  # every call gets its result, even on a stop
+            results = runtime.llm.tool_results(
+                outcomes
+            )  # every call gets its result, even on a stop
             for message, photos in zip(results, shown, strict=False):
                 if photos:  # kept for the chat page and the owner, hidden from the model
                     message["photos"] = photos
             added += results
             if said:  # the tool said the reply itself (off_topic): no model call for it
                 yield Token(said)
-                added.append(rt.llm.assistant_message(said))
+                added.append(runtime.llm.assistant_message(said))
                 break
             if turn.interrupt.is_set():
                 interrupted = True
@@ -166,7 +168,7 @@ async def run_turn(turn: TurnInput, rt: Runtime) -> AsyncGenerator[Event]:
     contact = turn.agent.handoff
     if failed or interrupted:  # a failure ends with the hand-off message as a polite line
         closing = contact.message if failed else None
-        added = safe_close(added, partial="".join(streamed), closing=closing, llm=rt.llm)
+        added = safe_close(added, partial="".join(streamed), closing=closing, llm=runtime.llm)
     handoff = failed or asked_for_person
     if handoff:
         yield HandOff(contact.message, contact.phone, contact.email)
@@ -196,8 +198,8 @@ def opening_messages(turn: TurnInput, llm: LanguageModel) -> list[Message]:
 
 
 def for_model(messages: list[Message]) -> list[Message]:
-    """The transcript as the model gets it: without the keys only people read (`HIDDEN`)."""
-    return [{k: v for k, v in m.items() if k not in HIDDEN} for m in messages]
+    """The transcript as the model gets it: without the keys only people read (`HIDDEN_FIELDS`)."""
+    return [{k: v for k, v in m.items() if k not in HIDDEN_FIELDS} for m in messages]
 
 
 def safe_close(

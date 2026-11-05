@@ -10,7 +10,9 @@ from heydesk.adapters.courier.pathao import SANDBOX, Pathao
 from heydesk.adapters.courier.steadfast import BASE, Steadfast
 from heydesk.ports.courier import CourierAccount, CourierError, Parcel
 
-PARCEL = Parcel("O-101", "Rahim", "01712345678", "House 3, Road 4, Mirpur", 360, "1 Tupi", 1)
+PARCEL_ITEM_TYPE = Parcel(
+    "O-101", "Rahim", "01712345678", "House 3, Road 4, Mirpur", 360, "1 Tupi", 1
+)
 
 
 async def test_steadfast_books_with_its_headers_and_reads_the_end() -> None:
@@ -25,7 +27,7 @@ async def test_steadfast_books_with_its_headers_and_reads_the_end() -> None:
     steadfast = Steadfast()
     steadfast.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
     account = CourierAccount("steadfast", "k", "s")
-    assert (await steadfast.book(account, PARCEL)) == "77"
+    assert (await steadfast.book(account, PARCEL_ITEM_TYPE)) == "77"
     body = json.loads(sent[0].content)
     assert str(sent[0].url) == f"{BASE}/create_order"
     assert (sent[0].headers["Api-Key"], sent[0].headers["Secret-Key"]) == ("k", "s")
@@ -35,7 +37,7 @@ async def test_steadfast_books_with_its_headers_and_reads_the_end() -> None:
         "01712345678",
     )
     tracked = await steadfast.status(account, "77")
-    assert (tracked.said, tracked.ending) == ("partial_delivered", "delivered")
+    assert (tracked.status_text, tracked.final_status) == ("partial_delivered", "delivered")
 
 
 async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
@@ -58,9 +60,9 @@ async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
     account = CourierAccount("pathao", "id", "secret", "me@shop.com", "pw", sandbox=True)
     assert await pathao.check(account) == 9  # the first active store
     account = CourierAccount("pathao", "id", "secret", "me@shop.com", "pw", 9, sandbox=True)
-    assert (await pathao.book(account, PARCEL)) == "DL1"
+    assert (await pathao.book(account, PARCEL_ITEM_TYPE)) == "DL1"
     tracked = await pathao.status(account, "DL1")
-    assert (tracked.said, tracked.ending) == ("Return", "returned")
+    assert (tracked.status_text, tracked.final_status) == ("Return", "returned")
 
     assert [r.url.path.rsplit("/", 1)[-1] for r in sent].count("issue-token") == 1
     assert all(str(r.url).startswith(SANDBOX) for r in sent)
@@ -77,4 +79,4 @@ async def test_steadfast_says_when_the_account_isnt_active_yet() -> None:
     steadfast = Steadfast()
     steadfast.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
     with pytest.raises(CourierError, match="isn't active yet"):
-        await steadfast.book(CourierAccount("steadfast", "k", "s"), PARCEL)
+        await steadfast.book(CourierAccount("steadfast", "k", "s"), PARCEL_ITEM_TYPE)

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.errors import Forbidden, HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
-from heydesk.services.users import Principal
+from heydesk.services.users import CurrentUser
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 
@@ -35,20 +35,20 @@ def get_services(request: Request) -> Services:
     return services
 
 
-def current_user(
+def get_current_user(
     services: Annotated[Services, Depends(get_services)],
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-) -> Principal:
+) -> CurrentUser:
     """The logged-in user (`Authorization: Bearer <token>`)."""
     if credentials is None:
         raise Unauthorized("Log in first, and send the token as 'Authorization: Bearer …'.")
-    return services.users.principal(credentials.credentials)
+    return services.users.user_from_token(credentials.credentials)
 
 
 async def current_workspace(
     request: Request,
     services: Annotated[Services, Depends(get_services)],
-    principal: Annotated[Principal, Depends(current_user)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> AsyncIterator[str]:
     """The business every business route is scoped by (rule 6).
 
@@ -62,18 +62,18 @@ async def current_workspace(
     path = route.path if isinstance(route, APIRoute) else request.url.path
     target = ",".join(f"{k}={v}" for k, v in request.path_params.items())
     action = f"{request.method} {path}"
-    if principal.is_admin:
-        yield await _admin_business(request, services, principal, action, target)
+    if current_user.is_admin:
+        yield await _admin_business(request, services, current_user, action, target)
         return
-    assert principal.workspace_id is not None  # an owner's or moderator's token always has one
-    if principal.role == "moderator":
-        if not await services.users.still_moderator(principal):
+    assert current_user.workspace_id is not None  # an owner's or moderator's token always has one
+    if current_user.role == "moderator":
+        if not await services.users.still_moderator(current_user):
             raise Unauthorized("Log in again.")  # removed from the team: out at once
         if owners_only(request.method, path):
             raise Forbidden("Only the business's owner can do this.")
-    yield principal.workspace_id
+    yield current_user.workspace_id
     if request.method != "GET":  # reached only when the route didn't raise
-        await services.members.record(principal, action, target)
+        await services.members.record(current_user, action, target)
 
 
 def owners_only(method: str, path: str) -> bool:
@@ -86,27 +86,27 @@ def owners_only(method: str, path: str) -> bool:
 
 
 async def _admin_business(
-    request: Request, services: Services, principal: Principal, action: str, target: str
+    request: Request, services: Services, current_user: CurrentUser, action: str, target: str
 ) -> str:
-    if not await services.users.still_admin(principal):
+    if not await services.users.still_admin(current_user):
         raise Unauthorized("Log in again.")
     business = request.headers.get(BUSINESS_HEADER, "")
     if not business:
         raise BusinessRequired(f"Pick a business first ({BUSINESS_HEADER} header).")
     await services.admin.require_business(business)
     if request.method != "GET" or request.path_params:
-        await services.admin.audit(principal.user_id, business, action, target)
+        await services.admin.audit(current_user.user_id, business, action, target)
     return business
 
 
 async def admin_only(
     services: Annotated[Services, Depends(get_services)],
-    principal: Annotated[Principal, Depends(current_user)],
-) -> Principal:
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> CurrentUser:
     """404 for everyone else: an owner can't even learn these routes exist."""
-    if not await services.users.still_admin(principal):
+    if not await services.users.still_admin(current_user):
         raise NotFound("Not found")
-    return principal
+    return current_user
 
 
 PAGE = 100  # the most rows one list request returns
@@ -162,8 +162,8 @@ def page(
 type Svc = Annotated[Services, Depends(get_services)]
 # "function": the activity line is written once the route returns, before the response
 type Workspace = Annotated[str, Depends(current_workspace, scope="function")]
-type User = Annotated[Principal, Depends(current_user)]
-type Admin = Annotated[Principal, Depends(admin_only)]
+type User = Annotated[CurrentUser, Depends(get_current_user)]
+type Admin = Annotated[CurrentUser, Depends(admin_only)]
 type Paged = Annotated[Page, Depends(page)]
 type ClientIp = Annotated[str, Depends(client_ip)]
 

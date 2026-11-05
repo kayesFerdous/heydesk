@@ -35,9 +35,9 @@ if TYPE_CHECKING:  # only a type here: services import the shop
     from heydesk.services.photos import PhotoService
 
 PAGE = 100  # the most rows a list returns at once (newest first)
-BROWSER = ("web", "voice")  # one browser's token is the contact on both
+BROWSER_CHANNELS = ("web", "voice")  # one browser's token is the contact on both
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most
-NOT_SALES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
+NOT_SALE_STATUSES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
 
 
 class TooLate(ValueError):
@@ -136,7 +136,7 @@ class Store:
         )
         return saved.code
 
-    async def missed(self, question: str) -> None:
+    async def save_missed_question(self, question: str) -> None:
         """A question it couldn't answer, for the owner to teach."""
         question = " ".join(question.split())[:300]
         if not question:
@@ -151,7 +151,7 @@ class Store:
                 )
             )
 
-    async def missed_list(self) -> list[MissedQuestion]:
+    async def missed_questions(self) -> list[MissedQuestion]:
         """The questions not taught yet, oldest first, the latest 500."""
         async with self.sessions() as s:
             rows = await s.scalars(
@@ -213,7 +213,7 @@ class Store:
 
     # The products: replaced whole, kept in order
 
-    async def rows_of[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
+    async def all_rows[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
         """Every row of `table` (it has a `position`) as `model`, in the business's order."""
         async with self.sessions() as s:
             rows: ScalarResult[Any] = await s.scalars(
@@ -236,7 +236,7 @@ class Store:
             for n, item in enumerate(items)
         )
 
-    async def take_sheet(
+    async def import_sheet(
         self, text: str, mapping: dict[str, str], seen: dict[str, Any]
     ) -> dict[str, Any]:
         """The list becomes the linked sheet's rows; returns what to remember for the
@@ -310,25 +310,29 @@ class Store:
             )
             return list(found)
 
-    async def before[T: CustomerRequest](self, table: type[T], limit: int = 1) -> list[T]:
+    async def earlier_records[T: CustomerRequest](self, table: type[T], limit: int = 1) -> list[T]:
         """What this visitor had before, newest first: in this conversation or an
         earlier one from the same chat on a messaging app, or the same browser on the web chat
         and its calls. A second order in the same chat is offered the first one's details too.
         Only this conversation's when it has no `contact`."""
-        here = await self._here()
+        here = await self._current_conversation()
         if here is None:
             return []
-        ws = self.workspace_id
+        workspace_id = self.workspace_id
         if here.contact is None:
             same = table.conversation_id == here.id
         else:
-            channels = BROWSER if here.channel in BROWSER else (here.channel,)
+            channels = BROWSER_CHANNELS if here.channel in BROWSER_CHANNELS else (here.channel,)
             same = and_(Conversation.channel.in_(channels), Conversation.contact == here.contact)
         async with self.sessions() as s:
             found = await s.scalars(
                 select(table)
                 .join(Conversation, table.conversation_id == Conversation.id)
-                .where(table.workspace_id == ws, Conversation.workspace_id == ws, same)
+                .where(
+                    table.workspace_id == workspace_id,
+                    Conversation.workspace_id == workspace_id,
+                    same,
+                )
                 .order_by(table.created_at.desc())
                 .limit(limit)
             )
@@ -354,7 +358,7 @@ class Store:
             visitor.notes = dict(list(notes.items())[-MAX_NOTES:])  # a new value, or it isn't saved
         return True
 
-    async def _here(self) -> Conversation | None:
+    async def _current_conversation(self) -> Conversation | None:
         if self.conversation_id is None:
             return None
         async with self.sessions() as s:
@@ -368,11 +372,11 @@ class Store:
 
     async def _visitor(self, s: AsyncSession) -> Visitor | None:
         """This conversation's visitor, keyed as the limits key them: `web:<token>` for
-        the web chat and calls, `messenger:<psid>` and so on."""
-        here = await self._here()
+        the web chat and calls, `messenger:<chat_id>` and so on."""
+        here = await self._current_conversation()
         if here is None or here.contact is None:
             return None
-        channel = "web" if here.channel in BROWSER else here.channel
+        channel = "web" if here.channel in BROWSER_CHANNELS else here.channel
         found: Visitor | None = await s.scalar(
             select(Visitor).where(
                 Visitor.workspace_id == self.workspace_id,
@@ -383,7 +387,7 @@ class Store:
 
     async def get[T: CustomerRequest](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:
-            return await self._one(s, table, row_id)
+            return await self._get_row(s, table, row_id)
 
     async def by_number[T: CustomerRequest](self, table: type[T], number: int) -> T | None:
         async with self.sessions() as s:
@@ -394,19 +398,19 @@ class Store:
 
     async def set_status[T: CustomerRequest](self, table: type[T], row_id: str, status: str) -> T:
         async with self.sessions() as s, s.begin():
-            row = await self._one(s, table, row_id)
+            row = await self._get_row(s, table, row_id)
             self._move(row, status)
         return row
 
     async def lead_outcome(self, lead_id: str, status: str, why: str) -> Lead:
         """The team tapped how a call back went; a lost one keeps its why."""
         async with self.sessions() as s, s.begin():
-            lead = await self._one(s, Lead, lead_id)
+            lead = await self._get_row(s, Lead, lead_id)
             self._move(lead, status)
             lead.why = " ".join(why.split())[:200].lower() if status == "lost" else ""
         return lead
 
-    async def lost_why(self) -> list[tuple[str, int]]:
+    async def lost_reasons(self) -> list[tuple[str, int]]:
         """Why sales were lost: each lost lead's why, with how many, most first."""
         async with self.sessions() as s:
             rows = await s.execute(
@@ -420,12 +424,12 @@ class Store:
     async def stats(self, start: datetime, end: datetime) -> Stats:
         """The dashboard's numbers from `start` up to `end`, added up from the rows we
         keep: the turns, the `SALES` tables and the leads."""
-        ws = self.workspace_id
+        workspace_id = self.workspace_id
         async with self.sessions() as s:
             turns = (
                 await s.execute(
                     select(Turn.conversation_id, Turn.handed_off).where(
-                        Turn.workspace_id == ws, Turn.at >= start, Turn.at < end
+                        Turn.workspace_id == workspace_id, Turn.at >= start, Turn.at < end
                     )
                 )
             ).all()
@@ -433,15 +437,15 @@ class Store:
             for table in self.SALES:
                 sales += await s.scalars(
                     select(table).where(
-                        table.workspace_id == ws,
+                        table.workspace_id == workspace_id,
                         table.created_at >= start,
                         table.created_at < end,
-                        table.status.not_in(NOT_SALES),
+                        table.status.not_in(NOT_SALE_STATUSES),
                     )
                 )
             leads = await s.scalar(
                 select(func.count()).where(
-                    Lead.workspace_id == ws,
+                    Lead.workspace_id == workspace_id,
                     Lead.created_at >= start,
                     Lead.created_at < end,
                     Lead.status != "sold",
@@ -475,7 +479,7 @@ class Store:
         except ValueError as error:
             raise InvalidTransition(str(error)) from None
 
-    async def _one[T: CustomerRequest](self, s: AsyncSession, table: type[T], row_id: str) -> T:
+    async def _get_row[T: CustomerRequest](self, s: AsyncSession, table: type[T], row_id: str) -> T:
         row: T | None = await s.scalar(
             select(table).where(table.id == row_id, table.workspace_id == self.workspace_id)
         )

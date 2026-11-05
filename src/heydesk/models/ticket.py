@@ -13,7 +13,7 @@ class Ticket(CustomerRequest, Base):
 
     __tablename__ = "tickets"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
-    LETTER: ClassVar[str] = "C"
-    FLOW: ClassVar[dict[str, set[str]]] = {"open": {"solved"}, "solved": {"open"}}
+    CODE_LETTER: ClassVar[str] = "C"
+    STATUS_FLOW: ClassVar[dict[str, set[str]]] = {"open": {"solved"}, "solved": {"open"}}
 
     reason: Mapped[str] = mapped_column(String(300))  # the agent's words for what's wrong

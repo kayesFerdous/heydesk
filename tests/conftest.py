@@ -52,7 +52,7 @@ def make_ctx(store: Any = None, state: dict[str, Any] | None = None, **kw: Any) 
         "store": store,
         "state": state or {},
         "now": FIXED_NOW,
-        "heard": "",
+        "last_read_back": "",
     }
     return ToolContext(**(fields | kw))
 
@@ -62,7 +62,7 @@ async def said_yes[A](
 ) -> ToolResult:
     """A writing tool called twice: it reads back, the visitor says yes, it saves (rule 2)."""
     asked = await run(ctx, args)
-    return await run(replace(ctx, heard=asked.data["read_back"]), args)
+    return await run(replace(ctx, last_read_back=asked.data["read_back"]), args)
 
 
 def make_test_settings() -> Settings:
@@ -146,9 +146,9 @@ class World:
 
     async def conversation(self, conversation_id: str) -> Conversation:
         async with self.sessions() as s:
-            conv = await s.get(Conversation, conversation_id)
-        assert conv is not None
-        return conv
+            conversation = await s.get(Conversation, conversation_id)
+        assert conversation is not None
+        return conversation
 
     async def tool_said(self, conversation_id: str) -> str:
         """What the last tool returned, as the model saw it."""

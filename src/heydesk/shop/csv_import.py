@@ -17,9 +17,9 @@ from pydantic import BaseModel, ValidationError
 from heydesk.errors import InvalidConfig
 
 MAX_ROWS = 2000
-YES = {"yes", "y", "true", "1", "available", "in stock", ""}
+YES_WORDS = {"yes", "y", "true", "1", "available", "in stock", ""}
 SAMPLE_ROWS = 3  # what the owner's screen shows of a file
-CLOSE = 0.8  # how alike a misspelt column name must be ("prise", "colors") to count
+MIN_COLUMN_MATCH = 0.8  # how alike a misspelt column name must be ("prise", "colors") to count
 
 
 class Column(BaseModel):
@@ -100,7 +100,7 @@ def column_match_score(header: str, name: str) -> float:
     if any(theirs[i : i + n] == ours for i in range(len(theirs) - n + 1)):
         return 0.9
     alike = SequenceMatcher(None, " ".join(theirs), " ".join(ours)).ratio()
-    return alike * 0.85 if alike >= CLOSE else 0  # below an exact or a whole-word match
+    return alike * 0.85 if alike >= MIN_COLUMN_MATCH else 0  # below an exact or a whole-word match
 
 
 def split_words(text: str) -> list[str]:
@@ -136,7 +136,7 @@ def items(text: str) -> list[str]:
 
 
 def available(text: str) -> bool:
-    return text.strip().lower() in YES
+    return text.strip().lower() in YES_WORDS
 
 
 def slug(name: str) -> str:

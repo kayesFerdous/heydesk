@@ -362,7 +362,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "deps: auth & scope",
    "type": "api",
    "file": "src/heydesk/api/deps.py",
-   "purpose": "Bearer token → Principal; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
+   "purpose": "Bearer token → CurrentUser; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
    "inputs": "Authorization, X-Business",
    "outputs": "workspace_id",
    "fn": "current_workspace"
@@ -592,7 +592,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ConversationService",
    "type": "service",
    "file": "src/heydesk/services/conversations.py",
-   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `page_wrote`, D135); one the AI was off for is given back once the AI is on again (`_given_back`, D127). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137).",
+   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`take_over`, `save_page_message`, D135); one the AI was off for is given back once the AI is on again (`_return_if_quiet`, D127). Labels, notes (their own table) and the inbox's reply (`team_reply`, D136). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137).",
    "inputs": "LiveAgent, text, channel, visitor, photo",
    "outputs": "RunningTurn (events) / Reply",
    "fn": "start_turn"
@@ -744,7 +744,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/services/users.py",
    "purpose": "Accounts, JWT tokens (7 days), stateless HMAC email codes, argon2 passwords.",
    "inputs": "email, password, code",
-   "outputs": "token, Principal",
+   "outputs": "token, CurrentUser",
    "fn": "principal"
   },
   {
@@ -1073,7 +1073,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/ports/courier.py",
    "purpose": "Book a parcel → its id; a parcel's status → the courier's words and its ending (D112).",
    "inputs": "Parcel",
-   "outputs": "parcel id / Tracked"
+   "outputs": "parcel id / ParcelStatus"
   },
   {
    "id": "p-sheets",
@@ -1968,7 +1968,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-channels",
    "target": "s-team",
-   "label": "send / team_wrote"
+   "label": "send / handle_team_reply"
   },
   {
    "source": "s-channels",
@@ -2128,7 +2128,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-sheets",
    "target": "k-store",
-   "label": "take_sheet"
+   "label": "import_sheet"
   },
   {
    "source": "s-sheets",
@@ -2168,7 +2168,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-courier",
    "target": "k-store",
-   "label": "orders_for_courier / parcel_booked / courier_said"
+   "label": "orders_for_courier / parcel_booked / update_courier_status"
   },
   {
    "source": "s-courier",
@@ -2178,7 +2178,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-woo",
    "target": "k-store",
-   "label": "take_woo / orders_for_woo"
+   "label": "import_woo / orders_for_woo"
   },
   {
    "source": "s-woo",
@@ -2278,7 +2278,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "k-store",
    "target": "k-csv",
-   "label": "take_sheet"
+   "label": "import_sheet"
   },
   {
    "source": "v-call",
@@ -3830,7 +3830,7 @@ tr.hl td { background: var(--accent-soft); }
      "vars": [
       [
        "zone lines",
-       "Zone.line() for each config.delivery zone"
+       "Zone.prompt_line() for each config.delivery zone"
       ],
       [
        "; paid online first",
@@ -3909,7 +3909,7 @@ tr.hl td { background: var(--accent-soft); }
      "title": "# Products (full list)",
      "owner": "python",
      "file": "src/heydesk/shop/values.py",
-     "fn": "Product.line",
+     "fn": "Product.prompt_line",
      "text": "# Products\nEach line: name [code] price, sizes, colours: description\nPanjabi:\n- Cotton Panjabi [panjabi-white] ৳1,850, sizes M/L/XL, colours White/Navy (only 2 left: L/White)",
      "when": {
       "desk": "shop",
@@ -3918,7 +3918,7 @@ tr.hl td { background: var(--accent-soft); }
      "vars": [
       [
        "product lines",
-       "Product.line(): sale price, SOLD OUT, only N left (≤3)"
+       "Product.prompt_line(): sale price, SOLD OUT, only N left (≤3)"
       ]
      ]
     },
@@ -3936,7 +3936,7 @@ tr.hl td { background: var(--accent-soft); }
      "vars": [
       [
        "140",
-       "len(products) > LONG_LIST (60)"
+       "len(products) > LONG_PRODUCT_LIST (60)"
       ],
       [
        "groups",
@@ -4048,7 +4048,7 @@ tr.hl td { background: var(--accent-soft); }
      "title": "# Right now",
      "owner": "python",
      "file": "src/heydesk/runtime/prompt.py",
-     "fn": "right_now",
+     "fn": "now_section",
      "text": "# Right now"
     },
     {
@@ -4129,7 +4129,7 @@ tr.hl td { background: var(--accent-soft); }
      "title": "Now",
      "owner": "python",
      "file": "src/heydesk/runtime/prompt.py",
-     "fn": "right_now",
+     "fn": "now_section",
      "text": "Now: Tuesday 29 September 2026, 14:00",
      "vars": [
       [
@@ -4143,7 +4143,7 @@ tr.hl td { background: var(--accent-soft); }
      "title": "Today: open / closed",
      "owner": "python",
      "file": "src/heydesk/runtime/prompt.py",
-     "fn": "right_now",
+     "fn": "now_section",
      "text": "Today: open 11:00–22:00",
      "when": {
       "hours_set": true
@@ -4154,7 +4154,7 @@ tr.hl td { background: var(--accent-soft); }
      "title": "Next 14 days",
      "owner": "python",
      "file": "src/heydesk/runtime/prompt.py",
-     "fn": "right_now",
+     "fn": "now_section",
      "text": "Next 14 days: Wed 30 Sep, Thu 1 Oct, Fri 2 Oct, Sat 3 Oct, Sun 4 Oct (closed), Mon 5 Oct, Tue 6 Oct, Wed 7 Oct, Thu 8 Oct, Fri 9 Oct, Sat 10 Oct, Sun 11 Oct (closed), Mon 12 Oct, Tue 13 Oct\n(without hours: Next 14 days: Wed 30 Sep, Thu 1 Oct, Fri 2 Oct, Sat 3 Oct, S…)",
      "note": "Python marks the closed days so the model never works out dates (rule 1)."
     },
@@ -4325,7 +4325,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "python",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "confirm",
-     "text": "return Confirmed(value) if heard and heard == read_back else None"
+     "text": "return Confirmed(value) if last_read_back and last_read_back == read_back else None"
     },
     {
      "id": "ask",
@@ -4533,26 +4533,26 @@ tr.hl td { background: var(--accent-soft); }
      "id": "cid",
      "label": "conversation_id given?",
      "shape": "decision",
-     "code": "if conversation_id:\n    conv = await self._get(s, agent, conversation_id)"
+     "code": "if conversation_id:\n    conversation = await self._get(s, agent, conversation_id)"
     },
     {
      "id": "full",
      "label": "≥ MAX_TURNS (60) visitor messages?",
      "shape": "decision",
-     "code": "turns = sum(1 for m in conv.messages if m.get('role') == 'user')\nreturn turns >= self.settings.MAX_TURNS",
+     "code": "turns = sum(1 for m in conversation.messages if m.get('role') == 'user')\nreturn turns >= self.settings.MAX_TURNS",
      "fn": "_is_full"
     },
     {
      "id": "human",
      "label": "status == 'human' (team answering)?",
      "shape": "decision",
-     "code": "if conv.status == HUMAN:\n    return RunningTurn(conv.id, self._to_team(conv, text, channel), asyncio.Event())"
+     "code": "if conversation.status == HUMAN_STATUS:\n    return RunningTurn(conversation.id, self._to_team(conversation, text, channel), asyncio.Event())"
     },
     {
      "id": "team",
      "label": "Save + forward to the owner; agent silent",
      "shape": "end",
-     "fn": "_to_team"
+     "fn": "_save_for_team"
     },
     {
      "id": "count_turn",
@@ -4571,13 +4571,13 @@ tr.hl td { background: var(--accent-soft); }
      "id": "new",
      "label": "Create the conversation",
      "shape": "step",
-     "code": "conv = self._new(agent, channel, contact, name)"
+     "code": "conversation = self._new(agent, channel, contact, name)"
     },
     {
      "id": "near",
      "label": "Photo → nearest products → photo line",
      "shape": "step",
-     "code": "matches = await self.photos.nearest(ws, saved.jpeg)\nabout_photo = photo_line(await store.products(), matches)"
+     "code": "matches = await self.photos.nearest(workspace_id, saved.jpeg)\nabout_photo = photo_line(await store.products(), matches)"
     },
     {
      "id": "build",
@@ -4681,7 +4681,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "start",
      "label": "Opening messages: greeting if first turn + user message",
      "shape": "event",
-     "code": "added = opening_messages(turn, rt.llm)",
+     "code": "added = opening_messages(turn, runtime.llm)",
      "fn": "opening_messages"
     },
     {
@@ -4738,7 +4738,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "close",
      "label": "safe_close: partial text + hand-off line",
      "shape": "step",
-     "code": "added = safe_close(added, partial=''.join(streamed), closing=closing, llm=rt.llm)",
+     "code": "added = safe_close(added, partial=''.join(streamed), closing=closing, llm=runtime.llm)",
      "fn": "safe_close"
     },
     {
@@ -4863,9 +4863,9 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "conf",
-     "label": "confirm(ctx.heard, value, read_back)",
+     "label": "confirm(ctx.last_read_back, value, read_back)",
      "shape": "decision",
-     "code": "return Confirmed(value) if heard and heard == read_back else None",
+     "code": "return Confirmed(value) if last_read_back and last_read_back == read_back else None",
      "fn": "confirm"
     },
     {
@@ -4944,7 +4944,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "end",
      "label": "TurnEnded",
      "shape": "event",
-     "fn": "_run"
+     "fn": "_run_turn"
     },
     {
      "id": "save",
@@ -4957,7 +4957,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "alerts",
      "label": "Any tool alerts?",
      "shape": "decision",
-     "code": "for alert in ended.alerts:\n    await self.team.alert(conv, alert)",
+     "code": "for alert in ended.alerts:\n    await self.team.alert(conversation, alert)",
      "fn": "_alert"
     },
     {
@@ -4969,7 +4969,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "woo",
-     "label": "woo.push_soon(ws) in the background",
+     "label": "woo.push_soon(workspace_id) in the background",
      "shape": "step",
      "file": "src/heydesk/services/woo.py",
      "fn": "push_soon"
@@ -4986,7 +4986,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "hand",
      "label": "Handed off?",
      "shape": "decision",
-     "code": "if ended.handed_off:\n    await self.team.alert(conv, handoff_alert([...]))"
+     "code": "if ended.handed_off:\n    await self.team.alert(conversation, handoff_alert([...]))"
     },
     {
      "id": "strike",
@@ -5106,10 +5106,10 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "ow",
-     "label": "team_wrote: /done → active; else → human + send",
+     "label": "handle_team_reply: /done → active; else → human + send",
      "shape": "end",
      "file": "src/heydesk/services/team.py",
-     "fn": "team_wrote"
+     "fn": "handle_team_reply"
     },
     {
      "id": "start",
@@ -5128,7 +5128,7 @@ tr.hl td { background: var(--accent-soft); }
      "label": "Wait 3 s: another message came? It answers all",
      "shape": "decision",
      "code": "messages = await self._gather(channel, chat_id, message)\nif messages is not None:\n    await self._turn(channel, chat_id, messages)",
-     "fn": "_gather"
+     "fn": "_collect_messages"
     },
     {
      "id": "photo",
@@ -5141,7 +5141,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "text",
      "label": "No words at all (only stickers, voice notes)?",
      "shape": "decision",
-     "code": "if not lines:\n    await self._send(channel, chat_id, NOT_TEXT)"
+     "code": "if not lines:\n    await self._send(channel, chat_id, NOT_TEXT_REPLY)"
     },
     {
      "id": "reply",
@@ -5212,7 +5212,7 @@ tr.hl td { background: var(--accent-soft); }
     [
      "text",
      "send",
-     "yes: NOT_TEXT"
+     "yes: NOT_TEXT_REPLY"
     ],
     [
      "text",
@@ -5248,7 +5248,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "sheet",
      "label": "Every 5 min: each linked sheet",
      "shape": "loop",
-     "code": "for ws in linked:\n    try: await self.sync(ws)\n    except Exception: log.exception(...)",
+     "code": "for workspace_id in linked:\n    try: await self.sync(workspace_id)\n    except Exception: log.exception(...)",
      "file": "src/heydesk/services/sheets.py",
      "fn": "run"
     },
@@ -5262,7 +5262,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "take",
-     "label": "take_sheet (keeps unchanged counts)",
+     "label": "import_sheet (keeps unchanged counts)",
      "shape": "step",
      "file": "src/heydesk/shop/values.py",
      "fn": "merge"
@@ -5271,13 +5271,13 @@ tr.hl td { background: var(--accent-soft); }
      "id": "prob",
      "label": "Problem? notify owner once",
      "shape": "fail",
-     "code": "if problem and problem != told:\n    await self.team.notify(ws, ...)"
+     "code": "if problem and problem != told:\n    await self.team.notify(workspace_id, ...)"
     },
     {
      "id": "woo",
      "label": "Every 2 min: each Woo store",
      "shape": "loop",
-     "code": "if hooks and last is not None and time.monotonic() - last < SAFETY_SECONDS:\n    continue  # its webhooks keep it up to date",
+     "code": "if hooks and last is not None and time.monotonic() - last < FULL_SYNC_SECONDS:\n    continue  # its webhooks keep it up to date",
      "file": "src/heydesk/services/woo.py",
      "fn": "run"
     },
@@ -5300,7 +5300,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "calls",
      "label": "Every 5 s: the call queue",
      "shape": "loop",
-     "code": "await asyncio.sleep(every)\nif not started: await self._after_restart()\nawait self.tick()",
+     "code": "await asyncio.sleep(every)\nif not started: await self._after_restart()\nawait self.ring_due_calls()",
      "file": "src/heydesk/services/calls.py",
      "fn": "run"
     },
@@ -5407,7 +5407,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "page",
      "label": "A /phone page open for this mobile?",
      "shape": "decision",
-     "code": "page = self.phones.get(call.phone)\nif page is None:\n    await self.missed(call.id)"
+     "code": "page = self.phones.get(call.phone)\nif page is None:\n    await self.mark_missed(call.id)"
     },
     {
      "id": "ring",
@@ -5596,7 +5596,7 @@ tr.hl td { background: var(--accent-soft); }
      "label": "rowcount 1 → tell visitor + alert owner (+ shop order to Woo)",
      "shape": "end",
      "code": "await self.team.tell_visitor(...)\nawait self._alert(record, ...)\nif isinstance(record, ShopOrder):\n    self.woo.push_soon(record.workspace_id)",
-     "fn": "_placed"
+     "fn": "_tell_visitor_paid"
     },
     {
      "id": "refund",
@@ -5741,7 +5741,7 @@ tr.hl td { background: var(--accent-soft); }
      "shape": "fail"
     },
     {
-     "id": "ws",
+     "id": "workspace_id",
      "label": "workspace_id → route runs",
      "shape": "end"
     },
@@ -5749,7 +5749,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "ev",
      "label": "Non-GET succeeded → TeamEvent",
      "shape": "end",
-     "code": "if request.method != 'GET':\n    await services.members.record(principal, action, target)"
+     "code": "if request.method != 'GET':\n    await services.members.record(current_user, action, target)"
     }
    ],
    "edges": [
@@ -5784,7 +5784,7 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "audit",
-     "ws"
+     "workspace_id"
     ],
     [
      "role",
@@ -5808,16 +5808,16 @@ tr.hl td { background: var(--accent-soft); }
     ],
     [
      "own",
-     "ws",
+     "workspace_id",
      "no"
     ],
     [
      "role",
-     "ws",
+     "workspace_id",
      "owner"
     ],
     [
-     "ws",
+     "workspace_id",
      "ev"
     ]
    ]
@@ -5951,7 +5951,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "wait",
      "label": "After 0.6 s still talking → stop()",
      "shape": "step",
-     "code": "self.barge_in = self.create_task(self.stop_after(BARGE_IN_S))",
+     "code": "self.barge_in = self.create_task(self.stop_after(INTERRUPT_SECONDS))",
      "fn": "stop_after"
     },
     {
@@ -5969,7 +5969,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "bc",
      "label": "Over the agent and a backchannel ('mm-hmm', 'ok')?",
      "shape": "decision",
-     "code": "if self.over_agent and text.lower().strip(' .,!?') in BACKCHANNEL:\n    return"
+     "code": "if self.over_agent and text.lower().strip(' .,!?') in SHORT_ACKNOWLEDGEMENTS:\n    return"
     },
     {
      "id": "ignore",
@@ -6142,7 +6142,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "a-sse",
      "data": "events, as the listener reads them",
      "file": "src/heydesk/services/conversations.py",
-     "fn": "_run"
+     "fn": "_run_turn"
     },
     {
      "from": "a-sse",
@@ -6240,7 +6240,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "t-shop-place_order",
      "to": "r-guards",
-     "data": "confirm(ctx.heard, order, read_back)",
+     "data": "confirm(ctx.last_read_back, order, read_back)",
      "file": "src/heydesk/runtime/guards.py",
      "fn": "confirm"
     },
@@ -6433,16 +6433,16 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-channels",
      "to": "s-team",
-     "data": "team_wrote(message with reply_to_message)",
+     "data": "handle_team_reply(message with reply_to_message)",
      "file": "src/heydesk/services/team.py",
-     "fn": "team_wrote"
+     "fn": "handle_team_reply"
     },
     {
      "from": "s-team",
      "to": "st-sql",
      "data": "Ref → conversation; append {by: team}; status = human; TeamEvent 'Telegram reply' (D150)",
      "file": "src/heydesk/services/team.py",
-     "fn": "team_wrote"
+     "fn": "handle_team_reply"
     },
     {
      "from": "s-team",
@@ -6457,14 +6457,14 @@ tr.hl td { background: var(--accent-soft); }
      "to": "s-team",
      "data": "visitor writes while human → forward, agent silent",
      "file": "src/heydesk/services/conversations.py",
-     "fn": "_to_team"
+     "fn": "_save_for_team"
     },
     {
      "from": "s-team",
      "to": "st-sql",
      "data": "owner replies '/done' → status active",
      "file": "src/heydesk/services/team.py",
-     "fn": "team_wrote"
+     "fn": "handle_team_reply"
     }
    ]
   },
@@ -6672,7 +6672,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-voice",
      "to": "s-calls",
-     "data": "ended(): outcome = order status",
+     "data": "mark_ended(): outcome = order status",
      "file": "src/heydesk/services/calls.py",
      "fn": "ended"
     }
@@ -6763,14 +6763,14 @@ tr.hl td { background: var(--accent-soft); }
      "to": "s-team",
      "data": "tell_visitor '✅ Payment received…' + owner alert 💳",
      "file": "src/heydesk/services/payments.py",
-     "fn": "_placed"
+     "fn": "_tell_visitor_paid"
     },
     {
      "from": "s-payments",
      "to": "s-woo",
      "data": "a shop order: push_soon into a linked Woo store (D105)",
      "file": "src/heydesk/services/payments.py",
-     "fn": "_placed"
+     "fn": "_tell_visitor_paid"
     }
    ]
   },
@@ -6796,21 +6796,21 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-conversations",
      "to": "s-photos",
-     "data": "save(ws, 'chat', bytes) → JPEG ≤1024 px",
+     "data": "save(workspace_id, 'chat', bytes) → JPEG ≤1024 px",
      "file": "src/heydesk/services/photos.py",
      "fn": "save"
     },
     {
      "from": "s-photos",
      "to": "p-media",
-     "data": "put {ws}/chat/<id>.jpg (disk or R2)",
+     "data": "put {workspace_id}/chat/<id>.jpg (disk or R2)",
      "file": "src/heydesk/adapters/media.py",
      "fn": "put"
     },
     {
      "from": "s-conversations",
      "to": "s-photos",
-     "data": "nearest(ws, jpeg)",
+     "data": "nearest(workspace_id, jpeg)",
      "file": "src/heydesk/services/photos.py",
      "fn": "nearest"
     },
@@ -6880,7 +6880,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-documents",
      "to": "s-knowledge",
-     "data": "add(ws, agent, title, text)",
+     "data": "add(workspace_id, agent, title, text)",
      "file": "src/heydesk/services/knowledge.py",
      "fn": "add"
     },
@@ -6965,9 +6965,9 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-sheets",
      "to": "k-store",
-     "data": "take_sheet: whole sheet or nothing",
+     "data": "import_sheet: whole sheet or nothing",
      "file": "src/heydesk/shop/store.py",
-     "fn": "take_sheet"
+     "fn": "import_sheet"
     },
     {
      "from": "s-sheets",
@@ -7014,9 +7014,9 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-woo",
      "to": "k-store",
-     "data": "take_woo: Woo count − our orders not in Woo yet",
+     "data": "import_woo: Woo count − our orders not in Woo yet",
      "file": "src/heydesk/shop/store.py",
-     "fn": "take_woo"
+     "fn": "import_woo"
     },
     {
      "from": "s-woo",
@@ -7190,7 +7190,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "A chat's waiting messages, and WhatsApp's recent ones",
    "file": "src/heydesk/services/channels.py",
    "where": "`ChannelService.waiting` (chat → messages not answered yet), `whatsapp_said` (message id → what the buyer sent, the last 10,000) and `cards_sent` (message id → the product card's words the agent sent on Messenger and WhatsApp, the last 10,000, D156), in memory",
-   "written": "`_gather` (each message waits `CHAT_WAIT_SECONDS`; the last one takes them all), `answer_whatsapp`",
+   "written": "`_collect_messages` (each message waits `CHAT_WAIT_SECONDS`; the last one takes them all), `answer_whatsapp`",
    "sync": "One server process only. Telegram sends a quoted message whole; Messenger's is fetched by id (D117); a reply to a product card is looked up in `cards_sent` first (D156).",
    "failure": "A restart loses the few seconds' waiting messages and WhatsApp's quotes: the reply is read on its own."
   },
@@ -7198,7 +7198,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Transcript",
    "file": "src/heydesk/models/conversation.py",
    "where": "`conversations.messages` (JSON, provider-native messages)",
-   "written": "`_save`, `tell_visitor`, `team_wrote`, `CallService.answer`",
+   "written": "`_save`, `tell_visitor`, `handle_team_reply`, `CallService.answer`",
    "sync": "Only appended (rule 5). Re-read inside a transaction with the row locked (`_get_by_id(lock=True)`, D162), then `[*old, *new]`. The whole transcript is resent to the model each turn.",
    "failure": "A tab closed mid-reply loses that turn (D3). A new list is assigned so SQLAlchemy sees it.",
    "timeline": "turn"
@@ -7216,7 +7216,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Conversation status",
    "file": "src/heydesk/services/team.py",
    "where": "`conversations.status`: active / needs_human / human",
-   "written": "`_save` (hand-off), `team_wrote`, `hand_back`",
+   "written": "`_save` (hand-off), `handle_team_reply`, `hand_back`",
    "sync": "Checked at the start of every turn.",
    "failure": "—",
    "timeline": "owner"
@@ -7242,7 +7242,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Stock",
    "file": "src/heydesk/shop/store.py",
    "where": "`products.stock` / `variants[].stock`",
-   "written": "`_stock` in the same transaction as the order, under `Store._lock` (D162)",
+   "written": "`_change_stock` in the same transaction as the order, under `Store._lock` (D162)",
    "sync": "Sheet/Woo counts merged minus held orders.",
    "failure": "OutOfStock → nothing saved.",
    "timeline": "woo"
@@ -7251,7 +7251,7 @@ tr.hl td { background: var(--accent-soft); }
    "what": "Payment",
    "file": "src/heydesk/services/payments.py",
    "where": "`status`, `paid`, `payment_ref` on payable rows",
-   "written": "`settle` only",
+   "written": "`check_payment` only",
    "sync": "Browser return and IPN both call settle; `UPDATE … WHERE unpaid`.",
    "failure": "Unreachable gateway: the other post settles it; paid-after-cancel → refund alert.",
    "timeline": "payment"
@@ -7746,7 +7746,7 @@ tr.hl td { background: var(--accent-soft); }
       {
        "f": "L",
        "t": "S",
-       "m": "sync(ws)"
+       "m": "sync(workspace_id)"
       },
       {
        "f": "S",
@@ -7783,7 +7783,7 @@ tr.hl td { background: var(--accent-soft); }
           {
            "f": "S",
            "t": "St",
-           "m": "take_sheet (merge counts)"
+           "m": "import_sheet (merge counts)"
           },
           {
            "f": "St",
@@ -7930,7 +7930,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "f": "W",
      "t": "St",
-     "m": "take_woo: Woo count − our unsent orders"
+     "m": "import_woo: Woo count − our unsent orders"
     },
     {
      "opt": "problem changed",
@@ -8672,7 +8672,7 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "q": "How do you keep one business from seeing another's data?",
-   "a": "workspace_id on every table and query; Store and ports take ws; deps scopes routes.",
+   "a": "workspace_id on every table and query; Store and ports take workspace_id; deps scopes routes.",
    "go": {
     "view": "triggers",
     "arg": {
@@ -8906,12 +8906,12 @@ tr.hl td { background: var(--accent-soft); }
     {
       "title": "2. The loop never touches the tables directly",
       "text": "`run_turn()` in `runtime/` knows nothing about the database. Tools reach data through `ctx.store`. When the turn ends it yields a `TurnEnded` event holding everything to keep, and `ConversationService._run()` saves it.",
-      "code": "if isinstance(event, TurnEnded):\n    await self._save(conv, event, ...)   # the service saves, not the loop"
+      "code": "if isinstance(event, TurnEnded):\n    await self._save(conversation, event, ...)   # the service saves, not the loop"
     },
     {
       "title": "3. A tool's first call usually doesn't save",
       "text": "A writing tool answers with a read-back the first time. The visitor says yes on their next message, the model calls the tool again, and Python compares the two read-backs. Only an exact match saves. See it happen in **Replay an order**.",
-      "code": "confirmed = confirm(ctx.heard, order, read_back)\nif confirmed is None:\n    return ask_for_yes(read_back, \"place_order\", ...)"
+      "code": "confirmed = confirm(ctx.last_read_back, order, read_back)\nif confirmed is None:\n    return ask_for_yes(read_back, \"place_order\", ...)"
     }
   ],
 
@@ -8950,10 +8950,10 @@ tr.hl td { background: var(--accent-soft); }
     "nodes": [
       {"id": "web", "shape": "event", "label": "Web chat page", "file": "src/heydesk/api/chat.py", "fn": "chat", "note": "`POST /api/chat/{public_key}`. The reply streams back on this same request, as Server-Sent Events.", "code": "await services.rate_limits.chat(body.visitor_id, ip)\nagent = await services.agents.by_key(public_key)\nturn = await services.conversations.start_turn(agent, body.conversation_id, body.message, \"web\", f\"web:{body.visitor_id}\", body.visitor_id, photo=...)\nreturn StreamingResponse(to_sse(turn), ...)"},
       {"id": "tg", "shape": "event", "label": "Telegram webhook", "file": "src/heydesk/api/telegram.py", "fn": "telegram_webhook", "note": "Telegram posts here. The route answers OK at once and runs the turn in the background, so Telegram never waits on the model.", "code": "channel = await services.channels.telegram_webhook(channel_id, secret)\nbackground.add_task(services.channels.answer_telegram, channel, update)"},
-      {"id": "ms", "shape": "event", "label": "Messenger webhook", "file": "src/heydesk/services/channels.py", "fn": "answer_messenger", "note": "The same idea. It also notices messages the business wrote from its own Page (`page_wrote`), and those never run a turn."},
+      {"id": "ms", "shape": "event", "label": "Messenger webhook", "file": "src/heydesk/services/channels.py", "fn": "answer_messenger", "note": "The same idea. It also notices messages the business wrote from its own Page (`save_page_message`), and those never run a turn."},
       {"id": "wa", "shape": "event", "label": "WhatsApp webhook", "file": "src/heydesk/services/channels.py", "fn": "answer_whatsapp", "note": "The same idea. Puts WhatsApp's message into the shape `_answer` reads."},
-      {"id": "answer", "label": "channels._answer", "file": "src/heydesk/services/channels.py", "fn": "_answer", "note": "Sorts the message: the owner or a moderator replying goes to `team_wrote`. `/start` restarts the chat. Every other message is counted for floods, then waits in `_gather`. Nothing here raises: a failure becomes a polite line."},
-      {"id": "gather", "label": "_gather: wait 3 seconds", "file": "src/heydesk/services/channels.py", "fn": "_gather", "note": "People send many bubbles. It waits `CHAT_WAIT_SECONDS` (3), and if another message came, that one answers both. Many bubbles, one turn, one reply paid for."},
+      {"id": "answer", "label": "channels._answer", "file": "src/heydesk/services/channels.py", "fn": "_answer", "note": "Sorts the message: the owner or a moderator replying goes to `handle_team_reply`. `/start` restarts the chat. Every other message is counted for floods, then waits in `_collect_messages`. Nothing here raises: a failure becomes a polite line."},
+      {"id": "gather", "label": "_collect_messages: wait 3 seconds", "file": "src/heydesk/services/channels.py", "fn": "_collect_messages", "note": "People send many bubbles. It waits `CHAT_WAIT_SECONDS` (3), and if another message came, that one answers both. Many bubbles, one turn, one reply paid for."},
       {"id": "turnfn", "label": "channels._turn", "file": "src/heydesk/services/channels.py", "fn": "_turn", "note": "Joins the bubbles into one text, turns voice notes into words, picks the last photo, shows “typing…”, then sends the finished reply, its photos and its cards."},
       {"id": "reply", "label": "conversations.reply", "file": "src/heydesk/services/conversations.py", "fn": "reply", "note": "Finds this contact's chat. If it's full or quiet for `CONVERSATION_IDLE_HOURS` (12), the agent starts afresh in the same chat. Then it reads the whole turn and returns one `Reply`.", "code": "latest = await self._latest(agent, channel, contact)\nif latest is not None and self._stale(latest):\n    await self._start_afresh(latest)\nturn = await self.start_turn(agent, latest.id if latest else None, text, channel, f\"{channel}:{contact}\", contact, photo, name)"},
       {"id": "voice", "shape": "event", "label": "Shop's confirmation call", "file": "src/heydesk/api/voice.py", "fn": "offer", "note": "The shop calls a buyer to confirm an order. A visitor can't call the shop today: `TAKES_VOICE` is False. Each thing the buyer says becomes one turn."},
@@ -8961,7 +8961,7 @@ tr.hl td { background: var(--accent-soft); }
       {"id": "inbox", "shape": "event", "label": "Team inbox: summary, draft, ask", "file": "src/heydesk/api/conversations.py", "fn": "assist", "note": "A team member asks for help on a chat. This isn't a visitor talking, so it skips the visitor checks."},
       {"id": "assist", "label": "conversations.assist", "file": "src/heydesk/services/conversations.py", "fn": "assist", "note": "Builds its own `TurnInput` with `tools=[]`. The words go back to the team and nothing is added to the chat. A `turns` row is still saved, on the channel `assist`."},
       {"id": "start", "label": "conversations.start_turn: THE entry point", "file": "src/heydesk/services/conversations.py", "fn": "start_turn", "note": "**This is the function that starts the agent.** It runs the checks, loads the conversation, packs `TurnInput`, and returns a `RunningTurn`. The model hasn't run yet."},
-      {"id": "run", "label": "conversations._run", "file": "src/heydesk/services/conversations.py", "fn": "_run", "note": "A generator wrapped around `run_turn`. It passes each event on, and when it sees `TurnEnded` it saves the turn and does the after-work.", "code": "async with aclosing(run_turn(turn, self.runtime)) as events:\n    async for event in events:\n        if isinstance(event, TurnEnded):\n            await self._save(conv, event, agent.config.handoff.auto_assign)\n            await self._alert(conv, event)\n            ...\n        yield event"},
+      {"id": "run", "label": "conversations._run_turn", "file": "src/heydesk/services/conversations.py", "fn": "_run_turn", "note": "A generator wrapped around `run_turn`. It passes each event on, and when it sees `TurnEnded` it saves the turn and does the after-work.", "code": "async with aclosing(run_turn(turn, self.runtime)) as events:\n    async for event in events:\n        if isinstance(event, TurnEnded):\n            await self._save(conversation, event, agent.config.handoff.auto_assign)\n            await self._alert(conversation, event)\n            ...\n        yield event"},
       {"id": "loop", "shape": "end", "label": "run_turn: the agent loop", "file": "src/heydesk/runtime/loop.py", "fn": "run_turn", "note": "The agent itself: up to 6 model calls, with tools running in between. Every path ends in exactly one `TurnEnded`."}
     ],
     "edges": [
@@ -9038,15 +9038,15 @@ tr.hl td { background: var(--accent-soft); }
         {"name": "system", "src": "run", "eg": "long text", "from": "`build_system_prompt(config, shop_prompt(...), channel, now, documents, VOICE_LANGUAGE, visitor_notes)`"},
         {"name": "tools", "src": "code", "eg": "15 or 16 Tool objects", "from": "`tools_for(has_documents)`"},
         {"name": "model", "src": "env", "eg": "openai/gpt-oss-120b", "from": "`settings.MODEL`; Maira ignores it"},
-        {"name": "history", "src": "db", "eg": "[{role, content}, …]", "from": "`conv.messages[conv.history_from:]`"},
+        {"name": "history", "src": "db", "eg": "[{role, content}, …]", "from": "`conversation.messages[conversation.history_from:]`"},
         {"name": "user_text", "src": "body", "eg": "\"2 Panjabi, L\"", "from": "`text`, stripped"},
         {"name": "channel", "src": "code", "eg": "\"web\"", "from": "Stage 3"},
         {"name": "agent", "src": "db", "eg": "ShopConfig", "from": "`agent.config`"},
-        {"name": "store", "src": "run", "eg": "ShopStore", "from": "`ShopStore(sessions, workspace_id, now, conversation_id=conv.id, ...)`"},
+        {"name": "store", "src": "run", "eg": "ShopStore", "from": "`ShopStore(sessions, workspace_id, now, conversation_id=conversation.id, ...)`"},
         {"name": "now", "src": "clock", "eg": "2026-09-29 08:00 UTC", "from": "`self.now()`"},
-        {"name": "state", "src": "db", "eg": "{\"cart\": {...}}", "from": "`conv.state`"},
+        {"name": "state", "src": "db", "eg": "{\"cart\": {...}}", "from": "`conversation.state`"},
         {"name": "note", "src": "code", "eg": "a function", "from": "`lambda state: shop_note(config, state)`, called before each model call"},
-        {"name": "is_first", "src": "run", "eg": "True", "from": "`len(conv.messages) == conv.history_from`"},
+        {"name": "is_first", "src": "run", "eg": "True", "from": "`len(conversation.messages) == conversation.history_from`"},
         {"name": "interrupt", "src": "run", "eg": "asyncio.Event", "from": "New for each turn; a caller talking over the agent sets it"},
         {"name": "photo_url", "src": "run", "eg": "\"\"", "from": "`saved.url`, after `photos.save`"},
         {"name": "photo_line", "src": "run", "eg": "\"\"", "from": "`photo_line(await store.products(), matches)`: the closest products"}
@@ -9075,7 +9075,7 @@ tr.hl td { background: var(--accent-soft); }
         {"name": "ctx.store", "src": "run", "eg": "ShopStore", "from": "`turn.store`"},
         {"name": "ctx.state", "src": "run", "eg": "{\"cart\": {...}}", "from": "The loop's copy of the state, with earlier tools' changes"},
         {"name": "ctx.now", "src": "clock", "eg": "2026-09-29 08:00 UTC", "from": "`turn.now`, the same for the whole turn"},
-        {"name": "ctx.heard", "src": "db", "eg": "\"2 × Cotton…\"", "from": "`state[\"read_back\"]` as it was when the turn began"},
+        {"name": "ctx.last_read_back", "src": "db", "eg": "\"2 × Cotton…\"", "from": "`state[\"read_back\"]` as it was when the turn began"},
         {"name": "ctx.channel", "src": "code", "eg": "\"web\"", "from": "`turn.channel`"}
       ]
     }
@@ -9083,8 +9083,8 @@ tr.hl td { background: var(--accent-soft); }
   "channelTable": {
     "cols": ["Parameter", "Web chat", "Messaging app", "Confirmation call"],
     "rows": [
-      ["conversation_id", "the page sends it", "newest chat for this contact (`_latest`)", "kept by the call, starts from the ring"],
-      ["text", "`body.message`", "the bubbles, joined by `_turn`", "what speech-to-text heard"],
+      ["conversation_id", "the page sends it", "newest chat for this contact (`_latest_conversation`)", "kept by the call, starts from the ring"],
+      ["text", "`body.message`", "the bubbles, joined by `_run_turn`", "what speech-to-text heard"],
       ["channel", "`\"web\"`", "`\"telegram\"`, `\"messenger\"` or `\"whatsapp\"`", "`\"voice\"`"],
       ["visitor", "`web:<token>`", "`telegram:<chat id>` and so on", "`web:<token>`"],
       ["contact", "the browser's token", "the chat id", "the browser's token"],
@@ -9105,11 +9105,11 @@ tr.hl td { background: var(--accent-soft); }
     {"name": "Not blocked", "who": "all", "fn": "visitors.check_not_blocked", "file": "src/heydesk/services/visitors.py", "rule": "`blocked_why` is set and `blocked_until` hasn't passed", "kept": "`visitors`", "kind": "stop", "fail": "429 `VisitorLimited` once; on the apps, silence after (`VisitorSilenced`)"},
     {"name": "The photo is readable", "who": "all", "fn": "photos.save", "file": "src/heydesk/services/photos.py", "rule": "Up to 10 MB, and really a picture. Checked before anything is saved", "kept": "disk or R2", "kind": "stop", "fail": "422 `UnreadablePhoto`"},
     {"name": "The chat is theirs, and not full", "who": "all", "fn": "_get, _is_full", "file": "src/heydesk/services/conversations.py", "rule": "Same `workspace_id` and `agent_id`; fewer than **60** visitor messages (`MAX_TURNS`)", "kept": "`conversations`", "kind": "stop", "fail": "404, or 409 `ConversationFull`. The apps start afresh instead"},
-    {"name": "Is the AI on?", "who": "all", "fn": "check_not_blocked, config.ai_off", "file": "src/heydesk/services/conversations.py", "rule": "Off for this visitor (`visitors.ai_off`) or for the whole business (`config.ai_off`)", "kept": "`visitors`, `agents.config`", "kind": "divert", "fail": "No model. The message is saved and forwarded to the team (`_to_team`)"},
-    {"name": "Does the team have this chat?", "who": "all", "fn": "_given_back, _team_has", "file": "src/heydesk/services/conversations.py", "rule": "`status == \"human\"` and the team wrote less than **30 minutes** ago", "kept": "`conversations`", "kind": "divert", "fail": "No model. Forwarded to the team. Quiet longer than that, the agent takes it back"},
+    {"name": "Is the AI on?", "who": "all", "fn": "check_not_blocked, config.ai_off", "file": "src/heydesk/services/conversations.py", "rule": "Off for this visitor (`visitors.ai_off`) or for the whole business (`config.ai_off`)", "kept": "`visitors`, `agents.config`", "kind": "divert", "fail": "No model. The message is saved and forwarded to the team (`_save_for_team`)"},
+    {"name": "Does the team have this chat?", "who": "all", "fn": "_return_if_quiet, _team_is_answering", "file": "src/heydesk/services/conversations.py", "rule": "`status == \"human\"` and the team wrote less than **30 minutes** ago", "kept": "`conversations`", "kind": "divert", "fail": "No model. Forwarded to the team. Quiet longer than that, the agent takes it back"},
     {"name": "Allowed one more turn", "who": "all", "fn": "visitors.count_turn → _limit", "file": "src/heydesk/services/visitors.py", "rule": "Plan not ended; plan's replies not used up; visitor under **30 a day**; business under **500 a day**", "kept": "`visitors`, `workspaces`, `turns`", "kind": "stop", "fail": "429 `VisitorLimited`, with how to reach the business"},
     {"group": "While the turn runs"},
-    {"name": "Tool arguments and time", "who": "all", "fn": "run_tool", "file": "src/heydesk/runtime/tool.py", "rule": "Arguments fit the tool's pydantic model; it ends within `timeout_s` (5 to 10 seconds)", "kept": "nothing", "kind": "soft", "fail": "`ok=False` with a hint. The model reads it and tries again or offers a person"},
+    {"name": "Tool arguments and time", "who": "all", "fn": "run_tool", "file": "src/heydesk/runtime/tool.py", "rule": "Arguments fit the tool's pydantic model; it ends within `timeout_seconds` (5 to 10 seconds)", "kept": "nothing", "kind": "soft", "fail": "`ok=False` with a hint. The model reads it and tries again or offers a person"},
     {"name": "At most 6 model calls", "who": "all", "fn": "run_turn", "file": "src/heydesk/runtime/loop.py", "rule": "`MAX_MODEL_CALLS = 6`; a refusal, a lost stream or an empty reply also fails", "kept": "nothing", "kind": "soft", "fail": "A polite line and the hand-off card"},
     {"name": "Exact read-back, then yes", "who": "all", "fn": "confirm", "file": "src/heydesk/runtime/guards.py", "rule": "This call's read-back equals the one heard on an earlier turn", "kept": "`conversations.state`", "kind": "soft", "fail": "Nothing saved. The tool returns the read-back to ask again"},
     {"group": "After the turn"},
@@ -9135,10 +9135,10 @@ tr.hl td { background: var(--accent-soft); }
     {"d": 2, "k": "check", "fn": "text and photo checks", "file": "src/heydesk/services/conversations.py", "does": "1 to 2,000 characters; photos allowed?"},
     {"d": 2, "k": "check", "fn": "visitors.check_not_blocked(agent, visitor)", "file": "src/heydesk/services/visitors.py", "does": "Blocked? Is the AI off for them?", "db": "SELECT visitors (UPDATE told_blocked when blocked)", "note": "Raises when blocked. Otherwise it returns False if the team turned the AI off for this visitor."},
     {"d": 2, "k": "net", "fn": "photos.save(...)", "file": "src/heydesk/services/photos.py", "does": "Only with a photo: saves a JPEG to disk or R2"},
-    {"d": 2, "k": "read", "fn": "_get(s, agent, conversation_id)", "file": "src/heydesk/services/conversations.py", "does": "Loads the chat, if the page sent an id", "db": "SELECT conversations", "note": "The session closes right after: the row stays in memory as `conv`. It also checks for a full chat."},
-    {"d": 2, "k": "check", "fn": "AI off? Team has the chat?", "file": "src/heydesk/services/conversations.py", "does": "If so, the message goes to the team: no model", "note": "Those two paths return a `RunningTurn` with `_to_team` in place of `_run`. It saves the message and forwards it. No `turns` row, nothing counted."},
-    {"d": 2, "k": "check", "fn": "visitors.count_turn(agent, visitor)", "file": "src/heydesk/services/visitors.py", "does": "Plan and daily limits; counts this turn", "db": "SELECT + maybe INSERT visitors; SELECT workspaces; COUNT turns; SUM visitors.turns; UPDATE visitors.turns", "note": "The visitor's row is locked so two turns at once can't both count from the same number. It's counted now, before the model, so a turn that fails later still counts.", "code": "visitor = await self._find(s, ws, key, lock=True)\nif visitor.day != today:\n    visitor.day, visitor.turns = today, 0\nreason = await self._limit(s, ws, visitor, today, now)\nif reason:\n    raise VisitorLimited(limited_message(agent))\nvisitor.turns += 1"},
-    {"d": 2, "k": "write", "fn": "_new(...) + s.add(conv)", "file": "src/heydesk/services/conversations.py", "does": "First message: creates the chat", "db": "INSERT conversations", "note": "With `messages=[]` and `state={}`. Its id reaches the page in the `open` frame."},
+    {"d": 2, "k": "read", "fn": "_get(s, agent, conversation_id)", "file": "src/heydesk/services/conversations.py", "does": "Loads the chat, if the page sent an id", "db": "SELECT conversations", "note": "The session closes right after: the row stays in memory as `conversation`. It also checks for a full chat."},
+    {"d": 2, "k": "check", "fn": "AI off? Team has the chat?", "file": "src/heydesk/services/conversations.py", "does": "If so, the message goes to the team: no model", "note": "Those two paths return a `RunningTurn` with `_save_for_team` in place of `_run`. It saves the message and forwards it. No `turns` row, nothing counted."},
+    {"d": 2, "k": "check", "fn": "visitors.count_turn(agent, visitor)", "file": "src/heydesk/services/visitors.py", "does": "Plan and daily limits; counts this turn", "db": "SELECT + maybe INSERT visitors; SELECT workspaces; COUNT turns; SUM visitors.turns; UPDATE visitors.turns", "note": "The visitor's row is locked so two turns at once can't both count from the same number. It's counted now, before the model, so a turn that fails later still counts.", "code": "visitor = await self._find(s, workspace_id, key, lock=True)\nif visitor.day != today:\n    visitor.day, visitor.turns = today, 0\nreason = await self._limit(s, workspace_id, visitor, today, now)\nif reason:\n    raise VisitorLimited(limited_message(agent))\nvisitor.turns += 1"},
+    {"d": 2, "k": "write", "fn": "_new(...) + s.add(conversation)", "file": "src/heydesk/services/conversations.py", "does": "First message: creates the chat", "db": "INSERT conversations", "note": "With `messages=[]` and `state={}`. Its id reaches the page in the `open` frame."},
     {"d": 2, "k": "build", "fn": "ShopStore(...)", "file": "src/heydesk/shop/store.py", "does": "Makes a ShopStore for this chat", "note": "No database call yet. It holds the session maker, `workspace_id` and `conversation_id`, so every query it makes is scoped."},
     {"d": 2, "k": "net", "fn": "photos.nearest + photo_line", "file": "src/heydesk/services/photos.py", "does": "Only with a photo: finds the closest products", "db": "SELECT products", "note": "Gemini makes a vector and Qdrant finds the closest product photos. The model gets one line of text about them, never the image."},
     {"d": 2, "k": "read", "fn": "shop_prompt(config, store)", "file": "src/heydesk/shop/__init__.py", "does": "Writes the shop's part of the prompt", "db": "SELECT payment_accounts, products, conversations, shop_orders", "note": "The role, the shop, delivery, the products (or just groups, for a long list), their last order, and the size guide."},
@@ -9147,18 +9147,18 @@ tr.hl td { background: var(--accent-soft); }
     {"d": 2, "k": "build", "fn": "tools_for(has_documents)", "file": "src/heydesk/shop/__init__.py", "does": "Picks this turn's tools", "code": "shared = [TAKE_MESSAGE, TAKE_LEAD, HANDOFF, COMPLAINT, OFF_TOPIC, REMEMBER]\nshared += [SEARCH_KNOWLEDGE] if has_documents else []\nreturn [*TOOLS, *shared]"},
     {"d": 2, "k": "build", "fn": "TurnInput(...) and RunningTurn(...)", "file": "src/heydesk/services/conversations.py", "does": "Packs it all. `_run(...)` is created, not started", "note": "`self._run(...)` is a generator: calling it runs none of its code. That's why this function returns before the model says anything."},
     {"d": 1, "k": "stream", "fn": "StreamingResponse(to_sse(turn))", "file": "src/heydesk/api/chat.py", "does": "The route returns; FastAPI starts reading", "note": "The first frame is `open`, with the conversation id. Reading `turn.events` is what starts the model."},
-    {"d": 2, "k": "route", "fn": "_run → run_turn(turn, runtime)", "file": "src/heydesk/runtime/loop.py", "does": "The agent loop begins", "code": "added = opening_messages(turn, rt.llm)       # greeting if first, then their message\nstate = dict(turn.state)\nheard = state.get(\"read_back\", \"\")          # what they heard before this turn\ntools = {tool.name: tool for tool in turn.tools}\nspecs = [tool.spec for tool in turn.tools]"},
+    {"d": 2, "k": "route", "fn": "_run → run_turn(turn, runtime)", "file": "src/heydesk/runtime/loop.py", "does": "The agent loop begins", "code": "added = opening_messages(turn, runtime.llm)       # greeting if first, then their message\nstate = dict(turn.state)\nheard = state.get(\"read_back\", \"\")          # what they heard before this turn\ntools = {tool.name: tool for tool in turn.tools}\nspecs = [tool.spec for tool in turn.tools]"},
     {"d": 3, "k": "build", "fn": "ChatRequest(system + note, specs, messages, model)", "file": "src/heydesk/runtime/loop.py", "does": "Step N of up to 6: builds the request", "note": "`note(state)` adds the language reminder and the current cart to the end of the prompt."},
-    {"d": 3, "k": "model", "fn": "rt.llm.stream(request)", "file": "src/heydesk/adapters/llm/groq.py", "does": "Calls Groq or Maira", "note": "Yields three kinds of event: `TextDelta`, `ToolCall`, `Finished`. Groq streams words and native tool calls. Maira replies whole in one text, and its adapter reads any tool call from JSON, so the loop can't tell them apart. No database transaction is open during this wait."},
+    {"d": 3, "k": "model", "fn": "runtime.llm.stream(request)", "file": "src/heydesk/adapters/llm/groq.py", "does": "Calls Groq or Maira", "note": "Yields three kinds of event: `TextDelta`, `ToolCall`, `Finished`. Groq streams words and native tool calls. Maira replies whole in one text, and its adapter reads any tool call from JSON, so the loop can't tell them apart. No database transaction is open during this wait."},
     {"d": 4, "k": "stream", "fn": "TextDelta → yield Token", "file": "src/heydesk/runtime/loop.py", "does": "Words go to the visitor as they arrive", "note": "`to_sse` turns each into a `token` frame."},
     {"d": 3, "k": "check", "fn": "failure check", "file": "src/heydesk/runtime/loop.py", "does": "No words and no tools? That's a failure", "code": "if finished is None or finished.stop == \"refusal\" or not (streamed or calls):\n    failed = True\n    break\nadded.append(finished.assistant_message)\nif not calls:\n    break  # the reply is done"},
     {"d": 3, "k": "tool", "fn": "for each call: run_tool(tool, call, ctx)", "file": "src/heydesk/runtime/tool.py", "does": "Validates, sets a timeout, runs the tool", "note": "Never raises: bad arguments, a timeout or a bug all come back as `ok=False` with a hint. Web shows the tool's `label` as a `status` frame first.", "code": "args = tool.input_model.model_validate(call.input)\nasync with asyncio.timeout(tool.timeout_s):\n    return await tool.run(ctx, args)"},
     {"d": 4, "k": "write", "fn": "tool.run → ctx.store.*", "file": "src/heydesk/shop/store.py", "does": "The tool reads or saves through the store", "db": "Depends on the tool: see the Tools chapter", "note": "Each store method opens its own short session, and commits right there. So an order is saved mid-turn, before the transcript is."},
-    {"d": 3, "k": "build", "fn": "merge the ToolResult", "file": "src/heydesk/runtime/loop.py", "does": "State, alerts, photos, cards, hand-off", "note": "Results go back to the model through `rt.llm.tool_results`, and the loop goes round again.", "code": "state |= result.state or {}\nasked_for_person |= result.handoff\nif result.alert:\n    alerts.append(result.alert)\noutcomes.append(ToolOutcome(call.id, result.ok, result.data))"},
+    {"d": 3, "k": "build", "fn": "merge the ToolResult", "file": "src/heydesk/runtime/loop.py", "does": "State, alerts, photos, cards, hand-off", "note": "Results go back to the model through `runtime.llm.tool_results`, and the loop goes round again.", "code": "state |= result.state or {}\nasked_for_person |= result.handoff\nif result.alert:\n    alerts.append(result.alert)\noutcomes.append(ToolOutcome(call.id, result.ok, result.data))"},
     {"d": 2, "k": "stream", "fn": "HandOff, then TurnEnded", "file": "src/heydesk/runtime/loop.py", "does": "The loop ends with one TurnEnded", "note": "`TurnEnded` carries `added` (new messages), `state`, the `trace`, `handed_off`, `alerts`, `tools` and `choices`. A failure first adds the polite hand-off line."},
-    {"d": 2, "k": "write", "fn": "_save(conv, ended, auto_assign)", "file": "src/heydesk/services/conversations.py", "does": "Saves the transcript, state and trace", "db": "UPDATE conversations (row locked); INSERT turns; maybe SELECT users", "note": "The row is read again, locked, so a team message at the same moment isn't lost. A new list is assigned, as SQLAlchemy can't see in-place changes.", "code": "saved = await self._get_by_id(s, ws, conv.id, lock=True)\nsaved.messages = [*saved.messages, *ended.added]\nsaved.state = ended.state\nif ended.handed_off:\n    saved.status = \"needs_human\"\ns.add(self._turn(conv, ended))"},
-    {"d": 2, "k": "net", "fn": "_alert(conv, ended)", "file": "src/heydesk/services/conversations.py", "does": "Telegram alert; pushes the order to WooCommerce", "db": "SELECT channels, users", "note": "Only when a tool left an alert, or the visitor was handed off."},
-    {"d": 2, "k": "read", "fn": "calls.after_turn(agent, conv.id)", "file": "src/heydesk/services/calls.py", "does": "A new order may be queued for a call", "db": "SELECT shop_orders, calls; maybe INSERT calls", "note": "Only after a turn with an alert, and with calls turned on."},
+    {"d": 2, "k": "write", "fn": "_save(conversation, ended, auto_assign)", "file": "src/heydesk/services/conversations.py", "does": "Saves the transcript, state and trace", "db": "UPDATE conversations (row locked); INSERT turns; maybe SELECT users", "note": "The row is read again, locked, so a team message at the same moment isn't lost. A new list is assigned, as SQLAlchemy can't see in-place changes.", "code": "saved = await self._get_by_id(s, workspace_id, conversation.id, lock=True)\nsaved.messages = [*saved.messages, *ended.added]\nsaved.state = ended.state\nif ended.handed_off:\n    saved.status = \"needs_human\"\ns.add(self._turn(conversation, ended))"},
+    {"d": 2, "k": "net", "fn": "_alert(conversation, ended)", "file": "src/heydesk/services/conversations.py", "does": "Telegram alert; pushes the order to WooCommerce", "db": "SELECT channels, users", "note": "Only when a tool left an alert, or the visitor was handed off."},
+    {"d": 2, "k": "read", "fn": "calls.after_turn(agent, conversation.id)", "file": "src/heydesk/services/calls.py", "does": "A new order may be queued for a call", "db": "SELECT shop_orders, calls; maybe INSERT calls", "note": "Only after a turn with an alert, and with calls turned on."},
     {"d": 2, "k": "write", "fn": "visitors.after_turn(agent, visitor, tools)", "file": "src/heydesk/services/visitors.py", "does": "Adds or clears off-topic strikes", "db": "UPDATE visitors", "note": "No tools ran: nothing changes."},
     {"d": 1, "k": "stream", "fn": "to_sse: choices, done", "file": "src/heydesk/api/sse.py", "does": "Buttons, then the done frame", "note": "`_run` yields `TurnEnded` after saving, so `done` means it's saved. **A tab closed mid-reply loses the turn:** the visitor drives the generator, so `_save` never runs. An order a tool already saved stays, but the transcript doesn't record it."}
   ],
@@ -9189,7 +9189,7 @@ tr.hl td { background: var(--accent-soft); }
     {"t": 3, "a": 1, "b": 1, "title": "confirm(heard, order, read_back) → Confirmed(order)", "note": "`heard == read_back`, letter for letter. If the model had changed the address, they'd differ, and it would read back again.", "fn": "confirm", "file": "src/heydesk/runtime/guards.py"},
     {"t": 3, "a": 1, "b": 3, "title": "store.place_order(confirmed): one transaction", "note": "Locks the business's row. Takes the stock. Uses up the coupon, if any. Works out the next number. Inserts the order. If stock ran out, nothing is saved. It commits here, mid-turn.", "fn": "_save_order", "file": "src/heydesk/shop/store.py", "db": "SELECT workspaces FOR UPDATE; UPDATE products stock; INSERT shop_orders (O-101)", "state": {"cart": {}, "read_back": "2 × Cotton Panjabi (L, White), subtotal ৳3,700; delivery Inside Dhaka ৳70; total ৳3,770, paid in cash on delivery; to House 5, Road 2, Mirpur, Dhaka; name Rafi; mobile 01712345678"}, "added": ["user: Yes", "assistant: [asks for place_order]", "tool: {code: O-101, total, next}"]},
     {"t": 3, "a": 2, "b": 0, "title": "“Your order is O-101. The shop will call to confirm…”", "note": "Step 2 of this turn. The visitor also gets a receipt card.", "fn": "to_sse", "file": "src/heydesk/api/sse.py", "added": ["user: Yes", "assistant: [asks for place_order]", "tool: {code: O-101, total, next}", "assistant: Your order is O-101…"]},
-    {"t": 3, "a": 1, "b": 3, "title": "Save, then the after-work", "note": "Saves the transcript and trace. Then: a Telegram alert to the owner, the order pushed to a linked WooCommerce store, maybe a confirmation call queued, and off-topic strikes cleared.", "fn": "_run", "file": "src/heydesk/services/conversations.py", "db": "UPDATE conversations; INSERT turns; UPDATE visitors.strikes; maybe INSERT calls"}
+    {"t": 3, "a": 1, "b": 3, "title": "Save, then the after-work", "note": "Saves the transcript and trace. Then: a Telegram alert to the owner, the order pushed to a linked WooCommerce store, maybe a confirmation call queued, and off-topic strikes cleared.", "fn": "_run_turn", "file": "src/heydesk/services/conversations.py", "db": "UPDATE conversations; INSERT turns; UPDATE visitors.strikes; maybe INSERT calls"}
   ],
 
   "toolLife": [
@@ -9255,14 +9255,14 @@ tr.hl td { background: var(--accent-soft); }
     {"t": "workspaces", "c": {"Gates": ["R", "`plan_problem`: has the plan ended?"], "Load": ["R", "`_live`: is the business active?"], "Tools": ["R", "`_lock`: held `FOR UPDATE`, so two saves can't take the same number or the last item"]}},
     {"t": "documents", "c": {"Load": ["R", "`knowledge.titles`: having any adds `search_knowledge`"]}},
     {"t": "visitors", "c": {"Gates": ["RW", "`check_not_blocked` reads; `count_turn` makes the row and adds one to `turns`"], "Prepare": ["R", "`visitor_notes`: what the agent remembers"], "Tools": ["W", "`remember` writes `notes`"], "After": ["W", "`after_turn`: strikes, maybe a block"]}},
-    {"t": "conversations", "c": {"Load": ["RW", "`_get` reads it; `_new` inserts it on the first message"], "Prepare": ["R", "`_here`: for the last order and the notes"], "Tools": ["R", "`_here`: `track_order`, `remember`"], "Save": ["W", "`_save`, locked: `messages`, `state`, `status`, `updated_at`"]}},
+    {"t": "conversations", "c": {"Load": ["RW", "`_get` reads it; `_new_conversation` inserts it on the first message"], "Prepare": ["R", "`_current_conversation`: for the last order and the notes"], "Tools": ["R", "`_current_conversation`: `track_order`, `remember`"], "Save": ["W", "`_save`, locked: `messages`, `state`, `status`, `updated_at`"]}},
     {"t": "turns", "c": {"Gates": ["R", "`replies_used`: counts rows for the plan's limit"], "Save": ["W", "`_turn`: one row. Time, tokens, cost, tools; never anyone's words"]}},
-    {"t": "products", "c": {"Prepare": ["R", "`shop_prompt` lists them; `photo_line` too"], "Tools": ["RW", "Cart and search read; `_stock` takes or returns stock"]}},
-    {"t": "shop_orders", "c": {"Prepare": ["R", "`before`: their last order, to offer the same details"], "Tools": ["RW", "`place_order`, `change_order`, `cancel_order`, `confirm_order`"], "After": ["R", "`calls.after_turn`: any new order to call about?"]}},
+    {"t": "products", "c": {"Prepare": ["R", "`shop_prompt` lists them; `photo_line` too"], "Tools": ["RW", "Cart and search read; `_change_stock` takes or returns stock"]}},
+    {"t": "shop_orders", "c": {"Prepare": ["R", "`earlier_records`: their last order, to offer the same details"], "Tools": ["RW", "`place_order`, `change_order`, `cancel_order`, `confirm_order`"], "After": ["R", "`calls.after_turn`: any new order to call about?"]}},
     {"t": "coupons", "c": {"Tools": ["RW", "`update_cart` checks one; `_save_order` adds a use"]}},
     {"t": "payment_accounts", "c": {"Prepare": ["R", "`pays_first`, only if the owner turned it on"], "Tools": ["R", "`new_order`: does this order start `unpaid`?"]}},
     {"t": "team_messages, leads, tickets", "c": {"Tools": ["W", "`take_message`, `request_exchange`, `take_lead`, `flag_complaint`"]}},
-    {"t": "missed_questions", "c": {"Tools": ["W", "`store.missed`: for the owner to teach"]}},
+    {"t": "missed_questions", "c": {"Tools": ["W", "`store.save_missed_question`: for the owner to teach"]}},
     {"t": "users", "c": {"Save": ["R", "`least_busy`, on a hand-off with auto-assign"], "After": ["R", "`team.alert`: whose Telegram to tell"]}},
     {"t": "channels", "c": {"After": ["R", "`team.alert`: the business's bot"]}},
     {"t": "calls", "c": {"After": ["RW", "`calls.after_turn`: queues a confirmation call"]}}
@@ -9272,7 +9272,7 @@ tr.hl td { background: var(--accent-soft); }
   "row": "{\n  \"id\": \"e20a…\",\n  \"workspace_id\": \"dev\",\n  \"agent_id\": \"7c1e…\",\n  \"channel\": \"web\",\n  \"contact\": \"a81f…\",\n  \"status\": \"active\",\n  \"history_from\": 0,\n  \"state\": {\n    \"cart\": {\"lines\": [{\"code\": \"P-12\", \"name\": \"Cotton Panjabi\", \"size\": \"L\", \"colour\": \"White\", \"quantity\": 2, \"price\": 185000}], \"subtotal\": 370000}\n  },\n  \"messages\": [\n    {\"role\": \"assistant\", \"content\": \"Welcome! How can I help?\"},\n    {\"role\": \"user\", \"content\": \"I want 2 Cotton Panjabi, L, white\"},\n    {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [\n      {\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"update_cart\", \"arguments\": \"{\\\"lines\\\": [...]}\"}}\n    ]},\n    {\"role\": \"tool\", \"tool_call_id\": \"call_1\", \"content\": \"{\\\"order\\\": [...], \\\"subtotal\\\": \\\"৳3,700\\\"}\"},\n    {\"role\": \"assistant\", \"content\": \"2 × Cotton Panjabi (L, White) = ৳3,700...\"}\n  ]\n}",
   "locks": [
     {"what": "`count_turn`", "lock": "The visitor's row", "why": "Two turns at once would both count from the same number."},
-    {"what": "`_save`, `team_reply`, `page_wrote`", "lock": "The conversation's row", "why": "Two writers would each add to the list they read, and one line would be lost."},
+    {"what": "`_save`, `team_reply`, `save_page_message`", "lock": "The conversation's row", "why": "Two writers would each add to the list they read, and one line would be lost."},
     {"what": "`_save_order`, `Store.add`", "lock": "The business's row", "why": "Numbers (O-101), stock and a coupon's last use must be taken one at a time."}
   ],
   "elsewhere": [

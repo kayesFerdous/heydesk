@@ -34,32 +34,32 @@ def woo_out(link: WooLink) -> WooOut:
 
 
 @router.put("/api/agent/woo")
-async def link_woo(body: WooIn, ws: Workspace, services: Svc) -> WooOut:
+async def link_woo(body: WooIn, workspace_id: Workspace, services: Svc) -> WooOut:
     """Checks the key, links the store and takes the products from it now. Then our orders are
     written there, and it's synced when its webhooks say something changed."""
-    return woo_out(await services.woo.link(ws, body.url, body.key, body.secret))
+    return woo_out(await services.woo.link(workspace_id, body.url, body.key, body.secret))
 
 
 @router.get("/api/agent/woo")
-async def get_woo(ws: Workspace, services: Svc) -> WooOut:
-    return woo_out(await services.woo.get(ws))
+async def get_woo(workspace_id: Workspace, services: Svc) -> WooOut:
+    return woo_out(await services.woo.get(workspace_id))
 
 
 @router.post("/api/agent/woo/sync")
-async def sync_woo(ws: Workspace, services: Svc) -> WooOut:
+async def sync_woo(workspace_id: Workspace, services: Svc) -> WooOut:
     """Writes the orders that changed and reads the products now."""
-    return woo_out(await services.woo.sync(ws))
+    return woo_out(await services.woo.sync(workspace_id))
 
 
 @router.delete("/api/agent/woo", status_code=status.HTTP_204_NO_CONTENT)
-async def unlink_woo(ws: Workspace, services: Svc) -> None:
+async def unlink_woo(workspace_id: Workspace, services: Svc) -> None:
     """Stops syncing. The list stays and can be edited here again."""
-    await services.woo.unlink(ws)
+    await services.woo.unlink(workspace_id)
 
 
-@router.post("/api/woo/hook/{ws}", include_in_schema=False)
+@router.post("/api/woo/hook/{workspace_id}", include_in_schema=False)
 async def woo_webhook(
-    ws: str,
+    workspace_id: str,
     request: Request,
     services: Svc,
     signature: Annotated[str, Header(alias="X-WC-Webhook-Signature")] = "",
@@ -68,7 +68,7 @@ async def woo_webhook(
     a webhook is made has no signature and needs only a 200."""
     if not signature:
         return {"ok": True}
-    if not await services.woo.hook_signed(ws, await request.body(), signature):
+    if not await services.woo.hook_signed(workspace_id, await request.body(), signature):
         raise NotFound("Not found")
-    services.woo.sync_soon(ws)
+    services.woo.sync_soon(workspace_id)
     return {"ok": True}

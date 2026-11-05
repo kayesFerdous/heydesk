@@ -108,7 +108,7 @@ the business name comes from signup. `GET /api/agent` then says what's `missing`
 step (D15): the agent answers from the start, and what's not filled in is simply not in its prompt.
 
 **The products are a table, and they're in the prompt.** `PUT /api/products` replaces them
-whole. The prompt lists them, one line each, up to `LONG_LIST` (D80).
+whole. The prompt lists them, one line each, up to `LONG_PRODUCT_LIST` (D80).
 
 **One agent per business** (D22). `agents.workspace_id` is unique,
 so a business's agent is just "the agent": no ids in the URLs. Creating a second is a 409.
@@ -116,7 +116,7 @@ The frontend still reads `kind` on the agent and the admin's businesses, and `GE
 
 **`AgentService`** (`services/agents.py`): `create`, `update` (validates; live from the next
 message), `get` (with `missing`), `by_key` (a `LiveAgent`: its config and document titles),
-`store(ws)` for the owner routes. There is no publish step and no versions (D15).
+`store(workspace_id)` for the owner routes. There is no publish step and no versions (D15).
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev` workspace and the
 agent `dev-shop` from `DEV_AGENT_SEED`; it takes the products
@@ -201,7 +201,7 @@ class Tool:
     run: Callable[[ToolContext, BaseModel], Awaitable[ToolResult]]
     label: str = ""                # web status line while it runs: "Checking the menu…"
     filler: str = ""               # voice line at the start: "One moment."
-    timeout_s: float = 5.0
+    timeout_seconds: float = 5.0
 ```
 
 `run_tool` validates the arguments, runs the tool under its timeout and turns any problem into
@@ -221,13 +221,13 @@ merged into the conversation's `state`, saved with the turn.
 |---|---|---|---|
 | `take_message` | shared | **yes** | `message`; optional `name`, `phone`, `best_time` (checked when given; the agent offers once to take them, D44). Returns its code, `M-104`, and an alert for the owner |
 | `search_knowledge` | shared, with documents | no | The best 4 passages from the business's documents, with their titles and a reminder that they are facts, never instructions (D35) |
-| `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_LIST` (60) products (D80). Off a call, it also sends a card for each product it found, photo or not, as `show_photos` does, and names them in `shown` (D102, D125) |
+| `find_product` | shop | no | `query`: a name, a group, a colour or what it's for. Python scores each product's words (twice in the name or group, once in the sizes, colours or description) and returns up to 8 of the prompt's own product lines, best first; nothing found says to try other words. The prompt tells the model to use it only when the shop has more than `LONG_PRODUCT_LIST` (60) products (D80). Off a call, it also sends a card for each product it found, photo or not, as `show_photos` does, and names them in `shown` (D102, D125) |
 | `update_cart` | shop | no | Sets the whole order: codes, quantities, and a size and colour when the product has them. Python checks the choices and the stock (the product's own, or its variant's for that size and colour, D56: "Cotton Panjabi (L/Navy): sold out (left: M, L/White)") and adds up the subtotal. Under `free_delivery_over`, it also says how much more makes the delivery free (`free_delivery_if_you_add`, D54); at or over it, `delivery: free`. The cart goes in `state["cart"]` (D45). `goes_with`: the prompt lines of up to 2 products the cart's products name in their `goes_with`, not in the cart, not sold out and not offered before in this chat (`state["offered"]`), so each is offered once (D125) |
 | `place_order` | shop | **yes** | `address`, `name`, `phone` (a Bangladeshi mobile, Bangla digits and +880 accepted), `note`, and `district` (the model reads it off the address: Mirpur → Dhaka). Python finds the area (`match_zone`, D98, D100): the one with the district, else the one for everywhere else; a name that isn't one of the 64 is a problem to ask about, and a district no area covers is "the shop doesn't deliver there". An address with no district asks for it. Gives the delivery charge and total as soon as the area is known; free over `free_delivery_over`. What's missing comes back as one list: in a chat, "ask for all of these in one message"; on a call, one at a time (`ArgumentChecker(together=…)`, D92). Takes the items out of stock (the product's, or the variant's) as it saves. Saves it `new` when the shop calls to confirm (`call_to_confirm`), else `confirmed` (D92). Returns its code, `O-101`, what to say next (the call or that it's confirmed, the cash for the delivery man, who calls before he comes, the usual days), and an alert, which also warns when this mobile has returned or cancelled orders before and lists the order's products at `LOW_STOCK` (3) or fewer (D54). When its area has `pay_first` (and a charge, and the shop's store is connected), it saves the order `unpaid` and returns a `pay_link` instead, and no alert: the payment confirms it (D47, D92) |
 | `track_order` | shop | no | No code for the one order placed in this conversation (D55); otherwise the mobile alone finds the latest order with it, or with nothing, this buyer's last order from the same chat or browser (D92, D114), and the code and the mobile find any: its status in words, items, total, what was paid online and what's left for cash on delivery, how long delivery usually takes, and the `pay_link` while it's unpaid; while shipped, the courier's last words (`courier_says`, D112). A wrong code and a wrong number get the same answer |
 | `change_order` | shop | **yes** | Found like `track_order`, except the mobile alone: a change needs the code (or the order from this chat, or this buyer's last). Then any of new `items` (the whole list, checked and priced as `update_cart`'s, with the order's own items counted as on the shelf, D92), `address` (with its `district`, or it asks for it, D98), `new_phone`, `note`, only while `new` or `confirmed` (`CHANGEABLE`). New items or a new district work out the delivery charge (free or not) and total again; not once its charge was paid online. The store swaps the stock in one transaction. Reads back only what changes; alerts the owner (D55) |
 | `cancel_order` | shop | **yes** | Found like `change_order`; only while `unpaid`, `new` or `confirmed` (not once the courier has it). The items go back in stock |
-| `request_exchange` | shop | **yes** | Found like `change_order` (the mobile alone isn't enough: the code, or the order from this chat, or this buyer's last); only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.choose`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
+| `request_exchange` | shop | **yes** | Found like `change_order` (the mobile alone isn't enough: the code, or the order from this chat, or this buyer's last); only a `delivered` order, within `exchange_days` of being marked delivered. `product` (a code from the order) and the `size` and/or `colour` wanted, checked against the product's own (`Product.match_option`, as `update_cart`) and refused when that variant is sold out, optional `reason`. Saved as a message for the team (`M-104`) with an alert: the owner arranges the swap; no stock changes (D55) |
 | `show_photos` | shop | no | `products`: up to 10 codes. Sends a `photos` event with each one's card (name, price, first photo or none, first video or none), and says which were shown; a product with no photo is named in `no_photo` so the model describes it, and one with a video in `video`. Not on a call: there it says photos can't be shown here. Each channel shows the cards its way (D125), each with an Order button (D99) (D57) |
 | `handoff_to_human` | shared | no | Marks the conversation `needs_human` and alerts the owner (D43), returns the hand-off message and phone. Optional `unanswered`: their question, when it hands off for not knowing; saved as a missed question (D143) |
 | `flag_complaint` | shared | no | `reason`. A hand-off (D43) that opens a ticket for the team, one per chat while open, and alerts "😠 Complaint C-101: reason" once; no yes is asked, as it's the team's to-do (D138) |
@@ -238,7 +238,7 @@ merged into the conversation's `state`, saved with the turn.
 **The commit check** (`runtime/guards.py`, D107): a writing tool's first call returns its
 read-back (`ask_for_yes`), which goes into the conversation state as `read_back`. The talking
 model judges the visitor's reply: only after a clear yes does it call the tool again. At the
-start of each turn the loop puts the state's `read_back` in `ToolContext.heard`; `confirm`
+start of each turn the loop puts the state's `read_back` in `ToolContext.last_read_back`; `confirm`
 makes a `Confirmed[T]` only when this call's read-back equals it. So the visitor heard exactly
 what is saved, on an earlier turn: a call in the same turn as its read-back, or with any detail
 changed, only reads back again. A store's writing methods accept only `Confirmed[...]`, so mypy
@@ -319,7 +319,7 @@ agent shows:  show_photos(products) ─► a `photos` event: each product's name
   scored 0.72).
 - **A message can carry photos.** A visitor's message has `photo` (its URL), and `show_photos`'s
   tool message has `photos` (its items). The chat page and the owner's conversation view show
-  them. The turn leaves them out of what the model gets (`HIDDEN` in `runtime/loop.py`, with
+  them. The turn leaves them out of what the model gets (`HIDDEN_FIELDS` in `runtime/loop.py`, with
   `by`).
 - **Isolation.** Files are under the business's id; every Qdrant point has `workspace_id` and
   every search filters by it. Saving products refuses a photo URL that isn't one of this
@@ -374,7 +374,7 @@ the first photo or "", `video` the first video link or "". Each app shows a row 
 - **Products have `videos`** (up to 3 http(s) links: YouTube, a Facebook video, a how-to) and
   **`goes_with`** (up to 3 codes). Both come from the Products page, a CSV or a sheet (columns
   `videos` and `goes_with`); Woo has neither. An import whose product has none keeps the ones
-  it had, as photos are kept (`KEPT`). The product page links each video; nothing is embedded,
+  it had, as photos are kept (`FIELDS_KEPT_ON_IMPORT`). The product page links each video; nothing is embedded,
   so the page's policy stays `default-src 'none'`.
 - A `goes_with` code that isn't in the shop is skipped, not refused, so a deleted product
   doesn't block saving the list.
@@ -389,7 +389,7 @@ and a photo's URL is the store's `url` + "/" + key:
 
 - `R2Media` signs each S3 request itself (AWS Signature Version 4: hashlib and hmac, checked
   against Amazon's published examples), over httpx. No SDK.
-- `is_products` checks the address, not the file: the business's own products folder and a
+- `is_product_photo` checks the address, not the file: the business's own products folder and a
   32-hex name, so no `../` reaches another business. A network call per photo on every save
   would buy nothing more.
 - Messenger fetches a card's photo from its URL: `/media/…` gets `PUBLIC_URL` in front, an R2
@@ -431,7 +431,7 @@ Every table has `workspace_id` (except `workspaces`).
 
 The **shared columns** (`models/customer_request.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
-change the table's `FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
+change the table's `STATUS_FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
 (`Payable`, same file) are on what a visitor can be asked to pay for first (D47, D48): currency,
 paid (minor units, online), payment_ref (the gateway's id).
 
@@ -591,7 +591,7 @@ the ones that are due and alerts the owner ("⏰ A chat you snoozed is back", wi
 The same round nudges an unfinished order (D139): a shop chat, `active`, last touched 1 to 3
 hours ago, whose last turn (not an `assist` one) ran `place_order` with no order saved since,
 gets "Shall I confirm your order? Tap Yes, or tell me what to change." with *Yes* and *Change*,
-through `tell_in_window`. `nudged` is set when tried, so never twice in a chat. A *Yes* is
+through `tell_visitor_if_allowed`. `nudged` is set when tried, so never twice in a chat. A *Yes* is
 answered by the agent: the read-back is still the state's, so `place_order` saves it.
 `?q=` matches the name, or the messages as text (`CAST(messages AS TEXT) ILIKE`), so a phone,
 an order code or any words find it, in done and snoozed chats too; `%` and `_` are taken as
@@ -679,7 +679,7 @@ in Bangladesh many people share one.
 
 **Block and AI off (D127).** The team (owner or moderator) decides about one visitor from their
 chat: `PATCH /api/visitors/{id} {blocked | ai_off}`; `GET /api/visitors/blocked` lists who is
-blocked now, with their latest chat. A visitor is who `key_of(channel, contact)` names, so a
+blocked now, with their latest chat. A visitor is who `visitor_key(channel, contact)` names, so a
 block covers all their chats on that app (a web visitor's chats and calls share one).
 
 ```
@@ -690,7 +690,7 @@ any message ─► visitors.let_in (first, before the photo, the conversation or
                                  still gets the 429, as the page shows the error itself
                  ai_off ─► the conversation becomes `human`, the message is saved and forwarded
                            to the owner (D43's path): no turn, nothing paid
-                 AI on again ─► their next message gives the chat back (`_given_back`) and
+                 AI on again ─► their next message gives the chat back (`_return_if_quiet`) and
                            is answered
 a messaging app's message ─► visitors.arrived: FLOOD_MESSAGES (20) in a minute ─► blocked
                              `flooding` for BLOCK_HOURS (counted per message, before D117's
@@ -818,7 +818,7 @@ every SHEET_SYNC_MINUTES (5):
 - **The owner writes what's on the shelf; Python takes off what's sold but still there.** An
   order that's `unpaid`, `new` or `confirmed` holds its items but hasn't left the shop yet, so
   a count of the shelf still includes them. When a count comes from the sheet, those orders'
-  lines are taken off it (with `Product.counter`, as `place_order` takes stock, D56); never
+  lines are taken off it (with `Product.stock_index`, as `place_order` takes stock, D56); never
   below 0. The owner just counts what they see, with no sum to do; a shipped order has left
   the shelf, so it isn't taken off again.
 
@@ -835,7 +835,7 @@ every SHEET_SYNC_MINUTES (5):
           if old and seen.get(p.code) == cells[p.code]:      # the owner didn't touch the count
               p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
           else:                                              # a new count of the shelf
-              p = take_off(p, [l for l in held if l["code"] == p.code])
+              p = minus_ordered(p, [l for l in held if l["code"] == p.code])
           keep.append(p.model_copy(update={"photos": old.photos if old else []}))
       return keep
   ```
@@ -850,7 +850,7 @@ every SHEET_SYNC_MINUTES (5):
   saved until the whole sheet is clean), or a sheet that can't be fetched: the list stays as
   it was, `problem` says why (the first 3 rows' problems, or "couldn't open the sheet"), and the
   owner gets one Telegram alert when the problem first appears, not every 5 minutes (a new
-  `TeamService.notify(ws, text)`: an alert with no conversation, so no `Ref:` line).
+  `TeamService.notify(workspace_id, text)`: an alert with no conversation, so no `Ref:` line).
   A sheet that can't be fetched is read whole again once it's back.
   The next clean sync clears it.
 - **A linked sheet adds and updates only its own products** (D120, below), so `PUT
@@ -858,8 +858,8 @@ every SHEET_SYNC_MINUTES (5):
 - **One sheet per agent**, because an agent has one list. `PRODUCT_COLUMNS` names its
   fields, the same as the import's, and the store takes the sheet's text
   (`Store.take_sheet(text, mapping, seen) -> seen`): the
-  shop merges, in one transaction with reading the orders that hold stock (`merge`,
-  `take_off`, `HOLDS` in `values.py`).
+  shop merges, in one transaction with reading the orders that hold stock (`merge_sheet_products`,
+  `minus_ordered`, `STATUSES_HOLDING_STOCK` in `values.py`).
 
 **Routes:**
 
@@ -925,8 +925,8 @@ sync:
 - **Woo's stock is the count.** Woo takes off its website's orders, and ours once they're
   written, and puts back what's cancelled (seen on WooCommerce 9.4: an order created `on-hold`
   or `processing` takes its stock once; `cancelled` puts it back). So the pull takes Woo's
-  count as it is, with no `seen` and no shelf sum (D58's `merge` isn't used), **less the orders
-  that hold stock here but aren't in Woo yet** (`HOLDS` with no `woo_id`, `take_off`). That's
+  count as it is, with no `seen` and no shelf sum (D58's `merge_sheet_products` isn't used), **less the orders
+  that hold stock here but aren't in Woo yet** (`STATUSES_HOLDING_STOCK` with no `woo_id`, `minus_ordered`). That's
   what keeps a pull from undoing an order placed a minute ago. `place_order` takes stock here
   as always, so two buyers in the same minute still can't get the last one.
 - **Push, then pull.** Each sync first writes the orders that changed: `shop_orders.woo_sent`
@@ -1046,11 +1046,11 @@ an unknown code is the same 404 page.
   card's tap (`default_action`) and a *Details* button beside *Order this* (D99); Telegram, a
   *Details* URL button beside *Order this*; WhatsApp, a `Details: <link>` line in the caption.
 - **Order this** on the website chat sends "Order [code]", as Messenger's postback does (D123),
-  so `# Right now` tells the web chat too that a tapped button arrives as its words (`TAPS`).
+  so `# Right now` tells the web chat too that a tapped button arrives as its words (`BUTTON_REPLY_RULE`).
 - **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
   stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
   area's charge and days. It posts back to the page. `form_order` (`shop/tools.py`)
-  checks it as `place_order` does (`_priced`, `_short`, `match_zone`, `mobile`), and
+  checks it as `place_order` does (`_lines_with_prices`, `_stock_problem`, `match_zone`, `mobile`), and
   `new_order` builds the order and its read-back for both. The first post shows **Check your
   order**, the order read back, with the details and `heard` (that read-back) in hidden
   fields; *Place order* posts them again, and `confirm(heard, order, read_back)` saves it only
@@ -1075,12 +1075,12 @@ Two things make them feel known:
 
 - **Their last order or message** (`Store.before`): in an earlier conversation *or this
   one*, so a second order in the same Messenger chat is offered the first one's name, phone and
-  address instead of asking again (D123). The `returning()` section says to offer them
+  address instead of asking again (D123). The `returning_section()` section says to offer them
   once, when the details are needed.
 - **What they told the agent** (D124): the shared `remember` tool keeps a short note when the
   visitor mentions something worth keeping ("likes dark colours", "buying for her son, 8",
   "allergic to penicillin"). Notes live on the `visitors` row the limits already keep
-  (`web:<token>`, `messenger:<psid>`…), as `{about: note}`: a note on the same `about` replaces
+  (`web:<token>`, `messenger:<chat_id>`…), as `{about: note}`: a note on the same `about` replaces
   the old one, and only the newest 20 stay. Every turn, `# What you remember about them` lists
   them after the shop's sections; the rule says to use them naturally, not to read them out or
   ask about them. They're the visitor's words, so they're never formatted (`fill`) and never
@@ -1180,7 +1180,7 @@ A buyer writes like a person: "hi", then "dam koto", then a photo, in three bubb
 sometimes replies to an older message. The agent answers like a person.
 
 ```
-a message ─► (Messenger: "Seen" at once) ─► _gather: waits CHAT_WAIT_SECONDS (3)
+a message ─► (Messenger: "Seen" at once) ─► _collect_messages: waits CHAT_WAIT_SECONDS (3)
           ─► another came meanwhile? this one stops; the last one answers them all
           ─► _turn: each message's words a line, a photo downloaded, a quoted message
              put before the words that reply to it ─► one ConversationService.reply
@@ -1303,7 +1303,7 @@ agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
   `PUBLIC_URL`, as the webhook does.
 - **`show_photos` works everywhere but a call.** If the carousel fails to send, it's logged and
   the text still goes.
-- The port gains `download(url) -> bytes` and `send_cards(token, psid, cards)`; `FakeMessenger`
+- The port gains `download(url) -> bytes` and `send_cards(token, chat_id, cards)`; `FakeMessenger`
   records both.
 
 ### Voice notes (D147)
@@ -1315,7 +1315,7 @@ apps' ogg and mp4 as they are and finds the language itself. `build_transcriber`
 `GROQ_API_KEY` is set, the fake when `LLM_PROVIDER=fake`, and none otherwise. The turn reads
 `[Voice note] <words>` as if typed; the reply stays text. A note over `MAX_VOICE_BYTES` (2 MB,
 minutes long), one that can't be fetched or heard, or no transcriber, is skipped like a sticker:
-alone, it gets `NOT_TEXT`. Nothing is kept but the words in the transcript.
+alone, it gets `NOT_TEXT_REPLY`. Nothing is kept but the words in the transcript.
 
 ### Photos on Telegram (D63)
 
@@ -1483,16 +1483,16 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
   `taken_over_at`, so it never goes back by itself: it goes back when the AI is on for them
   again and they write.
 - **Business Suite's messages:** the Page subscribes `message_echoes`. Every message we send
-  carries `metadata: "heydesk"` (`ports/messenger.py`, `OURS`), and so does its echo, so an
+  carries `metadata: "heydesk"` (`ports/messenger.py`, `OUR_APP_TAG`), and so does its echo, so an
   echo without it is the owner's own. Its words are added to the chat as the team's
-  (`page_wrote`, rule 5: added, not edited), so the agent reads them next turn; an echo
+  (`save_page_message`, rule 5: added, not edited), so the agent reads them next turn; an echo
   before there's a chat, or with no text, is left. A Page connected before this needs
   connecting again for its echoes.
 - Given up: WhatsApp's own app (the Cloud API number has none to type in; the inbox switch
   covers it). The buyer sees the "." itself.
 
 - **Telling the buyer (D66, D105):** when the owner moves an order with
-  `PATCH /api/shop/orders/{id}`, the row's `news()` gives a line, and
+  `PATCH /api/shop/orders/{id}`, the row's `status_update_text()` gives a line, and
   `TeamService.tell_visitor` adds it to that conversation as the team's (the web page fetches
   it, the bot or the Page sends it, the model sees it next turn; the conversation stays with
   the agent): `confirmed` ("…is confirmed and will be sent out."), `shipped` ("…is with the
@@ -1523,7 +1523,7 @@ keys by granting a token. A 400 carries the gateway's reason, and no route retur
 The agent asks for payment only when `pay_first` is on (a shop: in some area,
 `ShopConfig.pay_first`) **and** a gateway is connected (`Store.pays_first`): without one, the
 prompt says nothing about paying, the tools place orders as before, and `missing` says
-"Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`, its `PAYABLE`
+"Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`, its `PAYABLE_TABLES`
 tables), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
 provider (`Gateways`: `adapters/payments/sslcommerz.py` and `bkash.py`; `PAYMENTS=fake` for
 tests) do it. `shop/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
@@ -1603,7 +1603,7 @@ every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRAC
   | A plan running | a smaller plan | refused until it ends; the grace days keep answering meanwhile | |
   | More moderators than the plan has | that plan | refused: remove some first | |
 
-  `settle` prices the payment again when the gateway says it's paid, under a row lock on the
+  `check_payment` prices the payment again when the gateway says it's paid, under a row lock on the
   workspace. If it's still the same kind and costs no more than was paid, it's applied;
   otherwise (another payment or an admin changed the plan meanwhile) it's kept as `review`,
   money taken but not applied, and an admin settles it by hand. `/api/billing` lists the
@@ -1684,7 +1684,7 @@ repeat it. A bad code is `ok=False` with `coupon_problem`, and the cart is kept 
 **An offer to everyone who wrote today (D140).** `POST /api/shop/offers {text, kind, value,
 ends_at, within_hours}` sends the owner's words, as they are, to each shop chat with a turn in
 the last `within_hours` (24 by default, up to a week, D163; not a call, not an `assist`),
-through `tell_in_window`, and saves it as a coupon
+through `tell_visitor_if_allowed`, and saves it as a coupon
 `OFFER1`, `OFFER2`… whose `only_for` is the chats it reached. `ShopStore.coupon` gives such a
 code only to those chats, so said by anyone else it's "no coupon"; `update_cart` uses the
 newest offer still running for the chat when the buyer gave no code and the cart has none.
@@ -1710,7 +1710,7 @@ orders came to, and the chats they ordered from. Only this shop's orders count (
 
 A confirmed order goes to the courier on its own. `CourierApi` (`ports/courier.py`) has
 `check(account)`, `book(account, Parcel) → parcel id` and `status(account, parcel id) →
-Tracked(said, ending)`. Its adapters: `Steadfast` and `Pathao` (`adapters/courier/`), with the
+ParcelStatus(said, ending)`. Its adapters: `Steadfast` and `Pathao` (`adapters/courier/`), with the
 shop's own merchant login linked at `/api/agent/courier` (checked when saved; `courier_links`,
 secrets encrypted), and `FakeCourier`, which moves a parcel one step every 2 minutes and
 delivers it after 8. A shop with no link uses the fake one, except in production (by hand).
@@ -1890,7 +1890,7 @@ version handles them.
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |
 | Prompt caching | The prompt is rebuilt every turn; it costs a little more |
 | Hand-off guard on every turn | Hand-off is a tool the model calls |
-| A shop's search that knows Banglish ("lal" for Red) or meanings | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41). A shop over `LONG_LIST` (60) products, such as a linked WooCommerce store, lists only its groups, and `find_product` matches plain words (D80) |
+| A shop's search that knows Banglish ("lal" for Red) or meanings | The whole list is in the prompt, every turn; fine for the few dozen a small business has (D41). A shop over `LONG_PRODUCT_LIST` (60) products, such as a linked WooCommerce store, lists only its groups, and `find_product` matches plain words (D80) |
 | Knowing a returning visitor on a shared computer | The web chat and a call use the browser's token as the `contact` (D114), so someone else on the same browser is offered the last visitor's name, phone and address, and gets their notes (D124). Clearing the browser's data makes a new visitor |
 | Several tool calls in one Gigalogy reply | The first `{"tool": …}` runs; the model sees its result and can call the next |
 | Progress-line policy (thresholds, rotation) | Web shows the tool's label; voice says the tool's filler |

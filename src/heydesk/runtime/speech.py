@@ -93,9 +93,9 @@ def _clock(m: re.Match[str]) -> str:
 
 
 # Bangla. The Bangla voice reads Bangla letters only, so every number becomes Bangla words.
-BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
-BN_DIGIT_WORDS = ["শূন্য", "এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়"]
-BN_CURRENCY_WORDS = {
+BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+BANGLA_DIGIT_WORDS = ["শূন্য", "এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়"]
+BANGLA_CURRENCY_WORDS = {
     "BDT": ("টাকা", "পয়সা"),
     "USD": ("ডলার", "সেন্ট"),
     "EUR": ("ইউরো", "সেন্ট"),
@@ -103,55 +103,55 @@ BN_CURRENCY_WORDS = {
     "INR": ("রুপি", "পয়সা"),
 }
 CODE = re.compile(r"\b([AMOT])-(\d+)")  # O-104, A-104, T-101, M-104: a record's code
-BN_LETTERS = {"A": "এ", "M": "এম", "O": "ও", "T": "টি"}
-TWICE = re.compile(r"(সকাল|দুপুর|বিকেল|সন্ধ্যা|রাত) \1")
+BANGLA_LETTERS = {"A": "এ", "M": "এম", "O": "ও", "T": "টি"}
+REPEATED_PART_OF_DAY = re.compile(r"(সকাল|দুপুর|বিকেল|সন্ধ্যা|রাত) \1")
 
 
 def _bangla(text: str) -> str:
     """ "মোট ৳360, 7:30 pm, O-104" → "মোট তিনশো ষাট টাকা, সন্ধ্যা সাতটা বেজে ত্রিশ মিনিট, ও একশো চার"."""
-    text = text.translate(BN_DIGITS)  # the model may write ৩৬০ as well as 360
-    text = PHONE.sub(_bn_phone, text)
-    text = CODE.sub(lambda m: f"{BN_LETTERS[m[1]]} {_bn(m[2])}", text)
-    text = MONEY.sub(_bn_money, text)
-    text = CLOCK.sub(_bn_clock, text)
-    text = TWICE.sub(r"\1", text)  # "সন্ধ্যা 7:30 pm" was "সন্ধ্যা সন্ধ্যা সাতটা…"
+    text = text.translate(BANGLA_DIGITS)  # the model may write ৩৬০ as well as 360
+    text = PHONE.sub(_bangla_phone, text)
+    text = CODE.sub(lambda m: f"{BANGLA_LETTERS[m[1]]} {_bangla_number(m[2])}", text)
+    text = MONEY.sub(_bangla_money, text)
+    text = CLOCK.sub(_bangla_clock, text)
+    text = REPEATED_PART_OF_DAY.sub(r"\1", text)  # "সন্ধ্যা 7:30 pm" was "সন্ধ্যা সন্ধ্যা সাতটা…"
     text = text.replace(" × ", " ").replace("#", "নম্বর ")
-    return NUMBER.sub(lambda m: _bn(m[0]), text)
+    return NUMBER.sub(lambda m: _bangla_number(m[0]), text)
 
 
-def _bn(digits: str) -> str:
+def _bangla_number(digits: str) -> str:
     """num2words writes the formal শত ("তিনশত"); people say শো ("তিনশো")."""
     return str(num2words(int(digits.replace(",", "")), lang="bn")).replace("শত", "শো")
 
 
-def _bn_phone(m: re.Match[str]) -> str:
-    said = " ".join(BN_DIGIT_WORDS[int(c)] for c in m[0] if c.isdigit())
+def _bangla_phone(m: re.Match[str]) -> str:
+    said = " ".join(BANGLA_DIGIT_WORDS[int(c)] for c in m[0] if c.isdigit())
     return ("প্লাস " if m[0].startswith("+") else "") + said
 
 
-def _bn_money(m: re.Match[str]) -> str:
+def _bangla_money(m: re.Match[str]) -> str:
     code = next(code for code, symbol in SYMBOLS.items() if symbol == m[1])
-    major, minor = BN_CURRENCY_WORDS[code]
-    said = f"{_bn(m[2])} {major}"
+    major, minor = BANGLA_CURRENCY_WORDS[code]
+    said = f"{_bangla_number(m[2])} {major}"
     if m[3] and int(m[3]):
-        said += f" {_bn(m[3])} {minor}"
+        said += f" {_bangla_number(m[3])} {minor}"
     return said
 
 
-def _bn_clock(m: re.Match[str]) -> str:
+def _bangla_clock(m: re.Match[str]) -> str:
     """ "7:30 pm" → "সন্ধ্যা সাতটা বেজে ত্রিশ মিনিট"; "10:00" → "দশটা"."""
     hour, minute = int(m[1]), int(m[2])
     if m[3]:
         hour = hour % 12 + (12 if m[3].lower() == "p" else 0)
-    said = f"{_bn(str(hour % 12 or 12))}টা"
+    said = f"{_bangla_number(str(hour % 12 or 12))}টা"
     if minute:
-        said += f" বেজে {_bn(m[2])} মিনিট"
+        said += f" বেজে {_bangla_number(m[2])} মিনিট"
     if m[3] or hour > 12:  # a bare "7:30" might be morning or evening: no part of the day
-        said = f"{_bn_part_of_day(hour)} {said}"
+        said = f"{_bangla_part_of_day(hour)} {said}"
     return said
 
 
-def _bn_part_of_day(hour: int) -> str:
+def _bangla_part_of_day(hour: int) -> str:
     if hour < 4:
         return "রাত"
     if hour < 12:

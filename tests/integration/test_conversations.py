@@ -6,7 +6,7 @@ from heydesk.models import Conversation, Turn
 from heydesk.ports.llm import LLMUnavailable, ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.conversations import RunningTurn
-from heydesk.services.team import HUMAN
+from heydesk.services.team import HUMAN_STATUS
 from heydesk.shop.store import ShopStore
 from tests.conftest import DEV_KEY, World
 
@@ -31,9 +31,9 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
     await say(world, "Two of those, please", conv_id)
 
     async with world.sessions() as s:
-        conv = await s.get(Conversation, conv_id)
-    assert conv is not None and conv.workspace_id == DEV_WORKSPACE_ID
-    assert [(m["role"], m["content"][:12]) for m in conv.messages] == [
+        conversation = await s.get(Conversation, conv_id)
+    assert conversation is not None and conversation.workspace_id == DEV_WORKSPACE_ID
+    assert [(m["role"], m["content"][:12]) for m in conversation.messages] == [
         ("assistant", "Assalamu ala"),  # the greeting the visitor saw
         ("user", "What's good?"),
         ("assistant", "The kurti is"),
@@ -41,7 +41,7 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
         ("assistant", "Two it is."),
     ]
     # The second model call saw everything before it
-    assert world.llm.requests[1].messages == conv.messages[:-1]
+    assert world.llm.requests[1].messages == conversation.messages[:-1]
 
 
 async def test_the_prompt_has_the_date_and_an_edit_shows_up_next_message(world: World) -> None:
@@ -78,9 +78,9 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
     conv_id = await say(world, "two black kurtis, size M")
 
     async with world.sessions() as s:
-        conv = await s.get(Conversation, conv_id)
-    assert conv is not None and conv.state["cart"]["subtotal"] == 190000
-    assert "৳1,900" in conv.messages[3]["content"]  # the tool result the model read
+        conversation = await s.get(Conversation, conv_id)
+    assert conversation is not None and conversation.state["cart"]["subtotal"] == 190000
+    assert "৳1,900" in conversation.messages[3]["content"]  # the tool result the model read
     # The products are in the prompt; the order so far is added once there is one
     request = world.llm.requests[0]
     assert "Cotton Kurti [kurti]" in request.system
@@ -145,8 +145,11 @@ async def test_a_message_to_the_team_is_not_a_turn(world: World) -> None:
     world.llm.script = ["Hello!"]
     conv_id = await say(world, "hi")
     async with world.sessions() as s, s.begin():
-        conv = await s.get(Conversation, conv_id)
-        conv.status, conv.taken_over_at = HUMAN, world.clock()  # the owner took the chat over
+        conversation = await s.get(Conversation, conv_id)
+        conversation.status, conversation.taken_over_at = (
+            HUMAN_STATUS,
+            world.clock(),
+        )  # the owner took the chat over
 
     await say(world, "are you there?", conv_id)
 
@@ -157,11 +160,11 @@ async def test_a_chat_taken_over_and_left_quiet_is_the_agents_again(world: World
     """The inbox's switch, or ".": the agent is quiet; 30 minutes after the team last wrote,
     the next message is answered."""
     agent = await world.agent()
-    conv = await world.say(agent, None, ["Hello!"], "hi")
-    await world.services.conversations.take_over(agent.workspace_id, conv, True)
-    await world.say(agent, conv, ["Should not be said."], "anyone?")
-    assert "Should not be said." not in str((await world.conversation(conv)).messages)
+    conversation = await world.say(agent, None, ["Hello!"], "hi")
+    await world.services.conversations.take_over(agent.workspace_id, conversation, True)
+    await world.say(agent, conversation, ["Should not be said."], "anyone?")
+    assert "Should not be said." not in str((await world.conversation(conversation)).messages)
     world.clock.advance(minutes=31)
-    await world.say(agent, conv, ["Back again."], "hello?")
-    saved = await world.conversation(conv)
+    await world.say(agent, conversation, ["Back again."], "hello?")
+    saved = await world.conversation(conversation)
     assert "Back again." in str(saved.messages) and saved.status == "active"

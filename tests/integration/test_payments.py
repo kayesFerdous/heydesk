@@ -49,14 +49,14 @@ def pay_first(services: Services) -> dict[str, Any]:
 
 async def take(world: World, agent: LiveAgent, first: list[Any], tool: ToolCall) -> str:
     """Asks for the yes, then says it; returns the conversation id."""
-    conv = await world.say(agent, None, [*first, tool, "Shall I?"], "…")
-    await world.say(agent, conv, [tool, "Pay here…"], "yes")
-    return conv
+    conversation = await world.say(agent, None, [*first, tool, "Shall I?"], "…")
+    await world.say(agent, conversation, [tool, "Pay here…"], "yes")
+    return conversation
 
 
-async def found(world: World, conv: str) -> Payable:
+async def found(world: World, conversation: str) -> Payable:
     """The order or appointment the conversation took: its id is in the payment link."""
-    said = str((await world.conversation(conv)).messages)
+    said = str((await world.conversation(conversation)).messages)
     record = await world.services.payments.find(said.split("/pay/")[1][:32])
     assert record is not None
     return record
@@ -73,31 +73,35 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
     )  # cash on delivery, and the shop calls
     assert "Elsewhere, orders are paid in cash on delivery, and the shop calls" in prompt
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
-    conv = await world.say(agent, None, [*first, ToolCall("c2", "place_order", SHOP_DETAILS), "…"])
-    assert "the delivery charge ৳60 paid online first, then ৳950 in cash on delivery" in (
-        await world.tool_said(conv)
+    conversation = await world.say(
+        agent, None, [*first, ToolCall("c2", "place_order", SHOP_DETAILS), "…"]
     )
-    await world.say(agent, conv, [ToolCall("c3", "place_order", SHOP_DETAILS), "Pay…"], "yes")
-    order = await found(world, conv)
+    assert "the delivery charge ৳60 paid online first, then ৳950 in cash on delivery" in (
+        await world.tool_said(conversation)
+    )
+    await world.say(
+        agent, conversation, [ToolCall("c3", "place_order", SHOP_DETAILS), "Pay…"], "yes"
+    )
+    order = await found(world, conversation)
     assert order.status == "unpaid"  # held, not placed: the yes alone isn't enough
-    assert f"https://heydesk.test/pay/{order.id}" in await world.tool_said(conv)
+    assert f"https://heydesk.test/pay/{order.id}" in await world.tool_said(conversation)
 
     payments = world.services.payments
     gateway.paid["short"] = Paid(order.id, 1000, "BDT", "B1")  # ৳10, not ৳60
     gateway.paid["elsewhere"] = Paid("another-order", 6000, "BDT", "B0")  # paid, but not this
     for forged_or_short in ("made-up", "short", "elsewhere"):
-        await payments.settle(order.id, forged_or_short)
-        assert (await found(world, conv)).status == "unpaid"
+        await payments.check_payment(order.id, forged_or_short)
+        assert (await found(world, conversation)).status == "unpaid"
 
     gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B2")
-    await payments.settle(order.id, "v1")
-    await payments.settle(
+    await payments.check_payment(order.id, "v1")
+    await payments.check_payment(
         order.id, "v1"
     )  # the visitor's return and the gateway's notice: once is enough
-    placed = await found(world, conv)
+    placed = await found(world, conversation)
     # the advance confirms it: no call
     assert (placed.status, placed.paid, placed.payment_ref) == ("confirmed", 6000, "B2")
-    said = (await world.conversation(conv)).messages
+    said = (await world.conversation(conversation)).messages
     assert said[-1]["by"] == "team"
     assert said[-1]["content"].startswith("✅ Payment received: ৳60 for the delivery charge.")
     assert "Your order O-101 is confirmed" in said[-1]["content"]
@@ -116,9 +120,9 @@ async def test_a_shop_takes_the_advance_only_in_the_areas_that_pay_first(world: 
     agent, _ = await paying_first(world.services)
     sylhet = SHOP_DETAILS | {"district": "Sylhet", "address": "Zindabazar, Sylhet"}
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
-    conv = await take(world, agent, first, ToolCall("c2", "place_order", sylhet))
-    assert "pay_link" not in await world.tool_said(conv)
-    [order] = await world.store(agent, conv).orders_here()
+    conversation = await take(world, agent, first, ToolCall("c2", "place_order", sylhet))
+    assert "pay_link" not in await world.tool_said(conversation)
+    [order] = await world.store(agent, conversation).orders_in_conversation()
     assert (order.zone, order.status, order.total) == ("Outside Dhaka", "new", 107000)
 
 
@@ -181,9 +185,9 @@ async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world
     )
 
     first = [ToolCall("c1", "update_cart", SHOP_ORDER)]
-    conv = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
-    assert "pay_link" not in await world.tool_said(conv)
-    assert '"code": "O-101"' in await world.tool_said(conv)  # placed, cash on delivery
+    conversation = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
+    assert "pay_link" not in await world.tool_said(conversation)
+    assert '"code": "O-101"' in await world.tool_said(conversation)  # placed, cash on delivery
 
 
 async def test_the_owner_connects_the_business_s_own_store(

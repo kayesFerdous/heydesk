@@ -28,7 +28,7 @@ handler = SmallWebRTCRequestHandler()  # keeps the open peer connections
 calls: set[asyncio.Task[None]] = set()  # running calls, so they aren't garbage-collected
 TURN_URL = "https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers"
 STUN_ONLY = [{"urls": ["stun:stun.cloudflare.com:3478"]}]
-STILL_HERE_S = 15  # a comment this often keeps a tunnel from closing a quiet stream
+STILL_HERE_SECONDS = 15  # a comment this often keeps a tunnel from closing a quiet stream
 
 
 async def ice_servers(request: Request) -> list[dict[str, Any]]:
@@ -81,7 +81,7 @@ async def offer(
             )
         finally:
             if answered:  # its outcome, from the order
-                await state.services.calls.ended(answered.call_id)
+                await state.services.calls.mark_ended(answered.call_id)
 
     async def start(connection: SmallWebRTCConnection) -> None:
         call = asyncio.create_task(handle_call(connection))
@@ -101,21 +101,21 @@ async def rings(number: str, request: Request) -> StreamingResponse:
     """The `/phone` page waits here for its mobile's calls: `ready {number}`, then a
     `ring {call, business, order}` for each one."""
     calls = request.app.state.services.calls
-    mobile = calls.number(number)  # 400 if it isn't a mobile number
+    mobile = calls.clean_number(number)  # 400 if it isn't a mobile number
 
     async def stream() -> AsyncIterator[str]:
-        queue = calls.listen(mobile)
+        queue = calls.wait_for_calls(mobile)
         try:
             yield frame("ready", {"number": mobile})
             while True:
                 try:
-                    ring = await asyncio.wait_for(queue.get(), STILL_HERE_S)
+                    ring = await asyncio.wait_for(queue.get(), STILL_HERE_SECONDS)
                 except TimeoutError:
                     yield ": still here\n\n"
                     continue
                 yield frame("ring", ring)
         finally:
-            calls.leave(mobile, queue)
+            calls.stop_waiting(mobile, queue)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -123,4 +123,4 @@ async def rings(number: str, request: Request) -> StreamingResponse:
 @router.post("/api/phone/decline", status_code=204)
 async def decline(call: str, request: Request) -> None:
     """The buyer tapped Decline: a missed call, tried again later."""
-    await request.app.state.services.calls.missed(call)
+    await request.app.state.services.calls.mark_missed(call)

@@ -22,7 +22,7 @@ from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.store import TO_BOOK, ShopStore
+from heydesk.shop.store import STATUSES_TO_BOOK, ShopStore
 from heydesk.shop.values import lines_text
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ NAMES = {"steadfast": "Steadfast", "pathao": "Pathao", "fake": "the test courier
 # ponytail: the words for "the rider has it today", matched in what the courier says. Only
 # the fake courier's are known; add Steadfast's or Pathao's once a live parcel shows them
 OUT_FOR_DELIVERY = ("out for delivery",)
-LATE = timedelta(days=2)  # a review asked later than this after it's due isn't sent
+REVIEW_TOO_LATE = timedelta(days=2)  # a review asked later than this after it's due isn't sent
 
 
 def out_for_delivery(said: str) -> bool:
@@ -45,7 +45,7 @@ def parcel(order: ShopOrder) -> Parcel:
         name=order.name,
         phone=order.phone,
         address=f"{order.address}, {order.zone}",
-        cod=(order.total - order.paid) // 100,
+        cash_on_delivery=(order.total - order.paid) // 100,
         items=lines_text(order.lines),
         quantity=sum(line["quantity"] for line in order.lines),
         note=order.note,
@@ -81,20 +81,22 @@ class CourierService:
         self.fallback = fallback
         self.review_after = review_after
 
-    async def link(self, ws: str, given: CourierAccount) -> CourierLink:
+    async def link(self, workspace_id: str, given: CourierAccount) -> CourierLink:
         """Checks the keys with the courier and links it, replacing one already there."""
-        agent = await self.agents.get(ws)
+        agent = await self.agents.get(workspace_id)
         try:
             store_id = await self.apis[given.kind].check(given)
         except CourierError as error:
             raise InvalidConfig({"key": str(error)}) from None
         async with self.sessions() as s, s.begin():
-            old = await s.scalar(select(CourierLink).where(CourierLink.workspace_id == ws))
+            old = await s.scalar(
+                select(CourierLink).where(CourierLink.workspace_id == workspace_id)
+            )
             if old is not None:
                 await s.delete(old)
                 await s.flush()
             link = CourierLink(
-                workspace_id=ws,
+                workspace_id=workspace_id,
                 agent_id=agent.id,
                 kind=given.kind,
                 key=given.key.strip(),
@@ -105,31 +107,35 @@ class CourierService:
                 sandbox=given.sandbox,
             )
             s.add(link)
-        log.info("courier linked", extra={"workspace_id": ws, "kind": given.kind})
+        log.info("courier linked", extra={"workspace_id": workspace_id, "kind": given.kind})
         return link
 
-    async def get(self, ws: str) -> CourierLink:
+    async def get(self, workspace_id: str) -> CourierLink:
         async with self.sessions() as s:
-            link = await s.scalar(select(CourierLink).where(CourierLink.workspace_id == ws))
+            link = await s.scalar(
+                select(CourierLink).where(CourierLink.workspace_id == workspace_id)
+            )
         if link is None:
             raise NotFound("No courier is linked.")
         return link
 
-    async def unlink(self, ws: str) -> None:
+    async def unlink(self, workspace_id: str) -> None:
         """Parcels already booked stay with the courier; they aren't followed any more."""
         async with self.sessions() as s, s.begin():
-            link = await s.scalar(select(CourierLink).where(CourierLink.workspace_id == ws))
+            link = await s.scalar(
+                select(CourierLink).where(CourierLink.workspace_id == workspace_id)
+            )
             if link is not None:
                 await s.delete(link)
 
-    async def sync(self, ws: str) -> None:
+    async def sync(self, workspace_id: str) -> None:
         """Asks the buyers of yesterday's deliveries how it was; then books the confirmed
         and packed orders with no parcel, and asks about each shipped one, with the shop's
         courier, or the fallback when none is linked."""
-        shop = await self.agents.store(ws)
+        shop = await self.agents.store(workspace_id)
         await self._ask_reviews(shop)
         try:
-            link: CourierLink | None = await self.get(ws)
+            link: CourierLink | None = await self.get(workspace_id)
         except NotFound:
             link = None
         if link is None and self.fallback is None:
@@ -143,36 +149,38 @@ class CourierService:
                     parcel_id = await api.book(acct, parcel(order))
                 except CourierError as error:
                     raise CourierError(f"{order.code} wasn't booked with {name}: {error}") from None
-                await self._moved(await shop.parcel_booked(order.id, parcel_id))
+                await self._tell_visitor_status(await shop.parcel_booked(order.id, parcel_id))
                 await self.team.notify(
-                    ws, f"📦 {order.code} is booked with {name} ({parcel_id}). Pack it."
+                    workspace_id, f"📦 {order.code} is booked with {name} ({parcel_id}). Pack it."
                 )
             for order in await shop.orders_for_courier("shipped"):
                 tracked = await api.status(acct, order.parcel_id)
-                if tracked.said == order.courier_status and tracked.ending is None:
+                if tracked.status_text == order.courier_status and tracked.final_status is None:
                     continue
-                moved = await shop.courier_said(order.id, tracked.said, tracked.ending)
+                moved = await shop.update_courier_status(
+                    order.id, tracked.status_text, tracked.final_status
+                )
                 if moved.status != order.status:
-                    await self._moved(moved)
-                elif not order.reminded and out_for_delivery(tracked.said):
+                    await self._tell_visitor_status(moved)
+                elif not order.reminded and out_for_delivery(tracked.status_text):
                     await self._remind(shop, moved)
-                if tracked.ending == "returned":
+                if tracked.final_status == "returned":
                     await self.team.notify(
-                        ws, f"↩️ {order.code} is coming back. Put its items back in stock."
+                        workspace_id, f"↩️ {order.code} is coming back. Put its items back in stock."
                     )
         except CourierError as error:  # the rest wait for the next round
             problem = str(error)
-            log.warning("courier failed", extra={"workspace_id": ws, "kind": acct.kind})
+            log.warning("courier failed", extra={"workspace_id": workspace_id, "kind": acct.kind})
         if link is None:
             return
         async with self.sessions() as s, s.begin():
             saved = await s.get_one(CourierLink, link.id)
             told, saved.problem = saved.problem, problem
         if problem and problem != told:
-            await self.team.notify(ws, f"⚠️ Your courier: {problem}")
+            await self.team.notify(workspace_id, f"⚠️ Your courier: {problem}")
 
-    async def _moved(self, order: ShopOrder) -> None:
-        if order.conversation_id and (line := order.news()):
+    async def _tell_visitor_status(self, order: ShopOrder) -> None:
+        if order.conversation_id and (line := order.status_update_text()):
             await self.team.tell_visitor(order.conversation_id, line)
 
     async def _remind(self, shop: ShopStore, order: ShopOrder) -> None:
@@ -187,24 +195,27 @@ class CourierService:
             else "It's paid: there's nothing to pay the rider."
         )
         line = f"🛵 Your order {order.code} is out for delivery today. {pay}"
-        await self.team.tell_in_window(order.conversation_id, line)
+        await self.team.tell_visitor_if_allowed(order.conversation_id, line)
 
     async def _ask_reviews(self, shop: ShopStore) -> None:
         """A day after delivery: one question with two buttons, inside the window. An
         order delivered long before (when this began, or the shop's round was down) isn't
         asked, only marked."""
         now = shop.now()
-        for order in await shop.to_review(now - self.review_after):
+        for order in await shop.orders_to_review(now - self.review_after):
             await shop.mark_notified(order.id, "review_asked")
             delivered = (
                 order.updated_at
                 if order.updated_at.tzinfo
                 else order.updated_at.replace(tzinfo=UTC)
             )
-            if order.conversation_id is None or now - delivered > self.review_after + LATE:
+            if (
+                order.conversation_id is None
+                or now - delivered > self.review_after + REVIEW_TOO_LATE
+            ):
                 continue
             line = f"How was your order {order.code}? Tap 👍 or 👎, or write to us."
-            await self.team.tell_in_window(order.conversation_id, line, ["👍", "👎"])
+            await self.team.tell_visitor_if_allowed(order.conversation_id, line, ["👍", "👎"])
 
     async def run(self, every: float) -> None:
         """Every `every` seconds, until cancelled (the app's lifespan starts it), a round for
@@ -216,7 +227,7 @@ class CourierService:
                     select(ShopOrder.workspace_id)
                     .where(
                         or_(
-                            and_(ShopOrder.status.in_(TO_BOOK), ShopOrder.parcel_id == ""),
+                            and_(ShopOrder.status.in_(STATUSES_TO_BOOK), ShopOrder.parcel_id == ""),
                             and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
                             and_(  # its buyer is asked how it was
                                 ShopOrder.status == "delivered",
@@ -228,8 +239,8 @@ class CourierService:
                     .distinct()
                 )
                 shops = list(busy)
-            for ws in shops:
+            for workspace_id in shops:
                 try:
-                    await self.sync(ws)
+                    await self.sync(workspace_id)
                 except Exception:
-                    log.exception("courier round failed", extra={"workspace_id": ws})
+                    log.exception("courier round failed", extra={"workspace_id": workspace_id})

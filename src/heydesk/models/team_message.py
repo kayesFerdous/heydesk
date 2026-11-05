@@ -12,8 +12,8 @@ class TeamMessage(CustomerRequest, Base):
 
     __tablename__ = "team_messages"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
-    LETTER: ClassVar[str] = "M"
-    FLOW: ClassVar[dict[str, set[str]]] = {"new": {"handled"}, "handled": {"new"}}
+    CODE_LETTER: ClassVar[str] = "M"
+    STATUS_FLOW: ClassVar[dict[str, set[str]]] = {"new": {"handled"}, "handled": {"new"}}
 
     body: Mapped[str]
     best_time: Mapped[str] = mapped_column(String(100), default="")  # when to call back

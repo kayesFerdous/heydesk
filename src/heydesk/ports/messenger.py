@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 # Every message we send carries it as `metadata`, and so does its echo: an echo without it is
 # the Page's own, written in Business Suite or Messenger by the owner
-OURS = "heydesk"
+OUR_APP_TAG = "heydesk"
 
 
 class MessengerUnavailable(Exception):
@@ -24,13 +24,13 @@ class MessengerApi(Protocol):
     async def unsubscribe(self, token: str, page_id: str) -> None: ...
 
     async def send_message(
-        self, token: str, psid: str, text: str, choices: list[str] | None = None
+        self, token: str, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
-        """`psid` is the visitor's id on this Page. `choices` are quick replies: a tap
+        """`chat_id` is the visitor's id on this Page. `choices` are quick replies: a tap
         comes back as a message with the choice as its text."""
         ...
 
-    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
+    async def send_cards(self, token: str, chat_id: str, cards: list[dict[str, str]]) -> str:
         """Products as one carousel: each card `{name, price, url}`, the photo's full URL,
         and maybe `choice`: an Order button whose tap comes back as a postback with it.
         `button` names the button (a product's is "Order this"). A product's `page` and `video`
@@ -38,7 +38,7 @@ class MessengerApi(Protocol):
         carousel's message id, so a reply to it is known."""
         ...
 
-    async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
+    async def send_link(self, token: str, chat_id: str, text: str, title: str, url: str) -> None:
         """Text with one button that opens `url`: a receipt's Pay button."""
         ...
 
@@ -46,7 +46,7 @@ class MessengerApi(Protocol):
         """A photo the visitor sent, from the URL in its message. Facebook's URLs expire."""
         ...
 
-    async def send_typing(self, token: str, psid: str) -> None:
+    async def send_typing(self, token: str, chat_id: str) -> None:
         """Shows "typing…" in the chat, until the reply or about 20 seconds."""
         ...
 
@@ -55,11 +55,11 @@ class MessengerApi(Protocol):
         short token is first made a long-lived one, so the Pages' tokens don't expire."""
         ...
 
-    async def mark_seen(self, token: str, psid: str) -> None:
+    async def mark_seen(self, token: str, chat_id: str) -> None:
         """Shows the visitor their messages as "Seen"."""
         ...
 
-    async def get_message(self, token: str, mid: str) -> dict[str, Any]:
+    async def get_message(self, token: str, message_id: str) -> dict[str, Any]:
         """A message of the Page's chats by its id, the visitor's or the Page's own, in the
         webhook's shape: `text`, and `attachments` with an image's `payload.url`."""
         ...

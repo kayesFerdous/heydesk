@@ -61,10 +61,10 @@ class ShopOrder(CustomerRequest, Payable, Base):
 
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
-    LETTER: ClassVar[str] = "O"
+    CODE_LETTER: ClassVar[str] = "O"
     PAY_FOR: ClassVar[str] = "the delivery charge"
     PAID_STATUS: ClassVar[str] = "confirmed"
-    FLOW: ClassVar[dict[str, set[str]]] = {
+    STATUS_FLOW: ClassVar[dict[str, set[str]]] = {
         "unpaid": {"confirmed", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "on_hold", "cancelled"},  # the shop calls the buyer to confirm
         "on_hold": {"confirmed", "cancelled"},  # waiting on the buyer or the shop
@@ -106,10 +106,10 @@ class ShopOrder(CustomerRequest, Payable, Base):
     def amount_due(self) -> int:
         return self.delivery_charge
 
-    def about(self) -> str:
+    def alert_summary(self) -> str:
         return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
 
-    def news(self) -> str:
+    def status_update_text(self) -> str:
         """What the buyer is told in their chat when the owner or the courier moves it here; "" for nothing."""
         if self.status == "confirmed":
             return f"✅ Your order {self.code} is confirmed and will be sent out."
@@ -124,9 +124,9 @@ class ShopOrder(CustomerRequest, Payable, Base):
             return f"Sorry, the shop had to cancel your order {self.code}."
         return ""
 
-    def after(self) -> str:
-        cod = money(self.total - self.paid, self.currency)
+    def next_step_text(self) -> str:
+        cash_due = money(self.total - self.paid, self.currency)
         return (
-            f"Your order {self.code} is confirmed and will be sent out. Pay the rest, {cod}, to "
+            f"Your order {self.code} is confirmed and will be sent out. Pay the rest, {cash_due}, to "
             "the delivery man, who calls before he comes."
         )

@@ -30,18 +30,20 @@ class QdrantPhotoIndex:
             models.KeywordIndexParams(type=models.KeywordIndexType.KEYWORD, is_tenant=True),
         )
 
-    async def add(self, ws: str, url: str, vector: list[float]) -> None:
+    async def add(self, workspace_id: str, url: str, vector: list[float]) -> None:
         point = models.PointStruct(
             id=str(uuid.uuid5(uuid.NAMESPACE_URL, url)),  # the same photo again replaces it
             vector=vector,
-            payload={"workspace_id": ws, "url": url},
+            payload={"workspace_id": workspace_id, "url": url},
         )
         await self.client.upsert(self.collection, [point])
 
     async def nearest(
-        self, ws: str, vector: list[float], limit: int, min_score: float
+        self, workspace_id: str, vector: list[float], limit: int, min_score: float
     ) -> list[tuple[str, float]]:
-        mine = models.FieldCondition(key="workspace_id", match=models.MatchValue(value=ws))
+        mine = models.FieldCondition(
+            key="workspace_id", match=models.MatchValue(value=workspace_id)
+        )
         found = await self.client.query_points(
             self.collection,
             query=vector,

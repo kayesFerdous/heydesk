@@ -20,15 +20,19 @@ async def store() -> AsyncIterator[QdrantKnowledgeStore]:
     await s.client.close()
 
 
-async def add(store: QdrantKnowledgeStore, ws: str, doc: str, title: str, *texts: str) -> None:
+async def add(
+    store: QdrantKnowledgeStore, workspace_id: str, doc: str, title: str, *texts: str
+) -> None:
     vectors = await EMBED.embed_documents(list(texts))
     chunks = [ChunkIn(n, t, v) for n, (t, v) in enumerate(zip(texts, vectors, strict=True))]
-    await store.add(ws, doc, title, chunks)
+    await store.add(workspace_id, doc, title, chunks)
 
 
-async def ask(store: QdrantKnowledgeStore, ws: str, question: str, limit: int = 3) -> list[str]:
+async def ask(
+    store: QdrantKnowledgeStore, workspace_id: str, question: str, limit: int = 3
+) -> list[str]:
     vector = await EMBED.embed_query(question)
-    return [s.text for s in await store.search(ws, question, vector, limit)]
+    return [s.text for s in await store.search(workspace_id, question, vector, limit)]
 
 
 async def test_a_question_finds_the_chunk_that_answers_it(store: QdrantKnowledgeStore) -> None:

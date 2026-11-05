@@ -60,34 +60,34 @@ class SheetService:
         self.team = team
         self.fetch = fetch
 
-    async def suggest(self, ws: str, url: str) -> Suggestion:
+    async def suggest(self, workspace_id: str, url: str) -> Suggestion:
         """The sheet's columns and their match to a product's fields, for the owner to check."""
-        await self.agents.get(ws)  # 404 until it has an agent
+        await self.agents.get(workspace_id)  # 404 until it has an agent
         return suggest(await self._read(url), PRODUCT_COLUMNS)
 
     async def link(
-        self, ws: str, url: str, mapping: dict[str, str], dry_run: bool = False
+        self, workspace_id: str, url: str, mapping: dict[str, str], dry_run: bool = False
     ) -> Sequence[BaseModel]:
         """Checks the whole sheet with `mapping` (problems per row, as an import) and returns
         its list. Unless `dry_run`, saves the link and takes the list from it, replacing a
         link already there."""
-        agent = await self.agents.get(ws)
+        agent = await self.agents.get(workspace_id)
         async with self.sessions() as s:
-            if await s.scalar(select(WooLink.id).where(WooLink.workspace_id == ws)):
+            if await s.scalar(select(WooLink.id).where(WooLink.workspace_id == workspace_id)):
                 raise Conflict("Unlink the WooCommerce store first: a list comes from one place.")
         text = await self._read(url)
         found = products_from_csv(text, mapping)
         if dry_run:
             return found
-        store = await self.agents.store(ws)
-        seen = await store.take_sheet(text, mapping, {})  # the first time, every count is new
+        store = await self.agents.store(workspace_id)
+        seen = await store.import_sheet(text, mapping, {})  # the first time, every count is new
         async with self.sessions() as s, s.begin():
-            old = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == ws))
+            old = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == workspace_id))
             if old is not None:
                 await s.delete(old)
                 await s.flush()
             link = SheetLink(
-                workspace_id=ws,
+                workspace_id=workspace_id,
                 agent_id=agent.id,
                 url=url.strip(),
                 mapping=mapping,
@@ -96,27 +96,27 @@ class SheetService:
                 synced_at=store.now(),
             )
             s.add(link)
-        log.info("sheet linked", extra={"workspace_id": ws})
+        log.info("sheet linked", extra={"workspace_id": workspace_id})
         return found
 
-    async def get(self, ws: str) -> SheetLink:
+    async def get(self, workspace_id: str) -> SheetLink:
         async with self.sessions() as s:
-            link = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == ws))
+            link = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == workspace_id))
         if link is None:
             raise NotFound("No Google Sheet is linked.")
         return link
 
-    async def unlink(self, ws: str) -> None:
+    async def unlink(self, workspace_id: str) -> None:
         """Stops syncing. The list stays as it is, and can be edited here again."""
         async with self.sessions() as s, s.begin():
-            link = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == ws))
+            link = await s.scalar(select(SheetLink).where(SheetLink.workspace_id == workspace_id))
             if link is not None:
                 await s.delete(link)
 
-    async def sync(self, ws: str) -> SheetLink:
+    async def sync(self, workspace_id: str) -> SheetLink:
         """Reads the sheet now. Never raises for the sheet's own problems: they're `problem`."""
-        link = await self.get(ws)
-        store = await self.agents.store(ws)
+        link = await self.get(workspace_id)
+        store = await self.agents.store(workspace_id)
         problem, seen, checked = link.problem, link.seen, link.checked
         try:
             text = await self.fetch(csv_url(link.url))
@@ -128,7 +128,7 @@ class SheetService:
                 hash_text(text),
             )  # a problem too isn't read again until it changes
             try:
-                seen = await store.take_sheet(text, link.mapping, link.seen)
+                seen = await store.import_sheet(text, link.mapping, link.seen)
             except InvalidConfig as error:  # a row the desk can't read: the old list stays
                 problem = problems(error)
         async with self.sessions() as s, s.begin():
@@ -138,8 +138,8 @@ class SheetService:
             if not problem:
                 saved.synced_at = store.now()
         if problem and problem != told:
-            await self.team.notify(ws, f"⚠️ Your Google Sheet wasn't read: {problem}")
-        log.info("sheet synced", extra={"workspace_id": ws, "problem": bool(problem)})
+            await self.team.notify(workspace_id, f"⚠️ Your Google Sheet wasn't read: {problem}")
+        log.info("sheet synced", extra={"workspace_id": workspace_id, "problem": bool(problem)})
         return saved
 
     async def run(self, every: float) -> None:
@@ -149,11 +149,11 @@ class SheetService:
             await asyncio.sleep(every)
             async with self.sessions() as s:
                 linked = list(await s.scalars(select(SheetLink.workspace_id)))
-            for ws in linked:
+            for workspace_id in linked:
                 try:
-                    await self.sync(ws)
+                    await self.sync(workspace_id)
                 except Exception:
-                    log.exception("sheet sync failed", extra={"workspace_id": ws})
+                    log.exception("sheet sync failed", extra={"workspace_id": workspace_id})
 
     async def _read(self, url: str) -> str:
         try:

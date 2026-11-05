@@ -30,7 +30,7 @@ from heydesk.errors import (
 )
 from heydesk.models import Channel, User
 from heydesk.ports.media import MediaUnavailable
-from heydesk.ports.messenger import OURS, MessengerApi, MessengerUnavailable
+from heydesk.ports.messenger import OUR_APP_TAG, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
@@ -43,10 +43,10 @@ from heydesk.services.visitors import VisitorService
 
 log = logging.getLogger(__name__)
 
-NOT_TEXT = "I can only read text messages for now. Please type your question."
-FAILED = "Sorry, something went wrong. Please try again."
+NOT_TEXT_REPLY = "I can only read text messages for now. Please type your question."
+FAILED_REPLY = "Sorry, something went wrong. Please try again."
 MAX_VOICE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
-PHOTOS_SENT = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list
+MAX_PHOTO_MESSAGES = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list
 
 
 def first_photo(message: dict[str, Any]) -> str | None:
@@ -161,12 +161,12 @@ class ChannelService:
         # "Cotton Shirt · ৳950": a buyer's reply to one names the product
         self.cards_sent: dict[str, str] = {}
 
-    async def connect_telegram(self, ws: str, token: str) -> Channel:
+    async def connect_telegram(self, workspace_id: str, token: str) -> Channel:
         """Checks the token with Telegram and points the bot's messages at us. Connecting
         again (a new token) replaces the old bot."""
         if not self.settings.PUBLIC_URL:
             raise HeyDeskError("The server has no PUBLIC_URL, so Telegram can't reach it.")
-        agent = await self.agents.get(ws)  # 404 if the business has no agent yet
+        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
         try:
             username = await self.telegram.get_me(token)
         except TelegramUnavailable:
@@ -174,12 +174,14 @@ class ChannelService:
                 {"token": "Telegram doesn't know this token. Copy it again from @BotFather."}
             ) from None
         async with self.sessions() as s:
-            channel = await self._find(s, ws, TELEGRAM)
+            channel = await self._find_channel(s, workspace_id, TELEGRAM)
         channel_id = channel.id if channel else new_id()
         secret = secrets.token_urlsafe(32)
         url = f"{self.settings.PUBLIC_URL.rstrip('/')}/api/telegram/{channel_id}"
         await self.telegram.set_webhook(token, url, secret)  # first: if it fails, nothing saved
-        channel = await self._save(ws, agent.id, TELEGRAM, channel_id, token, secret, username)
+        channel = await self._save(
+            workspace_id, agent.id, TELEGRAM, channel_id, token, secret, username
+        )
         log.info("telegram connected", extra={"channel_id": channel_id})
         return channel
 
@@ -202,25 +204,27 @@ class ChannelService:
             except TelegramUnavailable as error:  # a revoked token: the rest still go
                 log.warning("webhook not set: %s", error, extra={"channel_id": channel.id})
 
-    async def telegram_of(self, ws: str) -> Channel:
-        return await self._of(ws, TELEGRAM, "This business hasn't connected a Telegram bot.")
+    async def telegram_of(self, workspace_id: str) -> Channel:
+        return await self._get_channel(
+            workspace_id, TELEGRAM, "This business hasn't connected a Telegram bot."
+        )
 
-    async def disconnect_telegram(self, ws: str) -> None:
-        channel = await self.telegram_of(ws)
+    async def disconnect_telegram(self, workspace_id: str) -> None:
+        channel = await self.telegram_of(workspace_id)
         # a token revoked in @BotFather: Telegram has stopped sending anyway
         with contextlib.suppress(TelegramUnavailable):
             await self.telegram.delete_webhook(channel.token)
         await self._delete(channel)
 
-    async def connect_messenger(self, ws: str, token: str, page_id: str) -> Channel:
+    async def connect_messenger(self, workspace_id: str, token: str, page_id: str) -> Channel:
         """Subscribes our app to the Page's messages, which also checks that the token is for
         that Page. Connecting again (a new token, or another Page) replaces the old one."""
         if not self.settings.META_APP_SECRET:
             raise HeyDeskError("The server has no META_APP_SECRET, so Messenger can't reach it.")
-        agent = await self.agents.get(ws)  # 404 if the business has no agent yet
+        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
         try:
             taken = await self.messenger_page(page_id)
-            if taken is not None and taken.workspace_id != ws:
+            if taken is not None and taken.workspace_id != workspace_id:
                 raise InvalidConfig({"page_id": "This Page is connected to another business."})
             await self.messenger.subscribe(token, page_id)  # first: if it fails, nothing saved
         except MessengerUnavailable:
@@ -231,9 +235,11 @@ class ChannelService:
                 }
             ) from None
         async with self.sessions() as s:
-            channel = await self._find(s, ws, MESSENGER)
+            channel = await self._find_channel(s, workspace_id, MESSENGER)
         channel_id = channel.id if channel else new_id()
-        channel = await self._save(ws, agent.id, MESSENGER, channel_id, token, "", page_id)
+        channel = await self._save(
+            workspace_id, agent.id, MESSENGER, channel_id, token, "", page_id
+        )
         log.info("messenger connected", extra={"channel_id": channel_id})
         return channel
 
@@ -259,33 +265,35 @@ class ChannelService:
                 {"user_token": "Facebook didn't accept this login. Try connecting again."}
             ) from None
 
-    async def connect_facebook(self, ws: str, user_token: str, page_id: str) -> Channel:
+    async def connect_facebook(self, workspace_id: str, user_token: str, page_id: str) -> Channel:
         """Connects one of the login's Pages with its own token, as if typed in."""
         pages = await self.facebook_pages(user_token)
         page = next((p for p in pages if p["id"] == page_id), None)
         if page is None:
             raise InvalidConfig({"page_id": "This Facebook login doesn't manage that Page."})
-        return await self.connect_messenger(ws, page["token"], page_id)
+        return await self.connect_messenger(workspace_id, page["token"], page_id)
 
-    async def messenger_of(self, ws: str) -> Channel:
-        return await self._of(ws, MESSENGER, "This business hasn't connected a Facebook Page.")
+    async def messenger_of(self, workspace_id: str) -> Channel:
+        return await self._get_channel(
+            workspace_id, MESSENGER, "This business hasn't connected a Facebook Page."
+        )
 
-    async def disconnect_messenger(self, ws: str) -> None:
-        channel = await self.messenger_of(ws)
+    async def disconnect_messenger(self, workspace_id: str) -> None:
+        channel = await self.messenger_of(workspace_id)
         with contextlib.suppress(MessengerUnavailable):  # a token that has expired
             await self.messenger.unsubscribe(channel.token, channel.address)
         await self._delete(channel)
 
     async def connect_whatsapp(
-        self, ws: str, token: str, account_id: str, phone_id: str
+        self, workspace_id: str, token: str, account_id: str, phone_id: str
     ) -> Channel:
         """Subscribes our app to the business account's messages, which also checks the token,
         the account and the number. Connecting again replaces the old number."""
         if not self.settings.META_APP_SECRET:
             raise HeyDeskError("The server has no META_APP_SECRET, so WhatsApp can't reach it.")
-        agent = await self.agents.get(ws)  # 404 if the business has no agent yet
+        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
         taken = await self.whatsapp_number(phone_id)
-        if taken is not None and taken.workspace_id != ws:
+        if taken is not None and taken.workspace_id != workspace_id:
             raise InvalidConfig({"phone_id": "This number is connected to another business."})
         try:
             # first: if it fails, nothing saved
@@ -298,9 +306,11 @@ class ChannelService:
                 }
             ) from None
         async with self.sessions() as s:
-            channel = await self._find(s, ws, WHATSAPP)
+            channel = await self._find_channel(s, workspace_id, WHATSAPP)
         channel_id = channel.id if channel else new_id()
-        channel = await self._save(ws, agent.id, WHATSAPP, channel_id, token, "", phone_id)
+        channel = await self._save(
+            workspace_id, agent.id, WHATSAPP, channel_id, token, "", phone_id
+        )
         log.info("whatsapp connected", extra={"channel_id": channel_id})
         return channel
 
@@ -315,16 +325,16 @@ class ChannelService:
         return {"app_id": s.META_APP_ID, "config_id": s.META_WA_CONFIG_ID}
 
     async def connect_whatsapp_signup(
-        self, ws: str, code: str, account_id: str, phone_id: str
+        self, workspace_id: str, code: str, account_id: str, phone_id: str
     ) -> Channel:
         """Embedded Signup's code becomes the business's token, the number is registered on
         the Cloud API, then it's connected as if typed in."""
         self.whatsapp_login()  # the app's id, secret and configuration are set
         taken = await self.whatsapp_number(phone_id)
-        if taken is not None and taken.workspace_id != ws:
+        if taken is not None and taken.workspace_id != workspace_id:
             raise InvalidConfig({"phone_id": "This number is connected to another business."})
         try:
-            token = await self.whatsapp.exchange(
+            token = await self.whatsapp.token_from_code(
                 self.settings.META_APP_ID, self.settings.META_APP_SECRET, code
             )
         except WhatsAppUnavailable:
@@ -337,15 +347,17 @@ class ChannelService:
             raise InvalidConfig(
                 {"phone_id": "Meta couldn't put this number on WhatsApp's Cloud API. Try again."}
             ) from None
-        return await self.connect_whatsapp(ws, token, account_id, phone_id)
+        return await self.connect_whatsapp(workspace_id, token, account_id, phone_id)
 
-    async def whatsapp_of(self, ws: str) -> Channel:
-        return await self._of(ws, WHATSAPP, "This business hasn't connected a WhatsApp number.")
+    async def whatsapp_of(self, workspace_id: str) -> Channel:
+        return await self._get_channel(
+            workspace_id, WHATSAPP, "This business hasn't connected a WhatsApp number."
+        )
 
-    async def disconnect_whatsapp(self, ws: str) -> None:
+    async def disconnect_whatsapp(self, workspace_id: str) -> None:
         """Our app stays subscribed to the account (it may have other numbers); this number's
         messages find no channel and aren't answered."""
-        await self._delete(await self.whatsapp_of(ws))
+        await self._delete(await self.whatsapp_of(workspace_id))
 
     async def whatsapp_number(self, phone_id: str) -> Channel | None:
         """The business connected to a number: one webhook serves every number, so it's by id."""
@@ -405,17 +417,17 @@ class ChannelService:
         if "postback" in event:  # a card's button: its payload is what they chose
             message = {"text": event["postback"].get("payload") or ""}
         if message and message.get("is_echo"):  # sent from the Page: by us, or by the owner
-            if message.get("metadata") != OURS and message.get("text"):
+            if message.get("metadata") != OUR_APP_TAG and message.get("text"):
                 agent = await self.agents.by_id(channel.agent_id)
                 buyer = str(event["recipient"]["id"])
-                await self.conversations.page_wrote(agent, MESSENGER, buyer, message["text"])
+                await self.conversations.save_page_message(agent, MESSENGER, buyer, message["text"])
             return
         if not message:
             return
-        psid = str(event["sender"]["id"])
+        chat_id = str(event["sender"]["id"])
         with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would
-            await self.messenger.mark_seen(channel.token, psid)
-        await self._answer(channel, psid, message)
+            await self.messenger.mark_seen(channel.token, chat_id)
+        await self._answer(channel, chat_id, message)
 
     async def run(self, every: float) -> None:
         """Sets the Telegram bots up again, `every` seconds after the start."""
@@ -463,7 +475,7 @@ class ChannelService:
             if chat_id == channel.owner_chat_id or (
                 channel.kind == TELEGRAM and await self.team.is_team(channel, chat_id)
             ):  # the owner or a moderator answering a visitor
-                await self.team.team_wrote(channel, chat_id, message)
+                await self.team.handle_team_reply(channel, chat_id, message)
                 return
             if text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 agent = await self.agents.by_id(channel.agent_id)
@@ -472,18 +484,18 @@ class ChannelService:
                 return
             # every message counts toward a flood, even one batched into another's turn
             await self.visitors.count_message(channel.workspace_id, f"{channel.kind}:{chat_id}")
-            messages = await self._gather(channel, chat_id, message)
+            messages = await self._collect_messages(channel, chat_id, message)
             if messages is not None:
-                await self._turn(channel, chat_id, messages)
+                await self._run_turn(channel, chat_id, messages)
         except VisitorSilenced:  # blocked, and told once already
             return
         except HeyDeskError as error:  # too long, or a suspended business: it says why
             await self._send(channel, chat_id, error.message)
         except Exception:
             log.exception("answer failed", extra={"channel_id": channel.id})
-            await self._send(channel, chat_id, FAILED)
+            await self._send(channel, chat_id, FAILED_REPLY)
 
-    async def _gather(
+    async def _collect_messages(
         self, channel: Channel, chat_id: str, message: dict[str, Any]
     ) -> list[dict[str, Any]] | None:
         """Many bubbles, one turn: waits `CHAT_WAIT_SECONDS` after a message. If another
@@ -498,7 +510,9 @@ class ChannelService:
         del self.waiting[key]
         return waiting
 
-    async def _turn(self, channel: Channel, chat_id: str, messages: list[dict[str, Any]]) -> None:
+    async def _run_turn(
+        self, channel: Channel, chat_id: str, messages: list[dict[str, Any]]
+    ) -> None:
         """One turn on the visitor's messages: their words a line each, a quoted message before
         the words that reply to it, and the last photo, theirs or a quoted one."""
         agent = await self.agents.by_id(channel.agent_id)
@@ -513,15 +527,15 @@ class ChannelService:
                 text = await self._voice(channel, message)
             if text is None:  # a sticker, a file, a voice note not understood
                 continue
-            words, quoted = await self._quoted(channel, message)
+            words, quoted = await self._replied_to_message(channel, message)
             lines.append(f'(replying to: "{words}") {text}' if words else text)
             if quoted is not None and sent is None:
                 photo = quoted
         if not lines:
-            await self._send(channel, chat_id, NOT_TEXT)
+            await self._send(channel, chat_id, NOT_TEXT_REPLY)
             return
         typing = None  # "typing…" only when the agent will answer, not the team
-        if await self.conversations.answers(agent, channel.kind, chat_id):
+        if await self.conversations.will_answer(agent, channel.kind, chat_id):
             typing = asyncio.create_task(
                 self._keep_typing(channel, chat_id, messages[-1].get("id", ""))
             )
@@ -561,7 +575,9 @@ class ChannelService:
         while len(self.cards_sent) > 10_000:  # the oldest go
             del self.cards_sent[next(iter(self.cards_sent))]
 
-    async def _quoted(self, channel: Channel, message: dict[str, Any]) -> tuple[str, bytes | None]:
+    async def _replied_to_message(
+        self, channel: Channel, message: dict[str, Any]
+    ) -> tuple[str, bytes | None]:
         """The earlier message this one replies to: its words and its photo. Telegram sends the whole message; Messenger its id, so it's fetched;
         WhatsApp its id, so only a message this server kept is known: the buyer's own, or a
         product card the agent sent."""
@@ -569,10 +585,14 @@ class ChannelService:
             if channel.kind == TELEGRAM:  # a product photo's caption names it
                 quoted = message.get("reply_to_message")
             elif channel.kind == MESSENGER:
-                mid = (message.get("reply_to") or {}).get("mid")
-                if mid in self.cards_sent:
-                    return self.cards_sent[mid][:300], None
-                quoted = await self.messenger.get_message(channel.token, mid) if mid else None
+                message_id = (message.get("reply_to") or {}).get("mid")
+                if message_id in self.cards_sent:
+                    return self.cards_sent[message_id][:300], None
+                quoted = (
+                    await self.messenger.get_message(channel.token, message_id)
+                    if message_id
+                    else None
+                )
             else:
                 reply_to = message.get("reply_to") or ""
                 if reply_to in self.cards_sent:
@@ -661,12 +681,12 @@ class ChannelService:
                 c["choice"] = ""
             if c["url"] and channel.kind != TELEGRAM:
                 c["url"] = self.absolute_url(c["url"])
-        sent = [c for c in cards if c["url"]][:PHOTOS_SENT]
+        sent = [c for c in cards if c["url"]][:MAX_PHOTO_MESSAGES]
         rest = [c for c in cards if c not in sent and c["choice"]]
         try:
             if channel.kind == MESSENGER:  # one carousel: a reply to it is to all of them
-                mid = await self.messenger.send_cards(channel.token, chat_id, cards)
-                self._remember_cards([mid], ["; ".join(card_words(c) for c in cards)])
+                message_id = await self.messenger.send_cards(channel.token, chat_id, cards)
+                self._remember_cards([message_id], ["; ".join(card_words(c) for c in cards)])
             elif channel.kind == WHATSAPP:
                 if sent:
                     ids = await self.whatsapp.send_cards(
@@ -683,7 +703,7 @@ class ChannelService:
                     )
             else:
                 for c in sent:
-                    jpeg = await self.photos.read(c["url"])
+                    jpeg = await self.photos.read_jpeg(c["url"])
                     caption = card_words(c)
                     await self.telegram.send_photo(
                         channel.token, chat_id, jpeg, caption, c["choice"], c["page"], c["video"]
@@ -737,13 +757,13 @@ class ChannelService:
         link = f"{self.settings.public_url}/p/{key}/{quote(code, safe='')}"
         return link + ("?" + "&".join(query) if query else "")
 
-    async def chat_link(self, ws: str, kind: str) -> str:
+    async def chat_link(self, workspace_id: str, kind: str) -> str:
         """Back to the business's chat on Messenger or Telegram, from a product's page;
         "" elsewhere: the page was opened over the chat, and closing it goes back."""
         if kind not in (MESSENGER, TELEGRAM):
             return ""
         async with self.sessions() as s:
-            channel = await self._find(s, ws, kind)
+            channel = await self._find_channel(s, workspace_id, kind)
         if channel is None:
             return ""
         return f"https://{'m.me' if kind == MESSENGER else 't.me'}/{channel.address}"
@@ -770,7 +790,7 @@ class ChannelService:
 
     async def _save(
         self,
-        ws: str,
+        workspace_id: str,
         agent_id: str,
         kind: str,
         channel_id: str,
@@ -779,11 +799,11 @@ class ChannelService:
         address: str,
     ) -> Channel:
         async with self.sessions() as s, s.begin():
-            channel = await self._find(s, ws, kind)
+            channel = await self._find_channel(s, workspace_id, kind)
             if channel is None:
                 channel = Channel(
                     id=channel_id,
-                    workspace_id=ws,
+                    workspace_id=workspace_id,
                     agent_id=agent_id,
                     kind=kind,
                     created_at=self.now(),
@@ -793,13 +813,15 @@ class ChannelService:
             channel.owner_chat_id = None  # a new bot: the owner links their chat with it again
             if kind == TELEGRAM:  # and so does each moderator
                 await s.execute(
-                    update(User).where(User.workspace_id == ws).values(telegram_chat_id=None)
+                    update(User)
+                    .where(User.workspace_id == workspace_id)
+                    .values(telegram_chat_id=None)
                 )
         return channel
 
-    async def _of(self, ws: str, kind: str, missing: str) -> Channel:
+    async def _get_channel(self, workspace_id: str, kind: str, missing: str) -> Channel:
         async with self.sessions() as s:
-            channel = await self._find(s, ws, kind)
+            channel = await self._find_channel(s, workspace_id, kind)
         if channel is None:
             raise NotFound(missing)
         return channel
@@ -808,7 +830,7 @@ class ChannelService:
         async with self.sessions() as s, s.begin():
             await s.delete(await s.get_one(Channel, channel.id))
 
-    async def _find(self, s: AsyncSession, ws: str, kind: str) -> Channel | None:
+    async def _find_channel(self, s: AsyncSession, workspace_id: str, kind: str) -> Channel | None:
         return await s.scalar(
-            select(Channel).where(Channel.workspace_id == ws, Channel.kind == kind)
+            select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
         )

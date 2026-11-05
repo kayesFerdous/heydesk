@@ -95,9 +95,9 @@ async def test_the_agent_answers_and_the_next_message_continues(
         (str(CHAT), "(fake model) You said: hi"),
         (str(CHAT), "(fake model) You said: again"),
     ]
-    [conv] = await telegram_conversations(app)
-    assert conv.contact == str(CHAT)
-    assert [m["content"] for m in conv.messages if m["role"] == "user"] == ["hi", "again"]
+    [conversation] = await telegram_conversations(app)
+    assert conversation.contact == str(CHAT)
+    assert [m["content"] for m in conversation.messages if m["role"] == "user"] == ["hi", "again"]
     [listed] = (await client.get("/api/conversations")).json()
     assert listed["name"] == "Rina Akter"
 
@@ -113,8 +113,8 @@ async def test_start_sends_the_greeting_and_starts_afresh(
     await send(client, path, secret, message("hello"))
 
     assert sent(app)[1][1].startswith("Assalamu alaikum! Welcome to Nakshi Threads.")
-    [conv] = await telegram_conversations(app)  # the same chat, started afresh
-    remembered = conv.messages[conv.history_from :]
+    [conversation] = await telegram_conversations(app)  # the same chat, started afresh
+    remembered = conversation.messages[conversation.history_from :]
     assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first
     assert [m["content"] for m in remembered if m["role"] == "user"] == ["hello"]
 
@@ -125,28 +125,28 @@ async def test_a_quiet_chat_starts_afresh_in_the_same_chat(
     """The team keeps one chat per contact, with its labels; the agent forgets."""
     path, secret = await connect(app, client)
     await send(client, path, secret, message("two biryanis"))
-    [conv] = await telegram_conversations(app)
-    await client.put(f"/api/conversations/{conv.id}/labels", json={"labels": ["vip"]})
+    [conversation] = await telegram_conversations(app)
+    await client.put(f"/api/conversations/{conversation.id}/labels", json={"labels": ["vip"]})
 
     app.state.services.conversations.now.advance(hours=13)
     await send(client, path, secret, message("hi"))
 
-    [conv] = await telegram_conversations(app)
-    assert conv.history_from == 3 and conv.labels == ["vip"]
+    [conversation] = await telegram_conversations(app)
+    assert conversation.history_from == 3 and conversation.labels == ["vip"]
     prompt = app.state.services.conversations.runtime.llm.requests[-1]
     assert "two biryanis" not in str(prompt.messages)  # yesterday's isn't in its history
 
-    whole = (await client.get(f"/api/conversations/{conv.id}")).json()
+    whole = (await client.get(f"/api/conversations/{conversation.id}")).json()
     assert [line["text"] for line in whole["messages"] if line["role"] == "user"] == [
         "two biryanis",
         "hi",
     ]
     assert whole["history_from"] == 3 and not whole["more"]
-    newest = (await client.get(f"/api/conversations/{conv.id}", params={"limit": 1})).json()
+    newest = (await client.get(f"/api/conversations/{conversation.id}", params={"limit": 1})).json()
     assert [line["text"] for line in newest["messages"]] == ["(fake model) You said: hi"]
     assert newest["more"] and newest["count"] == whole["count"] == 6
     before = newest["messages"][0]["index"]
-    older = await client.get(f"/api/conversations/{conv.id}", params={"before": before})
+    older = await client.get(f"/api/conversations/{conversation.id}", params={"before": before})
     assert older.json()["messages"][-1]["text"] == "hi"
 
 

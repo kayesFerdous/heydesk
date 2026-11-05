@@ -14,12 +14,12 @@ from heydesk.shop.shared import (
     SEARCH_KNOWLEDGE,
     TAKE_LEAD,
     TAKE_MESSAGE,
-    returning,
+    returning_section,
 )
 from heydesk.shop.store import ShopStore
 from heydesk.shop.tools import TOOLS
 from heydesk.shop.values import (
-    LONG_LIST,
+    LONG_PRODUCT_LIST,
     ShopConfig,
     cart_text,
     groups_text,
@@ -128,7 +128,9 @@ async def shop_prompt(config: ShopConfig, store: ShopStore) -> str:
     delivery = ["# Delivery", "The charge depends on the area:"]
     for zone in config.delivery:
         first = pays and zone.pay_first and zone.charge
-        delivery.append(zone.line(config.currency) + ("; paid online first" if first else ""))
+        delivery.append(
+            zone.prompt_line(config.currency) + ("; paid online first" if first else "")
+        )
     if pays:
         delivery.append(
             'Where it says "paid online first", the delivery charge is paid first, by the '
@@ -137,20 +139,20 @@ async def shop_prompt(config: ShopConfig, store: ShopStore) -> str:
             "placed or confirmed until a message says the payment came in: never say it is "
             "before."
         )
-    cod = "Elsewhere, orders are" if pays else "Orders are"
+    orders_are = "Elsewhere, orders are" if pays else "Orders are"
     how = (
         "the shop calls to confirm one before sending it"
         if config.call_to_confirm
         else "one is confirmed as soon as it's placed: the shop doesn't call"
     )
-    delivery.append(f"{cod} paid in cash on delivery, and {how}.")
+    delivery.append(f"{orders_are} paid in cash on delivery, and {how}.")
     if config.free_delivery_over:
         free = money(config.free_delivery_over, config.currency)
         delivery.append(f"Delivery is free on orders of {free} or more.")
 
     listed = await store.products()
     products = ["# Products"]
-    if len(listed) > LONG_LIST:  # too many for every call: the model looks them up
+    if len(listed) > LONG_PRODUCT_LIST:  # too many for every call: the model looks them up
         products.append(
             f"The shop has {len(listed)} products, too many to list here. "
             f"Groups: {groups_text(listed)}."
@@ -164,14 +166,14 @@ async def shop_prompt(config: ShopConfig, store: ShopStore) -> str:
         products.append("Each line: name [code] price, sizes, colours: description")
         for category in dict.fromkeys(p.category for p in listed):
             products.append(f"{category}:")
-            products += [p.line(config.currency) for p in listed if p.category == category]
+            products += [p.prompt_line(config.currency) for p in listed if p.category == category]
     if not listed:
         products.append("No products listed yet.")
 
     sections = [ROLE, "\n".join(about), "\n".join(delivery), "\n".join(products)]
-    for last in await store.before(ShopOrder):  # a buyer back again
+    for last in await store.earlier_records(ShopOrder):  # a buyer back again
         sections.append(
-            returning(
+            returning_section(
                 "Their last order",
                 [
                     f"{last.code}: {lines_text(last.lines)}",

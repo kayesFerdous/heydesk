@@ -12,10 +12,11 @@ from heydesk.domain.values import Confirmed
 from heydesk.runtime.tool import ToolResult
 
 
-def confirm[T](heard: str, value: T, read_back: str) -> Confirmed[T] | None:
-    """`heard` is the read-back the visitor replied to (`ToolContext.heard`); `read_back` is
-    this call's, as the visitor would hear it. Different, or none → nothing is saved."""
-    return Confirmed(value) if heard and heard == read_back else None
+def confirm[T](last_read_back: str, value: T, read_back: str) -> Confirmed[T] | None:
+    """`last_read_back` is the read-back the visitor replied to (`ToolContext.last_read_back`);
+    `read_back` is this call's, as the visitor would hear it. Different, or none → nothing is
+    saved."""
+    return Confirmed(value) if last_read_back and last_read_back == read_back else None
 
 
 def ask_for_yes(read_back: str, tool: str, card: dict[str, Any] | None = None) -> ToolResult:

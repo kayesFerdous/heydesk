@@ -16,8 +16,10 @@ from heydesk.ports.payments import Account, Checkout, Paid, PaymentUnavailable
 
 SANDBOX = "https://sandbox.sslcommerz.com"
 LIVE = "https://securepay.sslcommerz.com"
-NO_EMAIL = "customer@example.com"  # SSLCommerz requires one; we don't ask buyers for theirs
-NOWHERE = "https://example.com/"  # where a check's session would send someone: no one goes
+PLACEHOLDER_EMAIL = (
+    "customer@example.com"  # SSLCommerz requires one; we don't ask buyers for theirs
+)
+PLACEHOLDER_URL = "https://example.com/"  # where a check's session would send someone: no one goes
 
 
 class SslCommerz:
@@ -35,8 +37,8 @@ class SslCommerz:
             name="HeyDesk",
             phone="01700000000",
             address="",
-            back_url=NOWHERE,
-            notify_url=NOWHERE,
+            back_url=PLACEHOLDER_URL,
+            notify_url=PLACEHOLDER_URL,
         )
         await self.start(account, check)
 
@@ -56,7 +58,7 @@ class SslCommerz:
             "product_profile": "general",
             "shipping_method": "NO",
             "cus_name": checkout.name,
-            "cus_email": NO_EMAIL,
+            "cus_email": PLACEHOLDER_EMAIL,
             "cus_phone": checkout.phone,
             "cus_add1": checkout.address or "Bangladesh",  # required
             "cus_city": "Bangladesh",

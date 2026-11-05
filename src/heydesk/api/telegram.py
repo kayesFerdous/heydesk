@@ -40,22 +40,22 @@ def telegram_out(channel: Channel) -> TelegramOut:
 
 
 @router.get("/api/agent/telegram")
-async def get_telegram(ws: Workspace, services: Svc, principal: User) -> TelegramOut:
-    out = telegram_out(await services.channels.telegram_of(ws))
-    if principal.role == "moderator":
+async def get_telegram(workspace_id: Workspace, services: Svc, current_user: User) -> TelegramOut:
+    out = telegram_out(await services.channels.telegram_of(workspace_id))
+    if current_user.role == "moderator":
         out.owner_link = None
     return out
 
 
 @router.put("/api/agent/telegram")
-async def connect_telegram(body: TelegramIn, ws: Workspace, services: Svc) -> TelegramOut:
+async def connect_telegram(body: TelegramIn, workspace_id: Workspace, services: Svc) -> TelegramOut:
     """Connects the business's Telegram bot: from now on the agent answers its messages."""
-    return telegram_out(await services.channels.connect_telegram(ws, body.token.strip()))
+    return telegram_out(await services.channels.connect_telegram(workspace_id, body.token.strip()))
 
 
 @router.delete("/api/agent/telegram", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_telegram(ws: Workspace, services: Svc) -> None:
-    await services.channels.disconnect_telegram(ws)
+async def disconnect_telegram(workspace_id: Workspace, services: Svc) -> None:
+    await services.channels.disconnect_telegram(workspace_id)
 
 
 @router.post("/api/telegram/{channel_id}", include_in_schema=False)

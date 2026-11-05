@@ -45,9 +45,9 @@ async def to_sse(turn: RunningTurn) -> AsyncIterator[str]:
 PING_SECONDS = 20
 
 
-async def live_frames(hub: LiveHub, ws: str) -> AsyncIterator[str]:
+async def live_frames(hub: LiveHub, workspace_id: str) -> AsyncIterator[str]:
     """The inbox's stream: a `changed` frame per chat, and a `ping` while it's quiet."""
-    with hub.listen(ws) as queue:
+    with hub.listen(workspace_id) as queue:
         yield frame("open", {})
         while True:
             try:

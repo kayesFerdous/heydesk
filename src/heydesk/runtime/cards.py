@@ -28,11 +28,13 @@ def amount(minor: int, currency: str) -> dict[str, Any]:
     }
 
 
-def line(label: str, qty: int | None = None, cost: dict[str, Any] | None = None) -> dict[str, Any]:
+def line(
+    label: str, quantity: int | None = None, cost: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """One line of a summary: "Cotton Kurti", 2, the two of them's amount."""
     found: dict[str, Any] = {"label": label}
-    if qty is not None:
-        found["qty"] = qty
+    if quantity is not None:
+        found["qty"] = quantity
     if cost is not None:
         found["amount"] = cost
     return found

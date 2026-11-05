@@ -4,7 +4,7 @@ Each thing the caller says becomes a `start_turn(channel="voice")`, the same
 turn the web chat runs; the reply's tokens go to the TTS, which speaks it
 sentence by sentence as they arrive.
 
-Barge-in: talking over the agent for `BARGE_IN_S` stops the audio and the turn,
+Barge-in: talking over the agent for `INTERRUPT_SECONDS` stops the audio and the turn,
 which still saves what it had. A short "mm-hmm" doesn't stop it and isn't a turn.
 """
 
@@ -54,13 +54,15 @@ from heydesk.voice.chorus import ChorusSTT
 from heydesk.voice.whisper_stt import WhisperSTT
 
 VOICE = "en_US-lessac-medium"  # Piper, free and local, when VOICE_LANGUAGE is `en`
-PAUSE_S = 0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
-BARGE_IN_S = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
-GOODBYE_S = 1.5  # after the last word of a settled shop call, it hangs up
-BACKCHANNEL = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
+END_OF_SPEECH_SECONDS = (
+    0.5  # silence that ends the caller's turn; 0.2 (the default) splits at a comma
+)
+INTERRUPT_SECONDS = 0.6  # talking this long over the agent stops it; "mm-hmm" is shorter
+HANG_UP_SECONDS = 1.5  # after the last word of a settled shop call, it hangs up
+SHORT_ACKNOWLEDGEMENTS = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
 
 
-class Agent(FrameProcessor):
+class VoiceAgent(FrameProcessor):
     """Runs a turn for each thing the caller says and passes the reply on to be spoken."""
 
     def __init__(
@@ -98,18 +100,18 @@ class Agent(FrameProcessor):
                 await self.cancel_task(self.hang_up)
                 self.hang_up = None
             if self.over and not self.busy():
-                self.hang_up = self.create_task(self.end_after(GOODBYE_S))
+                self.hang_up = self.create_task(self.end_after(HANG_UP_SECONDS))
         elif isinstance(frame, VADUserStartedSpeakingFrame):
             self.over_agent = self.busy()
             if self.over_agent:
-                self.barge_in = self.create_task(self.stop_after(BARGE_IN_S))
+                self.barge_in = self.create_task(self.stop_after(INTERRUPT_SECONDS))
         elif isinstance(frame, VADUserStoppedSpeakingFrame) and self.barge_in:
             await self.cancel_task(self.barge_in)
             self.barge_in = None
         await self.push_frame(frame, direction)
 
     async def on_transcript(self, text: str) -> None:
-        if self.over_agent and text.lower().strip(" .,!?") in BACKCHANNEL:
+        if self.over_agent and text.lower().strip(" .,!?") in SHORT_ACKNOWLEDGEMENTS:
             return  # "mm-hmm" while the agent talks: let it go on
         await self.stop()  # anything else is a new turn: the old one stops first
         if self.turn:
@@ -177,7 +179,7 @@ class SpokenTextFilter(BaseTextFilter):
         return speakable(text, self.language)
 
 
-class FirstSound(BaseObserver):
+class FirstSoundTimer(BaseObserver):
     """Logs the time from the caller's last word (the VAD's stop) to the agent's first sound."""
 
     def __init__(self) -> None:
@@ -229,9 +231,11 @@ async def run_call(
     pipeline = Pipeline(
         [
             transport.input(),
-            VADProcessor(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=PAUSE_S))),
+            VADProcessor(
+                vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=END_OF_SPEECH_SECONDS))
+            ),
             stt,
-            Agent(
+            VoiceAgent(
                 services.conversations,
                 agent,
                 visitor,
@@ -242,7 +246,7 @@ async def run_call(
         ]
     )
     task = PipelineTask(
-        pipeline, params=PipelineParams(), observers=[FirstSound()], enable_rtvi=False
+        pipeline, params=PipelineParams(), observers=[FirstSoundTimer()], enable_rtvi=False
     )
 
     @transport.event_handler("on_client_connected")

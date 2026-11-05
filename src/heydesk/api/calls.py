@@ -39,14 +39,14 @@ class CallIn(BaseModel):
 @router.get("/api/calls")
 async def calls(
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
     view: Literal["waiting", "done"] = "waiting",
     order_id: str | None = None,
 ) -> list[CallOut]:
     """`waiting`: the calls ringing or talking, then the queue in the order it's called, each
     with its `place`. `done`: the last 100, newest first. With `order_id`: that order's calls,
     newest first."""
-    found = await services.calls.find(ws, view, order_id)
+    found = await services.calls.find(workspace_id, view, order_id)
     out = [CallOut.model_validate(c) for c in found]
     if view == "waiting" and not order_id:
         queued = [c for c in out if c.status == QUEUED]
@@ -56,19 +56,19 @@ async def calls(
 
 
 @router.post("/api/calls", status_code=201)
-async def call_order(body: CallIn, services: Svc, ws: Workspace) -> CallOut:
+async def call_order(body: CallIn, services: Svc, workspace_id: Workspace) -> CallOut:
     """Call a new order to confirm it, first in the queue. 409 while calls are off, or when the
     order isn't new or already has a call waiting."""
-    return CallOut.model_validate(await services.calls.call_order(ws, body.order_id))
+    return CallOut.model_validate(await services.calls.call_order(workspace_id, body.order_id))
 
 
 @router.post("/api/calls/{call_id}/now")
-async def call_now(call_id: str, services: Svc, ws: Workspace) -> CallOut:
+async def call_now(call_id: str, services: Svc, workspace_id: Workspace) -> CallOut:
     """A queued call moves to the front and is due now."""
-    return CallOut.model_validate(await services.calls.call_now(ws, call_id))
+    return CallOut.model_validate(await services.calls.call_now(workspace_id, call_id))
 
 
 @router.delete("/api/calls/{call_id}")
-async def stop_call(call_id: str, services: Svc, ws: Workspace) -> CallOut:
+async def stop_call(call_id: str, services: Svc, workspace_id: Workspace) -> CallOut:
     """Cancels a queued call (`stopped`); the order stays as it is."""
-    return CallOut.model_validate(await services.calls.stop(ws, call_id))
+    return CallOut.model_validate(await services.calls.stop(workspace_id, call_id))

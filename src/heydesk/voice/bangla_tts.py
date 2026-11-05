@@ -11,13 +11,13 @@ from pipecat.frames.frames import ErrorFrame, Frame
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.text.base_text_filter import BaseTextFilter
 
-TIMEOUT_S = 15.0
+TIMEOUT_SECONDS = 15.0
 
 
 class BanglaTTS(TTSService):
     def __init__(self, url: str, text_filters: list[BaseTextFilter]) -> None:
         super().__init__(push_start_frame=True, push_stop_frames=True, text_filters=text_filters)
-        self.client = httpx.AsyncClient(base_url=url, timeout=TIMEOUT_S)
+        self.client = httpx.AsyncClient(base_url=url, timeout=TIMEOUT_SECONDS)
 
     def can_generate_metrics(self) -> bool:
         return True

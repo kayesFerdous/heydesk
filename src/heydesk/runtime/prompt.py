@@ -42,23 +42,24 @@ write them to the visitor. Use the name.
 
 
 # The buttons' words are English; the reply keeps to the visitor's own language
-TAPS = (
+BUTTON_REPLY_RULE = (
     'A button they tap arrives as its words ("Yes", "XL", "Order [code]"): reply in the '
     "language they have been writing in."
 )
 
 CHANNEL_STYLE = {
-    "web": "web chat. Keep replies to two or three short sentences; a short list is fine. " + TAPS,
+    "web": "web chat. Keep replies to two or three short sentences; a short list is fine. "
+    + BUTTON_REPLY_RULE,
     "voice": "a phone call. Speak in one or two short sentences: no lists, symbols or markdown. "
     "Their words come from speech-to-text and can be misheard: when a name (a product, a "
     "dish, a doctor, a place) doesn't match one listed, take the closest listed one and check "
     "it with them.",
     "telegram": "a Telegram chat, read on a phone. Keep replies to two or three short "
-    "sentences, in plain text: no markdown, bold or tables. " + TAPS,
+    "sentences, in plain text: no markdown, bold or tables. " + BUTTON_REPLY_RULE,
     "messenger": "a Facebook Messenger chat, read on a phone. Keep replies to two or three "
-    "short sentences, in plain text: no markdown, bold or tables. " + TAPS,
+    "short sentences, in plain text: no markdown, bold or tables. " + BUTTON_REPLY_RULE,
     "whatsapp": "a WhatsApp chat, read on a phone. Keep replies to two or three short "
-    "sentences, in plain text: no markdown, bold or tables. " + TAPS,
+    "sentences, in plain text: no markdown, bold or tables. " + BUTTON_REPLY_RULE,
 }
 
 # A call in Bangla: our Bangla voice reads Bangla letters only and drops the rest
@@ -90,7 +91,7 @@ def build_system_prompt(
         sections.append("# FAQ\n" + agent.fill(agent.faq).strip())
     if documents:
         sections.append(documents_section(documents))
-    sections.append(right_now(channel, now, agent.timezone, agent.hours, voice_language))
+    sections.append(now_section(channel, now, agent.timezone, agent.hours, voice_language))
     return "\n\n".join(sections) + "\n"
 
 
@@ -136,7 +137,7 @@ def documents_section(titles: list[str]) -> str:
     )
 
 
-def right_now(
+def now_section(
     channel: str, now: datetime, timezone: str, hours: WeeklyHours, voice_language: str
 ) -> str:
     """The channel, the time, and the next two weeks, so "next Friday" has a date. Python

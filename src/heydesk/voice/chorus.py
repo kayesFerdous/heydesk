@@ -16,8 +16,8 @@ from pipecat.services.stt_service import SegmentedSTTService
 from pipecat.utils.time import time_now_iso8601
 
 URL = "https://api.maira.gigalogy.com/chorus/v1/speeches"
-POLL_S = 0.2
-TIMEOUT_S = 20.0
+POLL_SECONDS = 0.2
+TIMEOUT_SECONDS = 20.0
 
 
 class ChorusSTT(SegmentedSTTService):
@@ -25,13 +25,13 @@ class ChorusSTT(SegmentedSTTService):
         super().__init__()
         self.language = language
         self.client = httpx.AsyncClient(
-            headers={"project-key": project_key, "api-key": api_key}, timeout=TIMEOUT_S
+            headers={"project-key": project_key, "api-key": api_key}, timeout=TIMEOUT_SECONDS
         )
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None]:
         started = time.perf_counter()
         try:
-            text = await asyncio.wait_for(self.transcribe(audio), TIMEOUT_S)
+            text = await asyncio.wait_for(self.transcribe(audio), TIMEOUT_SECONDS)
         except (
             httpx.HTTPError,
             TimeoutError,
@@ -53,7 +53,7 @@ class ChorusSTT(SegmentedSTTService):
         upload.raise_for_status()
         task_id = upload.json()["task_id"]
         while True:
-            await asyncio.sleep(POLL_S)
+            await asyncio.sleep(POLL_SECONDS)
             task = (await self.client.get(f"{URL}/{task_id}")).json()
             if task["status"] == "completed":
                 return str(task["results"]["transcription"]["text"]).strip()

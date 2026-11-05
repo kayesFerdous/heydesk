@@ -1,6 +1,6 @@
 """Users: sign up, log in, and who a token belongs to (design §9).
 
-A token carries the user (`sub`), their role and, for an owner, their business (`ws`).
+A token carries the user (`sub`), their role and, for an owner, their business (`workspace_id`).
 Every business route is scoped by it. An admin has no business of their own: they name
 one per request, and the database (not the token) says they're still an admin.
 
@@ -69,7 +69,7 @@ hasher = PasswordHash.recommended()  # argon2
 
 
 @dataclass(frozen=True)
-class Principal:
+class CurrentUser:
     """Who a token says is calling. `workspace_id` is None only for an admin."""
 
     user_id: str
@@ -102,7 +102,7 @@ class UserService:
             s.add(workspace)
             await s.flush()
             user = await self.new_user(
-                s, email, password, role="owner", ws=workspace.id, verified=False
+                s, email, password, role="owner", workspace_id=workspace.id, verified=False
             )
         await self.send_code(user, "verify")
 
@@ -144,13 +144,15 @@ class UserService:
             user.email_verified_at = user.email_verified_at or self.now()
         return self._token(user)
 
-    async def create_user(self, ws: str, email: str, password: str) -> str:
+    async def create_user(self, workspace_id: str, email: str, password: str) -> str:
         """An owner in an existing business, from the command line. Returns a token."""
-        return self._token(await self._add(email, password, role="owner", ws=ws))
+        return self._token(
+            await self._add(email, password, role="owner", workspace_id=workspace_id)
+        )
 
     async def create_admin(self, email: str, password: str) -> None:
         """From the command line only (`heydesk create-admin`): never a web route."""
-        await self._add(email, password, role="admin", ws=None)
+        await self._add(email, password, role="admin", workspace_id=None)
 
     async def admins(self) -> list[User]:
         """From the command line only (`heydesk admins`)."""
@@ -193,7 +195,7 @@ class UserService:
         async with self.sessions() as s:
             return await s.scalar(select(User).where(User.email == email.strip().lower()))
 
-    def principal(self, token: str) -> Principal:
+    def user_from_token(self, token: str) -> CurrentUser:
         try:
             # Expiry is checked against our clock, not the machine's, so tests' fixed clock works
             claims = jwt.decode(
@@ -203,29 +205,29 @@ class UserService:
             claims = {}
         if not claims or claims.get("exp", 0) <= self.now().timestamp():
             raise Unauthorized("Log in again: the token is missing, wrong or expired.")
-        return Principal(str(claims["sub"]), str(claims["role"]), claims["ws"])
+        return CurrentUser(str(claims["sub"]), str(claims["role"]), claims["ws"])
 
-    async def still_admin(self, principal: Principal) -> bool:
+    async def still_admin(self, current_user: CurrentUser) -> bool:
         """The database's word, not the token's: a demoted admin is out at once."""
-        if not principal.is_admin:
+        if not current_user.is_admin:
             return False
         async with self.sessions() as s:
-            role = await s.scalar(select(User.role).where(User.id == principal.user_id))
+            role = await s.scalar(select(User.role).where(User.id == current_user.user_id))
         return role == "admin"
 
-    async def still_moderator(self, principal: Principal) -> bool:
+    async def still_moderator(self, current_user: CurrentUser) -> bool:
         """The database's word: a moderator the owner removed is out at once."""
         async with self.sessions() as s:
             role = await s.scalar(
                 select(User.role).where(
-                    User.id == principal.user_id, User.workspace_id == principal.workspace_id
+                    User.id == current_user.user_id, User.workspace_id == current_user.workspace_id
                 )
             )
         return role == "moderator"
 
-    async def me(self, principal: Principal) -> tuple[User, Workspace | None]:
+    async def me(self, current_user: CurrentUser) -> tuple[User, Workspace | None]:
         async with self.sessions() as s:
-            user = await s.get(User, principal.user_id)
+            user = await s.get(User, current_user.user_id)
             if user is None:
                 raise Unauthorized("Log in again.")
             business = await s.get(Workspace, user.workspace_id) if user.workspace_id else None
@@ -254,9 +256,9 @@ class UserService:
                 raise Forbidden("That isn't your current password.")
             user.password_hash = hasher.hash(new)
 
-    async def _add(self, email: str, password: str, *, role: str, ws: str | None) -> User:
+    async def _add(self, email: str, password: str, *, role: str, workspace_id: str | None) -> User:
         async with self.sessions() as s, s.begin():
-            return await self.new_user(s, email, password, role=role, ws=ws)
+            return await self.new_user(s, email, password, role=role, workspace_id=workspace_id)
 
     async def new_user(
         self,
@@ -265,7 +267,7 @@ class UserService:
         password: str,
         *,
         role: str,
-        ws: str | None,
+        workspace_id: str | None,
         verified: bool = True,  # signup's and invites need a code: the command line's are trusted
     ) -> User:
         """Adds a user in the caller's transaction; a 409 if the email is taken."""
@@ -273,7 +275,7 @@ class UserService:
         if await s.scalar(select(User.id).where(User.email == email)):
             raise Conflict("There's already an account with that email. Log in instead.")
         user = User(
-            workspace_id=ws,
+            workspace_id=workspace_id,
             role=role,
             email=email,
             password_hash=hasher.hash(password),

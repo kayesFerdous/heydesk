@@ -8,10 +8,10 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.courier import CourierAccount, CourierError, Ending, Parcel, Tracked
+from heydesk.ports.courier import CourierAccount, CourierError, FinalStatus, Parcel, ParcelStatus
 
 BASE = "https://portal.packzy.com/api/v1"
-ENDINGS: dict[str, Ending] = {  # Steadfast's final words → the order's last status
+FINAL_STATUSES: dict[str, FinalStatus] = {  # Steadfast's final words → the order's last status
     "delivered": "delivered",
     "partial_delivered": "delivered",
     "cancelled": "returned",  # not delivered: the parcel is coming back to the shop
@@ -32,7 +32,7 @@ class Steadfast:
             "recipient_name": parcel.name,
             "recipient_phone": parcel.phone,
             "recipient_address": parcel.address[:490],
-            "cod_amount": parcel.cod,
+            "cod_amount": parcel.cash_on_delivery,
             "note": parcel.note[:480],
             "item_description": parcel.items[:255],
             "total_lot": parcel.quantity,
@@ -43,10 +43,10 @@ class Steadfast:
             raise CourierError(f"Steadfast didn't book it. {data.get('message', '')}".strip())
         return str(consignment["consignment_id"])
 
-    async def status(self, account: CourierAccount, parcel_id: str) -> Tracked:
+    async def status(self, account: CourierAccount, parcel_id: str) -> ParcelStatus:
         data = await self._call(account, "GET", f"status_by_cid/{parcel_id}")
         said = str(data.get("delivery_status", ""))
-        return Tracked(said, ENDINGS.get(said))
+        return ParcelStatus(said, FINAL_STATUSES.get(said))
 
     async def _call(
         self, account: CourierAccount, method: str, path: str, **kwargs: Any

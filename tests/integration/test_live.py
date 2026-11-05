@@ -17,11 +17,11 @@ async def test_an_open_inbox_hears_a_chat_that_changed(app: FastAPI, client: Asy
     res = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hi"}
     )
-    conv = res.text.split('"conversation_id": "')[1].split('"')[0]
-    assert f'"conversation_id": "{conv}"' in await anext(frames)  # the visitor's turn
+    conversation = res.text.split('"conversation_id": "')[1].split('"')[0]
+    assert f'"conversation_id": "{conversation}"' in await anext(frames)  # the visitor's turn
 
-    await client.put(f"/api/conversations/{conv}/labels", json={"labels": ["vip"]})
-    assert f'"conversation_id": "{conv}"' in await anext(frames)  # the team's change
+    await client.put(f"/api/conversations/{conversation}/labels", json={"labels": ["vip"]})
+    assert f'"conversation_id": "{conversation}"' in await anext(frames)  # the team's change
 
     await frames.aclose()
     assert hub.pages == {}  # closed, so nothing is kept for it

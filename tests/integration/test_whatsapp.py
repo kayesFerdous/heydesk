@@ -17,7 +17,7 @@ from tests.integration.test_telegram import send as to_telegram
 TOKEN = "EAAB-a-system-user-token"
 ACCOUNT, PHONE = "2001", "3001"
 FROM = "8801711000000"  # the visitor's WhatsApp number
-NOT_TEXT = "I can only read text messages for now. Please type your question."
+NOT_TEXT_REPLY = "I can only read text messages for now. Please type your question."
 
 
 def message(text: str | None = "hi", **instead: Any) -> dict[str, Any]:
@@ -98,7 +98,7 @@ async def test_a_wrong_signature_is_a_404_and_nothing_is_answered(
 async def test_a_voice_note_gets_text_only(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
     await post(client, message(type="audio", audio={"id": "m9"}))
-    assert fake(app).sent == [(FROM, NOT_TEXT)]
+    assert fake(app).sent == [(FROM, NOT_TEXT_REPLY)]
 
 
 async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
@@ -216,8 +216,8 @@ async def test_typing_shows_only_when_the_agent_answers(app: FastAPI, client: As
     await post(client, message("hi"))
     assert fake(app).typing == ["wamid.1"]
 
-    [conv] = (await client.get("/api/conversations")).json()
-    visitor = (await client.get(f"/api/conversations/{conv['id']}")).json()["visitor"]
+    [conversation] = (await client.get("/api/conversations")).json()
+    visitor = (await client.get(f"/api/conversations/{conversation['id']}")).json()["visitor"]
     await client.patch(f"/api/visitors/{visitor['id']}", json={"ai_off": True})
     await post(client, message("where is my parcel?"))
     assert fake(app).typing == ["wamid.1"]  # the team answers: no "typing…"

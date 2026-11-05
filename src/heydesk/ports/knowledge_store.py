@@ -30,12 +30,14 @@ class KnowledgeStore(Protocol):
         """Makes the collection and its indexes if they aren't there. Safe to call every start."""
         ...
 
-    async def add(self, ws: str, document_id: str, title: str, chunks: list[ChunkIn]) -> None: ...
+    async def add(
+        self, workspace_id: str, document_id: str, title: str, chunks: list[ChunkIn]
+    ) -> None: ...
 
-    async def delete_document(self, ws: str, document_id: str) -> None: ...
+    async def delete_document(self, workspace_id: str, document_id: str) -> None: ...
 
     async def search(
-        self, ws: str, question: str, vector: list[float] | None, limit: int
+        self, workspace_id: str, question: str, vector: list[float] | None, limit: int
     ) -> list[Snippet]:
         """The best `limit` pieces for a question, by meaning (`vector`) and by its words.
         With no vector (the embedder is down), by words alone."""

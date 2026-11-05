@@ -1,6 +1,6 @@
 """What the agent took for a business: an order, a message. Each kind has its
 own table; they share these columns, a number per business, and a status that moves along
-the table's `FLOW`."""
+the table's `STATUS_FLOW`."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -18,10 +18,10 @@ UNPAID = "unpaid"  # waiting for its payment online; only the payment check move
 
 
 class CustomerRequest:
-    """A mixin for the tables. A subclass sets `LETTER` ("A" for A-104) and `FLOW`."""
+    """A mixin for the tables. A subclass sets `CODE_LETTER` ("A" for A-104) and `STATUS_FLOW`."""
 
-    LETTER: ClassVar[str]
-    FLOW: ClassVar[dict[str, set[str]]]  # status → where it may go next
+    CODE_LETTER: ClassVar[str]
+    STATUS_FLOW: ClassVar[dict[str, set[str]]]  # status → where it may go next
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
@@ -40,14 +40,14 @@ class CustomerRequest:
     @property
     def code(self) -> str:
         """What the visitor is told and the business sees: "A-104"."""
-        return record_code(self.LETTER, self.number)
+        return record_code(self.CODE_LETTER, self.number)
 
     def move(self, status: str, now: datetime) -> None:
         """One status change. Raises LookupError for an unknown status, ValueError for a
         change the flow doesn't allow."""
-        if status not in self.FLOW:
-            raise LookupError(f"status is one of: {', '.join(self.FLOW)}")
-        if status not in self.FLOW[self.status]:
+        if status not in self.STATUS_FLOW:
+            raise LookupError(f"status is one of: {', '.join(self.STATUS_FLOW)}")
+        if status not in self.STATUS_FLOW[self.status]:
             raise ValueError(f"something that is {self.status} can't become {status}")
         self.status = status
         self.updated_at = now
@@ -70,11 +70,11 @@ class Payable:
         """What's paid online first, in minor units."""
         raise NotImplementedError
 
-    def about(self) -> str:
+    def alert_summary(self) -> str:
         """A line for the owner's alert once it's paid: what was ordered or booked."""
         raise NotImplementedError
 
-    def after(self) -> str:
+    def next_step_text(self) -> str:
         """What the visitor is told happens next, once it's paid."""
         raise NotImplementedError
 

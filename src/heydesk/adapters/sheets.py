@@ -5,7 +5,7 @@ import httpx
 
 from heydesk.ports.sheets import SheetUnreadable
 
-SHARE = "Share the sheet as 'Anyone with the link: Viewer', then try again."
+SHARE_SHEET_HINT = "Share the sheet as 'Anyone with the link: Viewer', then try again."
 
 
 async def fetch_csv(url: str) -> str:
@@ -17,5 +17,5 @@ async def fetch_csv(url: str) -> str:
     if response.status_code == 404:
         raise SheetUnreadable("There's no such sheet: check the link.")
     if response.status_code != 200 or "text/csv" not in response.headers.get("content-type", ""):
-        raise SheetUnreadable(SHARE)
+        raise SheetUnreadable(SHARE_SHEET_HINT)
     return response.text

@@ -61,33 +61,37 @@ class VisitorService:
             raise (VisitorSilenced if told else VisitorLimited)(limited_message(agent))
         return not ai_off
 
-    async def count_message(self, ws: str, key: str) -> None:
+    async def count_message(self, workspace_id: str, key: str) -> None:
         """One message from a messaging app. `FLOOD_MESSAGES` in a minute block them for
         `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit."""
         limit = parse(f"{self.settings.FLOOD_MESSAGES}/minute")
-        if await self.flood.hit(limit, "flood", ws, key):
+        if await self.flood.hit(limit, "flood", workspace_id, key):
             return
-        await self._first_seen(ws, key, self.now().date())  # admit puts the business's day right
+        await self._first_seen(
+            workspace_id, key, self.now().date()
+        )  # admit puts the business's day right
         async with self.sessions() as s, s.begin():
-            visitor = await self._find(s, ws, key, lock=True)
+            visitor = await self._find(s, workspace_id, key, lock=True)
             assert visitor is not None
             if not is_blocked(visitor, self.now()):
                 until = self.now() + timedelta(hours=self.settings.BLOCK_HOURS)
                 block(visitor, "flooding", until)
-                log.info("visitor flooding", extra={"workspace_id": ws})
+                log.info("visitor flooding", extra={"workspace_id": workspace_id})
 
-    async def find(self, ws: str, key: str) -> Visitor | None:
+    async def find(self, workspace_id: str, key: str) -> Visitor | None:
         async with self.sessions() as s:
-            return await self._find(s, ws, key)
+            return await self._find(s, workspace_id, key)
 
     async def change(
-        self, ws: str, visitor_id: str, by: str, blocked: bool | None, ai_off: bool | None
+        self, workspace_id: str, visitor_id: str, by: str, blocked: bool | None, ai_off: bool | None
     ) -> Visitor:
         """The team blocks or unblocks a visitor, or turns the AI off or on for them.
         `by` is who did it (their email). A block by the team lasts until someone unblocks."""
         async with self.sessions() as s, s.begin():
             visitor = await s.scalar(
-                select(Visitor).where(Visitor.id == visitor_id, Visitor.workspace_id == ws)
+                select(Visitor).where(
+                    Visitor.id == visitor_id, Visitor.workspace_id == workspace_id
+                )
             )
             if visitor is None:
                 raise NotFound("There's no such visitor.")
@@ -99,16 +103,16 @@ class VisitorService:
             if ai_off is not None:
                 visitor.ai_off = ai_off
             visitor.updated_at = self.now()
-        log.info("visitor changed", extra={"workspace_id": ws, "visitor_id": visitor_id})
+        log.info("visitor changed", extra={"workspace_id": workspace_id, "visitor_id": visitor_id})
         return visitor
 
-    async def blocked(self, ws: str) -> list[Visitor]:
+    async def blocked(self, workspace_id: str) -> list[Visitor]:
         """Who is blocked now, the newest block first."""
         now = self.now()
         async with self.sessions() as s:
             found = await s.scalars(
                 select(Visitor)
-                .where(Visitor.workspace_id == ws, Visitor.blocked_why.is_not(None))
+                .where(Visitor.workspace_id == workspace_id, Visitor.blocked_why.is_not(None))
                 .order_by(Visitor.updated_at.desc())
             )
             return [v for v in found if is_blocked(v, now)]
@@ -154,44 +158,44 @@ class VisitorService:
             visitor.updated_at = self.now()
 
     async def _limit(
-        self, s: AsyncSession, ws: str, visitor: Visitor, today: date, now: datetime
+        self, s: AsyncSession, workspace_id: str, visitor: Visitor, today: date, now: datetime
     ) -> str | None:
         """Why the visitor can't have a turn now, or None."""
         if is_blocked(visitor, now):
             return "blocked"
-        plan = await plan_problem(s, ws, now)  # ended, or its replies used up
+        plan = await plan_problem(s, workspace_id, now)  # ended, or its replies used up
         if plan:
             return plan
         if visitor.turns >= self.settings.VISITOR_DAILY_TURNS:
             return "visitor_daily_turns"
         business_turns = await s.scalar(
             select(func.coalesce(func.sum(Visitor.turns), 0)).where(
-                Visitor.workspace_id == ws, Visitor.day == today
+                Visitor.workspace_id == workspace_id, Visitor.day == today
             )
         )
         if (business_turns or 0) >= self.settings.WORKSPACE_DAILY_TURNS:
             return "workspace_daily_turns"
         return None
 
-    async def _first_seen(self, ws: str, key: str, today: date) -> None:
+    async def _first_seen(self, workspace_id: str, key: str, today: date) -> None:
         """Makes the visitor's row, the first time they write. Two first messages at once:
         the unique (workspace, key) refuses the second row, and both go on with the first."""
         async with self.sessions() as s:
-            if await self._find(s, ws, key) is not None:
+            if await self._find(s, workspace_id, key) is not None:
                 return
         with suppress(IntegrityError):
             async with self.sessions() as s, s.begin():
-                s.add(Visitor(workspace_id=ws, key=key, day=today, turns=0))
+                s.add(Visitor(workspace_id=workspace_id, key=key, day=today, turns=0))
 
     async def _find(
-        self, s: AsyncSession, ws: str, key: str, *, lock: bool = False
+        self, s: AsyncSession, workspace_id: str, key: str, *, lock: bool = False
     ) -> Visitor | None:
         """`lock` before changing it: two turns at once would both count from the same number."""
-        query = select(Visitor).where(Visitor.workspace_id == ws, Visitor.key == key)
+        query = select(Visitor).where(Visitor.workspace_id == workspace_id, Visitor.key == key)
         return await s.scalar(query.with_for_update() if lock else query)
 
 
-def key_of(channel: str, contact: str) -> str:
+def visitor_key(channel: str, contact: str) -> str:
     """Who a conversation's visitor is: `web:<token>` for the web chat and a call (they share
     the browser's token), `<app>:<chat id>` on a messaging app."""
     return f"{'web' if channel in ('web', 'voice') else channel}:{contact}"

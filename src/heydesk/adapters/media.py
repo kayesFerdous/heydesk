@@ -1,7 +1,7 @@
 """Photo files on this server's disk, or in a Cloudflare R2 bucket, and photos
 downloaded from the links in a shop's list.
 
-R2 speaks Amazon S3's API. Each request is signed with AWS Signature Version 4 (`signed`),
+R2 speaks Amazon S3's API. Each request is signed with AWS Signature Version 4 (`signed_headers`),
 which is a few lines of hashlib, so there's no SDK to install.
 """
 
@@ -19,7 +19,9 @@ import httpx
 
 from heydesk.ports.media import ImageUnreachable, MediaUnavailable
 
-S3 = "{http://s3.amazonaws.com/doc/2006-03-01/}"  # the XML namespace of a bucket's listing
+S3_XML_NAMESPACE = (
+    "{http://s3.amazonaws.com/doc/2006-03-01/}"  # the XML namespace of a bucket's listing
+)
 
 
 class DiskMedia:
@@ -92,8 +94,8 @@ class R2Media:
         query = {"list-type": "2", "prefix": prefix}
         while True:  # a listing is at most 1000 keys; the next part starts at its token
             listing = ElementTree.fromstring((await self._call("GET", "", query=query)).content)
-            found += [e.text or "" for e in listing.iter(f"{S3}Key")]
-            token = listing.findtext(f"{S3}NextContinuationToken")
+            found += [e.text or "" for e in listing.iter(f"{S3_XML_NAMESPACE}Key")]
+            token = listing.findtext(f"{S3_XML_NAMESPACE}NextContinuationToken")
             if not token:
                 return found
             query["continuation-token"] = token
@@ -108,7 +110,7 @@ class R2Media:
     ) -> httpx.Response:
         path = quote(f"/{self.bucket}/{key}" if key else f"/{self.bucket}", safe="/-_.~")
         query_text = canonical_query(query or {})
-        signing = signed(
+        signing = signed_headers(
             method,
             self.endpoint.removeprefix("https://"),
             path,
@@ -137,7 +139,7 @@ def canonical_query(query: dict[str, str]) -> str:
     )
 
 
-def signed(
+def signed_headers(
     method: str,
     host: str,
     path: str,
@@ -198,7 +200,7 @@ DRIVE = re.compile(r"^https://drive\.google\.com/(?:file/d/([\w-]+)|open\?id=([\
 LOCAL = ("localhost", "127.0.0.1")  # the test shop in dev/woo-shop, in development only
 
 
-def direct(url: str) -> str:
+def drive_download_link(url: str) -> str:
     """A Google Drive share link ("…/file/d/<id>/view") → its download link; others as they are."""
     found = DRIVE.match(url.strip())
     if found is None:
@@ -209,7 +211,7 @@ def direct(url: str) -> str:
 async def fetch_image(url: str, local: bool = False) -> bytes:
     """The photo at `url`. Raises ImageUnreachable. With `local`, localhost is allowed too."""
     try:
-        return await download(direct(url), local)
+        return await download(drive_download_link(url), local)
     except httpx.HTTPError as error:
         raise ImageUnreachable(f"the photo link didn't answer: {error!r}") from error
 
@@ -217,7 +219,7 @@ async def fetch_image(url: str, local: bool = False) -> bytes:
 async def download(url: str, local: bool) -> bytes:
     async with httpx.AsyncClient(timeout=15) as client:
         for _ in range(REDIRECTS + 1):
-            await public(url, local)
+            await check_public_url(url, local)
             async with client.stream("GET", url) as response:
                 if response.is_redirect:
                     url = urljoin(url, response.headers.get("location", ""))
@@ -233,7 +235,7 @@ async def download(url: str, local: bool) -> bytes:
     raise ImageUnreachable("too many redirects")
 
 
-async def public(url: str, local: bool) -> None:
+async def check_public_url(url: str, local: bool) -> None:
     """Raises ImageUnreachable unless `url` is http(s) to a host whose every address is public."""
     # ponytail: the name is looked up again by httpx, so a host that changes its answer in
     # between (DNS rebinding) gets through; pin the address if a business ever tries it

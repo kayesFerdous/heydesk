@@ -121,20 +121,22 @@ async def reset_password(body: ResetIn, services: Svc) -> TokenOut:
 
 
 @router.put("/api/auth/password", status_code=status.HTTP_204_NO_CONTENT)
-async def change_password(body: PasswordIn, principal: User, services: Svc, ip: ClientIp) -> None:
+async def change_password(
+    body: PasswordIn, current_user: User, services: Svc, ip: ClientIp
+) -> None:
     """Your own password: the current one, then the new one. A 403 if the current is wrong."""
-    await services.rate_limits.login(ip, principal.user_id)  # 429: guessing the current one
+    await services.rate_limits.login(ip, current_user.user_id)  # 429: guessing the current one
     await services.users.change_password(
-        principal.user_id, body.current_password, body.new_password
+        current_user.user_id, body.current_password, body.new_password
     )
 
 
 @router.get("/api/auth/me")
-async def me(principal: User, services: Svc) -> MeOut:
-    user, business = await services.users.me(principal)
+async def me(current_user: User, services: Svc) -> MeOut:
+    user, business = await services.users.me(current_user)
     link, linked = (None, False)
     if user.workspace_id:
-        link, linked = await services.team.link_of(user.workspace_id, user.id)
+        link, linked = await services.team.member_alert_link(user.workspace_id, user.id)
     return MeOut(
         available=user.available,
         telegram_link=link,
@@ -153,8 +155,10 @@ async def me(principal: User, services: Svc) -> MeOut:
 
 
 @router.put("/api/auth/me/available", status_code=status.HTTP_204_NO_CONTENT)
-async def set_available(body: AvailableIn, principal: User, services: Svc) -> None:
+async def set_available(body: AvailableIn, current_user: User, services: Svc) -> None:
     """Switches yourself on or off for new hand-offs."""
-    if principal.workspace_id is None:
+    if current_user.workspace_id is None:
         raise NotFound("Only a business's team takes hand-offs.")
-    await services.members.set_available(principal.workspace_id, principal.user_id, body.available)
+    await services.members.set_available(
+        current_user.workspace_id, current_user.user_id, body.available
+    )

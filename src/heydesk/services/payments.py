@@ -3,7 +3,7 @@ SSLCommerz store, its own bKash account, or both, which its owner connects here.
 
 A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
 starts a payment with the gateway the visitor picks. When the gateway sends word back (the
-visitor's browser, and SSLCommerz itself, both to URLs naming the row), `settle` asks the
+visitor's browser, and SSLCommerz itself, both to URLs naming the row), `check_payment` asks the
 business's account with that gateway whether it really went through, for this row and this
 amount, and only then moves it on: to `new`, or a shop order to `confirmed` (`PAID_STATUS`).
 Nothing the agent says can do that.
@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # SSLCommerz's own post, server to server
 NAMES = {"sslcommerz": "SSLCommerz", "bkash": "bKash"}
 type Payable = ShopOrder
-PAYABLE: tuple[type[Payable], ...] = (ShopOrder,)
+PAYABLE_TABLES: tuple[type[Payable], ...] = (ShopOrder,)
 
 
 class PaymentService:
@@ -63,25 +63,29 @@ class PaymentService:
 
     # The business's own accounts
 
-    async def account(self, ws: str, provider: Provider) -> PaymentAccount | None:
+    async def account(self, workspace_id: str, provider: Provider) -> PaymentAccount | None:
         async with self.sessions() as s:
             return await s.scalar(
                 select(PaymentAccount).where(
-                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                    PaymentAccount.workspace_id == workspace_id, PaymentAccount.provider == provider
                 )
             )
 
-    async def providers(self, ws: str) -> list[Provider]:
+    async def providers(self, workspace_id: str) -> list[Provider]:
         """The gateways this business is connected to, in the order the pay page shows them."""
         async with self.sessions() as s:
             found = set(
                 await s.scalars(
-                    select(PaymentAccount.provider).where(PaymentAccount.workspace_id == ws)
+                    select(PaymentAccount.provider).where(
+                        PaymentAccount.workspace_id == workspace_id
+                    )
                 )
             )
         return [p for p in PROVIDERS if p in found]
 
-    async def connect(self, ws: str, provider: Provider, account: Account) -> PaymentAccount:
+    async def connect(
+        self, workspace_id: str, provider: Provider, account: Account
+    ) -> PaymentAccount:
         """Checks the account with its gateway, then keeps it, in place of any before."""
         try:
             await self.gateways[provider].verify(account)
@@ -90,11 +94,13 @@ class PaymentService:
         async with self.sessions() as s, s.begin():
             saved = await s.scalar(
                 select(PaymentAccount).where(
-                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                    PaymentAccount.workspace_id == workspace_id, PaymentAccount.provider == provider
                 )
             )
             if saved is None:
-                saved = PaymentAccount(workspace_id=ws, provider=provider, created_at=self.now())
+                saved = PaymentAccount(
+                    workspace_id=workspace_id, provider=provider, created_at=self.now()
+                )
                 s.add(saved)
             saved.store_id, saved.password = account.store_id, account.password
             saved.app_key, saved.username = account.app_key, account.username
@@ -102,25 +108,25 @@ class PaymentService:
             saved.sandbox = account.sandbox
         log.info(
             "payment account connected",
-            extra={"workspace_id": ws, "provider": provider, "sandbox": account.sandbox},
+            extra={"workspace_id": workspace_id, "provider": provider, "sandbox": account.sandbox},
         )
         return saved
 
-    async def disconnect(self, ws: str, provider: Provider) -> None:
+    async def disconnect(self, workspace_id: str, provider: Provider) -> None:
         """Payments through it stop. With none left, the agent no longer asks for any, and
         unpaid ones can't be paid."""
         async with self.sessions() as s, s.begin():
             saved = await s.scalar(
                 select(PaymentAccount).where(
-                    PaymentAccount.workspace_id == ws, PaymentAccount.provider == provider
+                    PaymentAccount.workspace_id == workspace_id, PaymentAccount.provider == provider
                 )
             )
             if saved is None:
                 raise NotFound(f"No {NAMES[provider]} account is connected.")
             await s.delete(saved)
 
-    async def _gateway_account(self, ws: str, provider: Provider) -> Account:
-        saved = await self.account(ws, provider)
+    async def _gateway_account(self, workspace_id: str, provider: Provider) -> Account:
+        saved = await self.account(workspace_id, provider)
         if saved is None:
             raise PaymentUnavailable(f"this business takes no payments by {NAMES[provider]}")
         return Account(
@@ -137,7 +143,7 @@ class PaymentService:
     async def find(self, record_id: str) -> Payable | None:
         """The order with this id."""
         async with self.sessions() as s:
-            for table in PAYABLE:
+            for table in PAYABLE_TABLES:
                 found: Payable | None = await s.get(table, record_id)
                 if found is not None:
                     return found
@@ -163,7 +169,7 @@ class PaymentService:
             ),
         )
 
-    async def settle(
+    async def check_payment(
         self, record_id: str, payment_id: str, provider: Provider = "sslcommerz"
     ) -> Payable | None:
         """Checks a payment a gateway sent word of for a row and, if it paid that unpaid row
@@ -198,7 +204,7 @@ class PaymentService:
         amount = money(paid.amount, paid.currency)
         if moved.rowcount == 1:  # type: ignore[attr-defined]
             log.info("paid online", extra={"record_id": record.id})
-            await self._placed(record, amount)
+            await self._tell_visitor_paid(record, amount)
         elif record.status == "cancelled" and not record.paid:
             await self._alert(
                 record,
@@ -207,16 +213,16 @@ class PaymentService:
             )
         return record
 
-    async def _placed(self, record: Payable, amount: str) -> None:
+    async def _tell_visitor_paid(self, record: Payable, amount: str) -> None:
         if record.conversation_id:
             await self.team.tell_visitor(
                 record.conversation_id,
-                f"✅ Payment received: {amount} for {record.PAY_FOR}. {record.after()}",
+                f"✅ Payment received: {amount} for {record.PAY_FOR}. {record.next_step_text()}",
             )
         await self._alert(
             record,
             f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
-            f"{record.about()}; name {record.name}; phone {record.phone}",
+            f"{record.alert_summary()}; name {record.name}; phone {record.phone}",
         )
         self.woo.push_soon(record.workspace_id)
 
@@ -224,11 +230,11 @@ class PaymentService:
         if record.conversation_id is None:
             return
         async with self.sessions() as s:
-            conv = await s.scalar(
+            conversation = await s.scalar(
                 select(Conversation).where(
                     Conversation.id == record.conversation_id,
                     Conversation.workspace_id == record.workspace_id,
                 )
             )
-        if conv is not None:
-            await self.team.alert(conv, text)
+        if conversation is not None:
+            await self.team.alert(conversation, text)

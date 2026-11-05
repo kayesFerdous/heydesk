@@ -48,12 +48,12 @@ async def test_the_agent_stops_when_the_plan_ends_or_its_replies_run_out(world: 
 
     # A trial's replies: the 200th in 30 days is the last
     await billing.set_plan(DEV_WORKSPACE_ID, "trial", world.clock.now + timedelta(days=7))
-    conv = await world.say(agent, None, ["Hi!"])  # one turn, saved in `turns`
+    conversation = await world.say(agent, None, ["Hi!"])  # one turn, saved in `turns`
     async with world.sessions() as s, s.begin():
         s.add_all(
             Turn(
                 workspace_id=DEV_WORKSPACE_ID,
-                conversation_id=conv,
+                conversation_id=conversation,
                 channel="web",
                 llm="fake",
                 at=world.clock.now,
@@ -88,15 +88,15 @@ async def test_a_paid_plan_starts_once_and_only_for_the_right_amount(world: Worl
 
     # Less than the price: nothing changes
     gateway.paid["short"] = Paid(checkout.order_id, 100, "BDT", "bank-1")
-    assert (await billing.settle(checkout.order_id, "short")).status == "unpaid"  # type: ignore[union-attr]
+    assert (await billing.check_payment(checkout.order_id, "short")).status == "unpaid"  # type: ignore[union-attr]
 
     gateway.paid["ok"] = Paid(checkout.order_id, checkout.amount, "BDT", "bank-2")
-    assert (await billing.settle(checkout.order_id, "ok")).status == "paid"  # type: ignore[union-attr]
-    await billing.settle(checkout.order_id, "ok")  # the gateway's notice too: no second year
+    assert (await billing.check_payment(checkout.order_id, "ok")).status == "paid"  # type: ignore[union-attr]
+    await billing.check_payment(checkout.order_id, "ok")  # the gateway's notice too: no second year
     async with world.sessions() as s:
-        ws = await s.get(Workspace, DEV_WORKSPACE_ID)
-    assert ws is not None and ws.plan == "growth"
-    assert ws.paid_until == FIXED_NOW + timedelta(days=365)  # a trial's days aren't added
+        workspace = await s.get(Workspace, DEV_WORKSPACE_ID)
+    assert workspace is not None and workspace.plan == "growth"
+    assert workspace.paid_until == FIXED_NOW + timedelta(days=365)  # a trial's days aren't added
 
 
 async def test_a_plan_paid_by_bkash_starts_the_same_way(app: FastAPI, world: World) -> None:
@@ -114,12 +114,14 @@ async def test_a_plan_paid_by_bkash_starts_the_same_way(app: FastAPI, world: Wor
     assert checkout.back_url.endswith(f"/billing/{checkout.order_id}/bkash")
 
     bkash.paid["P1"] = Paid(checkout.order_id, checkout.amount, "BDT", "TRX1")
-    assert (await billing.settle(checkout.order_id, "P1", "bkash")).status == "paid"  # type: ignore[union-attr]
-    await billing.settle(checkout.order_id, "P1", "bkash")  # the owner reloads: no second month
+    assert (await billing.check_payment(checkout.order_id, "P1", "bkash")).status == "paid"  # type: ignore[union-attr]
+    await billing.check_payment(
+        checkout.order_id, "P1", "bkash"
+    )  # the owner reloads: no second month
     async with world.sessions() as s:
-        ws = await s.get(Workspace, DEV_WORKSPACE_ID)
-    assert ws is not None and ws.plan == "growth"
-    assert ws.paid_until == FIXED_NOW + timedelta(days=5)  # an upgrade: the same end day
+        workspace = await s.get(Workspace, DEV_WORKSPACE_ID)
+    assert workspace is not None and workspace.plan == "growth"
+    assert workspace.paid_until == FIXED_NOW + timedelta(days=5)  # an upgrade: the same end day
 
 
 async def test_a_cancelled_bkash_return_changes_nothing(app: FastAPI) -> None:
@@ -141,16 +143,16 @@ async def pay(billing: BillingService, gateway: FakePayments, plan: str, months:
     await billing.checkout(DEV_WORKSPACE_ID, plan, months)
     checkout = gateway.started[-1][1]
     gateway.paid[checkout.order_id] = Paid(checkout.order_id, checkout.amount, "BDT", "bank")
-    payment = await billing.settle(checkout.order_id, checkout.order_id)
+    payment = await billing.check_payment(checkout.order_id, checkout.order_id)
     assert payment is not None
     return payment.status
 
 
-async def workspace(world: World) -> Workspace:
+async def get_workspace(world: World) -> Workspace:
     async with world.sessions() as s:
-        ws = await s.get(Workspace, DEV_WORKSPACE_ID)
-    assert ws is not None
-    return ws
+        workspace_id = await s.get(Workspace, DEV_WORKSPACE_ID)
+    assert workspace_id is not None
+    return workspace_id
 
 
 async def test_an_upgrade_pays_the_difference_and_keeps_the_end_day(world: World) -> None:
@@ -161,8 +163,10 @@ async def test_an_upgrade_pays_the_difference_and_keeps_the_end_day(world: World
     per_day = (PLANS["pro"].price - PLANS["starter"].price) / 30
     assert q.kind == "upgrade" and q.amount == round(per_day * 15)  # ৳5,250, not ৳12,990
     assert await pay(billing, gateway, "pro") == "paid"
-    ws = await workspace(world)
-    assert ws.plan == "pro" and ws.paid_until == FIXED_NOW + timedelta(days=15)  # no free days
+    workspace = await get_workspace(world)
+    assert workspace.plan == "pro" and workspace.paid_until == FIXED_NOW + timedelta(
+        days=15
+    )  # no free days
 
     # A year of Starter then a month of Pro no longer gives a year of Pro: it's an upgrade
     await billing.set_plan(DEV_WORKSPACE_ID, "trial", FIXED_NOW)
@@ -179,18 +183,20 @@ async def test_a_smaller_plan_waits_until_this_one_ends(app: FastAPI, world: Wor
 
     world.clock.advance(days=10)  # Growth has ended (its grace days still answer)
     assert await pay(billing, gateway, "starter") == "paid"
-    ws = await workspace(world)
-    assert ws.plan == "starter" and ws.paid_until == world.clock.now + timedelta(days=30)
+    workspace = await get_workspace(world)
+    assert workspace.plan == "starter" and workspace.paid_until == world.clock.now + timedelta(
+        days=30
+    )
 
 
 async def test_a_smaller_plan_needs_the_team_to_fit(app: FastAPI) -> None:
     owner = await new_business(app)
     await owner.post("/api/team/members", json={"email": "a@example.com"})
     services = app.state.services
-    ws = services.users.principal(owner.headers["Authorization"][7:]).workspace_id
-    await services.billing.set_plan(ws, "growth", FIXED_NOW + timedelta(days=1))
+    workspace_id = services.users.user_from_token(owner.headers["Authorization"][7:]).workspace_id
+    await services.billing.set_plan(workspace_id, "growth", FIXED_NOW + timedelta(days=1))
     assert (await owner.post("/api/team/members", json={"email": "b@example.com"})).is_success
-    await services.billing.set_plan(ws, "growth", FIXED_NOW - timedelta(days=1))
+    await services.billing.set_plan(workspace_id, "growth", FIXED_NOW - timedelta(days=1))
     # Growth has ended; Starter has one moderator, and there are two
     too_many = await owner.get("/api/billing/quote", params={"plan": "starter"})
     assert too_many.status_code == 409 and "Remove 1" in too_many.json()["error"]["message"]
@@ -204,8 +210,8 @@ async def test_a_payment_priced_before_the_plan_changed_is_held(world: World) ->
     assert await pay(billing, gateway, "starter", 12) == "paid"  # then a year of Starter
 
     gateway.paid["late"] = Paid(upgrade.order_id, upgrade.amount, "BDT", "bank")
-    held = await billing.settle(upgrade.order_id, "late")
+    held = await billing.check_payment(upgrade.order_id, "late")
     assert held is not None and held.status == "review"
-    assert (await workspace(world)).plan == "starter"  # not a year of Pro for 2 days' price
+    assert (await get_workspace(world)).plan == "starter"  # not a year of Pro for 2 days' price
     payments = (await billing.billing(DEV_WORKSPACE_ID)).payments
     assert [p.status for p in payments] == ["review", "paid"]

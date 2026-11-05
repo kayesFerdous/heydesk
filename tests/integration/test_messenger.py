@@ -21,7 +21,7 @@ TOKEN = "EAAB-a-page-access-token"
 PAGE = "1001"  # FakeMessenger's page
 PSID = "9001"
 CDN = "https://scontent.example/photo.jpg"  # where Facebook keeps a photo a visitor sent
-NOT_TEXT = "I can only read text messages for now. Please type your question."
+NOT_TEXT_REPLY = "I can only read text messages for now. Please type your question."
 
 
 def message(text: str | None = "hi", **extra: Any) -> dict[str, Any]:
@@ -137,7 +137,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
     assert sent(app) == [(PSID, "Is it this one?")]
 
     await post(client, message(None, **image(sticker_id=369239263222822)))  # a thumbs-up
-    assert sent(app)[-1] == (PSID, NOT_TEXT)
+    assert sent(app)[-1] == (PSID, NOT_TEXT_REPLY)
 
     # a reply to the carousel names its products, without asking Facebook
     await post(client, message("I want this", mid="m2", reply_to={"mid": "m-cards-1"}))

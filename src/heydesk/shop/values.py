@@ -15,11 +15,15 @@ from heydesk.shop import csv_import
 from heydesk.shop.districts import DISTRICTS, district
 
 LOW_STOCK = 3  # at this many or fewer, the prompt says how many are left and the owner hears
-OWN = -1  # `Product.counter`: the product's own stock, not a variant's
-LONG_LIST = 60  # more products than this, and the prompt lists the groups, not each one
-FOUND = 8  # the most products find_product returns
-CARDS = 10  # the most product cards in a row: Messenger's carousel holds 10
-KEPT = ("photos", "videos", "goes_with")  # what an import leaves when its product has none
+OWN_STOCK = -1  # `Product.stock_index`: the product's own stock, not a variant's
+LONG_PRODUCT_LIST = 60  # more products than this, and the prompt lists the groups, not each one
+MAX_FOUND_PRODUCTS = 8  # the most products find_product returns
+MAX_PRODUCT_CARDS = 10  # the most product cards in a row: Messenger's carousel holds 10
+FIELDS_KEPT_ON_IMPORT = (
+    "photos",
+    "videos",
+    "goes_with",
+)  # what an import leaves when its product has none
 
 
 class Variant(BaseModel):
@@ -83,38 +87,42 @@ class Product(BaseModel):
             self.stock = None
         return self
 
-    def counter(self, size: str, colour: str) -> int | None:
-        """Which count a line of this size and colour takes from: a variant's index, `OWN` for
+    def stock_index(self, size: str, colour: str) -> int | None:
+        """Which count a line of this size and colour takes from: a variant's index, `OWN_STOCK` for
         the product's own stock, or None when it isn't counted."""
         if not self.variants:
-            return None if self.stock is None else OWN
+            return None if self.stock is None else OWN_STOCK
         return next((i for i, v in enumerate(self.variants) if v.matches(size, colour)), None)
 
-    def count(self, counter: int) -> int:
+    def stock_at(self, stock_index: int) -> int:
         """How many are left on that count."""
-        return (self.stock or 0) if counter == OWN else self.variants[counter].stock
+        return (self.stock or 0) if stock_index == OWN_STOCK else self.variants[stock_index].stock
 
-    def display_name(self, counter: int) -> str:
+    def display_name(self, stock_index: int) -> str:
         """ "Cotton Panjabi", or with a variant "Cotton Panjabi (L/White)"."""
-        return self.name if counter == OWN else f"{self.name} ({self.variants[counter].label()})"
+        return (
+            self.name
+            if stock_index == OWN_STOCK
+            else f"{self.name} ({self.variants[stock_index].label()})"
+        )
 
-    def left(self) -> str:
+    def available_variants(self) -> str:
         """The variants that aren't sold out, for a hint: "M, XL/White"."""
         return ", ".join(v.label() for v in self.variants if v.stock)
 
     def sold_out(self) -> bool:
         """Every size and colour is counted and at 0."""
         every = [(s, c) for s in self.sizes or [""] for c in self.colours or [""]]
-        counters = [self.counter(s, c) for s, c in every]
-        return all(n is not None and self.count(n) == 0 for n in counters)
+        stock_indexes = [self.stock_index(s, c) for s, c in every]
+        return all(n is not None and self.stock_at(n) == 0 for n in stock_indexes)
 
     def in_stock(self, what: str, size: str = "", colour: str = "") -> list[str]:
         """The sizes (or colours) that aren't sold out, with the colour (or size) already
         chosen: the buttons a buyer taps."""
 
         def left(s: str, c: str) -> bool:
-            counter = self.counter(s, c)
-            return counter is None or self.count(counter) > 0
+            stock_index = self.stock_index(s, c)
+            return stock_index is None or self.stock_at(stock_index) > 0
 
         colours = [colour] if colour else self.colours or [""]
         sizes = [size] if size else self.sizes or [""]
@@ -122,7 +130,7 @@ class Product(BaseModel):
             return [s for s in self.sizes if any(left(s, c) for c in colours)]
         return [c for c in self.colours if any(left(s, c) for s in sizes)]
 
-    def line(self, currency: str) -> str:
+    def prompt_line(self, currency: str) -> str:
         """One product as a prompt line: `- Cotton Panjabi [panjabi] ৳1,850, sizes M/L…`"""
         line = f"- {self.name} [{self.code}] {money(self.price, currency)}"
         if self.was_price and self.was_price > self.price:
@@ -147,7 +155,7 @@ class Product(BaseModel):
         )
         return line
 
-    def choose(self, what: str, said: str) -> str:
+    def match_option(self, what: str, said: str) -> str:
         """The size or colour `said` names, spelled as the shop spells it; "" when the product
         has none. Raises ValueError with a hint for the model."""
         choices: list[str] = getattr(self, what + "s")
@@ -181,7 +189,7 @@ class Zone(BaseModel):
     def everywhere_else(self) -> bool:
         return not self.districts
 
-    def line(self, currency: str) -> str:
+    def prompt_line(self, currency: str) -> str:
         line = f"- {self.name}: {money(self.charge, currency)}"
         line += f", usually {self.days}" if self.days else ""
         return line + f" ({', '.join(self.districts) or 'everywhere else'})"
@@ -377,7 +385,7 @@ class Buyer(BuyerRecord):
     conversations: int
 
 
-PHOTO_MATCHES = 3  # products named in a photo's line
+MAX_PHOTO_MATCHES = 3  # products named in a photo's line
 
 
 def photo_line(products: list[Product], matches: list[tuple[str, float]] | None) -> str:
@@ -388,7 +396,7 @@ def photo_line(products: list[Product], matches: list[tuple[str, float]] | None)
         return "[Photo. It couldn't be checked: ask what it is.]"
     by_url = {url: p for p in products for url in p.photos}
     found = [by_url[url] for url, _ in matches if url in by_url]
-    names = list(dict.fromkeys(f"{p.name} [{p.code}]" for p in found))[:PHOTO_MATCHES]
+    names = list(dict.fromkeys(f"{p.name} [{p.code}]" for p in found))[:MAX_PHOTO_MATCHES]
     if not names:
         return "[Photo. Nothing in the shop looks like it.]"
     return f"[Photo. Closest products in the shop: {', '.join(names)}]"
@@ -403,7 +411,7 @@ def groups_text(products: list[Product]) -> str:
 
 
 def find_products(products: list[Product], query: str) -> list[Product]:
-    """The products whose words match `query` best, at most `FOUND`. A word in the name
+    """The products whose words match `query` best, at most `MAX_FOUND_PRODUCTS`. A word in the name
     or group counts twice, one in the sizes, colours or description once; a tie keeps the
     shop's order. Plain word matching: "lal" doesn't find Red."""
     words = {w for w in re.findall(r"\w+", query.lower()) if len(w) > 1}
@@ -415,7 +423,7 @@ def find_products(products: list[Product], query: str) -> list[Product]:
 
     scored = [(score(p), i, p) for i, p in enumerate(products)]
     best = sorted((s for s in scored if s[0]), key=lambda s: (-s[0], s[1]))
-    return [p for _, _, p in best[:FOUND]]
+    return [p for _, _, p in best[:MAX_FOUND_PRODUCTS]]
 
 
 BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
@@ -493,8 +501,8 @@ CANCELLABLE = {"unpaid", "new", "on_hold", "confirmed", "packed"}  # not once th
 # order isn't placed yet: cancel it and order again
 CHANGEABLE = {"new", "on_hold", "confirmed", "packed"}
 # Sold but still on the shelf: a count from a linked sheet includes them
-HOLDS = {"unpaid", "new", "on_hold", "confirmed", "packed"}
-ENDED = {"delivered", "returned", "cancelled"}  # these take money in and a reason
+STATUSES_HOLDING_STOCK = {"unpaid", "new", "on_hold", "confirmed", "packed"}
+FINISHED_STATUSES = {"delivered", "returned", "cancelled"}  # these take money in and a reason
 
 
 @dataclass(frozen=True)
@@ -746,24 +754,24 @@ def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | N
 # A linked Google Sheet: the owner writes what's on the shelf
 
 
-def stock_snapshot(p: Product) -> list[Any]:
+def stock_snapshot(product: Product) -> list[Any]:
     """A product's count as the sheet says it, to see next time whether the owner changed it."""
-    return [p.stock, [v.model_dump() for v in p.variants]]
+    return [product.stock, [v.model_dump() for v in product.variants]]
 
 
-def take_off(p: Product, lines: list[dict[str, Any]]) -> Product:
+def minus_ordered(product: Product, lines: list[dict[str, Any]]) -> Product:
     """`p` less these order lines (its own), never below 0: what's left to sell."""
-    stock, variants = p.stock, [v.model_copy() for v in p.variants]
+    stock, variants = product.stock, [v.model_copy() for v in product.variants]
     for line in lines:
-        counter = p.counter(line["size"], line["colour"])
-        if counter == OWN:
+        stock_index = product.stock_index(line["size"], line["colour"])
+        if stock_index == OWN_STOCK:
             stock = max(0, (stock or 0) - line["quantity"])
-        elif counter is not None:
-            variants[counter].stock = max(0, variants[counter].stock - line["quantity"])
-    return p.model_copy(update={"stock": stock, "variants": variants})
+        elif stock_index is not None:
+            variants[stock_index].stock = max(0, variants[stock_index].stock - line["quantity"])
+    return product.model_copy(update={"stock": stock, "variants": variants})
 
 
-def merge(
+def merge_sheet_products(
     found: list[Product],
     ours: dict[str, Product],
     seen: dict[str, Any],
@@ -778,12 +786,14 @@ def merge(
         if old and seen.get(p.code) == stock_snapshot(p):  # the owner didn't touch this count
             p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
         else:
-            p = take_off(p, [line for line in held if line["code"] == p.code])
+            p = minus_ordered(p, [line for line in held if line["code"] == p.code])
         kept.append(p)
     return kept
 
 
-def added(ours: list[Product], found: list[Product], gone: set[str] | None = None) -> list[Product]:
+def merge_products(
+    ours: list[Product], found: list[Product], gone: set[str] | None = None
+) -> list[Product]:
     """Our list with a source's products in it: each found product updates the one it
     is (the same code, or else the only one with the same name) in its place, or joins the
     end. Ours stay, except the `gone` codes: a linked list's products it doesn't have any more.
@@ -799,7 +809,7 @@ def added(ours: list[Product], found: list[Product], gone: set[str] | None = Non
             kept.append(p)
             continue
         i = same[0]
-        empty = [field for field in KEPT if not getattr(p, field)]
+        empty = [field for field in FIELDS_KEPT_ON_IMPORT if not getattr(p, field)]
         kept[i] = p.model_copy(update={field: getattr(kept[i], field) for field in empty})
         free.discard(i)
     return kept
@@ -808,7 +818,7 @@ def added(ours: list[Product], found: list[Product], gone: set[str] | None = Non
 # A linked WooCommerce store: its fields are the same in every store, so they're matched here
 
 SIZE, COLOUR = {"size"}, {"colour", "color"}  # attribute names, in any case
-UNSORTED = "Uncategorized"  # Woo's own default category: ours is "Products"
+WOO_DEFAULT_CATEGORY = "Uncategorized"  # Woo's own default category: ours is "Products"
 
 
 def products_from_woo(items: list[dict[str, Any]]) -> tuple[list[Product], dict[str, Any]]:
@@ -928,7 +938,11 @@ def woo_about(item: dict[str, Any]) -> str:
 
 
 def woo_category(item: dict[str, Any]) -> str:
-    names = [plain_text(c["name"]) for c in item.get("categories", []) if c["name"] != UNSORTED]
+    names = [
+        plain_text(c["name"])
+        for c in item.get("categories", [])
+        if c["name"] != WOO_DEFAULT_CATEGORY
+    ]
     return names[0][:100] if names else "Products"
 
 

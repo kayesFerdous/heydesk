@@ -12,10 +12,10 @@ class PhotoIndex(Protocol):
         """Makes the collection and its index if they aren't there. Safe to call every time."""
         ...
 
-    async def add(self, ws: str, url: str, vector: list[float]) -> None: ...
+    async def add(self, workspace_id: str, url: str, vector: list[float]) -> None: ...
 
     async def nearest(
-        self, ws: str, vector: list[float], limit: int, min_score: float
+        self, workspace_id: str, vector: list[float], limit: int, min_score: float
     ) -> list[tuple[str, float]]:
         """This business's photos most like `vector`, at or above `min_score`, best first:
         (url, score)."""

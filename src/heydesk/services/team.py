@@ -26,10 +26,12 @@ from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 log = logging.getLogger(__name__)
 
 TELEGRAM, MESSENGER, WHATSAPP = "telegram", "messenger", "whatsapp"  # as `channels.kind`
-HUMAN = "human"  # the conversation's status while the team answers
-TEAM = "team"  # the "by" mark on a message the team wrote
-REF = re.compile(r"Ref: ([0-9a-f]{32})")
-WINDOW = timedelta(hours=24)  # Messenger and WhatsApp: a business writes first only inside it
+HUMAN_STATUS = "human"  # the conversation's status while the team answers
+TEAM_AUTHOR = "team"  # the "by" mark on a message the team wrote
+REF_PATTERN = re.compile(r"Ref: ([0-9a-f]{32})")
+MESSAGING_WINDOW = timedelta(
+    hours=24
+)  # Messenger and WhatsApp: a business writes first only inside it
 
 HOW_TO_ANSWER = {
     "telegram": "Reply to this message to answer them.",
@@ -43,7 +45,7 @@ HOW_TO_ANSWER = {
 LINKED = "Done! You'll get alerts here. Reply to one to answer that customer yourself."
 OLD_LINK = "That link is out of date. Open the newest one from your HeyDesk page."
 PICK_A_CHAT = "To answer a customer, reply to an alert or to one of their messages."
-GONE = "I can't find that chat any more."
+CHAT_NOT_FOUND = "I can't find that chat any more."
 NOT_A_CHAT = "That was a phone call, so I can't pass a message on. Call them back instead."
 TAKEN_OVER = (
     "The agent stays quiet in this chat until you reply /done or ., or for 30 minutes after "
@@ -103,28 +105,28 @@ class TeamService:
         self.whatsapp = whatsapp
         self.now = now
 
-    async def alert(self, conv: Conversation, text: str) -> None:
-        """Sends an alert about `conv` to the team member who has it, if they've linked their
+    async def alert(self, conversation: Conversation, text: str) -> None:
+        """Sends an alert about `conversation` to the team member who has it, if they've linked their
         chat; otherwise to the owner, if they have."""
-        channel = await self._channel(conv.workspace_id)
+        channel = await self._channel(conversation.workspace_id)
         if channel is None:
             return
         async with self.sessions() as s:
             theirs = await s.scalar(
                 select(User.telegram_chat_id)
                 .join(Conversation, Conversation.assigned_to == User.id)
-                .where(Conversation.id == conv.id)
+                .where(Conversation.id == conversation.id)
             )
         chat_id = theirs or channel.owner_chat_id
         if chat_id is None:
             return
-        how = HOW_TO_ANSWER.get(conv.channel, "")
-        await self.send(channel, chat_id, f"{text}\n\n{how}\nRef: {conv.id}")
+        how = HOW_TO_ANSWER.get(conversation.channel, "")
+        await self.send(channel, chat_id, f"{text}\n\n{how}\nRef: {conversation.id}")
 
-    async def notify(self, ws: str, text: str) -> None:
+    async def notify(self, workspace_id: str, text: str) -> None:
         """Tells the owner something about the business, not a chat (a sheet that can't be
         read), if they've linked their chat. No `Ref:`: there's no one to answer."""
-        channel = await self._channel(ws)
+        channel = await self._channel(workspace_id)
         if channel is not None and channel.owner_chat_id is not None:
             await self.send(channel, channel.owner_chat_id, text)
 
@@ -145,9 +147,9 @@ class TeamService:
         except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable) as error:
             log.warning("send failed: %s", error, extra={"channel_id": channel.id})
 
-    async def forward(self, conv: Conversation, text: str) -> None:
+    async def forward(self, conversation: Conversation, text: str) -> None:
         """A visitor wrote while the team is answering: pass it on, for the owner to reply to."""
-        await self.alert(conv, f"💬 Customer: {text}")
+        await self.alert(conversation, f"💬 Customer: {text}")
 
     async def tell_visitor(
         self, conversation_id: str, text: str, choices: list[str] | None = None
@@ -158,13 +160,16 @@ class TeamService:
         The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
             # locked: a turn saving at the same moment would drop this line (rule 5)
-            conv = await s.get_one(Conversation, conversation_id, with_for_update=True)
-            said = {**self.llm.assistant_message(text), "by": TEAM}
-            conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
-            conv.updated_at = self.now()
-        await self.to_visitor(conv, text, choices)
+            conversation = await s.get_one(Conversation, conversation_id, with_for_update=True)
+            said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
+            conversation.messages = [
+                *conversation.messages,
+                said,
+            ]  # a new list, so SQLAlchemy sees it
+            conversation.updated_at = self.now()
+        await self.send_to_visitor(conversation, text, choices)
 
-    async def tell_in_window(
+    async def tell_visitor_if_allowed(
         self, conversation_id: str, text: str, choices: list[str] | None = None
     ) -> bool:
         """`tell_visitor` for a message the visitor didn't ask for: only inside the app's
@@ -172,15 +177,15 @@ class TeamService:
         message after it). Telegram and the web chat have none; a call can't take one. Says
         whether it was sent."""
         async with self.sessions() as s:
-            conv = await s.get_one(Conversation, conversation_id)
+            conversation = await s.get_one(Conversation, conversation_id)
             last = await s.scalar(
                 select(func.max(Turn.at)).where(Turn.conversation_id == conversation_id)
             )
-        if conv.channel == "voice":
+        if conversation.channel == "voice":
             return False
-        if conv.channel in (MESSENGER, WHATSAPP):
+        if conversation.channel in (MESSENGER, WHATSAPP):
             last = last and (last if last.tzinfo else last.replace(tzinfo=UTC))
-            if last is None or self.now() - last > WINDOW:
+            if last is None or self.now() - last > MESSAGING_WINDOW:
                 return False
         await self.tell_visitor(conversation_id, text, choices)
         return True
@@ -216,7 +221,9 @@ class TeamService:
         async with self.sessions() as s:
             return await s.scalar(self._member(channel, chat_id)) is not None
 
-    async def team_wrote(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
+    async def handle_team_reply(
+        self, channel: Channel, chat_id: str, message: dict[str, Any]
+    ) -> None:
         """Someone on the team replied to an alert: send their words to that visitor, or with
         `/done` give the chat back to the agent; "." takes it over, or gives it back.
         Their words go in the transcript as the agent's, and a reply is in the team's activity
@@ -224,34 +231,41 @@ class TeamService:
         owner = chat_id  # who answers: the owner, or a moderator
         text = (message.get("text") or "").strip()
         quoted = (message.get("reply_to_message") or {}).get("text") or ""
-        found = REF.search(quoted)
+        found = REF_PATTERN.search(quoted)
         if not text or found is None:
             await self.send(channel, owner, PICK_A_CHAT)
             return
         to_visitor = False
         async with self.sessions() as s, s.begin():
-            conv = await s.scalar(
+            conversation = await s.scalar(
                 select(Conversation)
                 .where(
                     Conversation.id == found[1], Conversation.workspace_id == channel.workspace_id
                 )
                 .with_for_update()  # a turn saving at the same moment would drop this line
             )
-            if conv is None:
-                await self.send(channel, owner, GONE)
+            if conversation is None:
+                await self.send(channel, owner, CHAT_NOT_FOUND)
                 return
-            if text == "/done" or (text == "." and conv.status == HUMAN):  # "."
-                conv.status, conv.taken_over_at, answer = "active", None, GIVEN_BACK
+            if text == "/done" or (text == "." and conversation.status == HUMAN_STATUS):  # "."
+                conversation.status, conversation.taken_over_at, answer = "active", None, GIVEN_BACK
             elif text == ".":  # taken over, with nothing said to them
-                conv.status, conv.taken_over_at, answer = HUMAN, self.now(), TAKEN_OVER
-            elif conv.channel == "voice":
+                conversation.status, conversation.taken_over_at, answer = (
+                    HUMAN_STATUS,
+                    self.now(),
+                    TAKEN_OVER,
+                )
+            elif conversation.channel == "voice":
                 answer = NOT_A_CHAT
             else:
-                said = {**self.llm.assistant_message(text), "by": TEAM}
-                conv.messages = [*conv.messages, said]  # a new list, so SQLAlchemy sees it
-                answer = "" if conv.status == HUMAN else TAKEN_OVER
-                conv.status, to_visitor = HUMAN, True
-                conv.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
+                said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
+                conversation.messages = [
+                    *conversation.messages,
+                    said,
+                ]  # a new list, so SQLAlchemy sees it
+                answer = "" if conversation.status == HUMAN_STATUS else TAKEN_OVER
+                conversation.status, to_visitor = HUMAN_STATUS, True
+                conversation.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
                 who = await s.scalar(
                     self._member(channel, chat_id)
                     if chat_id != channel.owner_chat_id
@@ -266,32 +280,32 @@ class TeamService:
                             actor_id=who.id,
                             actor_email=who.email,
                             action=TELEGRAM_REPLY,
-                            target=f"conversation_id={conv.id}",
+                            target=f"conversation_id={conversation.id}",
                             at=self.now(),
                         )
                     )
-            conv.updated_at = self.now()
+            conversation.updated_at = self.now()
         if to_visitor:
-            await self.to_visitor(conv, text)
+            await self.send_to_visitor(conversation, text)
         if answer:
-            await self.send(channel, owner, f"{answer}\nRef: {conv.id}")
-        log.info("team answered", extra={"conversation_id": conv.id})
+            await self.send(channel, owner, f"{answer}\nRef: {conversation.id}")
+        log.info("team answered", extra={"conversation_id": conversation.id})
 
-    async def to_visitor(
-        self, conv: Conversation, text: str, choices: list[str] | None = None
+    async def send_to_visitor(
+        self, conversation: Conversation, text: str, choices: list[str] | None = None
     ) -> None:
         """Sends the team's words to a messaging app's visitor; a web visitor's page fetches
         them (/team), and a call can't get them."""
-        if conv.channel not in (TELEGRAM, MESSENGER, WHATSAPP):
+        if conversation.channel not in (TELEGRAM, MESSENGER, WHATSAPP):
             return
-        channel = await self._channel(conv.workspace_id, conv.channel)
+        channel = await self._channel(conversation.workspace_id, conversation.channel)
         if channel is not None:
-            await self.send(channel, str(conv.contact), text, choices)
+            await self.send(channel, str(conversation.contact), text, choices)
 
-    async def link_of(self, ws: str, user_id: str) -> tuple[str | None, bool]:
+    async def member_alert_link(self, workspace_id: str, user_id: str) -> tuple[str | None, bool]:
         """A team member's own alerts link and whether they've opened it; no link without
         a Telegram bot."""
-        channel = await self._channel(ws)
+        channel = await self._channel(workspace_id)
         async with self.sessions() as s:
             user = await s.get_one(User, user_id)
         if channel is None:
@@ -305,9 +319,9 @@ class TeamService:
             User.workspace_id == channel.workspace_id, User.telegram_chat_id == chat_id
         )
 
-    async def _channel(self, ws: str, kind: str = TELEGRAM) -> Channel | None:
+    async def _channel(self, workspace_id: str, kind: str = TELEGRAM) -> Channel | None:
         """Alerts always go to Telegram; a visitor's channel can be any app."""
         async with self.sessions() as s:
             return await s.scalar(
-                select(Channel).where(Channel.workspace_id == ws, Channel.kind == kind)
+                select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
             )

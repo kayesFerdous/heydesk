@@ -125,8 +125,8 @@ async def test_an_email_joins_one_business_and_a_team_has_a_limit(
     assert (await client.delete(f"/api/team/members/{owner_id}")).status_code == 404
 
     services = app.state.services
-    ws = services.users.principal(client.headers["Authorization"][7:]).workspace_id
+    workspace_id = services.users.user_from_token(client.headers["Authorization"][7:]).workspace_id
     for n in range(PLANS["pro"].moderators - 1):  # the dev workspace is on Pro
-        await services.members.invite(ws, f"m{n}@example.com", owner_id)
+        await services.members.invite(workspace_id, f"m{n}@example.com", owner_id)
     full = await client.post("/api/team/members", json={"email": "one-more@example.com"})
     assert full.status_code == 409
