@@ -29,7 +29,7 @@ async def test_a_moderator_takes_a_free_chat_but_not_a_colleagues(
 ) -> None:
     rafi_id, nila_id = await invite(client), await invite(client, OTHER)
     rafi, nila = await join(app), await join(app, OTHER)
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     conversation = await chat(app, client)
 
     assert await assign(rafi, conversation, rafi_id) == 200  # Take
@@ -56,7 +56,7 @@ async def test_a_moderator_takes_a_free_chat_but_not_a_colleagues(
 async def test_only_this_businesss_team_can_be_given_a_chat(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     conversation = await chat(app, client)
     other = await new_business(app)
     stranger = (await other.get("/api/team/members")).json()[0]["id"]
@@ -70,7 +70,7 @@ async def test_a_hand_off_goes_to_the_least_busy_moderator(
     rafi_id, nila_id = await invite(client), await invite(client, OTHER)
     await join(app), await join(app, OTHER)
     await invite(client, "late@example.com")  # invited, not joined: never picked
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     handoff = [ToolCall("c1", "handoff_to_human", {}), "Someone will help you."]
 
     llm.script = list(handoff)
@@ -89,7 +89,7 @@ async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
 ) -> None:
     rafi_id = await invite(client)
     rafi = await join(app)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone will help you."]
     waiting = await chat(app, client, "visitor-one")
     llm.script = ["Hello!"]
@@ -110,7 +110,7 @@ async def test_the_inbox_counts_who_waits_and_the_team_shows_open_chats(
 async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: AsyncClient) -> None:
     """A label filters the list; a note stays the team's, out of the prompt and the chat; a
     reply from the inbox reaches the chat and takes it over."""
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!"]
     conversation = await chat(app, client)
     other = await chat(app, client, visitor="another-visitor")
@@ -153,7 +153,7 @@ async def test_a_draft_is_shown_to_the_team_and_not_sent(app: FastAPI, client: A
     """Summary, ask and draft: the model with no tools on the chat's history; the words come
     back, nothing is added to the chat or sent, and each is a traced turn."""
     services = app.state.services
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = ["Hello!"]
     conversation = await chat(app, client)
     before = len((await client.get(f"/api/conversations/{conversation}")).json()["messages"])
@@ -188,7 +188,7 @@ async def test_a_hand_off_skips_a_moderator_who_isnt_available(
     rafi_id, nila_id = await invite(client), await invite(client, OTHER)
     rafi, nila = await join(app), await join(app, OTHER)
     await client.patch("/api/agent", json={"handoff": {"auto_assign": True}})
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     handoff = [ToolCall("c1", "handoff_to_human", {}), "Someone will help you."]
 
     assert (await rafi.put("/api/auth/me/available", json={"available": False})).status_code == 204
@@ -211,7 +211,7 @@ async def test_a_solved_ticket_counts_for_who_marked_it(app: FastAPI, client: As
     """the team's numbers come from what each member did."""
     rafi_id = await invite(client)
     rafi = await join(app)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "flag_complaint", {"reason": "cold food"}), "Sorry!"]
     await chat(app, client)
     [ticket] = (await rafi.get("/api/tickets")).json()

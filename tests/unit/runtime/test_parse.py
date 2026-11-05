@@ -15,46 +15,8 @@ CLINIC_HOURS = WeeklyHours.model_validate(  # open 9 am to 10 pm every day excep
 )
 
 
-def today(said: str, hours: WeeklyHours = NO_HOURS) -> str:
-    return f"{parse.time_today(said, NOW, hours):%H:%M}"
-
-
 def day_and_time(said: str, hours: WeeklyHours = CLINIC_HOURS) -> str:
     return f"{parse.day_and_time(said, NOW, hours):%Y-%m-%dT%H:%M}"
-
-
-@pytest.mark.parametrize(
-    ("said", "saved"),
-    [
-        ("7:30 pm", "19:30"),
-        ("7.30PM", "19:30"),
-        ("8 p.m.", "20:00"),
-        ("19:30", "19:30"),
-        ("7:30", "19:30"),  # said at 2 pm, so this evening
-        ("3", "15:00"),
-        ("at 4pm", "16:00"),
-        ("today at 4 pm", "16:00"),
-        ("8 tonight", "20:00"),
-    ],
-)
-def test_a_time_today(said: str, saved: str) -> None:
-    assert today(said) == saved
-
-
-@pytest.mark.parametrize("said", ["11 am", "13:59", "2 pm", "soon", "25:00", "7:75", "13 pm"])
-def test_a_time_that_has_passed_or_isnt_a_time_is_refused(said: str) -> None:
-    with pytest.raises(ValueError):
-        today(said)
-
-
-def test_a_passed_time_says_what_time_it_is() -> None:
-    with pytest.raises(ValueError, match="it's 2:00 pm now"):
-        today("11 am")
-
-
-def test_another_day_is_refused_with_a_reason() -> None:
-    with pytest.raises(ValueError, match="today only"):
-        today("tomorrow at 4pm")
 
 
 def test_names_phones_and_text_are_tidied() -> None:
@@ -122,13 +84,6 @@ def test_a_day_and_time_outside_the_hours_or_unclear_is_refused_with_a_hint(
 
 def test_with_no_hours_set_only_the_clock_is_checked() -> None:
     assert day_and_time("tomorrow at 11 pm", NO_HOURS) == "2026-09-30T23:00"
-    assert today("11 pm") == "23:00"
-
-
-def test_a_pickup_time_must_be_inside_the_opening_hours_too() -> None:
-    assert today("9 pm", CLINIC_HOURS) == "21:00"
-    with pytest.raises(ValueError, match="outside our hours"):
-        today("11 pm", CLINIC_HOURS)
 
 
 def test_closed_every_day_refuses_every_time() -> None:
@@ -137,7 +92,7 @@ def test_closed_every_day_refuses_every_time() -> None:
         dict.fromkeys(("mon", "tue", "wed", "thu", "fri", "sat", "sun"))
     )
     with pytest.raises(ValueError, match="closed on Tuesdays"):
-        today("4:05 pm", all_off)
+        day_and_time("today at 4:05 pm", all_off)
 
 
 def test_a_bare_weekday_is_the_next_one_or_today() -> None:

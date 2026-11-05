@@ -4,7 +4,8 @@ Placing an order takes its items out of stock in the same transaction, and cance
 them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
 buyers at the same moment can't both get the last one."""
 
-from dataclasses import replace
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
@@ -13,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
-from heydesk.models import Conversation, Turn
-from heydesk.models.customer_request import next_number
+from heydesk.models import Conversation, Lead, PaymentAccount, Turn
+from heydesk.models.customer_request import UNPAID, next_number
 from heydesk.shop.base import PAGE, Store, TooLate
 from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
 from heydesk.shop.values import (
@@ -30,6 +31,7 @@ from heydesk.shop.values import (
     OrderConfirm,
     OrderEdit,
     Product,
+    ShopConfig,
     merge_products,
     merge_sheet_products,
     minus_ordered,
@@ -38,6 +40,7 @@ from heydesk.shop.values import (
 )
 
 STATUSES_TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
+NOT_SALE_STATUSES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
 
 
 class CouponGone(ValueError):
@@ -48,8 +51,71 @@ class OutOfStock(ValueError):
     """Someone else bought the last ones since the cart was made."""
 
 
+@dataclass(frozen=True)
+class Stats:
+    """What a business's agent did in a stretch of time, for the owner's dashboard."""
+
+    conversations: int  # chats the agent answered in it
+    handed_off: int  # of those, handed to a person; the rest the agent handled alone
+    sales: int  # orders made in it, not cancelled or waiting for payment
+    amount: int  # their total, minor units
+    bought: int  # chats that ended in one
+    sources: dict[str, int]  # where they came from: chat, page or team
+    leads: int  # call backs asked for in it and not sold
+
+
 class ShopStore(Store):
-    SALES = (ShopOrder,)
+    async def pays_first(self, config: ShopConfig) -> bool:
+        """Whether the agent asks for payment before placing anything: the owner turned it on
+        (`pay_first`) and connected the business's SSLCommerz store or bKash account. Without
+        either, the agent takes orders as if it were off."""
+        if not config.pay_first:
+            return False
+        async with self.sessions() as s:
+            found = await s.scalar(
+                select(PaymentAccount.id).where(PaymentAccount.workspace_id == self.workspace_id)
+            )
+        return found is not None
+
+    async def stats(self, start: datetime, end: datetime) -> Stats:
+        """The dashboard's numbers from `start` up to `end`, added up from the rows we
+        keep: the turns, the orders and the leads."""
+        workspace_id = self.workspace_id
+        async with self.sessions() as s:
+            turns = (
+                await s.execute(
+                    select(Turn.conversation_id, Turn.handed_off).where(
+                        Turn.workspace_id == workspace_id, Turn.at >= start, Turn.at < end
+                    )
+                )
+            ).all()
+            sales = list(
+                await s.scalars(
+                    select(ShopOrder).where(
+                        ShopOrder.workspace_id == workspace_id,
+                        ShopOrder.created_at >= start,
+                        ShopOrder.created_at < end,
+                        ShopOrder.status.not_in(NOT_SALE_STATUSES),
+                    )
+                )
+            )
+            leads = await s.scalar(
+                select(func.count()).where(
+                    Lead.workspace_id == workspace_id,
+                    Lead.created_at >= start,
+                    Lead.created_at < end,
+                    Lead.status != "sold",
+                )
+            )
+        return Stats(
+            conversations=len({c for c, _ in turns}),
+            handed_off=len({c for c, handed in turns if handed}),
+            sales=len(sales),
+            amount=sum(row.total for row in sales),
+            bought=len({row.conversation_id for row in sales if row.conversation_id}),
+            sources=dict(Counter(row.source for row in sales)),
+            leads=leads or 0,
+        )
 
     def order_link(self, order_id: str) -> str:
         """The order's page for the buyer, `/o/<id>`; the id is long and random."""

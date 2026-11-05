@@ -13,8 +13,8 @@ from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Account, Paid
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
-from heydesk.services.payments import Payable
 from heydesk.shop import shop_prompt
+from heydesk.shop.models import ShopOrder
 from heydesk.shop.tools import FindOrderInput, track_order
 from tests.conftest import SEEDS, World, make_ctx
 
@@ -54,7 +54,7 @@ async def take(world: World, agent: LiveAgent, first: list[Any], tool: ToolCall)
     return conversation
 
 
-async def found(world: World, conversation: str) -> Payable:
+async def found(world: World, conversation: str) -> ShopOrder:
     """The order or appointment the conversation took: its id is in the payment link."""
     said = str((await world.conversation(conversation)).messages)
     record = await world.services.payments.find(said.split("/pay/")[1][:32])
@@ -131,8 +131,8 @@ async def test_the_payment_link_goes_to_the_gateway_and_comes_back_placed(
 ) -> None:
     services = app.state.services
     agent, gateway = await paying_first(services)
-    runtime = services.conversations.runtime
-    runtime.llm.script = [
+    llm = services.conversations.llm
+    llm.script = [
         ToolCall("c1", "update_cart", SHOP_ORDER),
         ToolCall("c2", "place_order", SHOP_DETAILS),
         "Shall I place it?",
@@ -255,7 +255,7 @@ async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
     agent, _ = await paying_first(services)
     await client.put("/api/agent/bkash", json=BKASH)
     bkash = cast(FakePayments, services.payments.gateways["bkash"])
-    services.conversations.runtime.llm.script = [
+    services.conversations.llm.script = [
         ToolCall("c1", "update_cart", SHOP_ORDER),
         ToolCall("c2", "place_order", SHOP_DETAILS),
         "Shall I place it?",

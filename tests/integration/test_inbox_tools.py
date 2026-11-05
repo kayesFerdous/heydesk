@@ -27,7 +27,7 @@ async def put(client: AsyncClient, conversation: str, what: str, body: dict[str,
 async def test_a_done_chat_comes_back_when_the_buyer_writes_again(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Hello!", "Sure."]
+    app.state.services.conversations.llm.script = ["Hello!", "Sure."]
     conversation = await web(client, "hi")
     assert (await put(client, conversation, "done", {"done": True})).json()["done_at"] is not None
     assert await listed(client) == []
@@ -43,7 +43,7 @@ async def test_a_snoozed_chat_comes_back_at_its_time_with_an_alert(
 ) -> None:
     await link_owner(app, client)
     services = app.state.services
-    services.conversations.runtime.llm.script = ["Hello!"]
+    services.conversations.llm.script = ["Hello!"]
     conversation = await web(client, "hi")
     later = (FIXED_NOW + timedelta(hours=2)).isoformat()
     assert (await put(client, conversation, "snooze", {"until": later})).status_code == 200
@@ -63,7 +63,7 @@ async def test_a_snoozed_chat_comes_back_at_its_time_with_an_alert(
 async def test_search_finds_words_phones_and_codes_in_one_business(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Noted.", "Hello!"]
+    app.state.services.conversations.llm.script = ["Noted.", "Hello!"]
     first = await web(client, "my number is 01712 345678, order O-101")
     await put(client, first, "done", {"done": True})  # a search looks in done chats too
     await web(client, "do you have biryani?")
@@ -71,7 +71,7 @@ async def test_search_finds_words_phones_and_codes_in_one_business(
     assert await listed(client, "?q=01712") == [first]
     assert await listed(client, "?q=o-101") == [first]
     assert await listed(client, "?q=100%25") == []  # a % is a letter, not "anything"
-    app.state.services.conversations.runtime.llm.script = ["জি আছে।"]
+    app.state.services.conversations.llm.script = ["জি আছে।"]
     bangla = await web(client, "পাঞ্জাবি আছে?")
     assert await listed(client, "?q=পাঞ্জাবি") == [bangla]
     other = await new_business(app)

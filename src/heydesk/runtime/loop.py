@@ -34,13 +34,6 @@ MAX_MODEL_CALLS = 6  # rule 9
 HIDDEN_FIELDS = ("by", "photo", "photos")
 
 
-@dataclass(frozen=True)
-class Runtime:
-    """The ports a turn runs against. Built once, in wiring."""
-
-    llm: LanguageModel
-
-
 @dataclass
 class TurnInput:
     system: str  # built for this turn; the shop's note is added before every model call
@@ -60,11 +53,11 @@ class TurnInput:
     photo_line: str = ""  # Python's line on that photo, which the model reads before their text
 
 
-async def run_turn(turn: TurnInput, runtime: Runtime) -> AsyncGenerator[Event]:
+async def run_turn(turn: TurnInput, llm: LanguageModel) -> AsyncGenerator[Event]:
     """Every path ends in exactly one `TurnEnded`: no early return, no yield in `finally`."""
     trace = Trace(channel=turn.channel)
-    trace.data["llm"] = runtime.llm.name
-    added = opening_messages(turn, runtime.llm)
+    trace.data["llm"] = llm.name
+    added = opening_messages(turn, llm)
     state = dict(turn.state)
     last_read_back = state.get("read_back", "")  # the last read-back, from an earlier turn (rule 2)
     tools = {tool.name: tool for tool in turn.tools}
@@ -83,7 +76,7 @@ async def run_turn(turn: TurnInput, runtime: Runtime) -> AsyncGenerator[Event]:
             system = turn.system + turn.note(state)
             request = ChatRequest(system, specs, for_model([*turn.history, *added]), turn.model)
             with trace.step("model", n=n) as step:
-                async with aclosing(runtime.llm.stream(request)) as stream:
+                async with aclosing(llm.stream(request)) as stream:
                     async for event in stream:
                         if isinstance(event, TextDelta):
                             if turn.interrupt.is_set():
@@ -144,16 +137,14 @@ async def run_turn(turn: TurnInput, runtime: Runtime) -> AsyncGenerator[Event]:
                     yield Card(result.card["kind"], result.card["data"])
                 shown.append(result.photos)
                 outcomes.append(ToolOutcome(call.id, result.ok, result.data))
-            results = runtime.llm.tool_results(
-                outcomes
-            )  # every call gets its result, even on a stop
+            results = llm.tool_results(outcomes)  # every call gets its result, even on a stop
             for message, photos in zip(results, shown, strict=False):
                 if photos:  # kept for the chat page and the owner, hidden from the model
                     message["photos"] = photos
             added += results
             if said:  # the tool said the reply itself (off_topic): no model call for it
                 yield Token(said)
-                added.append(runtime.llm.assistant_message(said))
+                added.append(llm.assistant_message(said))
                 break
             if turn.interrupt.is_set():
                 interrupted = True
@@ -168,7 +159,7 @@ async def run_turn(turn: TurnInput, runtime: Runtime) -> AsyncGenerator[Event]:
     contact = turn.agent.handoff
     if failed or interrupted:  # a failure ends with the hand-off message as a polite line
         closing = contact.message if failed else None
-        added = safe_close(added, partial="".join(streamed), closing=closing, llm=runtime.llm)
+        added = safe_close(added, partial="".join(streamed), closing=closing, llm=llm)
     handoff = failed or asked_for_person
     if handoff:
         yield HandOff(contact.message, contact.phone, contact.email)

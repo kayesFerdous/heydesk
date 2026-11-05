@@ -46,7 +46,7 @@ async def test_chat_streams_tokens_over_sse(client: AsyncClient) -> None:
 async def test_a_tool_shows_a_status_line_and_a_hand_off_shows_the_card(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("call_1", "handoff_to_human", {}), "Of course."]
     res = await client.post(
         f"/api/chat/{DEV_KEY}",
@@ -95,7 +95,7 @@ async def test_rejects_an_empty_or_long_message_before_streaming(client: AsyncCl
 async def test_a_read_back_sends_its_card_and_the_yes_buttons(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),

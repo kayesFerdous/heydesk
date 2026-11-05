@@ -685,17 +685,17 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Each business's SSLCommerz store and bKash account (one of each, D109); start a payment with the one the visitor picks; settle it only after asking that gateway.",
    "inputs": "record id, val_id or paymentID, provider",
    "outputs": "record placed",
-   "fn": "settle"
+   "fn": "check_payment"
   },
   {
    "id": "s-billing",
    "label": "BillingService",
    "type": "service",
    "file": "src/heydesk/services/billing.py",
-   "purpose": "Plans (replies in 30 days, moderators); `quote` prices a purchase from where the business stands (new, renewal, upgrade; a downgrade waits for the end); checkout and settle into our own SSLCommerz store or bKash account, priced again at settle (a changed plan holds it as review); `plan_problem` for every turn (D106, D109, D116).",
+   "purpose": "Plans (replies in 30 days, moderators); `quote` prices a purchase from where the business stands (new, renewal, upgrade; a downgrade waits for the end); checkout and settle into our own SSLCommerz store or bKash account, priced again at check_payment (a changed plan holds it as review); `plan_problem` for every turn (D106, D109, D116).",
    "inputs": "plan, months, gateway, val_id or paymentID",
    "outputs": "plan and paid_until",
-   "fn": "settle"
+   "fn": "check_payment"
   },
   {
    "id": "s-calls",
@@ -705,7 +705,7 @@ tr.hl td { background: var(--accent-soft); }
    "purpose": "Queue of calls that confirm new shop orders; rings the buyer's /phone page; retries; outcome from the order. Not in production, which serves no /phone page (D105); needs only calls.enabled, not TAKES_VOICE (D168).",
    "inputs": "new orders, rings",
    "outputs": "Call rows, voice conversation",
-   "fn": "tick"
+   "fn": "ring_due_calls"
   },
   {
    "id": "s-sheets",
@@ -732,7 +732,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "CourierService",
    "type": "service",
    "file": "src/heydesk/services/courier.py",
-   "purpose": "Books every confirmed shop order with its linked Steadfast or Pathao, or the fake courier when none is linked outside production (it's shipped then), and follows each parcel until delivered or returned; the buyer hears each move (D112, D113). On delivery day a reminder, a day after a 👍 / 👎 question, once each and inside the app's window (`TeamService.tell_in_window`, D134).",
+   "purpose": "Books every confirmed shop order with its linked Steadfast or Pathao, or the fake courier when none is linked outside production (it's shipped then), and follows each parcel until delivered or returned; the buyer hears each move (D112, D113). On delivery day a reminder, a day after a 👍 / 👎 question, once each and inside the app's window (`TeamService.tell_visitor_if_allowed`, D134).",
    "inputs": "confirmed / packed / shipped / delivered orders",
    "outputs": "parcel_id, courier_status, status",
    "fn": "sync"
@@ -1708,12 +1708,12 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "a-payments",
    "target": "s-payments",
-   "label": "start / settle"
+   "label": "start / check_payment"
   },
   {
    "source": "a-billing",
    "target": "s-billing",
-   "label": "checkout / settle"
+   "label": "checkout / check_payment"
   },
   {
    "source": "s-billing",
@@ -3617,7 +3617,7 @@ tr.hl td { background: var(--accent-soft); }
      "shop"
     ]
    },
-   "help": "Store.pays_first(): pay_first and a PaymentAccount row; a shop: some zone has pay_first"
+   "help": "ShopStore.pays_first(): pay_first and a PaymentAccount row; a shop: some zone has pay_first"
   },
   {
    "id": "call_to_confirm",
@@ -3958,7 +3958,7 @@ tr.hl td { background: var(--accent-soft); }
      "vars": [
       [
        "facts",
-       "Store.before(ShopOrder): same contact, web and voice as one browser, another conversation (D81, D114)"
+       "Store.earlier_records(ShopOrder): same contact, web and voice as one browser, another conversation (D81, D114)"
       ]
      ]
     },
@@ -4546,7 +4546,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "human",
      "label": "status == 'human' (team answering)?",
      "shape": "decision",
-     "code": "if conversation.status == HUMAN_STATUS:\n    return RunningTurn(conversation.id, self._to_team(conversation, text, channel), asyncio.Event())"
+     "code": "if conversation.status == HUMAN_STATUS:\n    return RunningTurn(conversation.id, self._save_for_team(conversation, text, channel), asyncio.Event())"
     },
     {
      "id": "team",
@@ -4571,7 +4571,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "new",
      "label": "Create the conversation",
      "shape": "step",
-     "code": "conversation = self._new(agent, channel, contact, name)"
+     "code": "conversation = self._new_conversation(agent, channel, contact, name)"
     },
     {
      "id": "near",
@@ -4681,7 +4681,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "start",
      "label": "Opening messages: greeting if first turn + user message",
      "shape": "event",
-     "code": "added = opening_messages(turn, runtime.llm)",
+     "code": "added = opening_messages(turn, llm)",
      "fn": "opening_messages"
     },
     {
@@ -4738,7 +4738,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "close",
      "label": "safe_close: partial text + hand-off line",
      "shape": "step",
-     "code": "added = safe_close(added, partial=''.join(streamed), closing=closing, llm=runtime.llm)",
+     "code": "added = safe_close(added, partial=''.join(streamed), closing=closing, llm=llm)",
      "fn": "safe_close"
     },
     {
@@ -4845,7 +4845,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "check",
      "label": "ArgumentChecker.take each detail",
      "shape": "step",
-     "code": "at = check.take('time', args.time, lambda said: parse.time_today(said, now, config.hours))\nname = check.take('name', args.name, parse.name)",
+     "code": "at = address = check.take('address', args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT))\nname = check.take('name', args.name, parse.name)\nphone = check.take('phone', args.phone, mobile)",
      "file": "src/heydesk/runtime/tool.py",
      "fn": "ArgumentChecker.take"
     },
@@ -4853,7 +4853,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "miss",
      "label": "Anything missing or wrong?",
      "shape": "decision",
-     "code": "if at is None or name is None or phone is None:\n    return check.result()"
+     "code": "if zone is None or address is None or name is None or phone is None:\n    missing = check.result().data"
     },
     {
      "id": "ask",
@@ -4978,7 +4978,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "call",
      "label": "Shop + calls on + order new + no call → queue a call",
      "shape": "decision",
-     "code": "if not self.rings: return  # rings: not production (D105); no TAKES_VOICE needed (D168)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
+     "code": "if not self.can_ring: return  # rings: not production (D105); no TAKES_VOICE needed (D168)\nif not calls.enabled: return\nif order.status == 'new' and not await self._calls_for(...):",
      "file": "src/heydesk/services/calls.py",
      "fn": "after_turn"
     },
@@ -5127,15 +5127,15 @@ tr.hl td { background: var(--accent-soft); }
      "id": "wait",
      "label": "Wait 3 s: another message came? It answers all",
      "shape": "decision",
-     "code": "messages = await self._gather(channel, chat_id, message)\nif messages is not None:\n    await self._turn(channel, chat_id, messages)",
+     "code": "messages = await self._collect_messages(channel, chat_id, message)\nif messages is not None:\n    await self._turn(channel, chat_id, messages)",
      "fn": "_collect_messages"
     },
     {
      "id": "photo",
      "label": "Each message: photo downloaded, quoted message before its words",
      "shape": "step",
-     "code": "sent = await self._photo(channel, message)\nwords, quoted = await self._quoted(channel, message)\nlines.append(f'(replying to: \"{words}\") {text}' if words else text)",
-     "fn": "_turn"
+     "code": "sent = await self._photo(channel, message)\nwords, quoted = await self._replied_to_message(channel, message)\nlines.append(f'(replying to: \"{words}\") {text}' if words else text)",
+     "fn": "_run_turn"
     },
     {
      "id": "text",
@@ -5145,7 +5145,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "reply",
-     "label": "conversations.reply on all lines (typing… every 4 s, only if conversations.answers: not AI off (one visitor or all), blocked or taken over)",
+     "label": "conversations.reply on all lines (typing… every 4 s, only if conversations.will_answer: not AI off (one visitor or all), blocked or taken over)",
      "shape": "step",
      "code": "reply = await self.conversations.reply(agent, channel.kind, chat_id, '\\n'.join(lines), photo, name)"
     },
@@ -5265,7 +5265,7 @@ tr.hl td { background: var(--accent-soft); }
      "label": "import_sheet (keeps unchanged counts)",
      "shape": "step",
      "file": "src/heydesk/shop/values.py",
-     "fn": "merge"
+     "fn": "merge_sheet_products"
     },
     {
      "id": "prob",
@@ -5310,7 +5310,7 @@ tr.hl td { background: var(--accent-soft); }
      "shape": "step",
      "code": "select(Call.id).where(Call.status == RINGING, Call.rang_at < late)",
      "file": "src/heydesk/services/calls.py",
-     "fn": "tick"
+     "fn": "ring_due_calls"
     },
     {
      "id": "ring",
@@ -5318,7 +5318,7 @@ tr.hl td { background: var(--accent-soft); }
      "shape": "decision",
      "code": "free = self.settings.MAX_LIVE_CALLS - live",
      "file": "src/heydesk/services/calls.py",
-     "fn": "tick"
+     "fn": "ring_due_calls"
     }
    ],
    "edges": [
@@ -5450,7 +5450,7 @@ tr.hl td { background: var(--accent-soft); }
      "label": "Hang up: outcome = order status (confirmed / cancelled / no_decision)",
      "shape": "end",
      "code": "outcome = order.status if order.status in ('confirmed', 'cancelled') else 'no_decision'",
-     "fn": "ended"
+     "fn": "mark_ended"
     }
    ],
    "edges": [
@@ -5577,7 +5577,7 @@ tr.hl td { background: var(--accent-soft); }
      "label": "gateway.check: VALID / Completed, and our id matches?",
      "shape": "decision",
      "code": "paid = await self.gateways[provider].check(account, payment_id)\nif paid is None or paid.order_id != record.id:\n    return record",
-     "fn": "settle"
+     "fn": "check_payment"
     },
     {
      "id": "amt",
@@ -5589,7 +5589,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "upd",
      "label": "UPDATE … WHERE status = 'unpaid'",
      "shape": "decision",
-     "code": "update(table).where(table.id == record.id, table.status == UNPAID).values(status=record.PAID_STATUS, ...)"
+     "code": "update(ShopOrder).where(ShopOrder.id == record.id, ShopOrder.status == UNPAID).values(status='confirmed', ...)"
     },
     {
      "id": "placed",
@@ -6074,7 +6074,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "st-sql",
      "data": "new Conversation row (first message)",
      "file": "src/heydesk/services/conversations.py",
-     "fn": "_new"
+     "fn": "_new_conversation"
     },
     {
      "from": "s-conversations",
@@ -6598,7 +6598,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "st-memory",
      "data": "phones[mobile] = asyncio.Queue()",
      "file": "src/heydesk/services/calls.py",
-     "fn": "listen"
+     "fn": "wait_for_calls"
     },
     {
      "from": "s-calls",
@@ -6674,7 +6674,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "s-calls",
      "data": "mark_ended(): outcome = order status",
      "file": "src/heydesk/services/calls.py",
-     "fn": "ended"
+     "fn": "mark_ended"
     }
    ]
   },
@@ -6738,9 +6738,9 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "a-payments",
      "to": "s-payments",
-     "data": "settle(record_id, val_id or paymentID, provider)",
+     "data": "check_payment(record_id, val_id or paymentID, provider)",
      "file": "src/heydesk/services/payments.py",
-     "fn": "settle"
+     "fn": "check_payment"
     },
     {
      "from": "s-payments",
@@ -6755,7 +6755,7 @@ tr.hl td { background: var(--accent-soft); }
      "to": "st-sql",
      "data": "UPDATE … WHERE status = 'unpaid' → confirmed",
      "file": "src/heydesk/services/payments.py",
-     "fn": "settle",
+     "fn": "check_payment",
      "note": "Two posts can't both place it."
     },
     {
@@ -7252,7 +7252,7 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/services/payments.py",
    "where": "`status`, `paid`, `payment_ref` on payable rows",
    "written": "`check_payment` only",
-   "sync": "Browser return and IPN both call settle; `UPDATE … WHERE unpaid`.",
+   "sync": "Browser return and IPN both call check_payment; `UPDATE … WHERE unpaid`.",
    "failure": "Unreachable gateway: the other post settles it; paid-after-cancel → refund alert.",
    "timeline": "payment"
   },
@@ -8372,7 +8372,7 @@ tr.hl td { background: var(--accent-soft); }
    "title": "A payment must be real, and count once",
    "lines": [
     "A browser post could be forged, and the gateway posts twice.",
-    "settle() asks SSLCommerz about the val_id, checks id and amount, and moves the row only WHERE status = 'unpaid'.",
+    "check_payment() asks SSLCommerz about the val_id, checks id and amount, and moves the row only WHERE status = 'unpaid'.",
     "The agent can never mark anything paid (D47)."
    ],
    "nodes": [
@@ -8954,8 +8954,8 @@ tr.hl td { background: var(--accent-soft); }
       {"id": "wa", "shape": "event", "label": "WhatsApp webhook", "file": "src/heydesk/services/channels.py", "fn": "answer_whatsapp", "note": "The same idea. Puts WhatsApp's message into the shape `_answer` reads."},
       {"id": "answer", "label": "channels._answer", "file": "src/heydesk/services/channels.py", "fn": "_answer", "note": "Sorts the message: the owner or a moderator replying goes to `handle_team_reply`. `/start` restarts the chat. Every other message is counted for floods, then waits in `_collect_messages`. Nothing here raises: a failure becomes a polite line."},
       {"id": "gather", "label": "_collect_messages: wait 3 seconds", "file": "src/heydesk/services/channels.py", "fn": "_collect_messages", "note": "People send many bubbles. It waits `CHAT_WAIT_SECONDS` (3), and if another message came, that one answers both. Many bubbles, one turn, one reply paid for."},
-      {"id": "turnfn", "label": "channels._turn", "file": "src/heydesk/services/channels.py", "fn": "_turn", "note": "Joins the bubbles into one text, turns voice notes into words, picks the last photo, shows “typing…”, then sends the finished reply, its photos and its cards."},
-      {"id": "reply", "label": "conversations.reply", "file": "src/heydesk/services/conversations.py", "fn": "reply", "note": "Finds this contact's chat. If it's full or quiet for `CONVERSATION_IDLE_HOURS` (12), the agent starts afresh in the same chat. Then it reads the whole turn and returns one `Reply`.", "code": "latest = await self._latest(agent, channel, contact)\nif latest is not None and self._stale(latest):\n    await self._start_afresh(latest)\nturn = await self.start_turn(agent, latest.id if latest else None, text, channel, f\"{channel}:{contact}\", contact, photo, name)"},
+      {"id": "turnfn", "label": "channels._turn", "file": "src/heydesk/services/channels.py", "fn": "_run_turn", "note": "Joins the bubbles into one text, turns voice notes into words, picks the last photo, shows “typing…”, then sends the finished reply, its photos and its cards."},
+      {"id": "reply", "label": "conversations.reply", "file": "src/heydesk/services/conversations.py", "fn": "reply", "note": "Finds this contact's chat. If it's full or quiet for `CONVERSATION_IDLE_HOURS` (12), the agent starts afresh in the same chat. Then it reads the whole turn and returns one `Reply`.", "code": "latest = await self._latest_conversation(agent, channel, contact)\nif latest is not None and self._stale(latest):\n    await self._start_afresh(latest)\nturn = await self.start_turn(agent, latest.id if latest else None, text, channel, f\"{channel}:{contact}\", contact, photo, name)"},
       {"id": "voice", "shape": "event", "label": "Shop's confirmation call", "file": "src/heydesk/api/voice.py", "fn": "offer", "note": "The shop calls a buyer to confirm an order. A visitor can't call the shop today: `TAKES_VOICE` is False. Each thing the buyer says becomes one turn."},
       {"id": "voicereply", "label": "voice/call.py reply", "file": "src/heydesk/voice/call.py", "fn": "reply", "note": "Calls `start_turn` with channel `voice`, and speaks each `Token`. A caller talking over the agent sets `turn.interrupt`."},
       {"id": "inbox", "shape": "event", "label": "Team inbox: summary, draft, ask", "file": "src/heydesk/api/conversations.py", "fn": "assist", "note": "A team member asks for help on a chat. This isn't a visitor talking, so it skips the visitor checks."},
@@ -9033,7 +9033,7 @@ tr.hl td { background: var(--accent-soft); }
       "title": "4. The turn's whole input",
       "fn": "TurnInput(...)",
       "file": "src/heydesk/runtime/loop.py",
-      "note": "Packed at the end of `start_turn`. This is the only thing the agent loop receives, plus `Runtime(llm)`.",
+      "note": "Packed at the end of `start_turn`. This is the only thing the agent loop receives, plus the `llm`.",
       "rows": [
         {"name": "system", "src": "run", "eg": "long text", "from": "`build_system_prompt(config, shop_prompt(...), channel, now, documents, VOICE_LANGUAGE, visitor_notes)`"},
         {"name": "tools", "src": "code", "eg": "15 or 16 Tool objects", "from": "`tools_for(has_documents)`"},
@@ -9138,7 +9138,7 @@ tr.hl td { background: var(--accent-soft); }
     {"d": 2, "k": "read", "fn": "_get(s, agent, conversation_id)", "file": "src/heydesk/services/conversations.py", "does": "Loads the chat, if the page sent an id", "db": "SELECT conversations", "note": "The session closes right after: the row stays in memory as `conversation`. It also checks for a full chat."},
     {"d": 2, "k": "check", "fn": "AI off? Team has the chat?", "file": "src/heydesk/services/conversations.py", "does": "If so, the message goes to the team: no model", "note": "Those two paths return a `RunningTurn` with `_save_for_team` in place of `_run`. It saves the message and forwards it. No `turns` row, nothing counted."},
     {"d": 2, "k": "check", "fn": "visitors.count_turn(agent, visitor)", "file": "src/heydesk/services/visitors.py", "does": "Plan and daily limits; counts this turn", "db": "SELECT + maybe INSERT visitors; SELECT workspaces; COUNT turns; SUM visitors.turns; UPDATE visitors.turns", "note": "The visitor's row is locked so two turns at once can't both count from the same number. It's counted now, before the model, so a turn that fails later still counts.", "code": "visitor = await self._find(s, workspace_id, key, lock=True)\nif visitor.day != today:\n    visitor.day, visitor.turns = today, 0\nreason = await self._limit(s, workspace_id, visitor, today, now)\nif reason:\n    raise VisitorLimited(limited_message(agent))\nvisitor.turns += 1"},
-    {"d": 2, "k": "write", "fn": "_new(...) + s.add(conversation)", "file": "src/heydesk/services/conversations.py", "does": "First message: creates the chat", "db": "INSERT conversations", "note": "With `messages=[]` and `state={}`. Its id reaches the page in the `open` frame."},
+    {"d": 2, "k": "write", "fn": "_new_conversation(...) + s.add(conversation)", "file": "src/heydesk/services/conversations.py", "does": "First message: creates the chat", "db": "INSERT conversations", "note": "With `messages=[]` and `state={}`. Its id reaches the page in the `open` frame."},
     {"d": 2, "k": "build", "fn": "ShopStore(...)", "file": "src/heydesk/shop/store.py", "does": "Makes a ShopStore for this chat", "note": "No database call yet. It holds the session maker, `workspace_id` and `conversation_id`, so every query it makes is scoped."},
     {"d": 2, "k": "net", "fn": "photos.nearest + photo_line", "file": "src/heydesk/services/photos.py", "does": "Only with a photo: finds the closest products", "db": "SELECT products", "note": "Gemini makes a vector and Qdrant finds the closest product photos. The model gets one line of text about them, never the image."},
     {"d": 2, "k": "read", "fn": "shop_prompt(config, store)", "file": "src/heydesk/shop/__init__.py", "does": "Writes the shop's part of the prompt", "db": "SELECT payment_accounts, products, conversations, shop_orders", "note": "The role, the shop, delivery, the products (or just groups, for a long list), their last order, and the size guide."},
@@ -9147,9 +9147,9 @@ tr.hl td { background: var(--accent-soft); }
     {"d": 2, "k": "build", "fn": "tools_for(has_documents)", "file": "src/heydesk/shop/__init__.py", "does": "Picks this turn's tools", "code": "shared = [TAKE_MESSAGE, TAKE_LEAD, HANDOFF, COMPLAINT, OFF_TOPIC, REMEMBER]\nshared += [SEARCH_KNOWLEDGE] if has_documents else []\nreturn [*TOOLS, *shared]"},
     {"d": 2, "k": "build", "fn": "TurnInput(...) and RunningTurn(...)", "file": "src/heydesk/services/conversations.py", "does": "Packs it all. `_run(...)` is created, not started", "note": "`self._run(...)` is a generator: calling it runs none of its code. That's why this function returns before the model says anything."},
     {"d": 1, "k": "stream", "fn": "StreamingResponse(to_sse(turn))", "file": "src/heydesk/api/chat.py", "does": "The route returns; FastAPI starts reading", "note": "The first frame is `open`, with the conversation id. Reading `turn.events` is what starts the model."},
-    {"d": 2, "k": "route", "fn": "_run → run_turn(turn, runtime)", "file": "src/heydesk/runtime/loop.py", "does": "The agent loop begins", "code": "added = opening_messages(turn, runtime.llm)       # greeting if first, then their message\nstate = dict(turn.state)\nheard = state.get(\"read_back\", \"\")          # what they heard before this turn\ntools = {tool.name: tool for tool in turn.tools}\nspecs = [tool.spec for tool in turn.tools]"},
+    {"d": 2, "k": "route", "fn": "_run_turn → run_turn(turn, llm)", "file": "src/heydesk/runtime/loop.py", "does": "The agent loop begins", "code": "added = opening_messages(turn, llm)       # greeting if first, then their message\nstate = dict(turn.state)\nheard = state.get(\"read_back\", \"\")          # what they heard before this turn\ntools = {tool.name: tool for tool in turn.tools}\nspecs = [tool.spec for tool in turn.tools]"},
     {"d": 3, "k": "build", "fn": "ChatRequest(system + note, specs, messages, model)", "file": "src/heydesk/runtime/loop.py", "does": "Step N of up to 6: builds the request", "note": "`note(state)` adds the language reminder and the current cart to the end of the prompt."},
-    {"d": 3, "k": "model", "fn": "runtime.llm.stream(request)", "file": "src/heydesk/adapters/llm/groq.py", "does": "Calls Groq or Maira", "note": "Yields three kinds of event: `TextDelta`, `ToolCall`, `Finished`. Groq streams words and native tool calls. Maira replies whole in one text, and its adapter reads any tool call from JSON, so the loop can't tell them apart. No database transaction is open during this wait."},
+    {"d": 3, "k": "model", "fn": "llm.stream(request)", "file": "src/heydesk/adapters/llm/groq.py", "does": "Calls Groq or Maira", "note": "Yields three kinds of event: `TextDelta`, `ToolCall`, `Finished`. Groq streams words and native tool calls. Maira replies whole in one text, and its adapter reads any tool call from JSON, so the loop can't tell them apart. No database transaction is open during this wait."},
     {"d": 4, "k": "stream", "fn": "TextDelta → yield Token", "file": "src/heydesk/runtime/loop.py", "does": "Words go to the visitor as they arrive", "note": "`to_sse` turns each into a `token` frame."},
     {"d": 3, "k": "check", "fn": "failure check", "file": "src/heydesk/runtime/loop.py", "does": "No words and no tools? That's a failure", "code": "if finished is None or finished.stop == \"refusal\" or not (streamed or calls):\n    failed = True\n    break\nadded.append(finished.assistant_message)\nif not calls:\n    break  # the reply is done"},
     {"d": 3, "k": "tool", "fn": "for each call: run_tool(tool, call, ctx)", "file": "src/heydesk/runtime/tool.py", "does": "Validates, sets a timeout, runs the tool", "note": "Never raises: bad arguments, a timeout or a bug all come back as `ok=False` with a hint. Web shows the tool's `label` as a `status` frame first.", "code": "args = tool.input_model.model_validate(call.input)\nasync with asyncio.timeout(tool.timeout_s):\n    return await tool.run(ctx, args)"},

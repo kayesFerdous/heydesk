@@ -56,9 +56,9 @@ async def test_the_owner_links_their_chat_and_hears_about_each_order(
 
 async def test_a_message_for_the_team_is_an_alert_too(app: FastAPI, client: AsyncClient) -> None:
     await link_owner(app, client)
-    runtime = app.state.services.conversations.runtime
+    llm = app.state.services.conversations.llm
     take = ToolCall("c", "take_message", {"message": "Do you cater weddings?"})
-    runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
+    llm.script = [take, "Shall I pass that on?", take, "Done."]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
     )
@@ -77,7 +77,7 @@ async def test_the_owner_takes_over_a_telegram_chat_and_gives_it_back(
     app: FastAPI, client: AsyncClient
 ) -> None:
     path, secret = await link_owner(app, client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone from the team will help."]
     await send(client, path, secret, message("can I talk to a person?"))
 
@@ -164,7 +164,7 @@ async def test_a_moderators_chat_alerts_them_not_the_owner(
     given = to(app, mod_chat)[-1]
     assert given.startswith("👉 This chat is yours now") and given.endswith(f"Ref: {conv_id}")
 
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone will help."]
     body = {"visitor_id": "test-visitor", "message": "a person please", "conversation_id": conv_id}
     await client.post(f"/api/chat/{DEV_KEY}", json=body)

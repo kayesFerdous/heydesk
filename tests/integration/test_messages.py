@@ -77,9 +77,9 @@ async def test_a_name_and_phone_are_optional(world: World) -> None:
 async def test_the_owner_sees_messages_and_marks_them_handled(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    runtime = app.state.services.conversations.runtime
+    llm = app.state.services.conversations.llm
     take = ToolCall("c", "take_message", MESSAGE)
-    runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
+    llm.script = [take, "Shall I pass that on?", take, "Done."]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
     )
@@ -116,8 +116,8 @@ async def test_the_owner_pages_through_messages(app: FastAPI, client: AsyncClien
 
 
 async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncClient) -> None:
-    runtime = app.state.services.conversations.runtime
-    runtime.llm.script = [ToolCall("c", "handoff_to_human", {}), "Someone will call you."]
+    llm = app.state.services.conversations.llm
+    llm.script = [ToolCall("c", "handoff_to_human", {}), "Someone will call you."]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a person please"}
     )
@@ -137,7 +137,7 @@ async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncCli
 async def test_the_inbox_lists_the_chats_the_team_is_answering(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hi"}
     )
@@ -167,7 +167,7 @@ async def test_a_complaint_hands_off_and_opens_one_ticket(
     assert (ticket.code, ticket.status, ticket.reason) == ("C-101", "open", "parcel came damaged")
 
     services = app.state.services
-    services.conversations.runtime.llm.script = [
+    services.conversations.llm.script = [
         ToolCall("c1", "flag_complaint", {"reason": "rude rider"}),
         "Sorry about that.",
     ]

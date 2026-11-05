@@ -5,7 +5,7 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.customer_request import CustomerRequest, Payable
+from heydesk.models.customer_request import CustomerRequest
 from heydesk.runtime.speech import money
 from heydesk.shop.values import lines_text
 
@@ -52,7 +52,7 @@ class CouponRow(Base):
     only_for: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True), default=None)
 
 
-class ShopOrder(CustomerRequest, Payable, Base):
+class ShopOrder(CustomerRequest, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
     When the shop takes payment first, the order starts `unpaid` (its items held) and only
@@ -62,8 +62,7 @@ class ShopOrder(CustomerRequest, Payable, Base):
     __tablename__ = "shop_orders"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
     CODE_LETTER: ClassVar[str] = "O"
-    PAY_FOR: ClassVar[str] = "the delivery charge"
-    PAID_STATUS: ClassVar[str] = "confirmed"
+    PAY_FOR: ClassVar[str] = "the delivery charge"  # what's paid online first
     STATUS_FLOW: ClassVar[dict[str, set[str]]] = {
         "unpaid": {"confirmed", "cancelled"},  # paid online; or the owner took it another way
         "new": {"confirmed", "on_hold", "cancelled"},  # the shop calls the buyer to confirm
@@ -76,6 +75,9 @@ class ShopOrder(CustomerRequest, Payable, Base):
         "cancelled": set(),
     }
 
+    currency: Mapped[str] = mapped_column(String(3))
+    paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first
+    payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
     lines: Mapped[list[Any]] = mapped_column(JSON)  # {code, name, size, colour, quantity, price}
     subtotal: Mapped[int]  # minor units
     delivery_charge: Mapped[int]
@@ -104,9 +106,11 @@ class ShopOrder(CustomerRequest, Payable, Base):
 
     @property
     def amount_due(self) -> int:
+        """What's paid online first, in minor units."""
         return self.delivery_charge
 
     def alert_summary(self) -> str:
+        """A line for the owner's alert once it's paid: what was ordered."""
         return f"{lines_text(self.lines)}; delivery {self.zone}; to {self.address}"
 
     def status_update_text(self) -> str:
@@ -125,6 +129,7 @@ class ShopOrder(CustomerRequest, Payable, Base):
         return ""
 
     def next_step_text(self) -> str:
+        """What the visitor is told happens next, once it's paid."""
         cash_due = money(self.total - self.paid, self.currency)
         return (
             f"Your order {self.code} is confirmed and will be sent out. Pay the rest, {cash_due}, to "

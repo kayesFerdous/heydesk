@@ -245,10 +245,9 @@ changed, only reads back again. A store's writing methods accept only `Confirmed
 catches a write that skipped the check, and `scripts/check_imports.sh` checks that only
 `runtime/guards.py` makes one.
 
-**Parsing** (`runtime/parse.py`): `name`, `phone`, `text`, `time_today` (a bare "7:30" is the next
-7:30 from now; a time that has passed is refused) and `day_and_time` ("tomorrow at 5 pm",
+**Parsing** (`runtime/parse.py`): `name`, `phone`, `text` and `day_and_time` ("tomorrow at 5 pm",
 "saturday 5pm", "5 Oct 6:30 pm"; within 14 days; a time with no am/pm is asked again, never
-guessed). Both times must be inside the business's opening hours (D31; seven closed days are
+guessed). The time must be inside the business's opening hours (D31; seven closed days are
 closed all week, D40), and a refusal's hint says the hours.
 
 ### The knowledge base (D33–D35)
@@ -431,8 +430,8 @@ Every table has `workspace_id` (except `workspaces`).
 
 The **shared columns** (`models/customer_request.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
-change the table's `STATUS_FLOW` doesn't allow is a 409 `invalid_transition`. The **paid columns**
-(`Payable`, same file) are on what a visitor can be asked to pay for first (D47, D48): currency,
+change the table's `STATUS_FLOW` doesn't allow is a 409 `invalid_transition`. A shop order also has the **paid columns**
+(`shop/models.py`), for what a visitor can be asked to pay for first (D47, D48): currency,
 paid (minor units, online), payment_ref (the gateway's id).
 
 **Writes at the same moment (D162).** Production runs on Postgres, where two transactions can read
@@ -857,7 +856,7 @@ every SHEET_SYNC_MINUTES (5):
   /api/products` and its import still work while it's linked.
 - **One sheet per agent**, because an agent has one list. `PRODUCT_COLUMNS` names its
   fields, the same as the import's, and the store takes the sheet's text
-  (`Store.take_sheet(text, mapping, seen) -> seen`): the
+  (`ShopStore.import_sheet(text, mapping, seen) -> seen`): the
   shop merges, in one transaction with reading the orders that hold stock (`merge_sheet_products`,
   `minus_ordered`, `STATUSES_HOLDING_STOCK` in `values.py`).
 
@@ -950,7 +949,7 @@ sync:
   in the background, so Woo's stock drops within a second or two and its website can't sell
   the same last piece; the chat never waits on the store (D77). A lock keeps one push at a
   time, so the sync and a turn never write the same order twice. An order paid online first
-  is pushed the same way once `PaymentService.settle` places it (D105). A push that fails says
+  is pushed the same way once `PaymentService.check_payment` places it (D105). A push that fails says
   nothing: the sync tries again and tells the owner. A move the owner makes in HeyDesk is
   written by the sync, at most `WOO_SYNC_MINUTES` later.
 - **Woo's webhooks say when to sync** (D78). Linking makes five in the store with the owner's
@@ -1073,7 +1072,7 @@ an unknown code is the same 404 page.
 A visitor is the same chat on a messaging app, or the same browser on the web chat and its calls.
 Two things make them feel known:
 
-- **Their last order or message** (`Store.before`): in an earlier conversation *or this
+- **Their last order or message** (`Store.earlier_records`): in an earlier conversation *or this
   one*, so a second order in the same Messenger chat is offered the first one's name, phone and
   address instead of asking again (D123). The `returning_section()` section says to offer them
   once, when the details are needed.
@@ -1187,7 +1186,7 @@ a message ─► (Messenger: "Seen" at once) ─► _collect_messages: waits CHA
              (typing… while it runs) ─► one reply
 ```
 
-- **"typing…" only when the agent answers** (`ConversationService.answers`): not for a visitor
+- **"typing…" only when the agent answers** (`ConversationService.will_answer`): not for a visitor
   who is blocked or has the AI off (I2) or the business turned it off for all (D165), or a chat the team
   has taken over (D135), since no reply is coming from us. WhatsApp's "typing…" also marks
   their last message read, and lasts until the reply, so it's sent once.
@@ -1257,7 +1256,7 @@ owner's page ─► GET /api/agent/whatsapp/login ─► {app_id: META_APP_ID, c
                {waba_id, phone_number_id}
             ─► POST /api/agent/whatsapp/signup {code, account_id, phone_id}
                  a number another business has: refused first
-                 WhatsAppApi.exchange: oauth/access_token (the app's id and secret, the code)
+                 WhatsAppApi.token_from_code: oauth/access_token (the app's id and secret, the code)
                    ─► the business's token (a system user's, which doesn't expire)
                  WhatsAppApi.register: {phone_id}/register with a random 6-digit PIN
                  ─► connect_whatsapp, as if typed in (it subscribes our app to the account)
@@ -1325,7 +1324,7 @@ The same as Messenger's, in Telegram's way:
 buyer sends: a message with `photo` (the same picture in a few sizes, largest last)
              ─► TelegramApi.download(token, the largest's file_id): getFile, then the file
              ─► ConversationService.reply(…, the caption as its words, photo=bytes)
-agent shows: Reply.photos ─► for each: PhotoService.read(url) ─► TelegramApi.send_photo,
+agent shows: Reply.photos ─► for each: PhotoService.read_jpeg(url) ─► TelegramApi.send_photo,
              captioned "Cotton Kurti · ৳950", before the reply's text
 ```
 
@@ -1478,7 +1477,7 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
 
 - **Quiet:** `taken_over_at` is the team's last word (a Business Suite message or a Telegram
   reply moves it on). A visitor's message `TAKEOVER_QUIET_MINUTES` (30) after it gives the
-  chat back first, then is answered (`ConversationService._given_back`): checked when they
+  chat back first, then is answered (`ConversationService._return_if_quiet`): checked when they
   write, so no round runs for it. The AI off for a visitor (D127) sets `human` with no
   `taken_over_at`, so it never goes back by itself: it goes back when the AI is on for them
   again and they write.
@@ -1506,8 +1505,8 @@ over* switch (`PUT /api/conversations/{id}/takeover {on}`). Each sets the conver
 
 A shop can set `pay_first`: the visitor pays online through SSLCommerz or
 bKash, into the business's **own** account, before anything is placed. The shop sets it per delivery area
-(`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the table's
-`Payable.due`, and the payment moves the row to its `PAID_STATUS`:
+(`Zone.pay_first`, D92), as BD shops take the advance outside Dhaka. What's paid is the order's
+`amount_due`, and the payment moves it to `confirmed`:
 
 The shop's order pays first the delivery charge (`PAY_FOR`), in an area with `pay_first`. It then
 becomes `confirmed`, with no call: the advance is the confirmation (D92); the rest is cash on delivery.
@@ -1521,13 +1520,12 @@ key, app secret, username, password and test mode. `PUT /api/agent/sslcommerz` c
 with SSLCommerz first (it opens a ৳10 session no one pays); `PUT /api/agent/bkash` checks the
 keys by granting a token. A 400 carries the gateway's reason, and no route returns a secret.
 The agent asks for payment only when `pay_first` is on (a shop: in some area,
-`ShopConfig.pay_first`) **and** a gateway is connected (`Store.pays_first`): without one, the
+`ShopConfig.pay_first`) **and** a gateway is connected (`ShopStore.pays_first`): without one, the
 prompt says nothing about paying, the tools place orders as before, and `missing` says
-"Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`, its `PAYABLE_TABLES`
-tables), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
+"Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
 provider (`Gateways`: `adapters/payments/sslcommerz.py` and `bkash.py`; `PAYMENTS=fake` for
-tests) do it. `shop/shared.py` has the tool's answer (`awaiting_payment`) and the prompt's
-line (`pay_first_rule`).
+tests) do it. `shop/shared.py` has the tool's answer (`awaiting_payment`), and `shop_prompt` the prompt's
+line.
 
 ```
 yes to the read-back ─► the tool saves it `unpaid` (a shop's items held), returns
@@ -1536,12 +1534,12 @@ visitor opens the link ─► both connected? a button for each; the visitor pic
     ─► a new session with that gateway for `amount_due` ─► its page
 SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
     /api/payments/sslcommerz/<id>)
-    ─► settle(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
+    ─► check_payment(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
        for this row (its tran_id), this amount
 bKash sends the browser to /pay/<id>/bkash?paymentID=…&status=success (failure, cancel: nothing)
-    ─► settle(id, paymentID, "bkash"): the business's bKash account executes it (or asks its
+    ─► check_payment(id, paymentID, "bkash"): the business's bKash account executes it (or asks its
        status): Completed, for this row (its merchantInvoiceNumber), this amount
-    ─► UPDATE … WHERE status = 'unpaid' → PAID_STATUS (new; a shop order confirmed), paid,
+    ─► UPDATE … WHERE status = 'unpaid' → confirmed, paid,
        payment_ref (only the first post wins)
     ─► "✅ Payment received…" added to the chat as the team's (the page and the model see it;
        the bot sends it on Telegram) and the owner's alert
@@ -1577,7 +1575,7 @@ billing page ─► POST /api/billing/checkout {plan, months, gateway} ─► a 
              (unpaid) ─► our SSLCommerz page (BILLING_STORE_*) or our bKash page
              (BILLING_BKASH_*, D109), not the business's own accounts
 gateway sends word back (SSLCommerz: /billing/<id>/back and its notice; bKash: /billing/<id>/bkash
-             with status=success) ─► settle: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
+             with status=success) ─► check_payment: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
              priced again (quote, D116): applied, or held as review if the plan changed meanwhile
 every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
              or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
@@ -1645,11 +1643,11 @@ A paid order is never queued for a call: the queue takes only `new` orders. With
 
 ### The owner's dashboard (D144)
 
-`GET /api/stats` adds up rows we already keep, in `Store.stats(start, end)`; the route asks for
+`GET /api/stats` adds up rows we already keep, in `ShopStore.stats(start, end)`; the route asks for
 today, yesterday and the last `days` days in the agent's `timezone`. **Chats** are the
 conversations with a turn in the stretch, and **handed off** those with a turn that handed off;
-the rest the agent handled alone. **Sales** are the rows of the `SALES` tables (the shop's
-orders) made in it and not `cancelled` or `unpaid`; their **amount** adds each row's `total`. **Bought** counts the chats those sales belong to. A shop order's
+the rest the agent handled alone. **Sales** are the shop's
+orders made in it and not `cancelled` or `unpaid`; their **amount** adds each order's `total`. **Bought** counts the chats those sales belong to. A shop order's
 `source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
 are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
 as the admin's overview is (D72).
@@ -1694,7 +1692,7 @@ From there it is a coupon: on the bill, checked again at the save, and gone at `
 
 ### A buyer's record (D132)
 
-Before an order is sent, the team sees what its mobile did with this shop: `ShopStore.records`
+Before an order is sent, the team sees what its mobile did with this shop: `ShopStore.buyer_records`
 counts each mobile's orders by how they ended, in one grouped query for a whole page, and
 every order out of the API carries it as `buyer` ("3 orders · 1 returned", the trouble in red;
 "First order from this mobile"). `/api/shop/buyers` lists the shop's mobiles, the latest to
@@ -1731,7 +1729,7 @@ delivers it after 8. A shop with no link uses the fake one, except in production
    (`review_asked`); one due more than two days ago is only marked. A tap is the buyer's next
    message, answered by the agent.
 
-Both go through `TeamService.tell_in_window`: on Messenger and WhatsApp only within 24 hours
+Both go through `TeamService.tell_visitor_if_allowed`: on Messenger and WhatsApp only within 24 hours
 of the buyer's last turn (Meta refuses a business's message after it), on Telegram and the web
 chat always, on a call never. Outside it nothing is sent, and it isn't tried again.
 

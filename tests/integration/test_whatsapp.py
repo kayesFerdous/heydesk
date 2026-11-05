@@ -109,7 +109,7 @@ async def test_a_buyer_sends_a_photo_and_taps_its_order_button(
     url = await kurti_with_photo(client)
     await connect(client)
     fake(app).files["m1"] = photo("red")
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
 
     await post(client, message(type="image", image={"id": "m1", "caption": "eta ache?"}))
@@ -199,7 +199,7 @@ async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
 ) -> None:
     path, secret = await link_owner(app, client)
     await connect(client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone from the team will help."]
     await post(client, message("can I talk to a person?"))
 
@@ -212,7 +212,7 @@ async def test_the_owner_answers_a_whatsapp_visitor_from_telegram(
 
 async def test_typing_shows_only_when_the_agent_answers(app: FastAPI, client: AsyncClient) -> None:
     await connect(client)
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     await post(client, message("hi"))
     assert fake(app).typing == ["wamid.1"]
 
@@ -262,7 +262,7 @@ async def test_more_cards_than_photos_are_one_list(app: FastAPI, client: AsyncCl
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await kurti_with_photo(client)
     await connect(client)
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     codes = ["kurti", "panjabi-cotton"]
     llm.script = [ToolCall("c1", "show_photos", {"products": codes}), "Which one?"]
 

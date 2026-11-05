@@ -133,7 +133,7 @@ async def test_a_quiet_chat_starts_afresh_in_the_same_chat(
 
     [conversation] = await telegram_conversations(app)
     assert conversation.history_from == 3 and conversation.labels == ["vip"]
-    prompt = app.state.services.conversations.runtime.llm.requests[-1]
+    prompt = app.state.services.conversations.llm.requests[-1]
     assert "two biryanis" not in str(prompt.messages)  # yesterday's isn't in its history
 
     whole = (await client.get(f"/api/conversations/{conversation.id}")).json()
@@ -203,7 +203,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     path, secret = await connect(app, client)
     fake = services.channels.telegram
     fake.files["large"] = photo("red")
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
 
     await send(client, path, secret, with_photo("eta ache?"))
@@ -232,7 +232,7 @@ async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     path, secret = await connect(app, client)
     fake = services.channels.telegram
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     line = {"code": "panjabi-cotton", "quantity": 1, "colour": "Navy"}
     llm.script = [ToolCall("c1", "update_cart", {"lines": [line]}), "Which size?"]
 
@@ -277,7 +277,7 @@ async def test_more_cards_than_photos_are_one_message_to_tap(
     await kurti_with_photo(client)
     path, secret = await connect(app, client)
     fake = services.channels.telegram
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     codes = ["kurti", "panjabi-cotton", "kids-panjabi"]
     llm.script = [ToolCall("c1", "show_photos", {"products": codes}), "Which one?"]
 

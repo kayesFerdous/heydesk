@@ -269,7 +269,7 @@ class ShopConfig(AgentConfig):
 
     @property
     def pay_first(self) -> bool:
-        """Some area's charge is paid online first: `Store.pays_first` reads it."""
+        """Some area's charge is paid online first: `ShopStore.pays_first` reads it."""
         return any(zone.pay_first for zone in self.delivery)
 
     @model_validator(mode="after")

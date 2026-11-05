@@ -1,11 +1,11 @@
-"""Paying online before something is placed: a shop's delivery charge. Each is a `Payable` table, and each business is paid into its own
-SSLCommerz store, its own bKash account, or both, which its owner connects here.
+"""Paying a shop order's delivery charge online before it's placed. Each business is paid into
+its own SSLCommerz store, its own bKash account, or both, which its owner connects here.
 
-A desk's writing tool saves the row `unpaid` and sends the visitor `/pay/<id>`. That page
+`place_order` saves the order `unpaid` and sends the visitor `/pay/<id>`. That page
 starts a payment with the gateway the visitor picks. When the gateway sends word back (the
 visitor's browser, and SSLCommerz itself, both to URLs naming the row), `check_payment` asks the
 business's account with that gateway whether it really went through, for this row and this
-amount, and only then moves it on: to `new`, or a shop order to `confirmed` (`PAID_STATUS`).
+amount, and only then moves it on, to `confirmed`.
 Nothing the agent says can do that.
 
 These look rows up by their id alone, across businesses, like Telegram's webhook looks up
@@ -40,8 +40,6 @@ log = logging.getLogger(__name__)
 
 NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # SSLCommerz's own post, server to server
 NAMES = {"sslcommerz": "SSLCommerz", "bkash": "bKash"}
-type Payable = ShopOrder
-PAYABLE_TABLES: tuple[type[Payable], ...] = (ShopOrder,)
 
 
 class PaymentService:
@@ -140,16 +138,12 @@ class PaymentService:
 
     # Paying
 
-    async def find(self, record_id: str) -> Payable | None:
+    async def find(self, record_id: str) -> ShopOrder | None:
         """The order with this id."""
         async with self.sessions() as s:
-            for table in PAYABLE_TABLES:
-                found: Payable | None = await s.get(table, record_id)
-                if found is not None:
-                    return found
-        return None
+            return await s.get(ShopOrder, record_id)
 
-    async def start(self, record: Payable, provider: Provider) -> str:
+    async def start(self, record: ShopOrder, provider: Provider) -> str:
         """The gateway's page for paying an unpaid order. SSLCommerz posts the
         visitor back to `/pay/<id>/back`; bKash sends them to `/pay/<id>/bkash`."""
         base = self.settings.public_url
@@ -163,7 +157,7 @@ class PaymentService:
                 what=f"{record.PAY_FOR[4:].capitalize()} for {record.code}",  # minus "the "
                 name=record.name,
                 phone=record.phone,
-                address=getattr(record, "address", ""),
+                address=record.address,
                 back_url=f"{base}/pay/{record.id}/{back}",
                 notify_url=base + NOTIFY_PATH.replace("{record_id}", record.id),
             ),
@@ -171,7 +165,7 @@ class PaymentService:
 
     async def check_payment(
         self, record_id: str, payment_id: str, provider: Provider = "sslcommerz"
-    ) -> Payable | None:
+    ) -> ShopOrder | None:
         """Checks a payment a gateway sent word of for a row and, if it paid that unpaid row
         in full, places it. The visitor's return and SSLCommerz's notice both come here; only
         the first one changes anything. Returns the row."""
@@ -187,13 +181,12 @@ class PaymentService:
             log.warning("payment amount differs", extra={"record_id": record.id})
             return record
 
-        table = type(record)
         async with self.sessions() as s, s.begin():
             moved = await s.execute(  # only from unpaid, so two posts can't both place it
-                update(table)
-                .where(table.id == record.id, table.status == UNPAID)
+                update(ShopOrder)
+                .where(ShopOrder.id == record.id, ShopOrder.status == UNPAID)
                 .values(
-                    status=record.PAID_STATUS,
+                    status="confirmed",
                     paid=paid.amount,
                     payment_ref=paid.reference,
                     updated_at=self.now(),
@@ -213,7 +206,7 @@ class PaymentService:
             )
         return record
 
-    async def _tell_visitor_paid(self, record: Payable, amount: str) -> None:
+    async def _tell_visitor_paid(self, record: ShopOrder, amount: str) -> None:
         if record.conversation_id:
             await self.team.tell_visitor(
                 record.conversation_id,
@@ -226,7 +219,7 @@ class PaymentService:
         )
         self.woo.push_soon(record.workspace_id)
 
-    async def _alert(self, record: Payable, text: str) -> None:
+    async def _alert(self, record: ShopOrder, text: str) -> None:
         if record.conversation_id is None:
             return
         async with self.sessions() as s:

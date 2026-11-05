@@ -3,11 +3,10 @@ team, the documents search, conversations). `shop/store.py` adds those; the tool
 only this part are in `shop/shared.py`.
 """
 
-from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 from sqlalchemy import ScalarResult, String, and_, cast, delete, func, or_, select
@@ -19,16 +18,13 @@ from heydesk.models import (
     Conversation,
     Lead,
     MissedQuestion,
-    PaymentAccount,
     TeamMessage,
     Ticket,
-    Turn,
     Visitor,
     Workspace,
 )
-from heydesk.models.customer_request import UNPAID, CustomerRequest, next_number
+from heydesk.models.customer_request import CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
-from heydesk.runtime.config import AgentConfig
 
 if TYPE_CHECKING:  # only a type here: services import the shop
     from heydesk.services.knowledge import KnowledgeService
@@ -37,7 +33,6 @@ if TYPE_CHECKING:  # only a type here: services import the shop
 PAGE = 100  # the most rows a list returns at once (newest first)
 BROWSER_CHANNELS = ("web", "voice")  # one browser's token is the contact on both
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most
-NOT_SALE_STATUSES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
 
 
 class TooLate(ValueError):
@@ -56,19 +51,6 @@ class NewMessage:
 
 
 @dataclass(frozen=True)
-class Stats:
-    """What a business's agent did in a stretch of time, for the owner's dashboard."""
-
-    conversations: int  # chats the agent answered in it
-    handed_off: int  # of those, handed to a person; the rest the agent handled alone
-    sales: int  # orders made in it, not cancelled or waiting for payment
-    amount: int  # their total, minor units
-    bought: int  # chats that ended in one
-    sources: dict[str, int]  # where they came from: chat, page or team
-    leads: int  # call backs asked for in it and not sold
-
-
-@dataclass(frozen=True)
 class NewLead:
     """A call back the visitor asked for, ready to save once they said yes to it."""
 
@@ -83,8 +65,6 @@ class Store:
     scoped to `workspace_id`). `ShopStore` subclasses this and adds the shop's tables.
 
     Tools get one made for their conversation, so what they save is linked to it."""
-
-    SALES: ClassVar[tuple[type[CustomerRequest], ...]] = ()  # its tables the dashboard counts
 
     def __init__(
         self,
@@ -104,17 +84,6 @@ class Store:
         self.knowledge = knowledge
         self.public_url = public_url  # where a link in a reply points: the payment page
         self.photos = photos  # for the photo links in a shop's list
-
-    async def pays_first(self, config: AgentConfig) -> bool:
-        """Whether the agent asks for payment before placing anything: the owner turned it on
-        (`pay_first`) and connected the business's SSLCommerz store or bKash account. Without either, the agent takes orders as if it were off."""
-        if not getattr(config, "pay_first", False):
-            return False
-        async with self.sessions() as s:
-            found = await s.scalar(
-                select(PaymentAccount.id).where(PaymentAccount.workspace_id == self.workspace_id)
-            )
-        return found is not None
 
     def pay_link(self, record_id: str) -> str:
         """The visitor's link to pay for something saved unpaid. It starts a new payment
@@ -235,13 +204,6 @@ class Store:
             table(workspace_id=self.workspace_id, position=n, **item.model_dump())
             for n, item in enumerate(items)
         )
-
-    async def import_sheet(
-        self, text: str, mapping: dict[str, str], seen: dict[str, Any]
-    ) -> dict[str, Any]:
-        """The list becomes the linked sheet's rows; returns what to remember for the
-        next time (`seen`). Raises InvalidConfig with the rows' problems, saving nothing."""
-        raise NotFound("This agent has no list to keep in a sheet.")
 
     # Shared by every table of things taken (`models.customer_request`)
 
@@ -420,46 +382,6 @@ class Store:
                 .order_by(func.count().desc())
             )
             return [(why or "no reason given", n) for why, n in rows.all()]
-
-    async def stats(self, start: datetime, end: datetime) -> Stats:
-        """The dashboard's numbers from `start` up to `end`, added up from the rows we
-        keep: the turns, the `SALES` tables and the leads."""
-        workspace_id = self.workspace_id
-        async with self.sessions() as s:
-            turns = (
-                await s.execute(
-                    select(Turn.conversation_id, Turn.handed_off).where(
-                        Turn.workspace_id == workspace_id, Turn.at >= start, Turn.at < end
-                    )
-                )
-            ).all()
-            sales: list[Any] = []
-            for table in self.SALES:
-                sales += await s.scalars(
-                    select(table).where(
-                        table.workspace_id == workspace_id,
-                        table.created_at >= start,
-                        table.created_at < end,
-                        table.status.not_in(NOT_SALE_STATUSES),
-                    )
-                )
-            leads = await s.scalar(
-                select(func.count()).where(
-                    Lead.workspace_id == workspace_id,
-                    Lead.created_at >= start,
-                    Lead.created_at < end,
-                    Lead.status != "sold",
-                )
-            )
-        return Stats(
-            conversations=len({c for c, _ in turns}),
-            handed_off=len({c for c, handed in turns if handed}),
-            sales=len(sales),
-            amount=sum(getattr(row, "total", 0) for row in sales),
-            bought=len({row.conversation_id for row in sales if row.conversation_id}),
-            sources=dict(Counter(getattr(row, "source", "chat") for row in sales)),
-            leads=leads or 0,
-        )
 
     async def _lock(self, s: AsyncSession) -> None:
         """Waits until no other transaction is numbering this business's records or changing

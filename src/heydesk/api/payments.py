@@ -22,7 +22,8 @@ from heydesk.errors import NotFound
 from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import Account, PaymentUnavailable, Provider
 from heydesk.runtime.speech import money
-from heydesk.services.payments import NOTIFY_PATH, Payable
+from heydesk.services.payments import NOTIFY_PATH
+from heydesk.shop.models import ShopOrder
 
 router = APIRouter(tags=["payments"])
 
@@ -139,7 +140,7 @@ def page(text: str, status_code: int = 200) -> HTMLResponse:
     return HTMLResponse(body, status_code)
 
 
-def choose_page(record: Payable, providers: list[Provider]) -> HTMLResponse:
+def choose_page(record: ShopOrder, providers: list[Provider]) -> HTMLResponse:
     """One button for each gateway the business is connected to."""
     what = f"{record.PAY_FOR[4:].capitalize()} for {record.code}: {money(record.amount_due, record.currency)}"
     buttons = "".join(
@@ -149,7 +150,7 @@ def choose_page(record: Payable, providers: list[Provider]) -> HTMLResponse:
     return HTMLResponse(f'{HEAD}<div style="{STYLE}"><p>{html.escape(what)}</p>{buttons}</div>')
 
 
-def record_page(record: Payable | None) -> HTMLResponse:
+def record_page(record: ShopOrder | None) -> HTMLResponse:
     if record is None:
         return page("There's nothing to pay for here.", 404)
     if record.status == UNPAID:

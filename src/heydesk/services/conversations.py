@@ -22,8 +22,9 @@ from heydesk.errors import (
     NotFound,
 )
 from heydesk.models import Agent, Conversation, Note, TeamMessage, Turn, User
+from heydesk.ports.llm import LanguageModel
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
-from heydesk.runtime.loop import Runtime, TurnInput, run_turn
+from heydesk.runtime.loop import TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import CallService
@@ -73,7 +74,6 @@ ASSIST_NOTE = (
 # A shop order read back and never said yes to gets one nudge this long after
 NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
 NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
-DHAKA = "Asia/Dhaka"  # an agent config saved before it had a timezone
 MAX_SNOOZE_DAYS = 30  # the furthest a chat can be snoozed
 OPEN_STATUSES = (
     "needs_human",
@@ -104,7 +104,7 @@ class ConversationService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        runtime: Runtime,
+        llm: LanguageModel,
         knowledge: KnowledgeService,
         photos: PhotoService,
         team: TeamService,
@@ -115,7 +115,7 @@ class ConversationService:
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
-        self.runtime = runtime
+        self.llm = llm
         self.knowledge = knowledge
         self.photos = photos
         self.team = team
@@ -646,7 +646,7 @@ class ConversationService:
             conversation = await self._get_by_id(s, workspace_id, conversation_id, lock=True)
             if conversation.channel == "voice":
                 raise InvalidTransition("That was a phone call: call them back instead.")
-            said = {**self.runtime.llm.assistant_message(text.strip()), "by": TEAM_AUTHOR}
+            said = {**self.llm.assistant_message(text.strip()), "by": TEAM_AUTHOR}
             conversation.messages = [
                 *conversation.messages,
                 said,
@@ -696,7 +696,7 @@ class ConversationService:
         )
         parts: list[str] = []
         ended = None
-        async with aclosing(run_turn(turn, self.runtime)) as events:
+        async with aclosing(run_turn(turn, self.llm)) as events:
             async for event in events:
                 if isinstance(event, Token):
                     parts.append(event.text)
@@ -750,7 +750,7 @@ class ConversationService:
             return
         async with self.sessions() as s, s.begin():
             saved = await self._get_by_id(s, agent.workspace_id, conversation.id, lock=True)
-            said = {**self.runtime.llm.assistant_message(text), "by": TEAM_AUTHOR}
+            said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
             saved.messages = [*saved.messages, said]  # a new list, so SQLAlchemy sees it
             saved.updated_at = self.now()
             if saved.taken_over_at is not None:
@@ -782,7 +782,7 @@ class ConversationService:
 
         The listener drives this, so a tab closed mid-reply loses the turn.
         """
-        async with aclosing(run_turn(turn, self.runtime)) as events:
+        async with aclosing(run_turn(turn, self.llm)) as events:
             async for event in events:
                 if isinstance(event, TurnEnded):
                     await self._save(conversation, event, agent.config.handoff.auto_assign)
@@ -816,7 +816,7 @@ class ConversationService:
         self, conversation: Conversation, text: str, channel: str
     ) -> AsyncGenerator[Event]:
         """A turn with no agent: the message is saved and passed to the team."""
-        message = self.runtime.llm.user_message(text)
+        message = self.llm.user_message(text)
         ended = TurnEnded([message], conversation.state, {"channel": channel, "to_team": True})
         await self._save(conversation, ended)
         await self.team.forward(conversation, text)

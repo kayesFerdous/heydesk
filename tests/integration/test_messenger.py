@@ -115,7 +115,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_as_a_card(
     await connect(client)
     fake = services.channels.messenger
     fake.files[CDN] = photo("red")
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
 
     await post(client, message(None, **image()))
@@ -194,7 +194,7 @@ async def test_the_owner_answers_a_messenger_visitor_from_telegram(
 ) -> None:
     path, secret = await link_owner(app, client)
     await connect(client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [ToolCall("c1", "handoff_to_human", {}), "Someone from the team will help."]
     await post(client, message("can I talk to a person?"))
 
@@ -214,7 +214,7 @@ def postback(payload: str) -> dict[str, Any]:
 async def test_a_cards_button_is_a_message_and_is_signed(app: FastAPI, client: AsyncClient) -> None:
     await services_shop(app)
     await connect(client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
 
     assert await post(client, postback("Order [kurti]"), secret="not-ours") == 404
     await post(client, postback("Order [kurti]"))
@@ -231,7 +231,7 @@ async def test_a_yes_tapped_with_no_read_back_saves_nothing(
     await services_shop(app)
     await connect(client)
     services = app.state.services
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
@@ -331,7 +331,7 @@ async def test_a_dot_in_business_suite_takes_the_chat_over_and_gives_it_back(
     """While the owner has it, the buyer's messages run no turn; the owner's words are in the
     next turn's history; our own messages' echoes are left alone."""
     await connect(client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     await post(client, message("hi"))
     await post(client, echo("(fake model) You said: hi", metadata="heydesk"))  # ours
     await post(client, echo("."))

@@ -32,9 +32,9 @@ async def shop_with_calls(services: Services, **settings: Any) -> LiveAgent:
 
 async def order(services: Services, agent: LiveAgent, phone: str = MOBILE) -> ShopOrder:
     """A kurti ordered over two turns, with a yes; returns the order."""
-    runtime = services.conversations.runtime
+    llm = services.conversations.llm
     details = {**DETAILS, "phone": phone}
-    runtime.llm.script = [
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", details),
         READ_BACK,

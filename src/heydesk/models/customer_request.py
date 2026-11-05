@@ -53,32 +53,6 @@ class CustomerRequest:
         self.updated_at = now
 
 
-class Payable:
-    """A mixin for a table whose rows a visitor can be asked to pay for online first:
-    a shop's delivery charge. Such a row is
-    saved `unpaid`, and only `PaymentService.settle` moves it on, to `PAID_STATUS`."""
-
-    PAY_FOR: ClassVar[str]  # what the payment is for: "the delivery charge"
-    PAID_STATUS: ClassVar[str] = FIRST_STATUS  # where the payment moves it
-
-    currency: Mapped[str] = mapped_column(String(3))
-    paid: Mapped[int] = mapped_column(default=0)  # minor units, paid online first
-    payment_ref: Mapped[str] = mapped_column(String(100), default="")  # the gateway's id for it
-
-    @property
-    def amount_due(self) -> int:
-        """What's paid online first, in minor units."""
-        raise NotImplementedError
-
-    def alert_summary(self) -> str:
-        """A line for the owner's alert once it's paid: what was ordered or booked."""
-        raise NotImplementedError
-
-    def next_step_text(self) -> str:
-        """What the visitor is told happens next, once it's paid."""
-        raise NotImplementedError
-
-
 async def next_number(s: AsyncSession, table: type[CustomerRequest], workspace_id: str) -> int:
     """The business's next number in this table: 101, 102… Call it after `Store._lock`,
     or two saves at once get the same number."""

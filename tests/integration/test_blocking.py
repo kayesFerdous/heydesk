@@ -32,7 +32,7 @@ async def change(client: AsyncClient, conversation: str, **body: bool) -> dict[s
 async def test_a_blocked_visitor_gets_no_turn_until_unblocked(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!", "Back again."]
     conversation = conv_id(await web(client))
     blocked = await change(client, conversation, blocked=True)
@@ -64,7 +64,7 @@ async def test_a_blocked_visitor_gets_no_turn_until_unblocked(
 
 async def test_a_blocked_buyer_on_telegram_is_told_once(app: FastAPI, client: AsyncClient) -> None:
     path, secret = await connect(app, client)
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     await send(client, path, secret, message("hi"))
     [conversation] = (await client.get("/api/conversations")).json()
     await change(client, conversation["id"], blocked=True)
@@ -77,7 +77,7 @@ async def test_a_blocked_buyer_on_telegram_is_told_once(app: FastAPI, client: As
 
 async def test_ai_off_sends_their_messages_to_the_team(app: FastAPI, client: AsyncClient) -> None:
     path, secret = await link_owner(app, client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!"]
     await send(client, path, secret, message("hi"))
     [conversation] = (await client.get("/api/conversations")).json()
@@ -95,7 +95,7 @@ async def test_ai_off_sends_their_messages_to_the_team(app: FastAPI, client: Asy
 
 async def test_ai_on_again_answers_them_again(app: FastAPI, client: AsyncClient) -> None:
     path, secret = await link_owner(app, client)
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!", "It's on its way."]
     await send(client, path, secret, message("hi"))
     [conversation] = (await client.get("/api/conversations")).json()
@@ -116,7 +116,7 @@ async def test_a_flood_on_a_messaging_app_blocks_for_a_day(
 ) -> None:
     path, secret = await connect(app, client)
     app.state.services.visitors.settings.FLOOD_MESSAGES = 3
-    app.state.services.conversations.runtime.llm.script = ["Hi!"] * 3
+    app.state.services.conversations.llm.script = ["Hi!"] * 3
     for n in range(5):
         await send(client, path, secret, message(f"spam {n}"))
     [row] = (await client.get("/api/visitors/blocked")).json()
@@ -127,7 +127,7 @@ async def test_a_flood_on_a_messaging_app_blocks_for_a_day(
 async def test_ai_off_for_all_sends_every_visitor_to_the_team(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!", "Welcome back."]
     conversation = conv_id(await web(client))
 

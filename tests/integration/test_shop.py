@@ -92,8 +92,8 @@ async def stock(
 
 async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
     """A whole order on the chat API, with a yes. Returns the conversation id."""
-    runtime = app.state.services.conversations.runtime
-    runtime.llm.script = [
+    llm = app.state.services.conversations.llm
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
         READ_BACK,
@@ -345,8 +345,8 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     assert (await client.get("/api/menu")).status_code == 404  # a shop has no menu
     assert len((await client.get("/api/products")).json()) == 6
 
-    runtime = services.conversations.runtime
-    runtime.llm.script = [
+    llm = services.conversations.llm
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
         READ_BACK,
@@ -781,7 +781,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     kurti_now = next(p for p in (await client.get("/api/products")).json() if p["code"] == "kurti")
     assert kurti_now["photos"] == [url]  # kept
 
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
     body = {"visitor_id": "test-visitor", "message": "eta ache?", "photo": as_base64(photo("red"))}
     res = await client.post(f"/api/chat/{agent.public_key}", json=body)
@@ -821,7 +821,7 @@ async def test_another_business_never_sees_your_photos(app: FastAPI, client: Asy
         )
     finally:
         await second.aclose()
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["What is it?"]
     body = {"visitor_id": "test-visitor", "photo": as_base64(photo("green"))}
     await client.post(f"/api/chat/{agent.public_key}", json=body)
@@ -1144,7 +1144,7 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     doesn't show the buyer's details."""
     services = app.state.services
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
-    services.conversations.runtime.llm.script = ["Hello!"]
+    services.conversations.llm.script = ["Hello!"]
     res = await client.post("/api/chat/dev-shop", json={"visitor_id": "a-buyer-1", "message": "hi"})
     conversation = res.text.split('"conversation_id": "')[1].split('"')[0]
     url = f"/p/dev-shop/kurti?c={conversation}"

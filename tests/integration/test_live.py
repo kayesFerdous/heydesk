@@ -9,7 +9,7 @@ from tests.conftest import DEV_KEY
 
 
 async def test_an_open_inbox_hears_a_chat_that_changed(app: FastAPI, client: AsyncClient) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     hub = app.state.services.live
     frames = live_frames(hub, DEV_WORKSPACE_ID)
     assert (await anext(frames)).startswith("event: open")  # listening now

@@ -109,12 +109,6 @@ def split_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9\u0980-\u09ff]+", plain)
 
 
-def by_name(headers: list[str], columns: list[Column]) -> dict[str, str]:
-    """Each of our fields whose name the file already uses ("Price (৳)" → price)."""
-    ours = {c.name for c in columns}
-    return {key(h): h for h in reversed(headers) if key(h) in ours}
-
-
 def key(header: str) -> str:
     """ "Price (৳)" → "price", "Start Time" → "start_time"."""
     words = re.sub(r"\(.*?\)", "", header).strip().lower()

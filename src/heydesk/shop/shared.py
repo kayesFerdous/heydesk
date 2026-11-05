@@ -1,6 +1,6 @@
 """The tools that aren't about products or orders: hand off to a person, take a message for the team, and search
-the business's documents (only when it has some). And what a desk's writing tool and
-prompt say when the business takes payment first."""
+the business's documents (only when it has some). And what a writing tool says when the
+business takes payment first."""
 
 from datetime import UTC
 from typing import Any
@@ -11,16 +11,6 @@ from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 from heydesk.shop.base import NewLead, NewMessage, Store
-
-
-def pay_first_rule(pay_for: str, tool: str) -> str:
-    """The prompt's line for a business that takes payment first."""
-    return (
-        f"{pay_for[0].upper()}{pay_for[1:]} is paid online first, by the link {tool} gives. "
-        "Nothing is placed or confirmed until that payment comes in: never say it is before a "
-        "message says the payment came in."
-    )
-
 
 RETURNING_RULE = (
     "When you need their details, ask once whether to use these again, and use them only if "
