@@ -16,7 +16,7 @@ every purchase from where the business stands:
   rate of the cycle paid last), switched at once, ending on the same day;
 - a smaller plan while one runs: refused until it ends (it's paid for); and never with more
   moderators than the smaller plan has.
-`settle` prices the payment again when the gateway says it's paid: if the plan changed while
+`check_payment` prices the payment again when the gateway says it's paid: if the plan changed while
 the owner was paying (another payment, an admin), the payment is kept as `review` and an admin
 settles it by hand, rather than applying a price that no longer holds.
 
@@ -51,7 +51,7 @@ log = logging.getLogger(__name__)
 TRIAL_DAYS = 14
 GRACE_DAYS = 3
 WINDOW_DAYS = 30  # replies are counted over the last 30 days
-DAYS_PAID = {1: 30, 12: 365}  # months bought → days added
+DAYS_PER_PLAN = {1: 30, 12: 365}  # months bought → days added
 MIN_CHARGE = 1_000  # ৳10, the least SSLCommerz takes
 NOTIFY_PATH = "/api/billing/sslcommerz/{payment_id}"  # SSLCommerz's own post; bKash has none
 
@@ -85,28 +85,30 @@ class Quote:
     paid_until: datetime  # after paying
 
 
-def quote(ws: Workspace, plan: str, months: int, moderators: int, now: datetime) -> Quote:
+def quote(workspace: Workspace, plan: str, months: int, moderators: int, now: datetime) -> Quote:
     """Prices `months` of `plan` for this business now; a `Conflict` says why it can't buy it."""
-    new, current = PLANS[plan], PLANS[ws.plan]
-    running = ws.plan != "trial" and now < ws.paid_until
-    if running and plan != ws.plan:
+    new, current = PLANS[plan], PLANS[workspace.plan]
+    running = workspace.plan != "trial" and now < workspace.paid_until
+    if running and plan != workspace.plan:
         if new.price < current.price:
             raise Conflict(
-                f"{current.name} is paid until {ws.paid_until:%d %b %Y}. "
+                f"{current.name} is paid until {workspace.paid_until:%d %b %Y}. "
                 f"You can move to {new.name} once it ends."
             )
-        days_left = math.ceil((ws.paid_until - now) / timedelta(days=1))
-        per_day = (new.cost(ws.months) - current.cost(ws.months)) / DAYS_PAID[ws.months]
+        days_left = math.ceil((workspace.paid_until - now) / timedelta(days=1))
+        per_day = (new.cost(workspace.months) - current.cost(workspace.months)) / DAYS_PER_PLAN[
+            workspace.months
+        ]
         amount = math.ceil(per_day * days_left / 100) * 100  # whole taka, rounded up
-        return Quote("upgrade", max(amount, MIN_CHARGE), ws.paid_until)
+        return Quote("upgrade", max(amount, MIN_CHARGE), workspace.paid_until)
     if moderators > new.moderators:
         extra = moderators - new.moderators
         raise Conflict(
             f"{new.name} has {new.moderators} moderator{'s' if new.moderators > 1 else ''}. "
             f"Remove {extra} from your team first."
         )
-    start = ws.paid_until if running else now  # running here means the same plan
-    return Quote("months", new.cost(months), start + timedelta(days=DAYS_PAID[months]))
+    start = workspace.paid_until if running else now  # running here means the same plan
+    return Quote("months", new.cost(months), start + timedelta(days=DAYS_PER_PLAN[months]))
 
 
 async def count_moderators(s: AsyncSession, workspace_id: str) -> int:
@@ -129,9 +131,9 @@ class Billing:
     payments: list[SubscriptionPayment]  # paid or held for review, newest first
 
 
-def plan_end_date(ws: Workspace) -> datetime:
+def plan_end_date(workspace: Workspace) -> datetime:
     """When the agent stops: the paid date, plus the grace days for a paid plan."""
-    return ws.paid_until + timedelta(days=0 if ws.plan == "trial" else GRACE_DAYS)
+    return workspace.paid_until + timedelta(days=0 if workspace.plan == "trial" else GRACE_DAYS)
 
 
 async def replies_used(s: AsyncSession, workspace_id: str, now: datetime) -> int:
@@ -146,12 +148,12 @@ async def replies_used(s: AsyncSession, workspace_id: str, now: datetime) -> int
 
 async def plan_problem(s: AsyncSession, workspace_id: str, now: datetime) -> str | None:
     """Why the business's plan allows no turn now, or None. For `VisitorService`."""
-    ws = await s.get(Workspace, workspace_id)
-    if ws is None:
+    workspace = await s.get(Workspace, workspace_id)
+    if workspace is None:
         return None
-    if now >= plan_end_date(ws):
+    if now >= plan_end_date(workspace):
         return "plan_ended"
-    if await replies_used(s, workspace_id, now) >= PLANS[ws.plan].replies:
+    if await replies_used(s, workspace_id, now) >= PLANS[workspace.plan].replies:
         return "plan_replies"
     return None
 
@@ -191,8 +193,8 @@ class BillingService:
     async def billing(self, workspace_id: str) -> Billing:
         now = self.now()
         async with self.sessions() as s:
-            ws = await s.get(Workspace, workspace_id)
-            if ws is None:
+            workspace = await s.get(Workspace, workspace_id)
+            if workspace is None:
                 raise NotFound("There's no such business.")
             used = await replies_used(s, workspace_id, now)
             payments = await s.scalars(
@@ -203,11 +205,11 @@ class BillingService:
                 )
                 .order_by(SubscriptionPayment.paid_at.desc())
             )
-        plan = PLANS[ws.plan]
+        plan = PLANS[workspace.plan]
         return Billing(
-            ws.plan,
-            ws.paid_until,
-            now < plan_end_date(ws),
+            workspace.plan,
+            workspace.paid_until,
+            now < plan_end_date(workspace),
             used,
             plan.replies,
             plan.moderators,
@@ -223,10 +225,12 @@ class BillingService:
 
     async def quote(self, workspace_id: str, plan: str, months: int) -> Quote:
         async with self.sessions() as s:
-            ws = await s.get(Workspace, workspace_id)
-            if ws is None:
+            workspace = await s.get(Workspace, workspace_id)
+            if workspace is None:
                 raise NotFound("There's no such business.")
-            return quote(ws, plan, months, await count_moderators(s, workspace_id), self.now())
+            return quote(
+                workspace, plan, months, await count_moderators(s, workspace_id), self.now()
+            )
 
     async def checkout(
         self, workspace_id: str, plan: str, months: int, gateway: Provider = "sslcommerz"
@@ -266,7 +270,7 @@ class BillingService:
         except PaymentUnavailable as error:
             raise HeyDeskError(f"The payment page isn't answering: {error}") from None
 
-    async def settle(
+    async def check_payment(
         self, payment_id: str, val_id: str, gateway: Provider = "sslcommerz"
     ) -> SubscriptionPayment | None:
         """Checks a payment a gateway sent word of (SSLCommerz's `val_id`, bKash's paymentID)
@@ -286,11 +290,15 @@ class BillingService:
         now = self.now()
         async with self.sessions() as s, s.begin():
             # locked, so two payments settling at once can't both start from the same day
-            ws = await s.get(Workspace, payment.workspace_id, with_for_update=True)
-            assert ws is not None
+            workspace = await s.get(Workspace, payment.workspace_id, with_for_update=True)
+            assert workspace is not None
             try:
                 q: Quote | None = quote(
-                    ws, payment.plan, payment.months, await count_moderators(s, ws.id), now
+                    workspace,
+                    payment.plan,
+                    payment.months,
+                    await count_moderators(s, workspace.id),
+                    now,
                 )
             except Conflict:
                 q = None
@@ -303,10 +311,10 @@ class BillingService:
                 )
             )
             if moved.rowcount == 1 and q is not None and fits:  # type: ignore[attr-defined]
-                ws.plan, ws.paid_until = payment.plan, q.paid_until
+                workspace.plan, workspace.paid_until = payment.plan, q.paid_until
                 if q.kind == "months":
-                    ws.months = payment.months
-                log.info("plan paid", extra={"workspace_id": ws.id, "plan": payment.plan})
+                    workspace.months = payment.months
+                log.info("plan paid", extra={"workspace_id": workspace.id, "plan": payment.plan})
             elif moved.rowcount == 1:  # type: ignore[attr-defined]
                 log.warning("plan payment held for review", extra={"payment_id": payment.id})
         async with self.sessions() as s:
@@ -315,10 +323,10 @@ class BillingService:
     async def set_plan(self, workspace_id: str, plan: str, paid_until: datetime) -> None:
         """An admin's change, for a payment made another way."""
         async with self.sessions() as s, s.begin():
-            ws = await s.get(Workspace, workspace_id)
-            if ws is None:
+            workspace = await s.get(Workspace, workspace_id)
+            if workspace is None:
                 raise NotFound("There's no such business.")
-            ws.plan, ws.paid_until = plan, paid_until
+            workspace.plan, workspace.paid_until = plan, paid_until
 
     def _account(self, gateway: Provider) -> Account:
         s = self.settings

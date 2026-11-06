@@ -22,7 +22,8 @@ from heydesk.errors import NotFound
 from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import Account, PaymentUnavailable, Provider
 from heydesk.runtime.speech import money
-from heydesk.services.payments import NOTIFY_PATH, Payable
+from heydesk.services.payments import NOTIFY_PATH
+from heydesk.shop.models import ShopOrder
 
 router = APIRouter(tags=["payments"])
 
@@ -42,9 +43,9 @@ class SslCommerzOut(BaseModel):
 
 
 @router.get("/api/agent/sslcommerz")
-async def get_sslcommerz(ws: Workspace, services: Svc) -> SslCommerzOut:
+async def get_sslcommerz(workspace_id: Workspace, services: Svc) -> SslCommerzOut:
     """The business's SSLCommerz store, or 404 when none is connected."""
-    saved = await services.payments.account(ws, "sslcommerz")
+    saved = await services.payments.account(workspace_id, "sslcommerz")
     if saved is None:
         raise NotFound("No SSLCommerz account is connected.")
     return SslCommerzOut(
@@ -53,19 +54,21 @@ async def get_sslcommerz(ws: Workspace, services: Svc) -> SslCommerzOut:
 
 
 @router.put("/api/agent/sslcommerz")
-async def connect_sslcommerz(body: SslCommerzIn, ws: Workspace, services: Svc) -> SslCommerzOut:
+async def connect_sslcommerz(
+    body: SslCommerzIn, workspace_id: Workspace, services: Svc
+) -> SslCommerzOut:
     """Checks the store with SSLCommerz (a 400 says why it said no), then keeps it. From the
     next message, an agent with paying first on asks for payments into it."""
     account = Account(body.store_id.strip(), body.password.strip(), body.sandbox)
-    saved = await services.payments.connect(ws, "sslcommerz", account)
+    saved = await services.payments.connect(workspace_id, "sslcommerz", account)
     return SslCommerzOut(
         store_id=saved.store_id, sandbox=saved.sandbox, connected_at=saved.created_at
     )
 
 
 @router.delete("/api/agent/sslcommerz", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_sslcommerz(ws: Workspace, services: Svc) -> None:
-    await services.payments.disconnect(ws, "sslcommerz")
+async def disconnect_sslcommerz(workspace_id: Workspace, services: Svc) -> None:
+    await services.payments.disconnect(workspace_id, "sslcommerz")
 
 
 class BkashIn(BaseModel):
@@ -83,16 +86,16 @@ class BkashOut(BaseModel):
 
 
 @router.get("/api/agent/bkash")
-async def get_bkash(ws: Workspace, services: Svc) -> BkashOut:
+async def get_bkash(workspace_id: Workspace, services: Svc) -> BkashOut:
     """The business's bKash account, or 404 when none is connected."""
-    saved = await services.payments.account(ws, "bkash")
+    saved = await services.payments.account(workspace_id, "bkash")
     if saved is None:
         raise NotFound("No bKash account is connected.")
     return BkashOut(username=saved.username, sandbox=saved.sandbox, connected_at=saved.created_at)
 
 
 @router.put("/api/agent/bkash")
-async def connect_bkash(body: BkashIn, ws: Workspace, services: Svc) -> BkashOut:
+async def connect_bkash(body: BkashIn, workspace_id: Workspace, services: Svc) -> BkashOut:
     """Checks the keys with bKash by asking it for a token (a 400 says why it said no), then
     keeps them. From the next payment link, the visitor can pay by bKash."""
     account = Account(
@@ -103,13 +106,13 @@ async def connect_bkash(body: BkashIn, ws: Workspace, services: Svc) -> BkashOut
         app_secret=body.app_secret.strip(),
         username=body.username.strip(),
     )
-    saved = await services.payments.connect(ws, "bkash", account)
+    saved = await services.payments.connect(workspace_id, "bkash", account)
     return BkashOut(username=saved.username, sandbox=saved.sandbox, connected_at=saved.created_at)
 
 
 @router.delete("/api/agent/bkash", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_bkash(ws: Workspace, services: Svc) -> None:
-    await services.payments.disconnect(ws, "bkash")
+async def disconnect_bkash(workspace_id: Workspace, services: Svc) -> None:
+    await services.payments.disconnect(workspace_id, "bkash")
 
 
 NOT_PAID = "The payment didn't go through. Open the payment link again to try once more."
@@ -137,7 +140,7 @@ def page(text: str, status_code: int = 200) -> HTMLResponse:
     return HTMLResponse(body, status_code)
 
 
-def choose_page(record: Payable, providers: list[Provider]) -> HTMLResponse:
+def choose_page(record: ShopOrder, providers: list[Provider]) -> HTMLResponse:
     """One button for each gateway the business is connected to."""
     what = f"{record.PAY_FOR[4:].capitalize()} for {record.code}: {money(record.amount_due, record.currency)}"
     buttons = "".join(
@@ -147,14 +150,14 @@ def choose_page(record: Payable, providers: list[Provider]) -> HTMLResponse:
     return HTMLResponse(f'{HEAD}<div style="{STYLE}"><p>{html.escape(what)}</p>{buttons}</div>')
 
 
-def record_page(record: Payable | None) -> HTMLResponse:
+def record_page(record: ShopOrder | None) -> HTMLResponse:
     if record is None:
         return page("There's nothing to pay for here.", 404)
     if record.status == UNPAID:
         return page(NOT_PAID)
     if record.status == "cancelled":
         return page(f"{record.code} was cancelled.")
-    return page(f"Payment received. {record.after()}")
+    return page(f"Payment received. {record.next_step_text()}")
 
 
 @router.get("/pay/{record_id}", response_model=None, include_in_schema=False)
@@ -183,7 +186,7 @@ async def back(record_id: str, services: Svc, val_id: Annotated[str, Form()] = "
     checked with the gateway, counts; what else it posts could be forged."""
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
-            await services.payments.settle(record_id, val_id)
+            await services.payments.check_payment(record_id, val_id)
     return record_page(await services.payments.find(record_id))
 
 
@@ -198,7 +201,7 @@ async def bkash_back(
     asking bKash about, and only bKash's answer counts: the link itself could be forged."""
     if payment_id and outcome == "success":
         with suppress(PaymentUnavailable):
-            await services.payments.settle(record_id, payment_id, "bkash")
+            await services.payments.check_payment(record_id, payment_id, "bkash")
     return record_page(await services.payments.find(record_id))
 
 
@@ -208,5 +211,5 @@ async def notice(
 ) -> dict[str, bool]:
     """The gateway's notice (SSLCommerz's IPN), even if the visitor closed the tab."""
     if val_id:
-        await services.payments.settle(record_id, val_id)
+        await services.payments.check_payment(record_id, val_id)
     return {"ok": True}

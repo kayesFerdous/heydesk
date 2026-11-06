@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.messenger import OURS, MessengerUnavailable
+from heydesk.ports.messenger import OUR_APP_TAG, MessengerUnavailable
 
 API = "https://graph.facebook.com/v23.0"
 
@@ -56,27 +56,27 @@ class MessengerGraph:
         await self._call("DELETE", f"{page_id}/subscribed_apps", token)
 
     async def send_message(
-        self, token: str, psid: str, text: str, choices: list[str] | None = None
+        self, token: str, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
         message: dict[str, Any] = {"text": text}
         if choices:
             message["quick_replies"] = [
                 {"content_type": "text", "title": c, "payload": c} for c in choices
             ]
-        await self._send(token, psid, message=message, messaging_type="RESPONSE")
+        await self._send(token, chat_id, message=message, messaging_type="RESPONSE")
 
-    async def send_cards(self, token: str, psid: str, cards: list[dict[str, str]]) -> str:
-        body = await self._send(token, psid, message=carousel(cards), messaging_type="RESPONSE")
+    async def send_cards(self, token: str, chat_id: str, cards: list[dict[str, str]]) -> str:
+        body = await self._send(token, chat_id, message=carousel(cards), messaging_type="RESPONSE")
         return str(body.get("message_id", ""))
 
-    async def send_link(self, token: str, psid: str, text: str, title: str, url: str) -> None:
+    async def send_link(self, token: str, chat_id: str, text: str, title: str, url: str) -> None:
         payload = {
             "template_type": "button",
             "text": text[:640],  # a button template's limit
             "buttons": [{"type": "web_url", "url": url, "title": title}],
         }
         message = {"attachment": {"type": "template", "payload": payload}}
-        await self._send(token, psid, message=message, messaging_type="RESPONSE")
+        await self._send(token, chat_id, message=message, messaging_type="RESPONSE")
 
     async def download(self, url: str) -> bytes:
         try:
@@ -86,8 +86,8 @@ class MessengerGraph:
             raise MessengerUnavailable("attachment: Facebook didn't send the photo") from None
         return res.content
 
-    async def send_typing(self, token: str, psid: str) -> None:
-        await self._send(token, psid, sender_action="typing_on")
+    async def send_typing(self, token: str, chat_id: str) -> None:
+        await self._send(token, chat_id, sender_action="typing_on")
 
     async def pages(self, app_id: str, app_secret: str, user_token: str) -> list[dict[str, str]]:
         long = await self._call(
@@ -107,11 +107,11 @@ class MessengerGraph:
             for p in body.get("data", [])
         ]
 
-    async def mark_seen(self, token: str, psid: str) -> None:
-        await self._send(token, psid, sender_action="mark_seen")
+    async def mark_seen(self, token: str, chat_id: str) -> None:
+        await self._send(token, chat_id, sender_action="mark_seen")
 
-    async def get_message(self, token: str, mid: str) -> dict[str, Any]:
-        body = await self._call("GET", mid, token, fields="message,attachments")
+    async def get_message(self, token: str, message_id: str) -> dict[str, Any]:
+        body = await self._call("GET", message_id, token, fields="message,attachments")
         images = [a for a in (body.get("attachments") or {}).get("data", []) if "image_data" in a]
         return {
             "text": body.get("message") or "",
@@ -120,11 +120,11 @@ class MessengerGraph:
             ],
         }
 
-    async def _send(self, token: str, psid: str, **body: Any) -> Any:
+    async def _send(self, token: str, chat_id: str, **body: Any) -> Any:
         if "message" in body:  # its echo comes back with this, so it's known as ours
-            body["message"] = {**body["message"], "metadata": OURS}
+            body["message"] = {**body["message"], "metadata": OUR_APP_TAG}
         return await self._call(
-            "POST", "me/messages", token, json={"recipient": {"id": psid}, **body}
+            "POST", "me/messages", token, json={"recipient": {"id": chat_id}, **body}
         )
 
     async def _call(

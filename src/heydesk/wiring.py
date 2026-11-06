@@ -46,7 +46,6 @@ from heydesk.ports.telegram import TelegramApi
 from heydesk.ports.transcriber import Transcriber
 from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.ports.woo import WooApi
-from heydesk.runtime.loop import Runtime
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
@@ -191,7 +190,6 @@ def build_services(
     fetch_photo: FetchImage | None = None,
     couriers: dict[str, CourierApi] | None = None,
 ) -> Services:
-    runtime = Runtime(llm=llm)
     live = LiveHub()
     watch(sessions, live)
     gateways = payments or build_payments(settings)
@@ -216,7 +214,7 @@ def build_services(
     calls = CallService(sessions, agents, team, llm, settings, now)
     conversations = ConversationService(
         sessions,
-        runtime,
+        llm,
         knowledge,
         photos,
         team,

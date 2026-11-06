@@ -53,7 +53,7 @@ def channel(kind: str) -> Channel:
 
 
 def place_order_script(app: FastAPI) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),

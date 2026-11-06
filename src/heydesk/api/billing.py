@@ -74,9 +74,9 @@ class CheckoutOut(BaseModel):
 
 
 @router.get("/api/billing")
-async def get_billing(ws: Workspace, services: Svc) -> BillingOut:
+async def get_billing(workspace_id: Workspace, services: Svc) -> BillingOut:
     """The business's plan, how much of it is used, and the plans it can buy."""
-    b = await services.billing.billing(ws)
+    b = await services.billing.billing(workspace_id)
     plans = [
         PlanOut(
             key=key,
@@ -104,17 +104,17 @@ async def get_billing(ws: Workspace, services: Svc) -> BillingOut:
 
 @router.get("/api/billing/quote")
 async def get_quote(
-    ws: Workspace, services: Svc, plan: PlanKey, months: Literal[1, 12] = 1
+    workspace_id: Workspace, services: Svc, plan: PlanKey, months: Literal[1, 12] = 1
 ) -> QuoteOut:
     """What paying for `plan` costs now; a 409 says why it can't be bought yet."""
-    q = await services.billing.quote(ws, plan, months)
+    q = await services.billing.quote(workspace_id, plan, months)
     return QuoteOut(kind=q.kind, amount=q.amount, paid_until=q.paid_until)
 
 
 @router.post("/api/billing/checkout")
-async def checkout(body: CheckoutIn, ws: Workspace, services: Svc) -> CheckoutOut:
+async def checkout(body: CheckoutIn, workspace_id: Workspace, services: Svc) -> CheckoutOut:
     """Starts paying for a plan; a 400 says why it can't (no store set up, the gateway down)."""
-    url = await services.billing.checkout(ws, body.plan, body.months, body.gateway)
+    url = await services.billing.checkout(workspace_id, body.plan, body.months, body.gateway)
     return CheckoutOut(url=url)
 
 
@@ -134,7 +134,7 @@ async def back(
     payment = None
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
-            payment = await services.billing.settle(payment_id, val_id)
+            payment = await services.billing.check_payment(payment_id, val_id)
     return to_billing_page(payment, services)
 
 
@@ -150,7 +150,7 @@ async def bkash_back(
     payment = None
     if bkash_id and outcome == "success":
         with suppress(PaymentUnavailable):
-            payment = await services.billing.settle(payment_id, bkash_id, "bkash")
+            payment = await services.billing.check_payment(payment_id, bkash_id, "bkash")
     return to_billing_page(payment, services)
 
 
@@ -160,5 +160,5 @@ async def notice(
 ) -> dict[str, bool]:
     """The gateway's notice (SSLCommerz's IPN), even if the owner closed the tab."""
     if val_id:
-        await services.billing.settle(payment_id, val_id)
+        await services.billing.check_payment(payment_id, val_id)
     return {"ok": True}

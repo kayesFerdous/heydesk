@@ -252,13 +252,13 @@ async def test_an_order_paid_online_is_in_woo_as_soon_as_it_is_paid(world: World
     await world.services.woo.link(DEV_WORKSPACE_ID, URL, "ck_1", "cs_1")
     line = {"code": "LP-1", "size": "L", "colour": "Black", "quantity": 1}
     first = [ToolCall("c1", "update_cart", {"lines": [line]})]
-    conv = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
-    order = await found(world, conv)
+    conversation = await take(world, agent, first, ToolCall("c2", "place_order", SHOP_DETAILS))
+    order = await found(world, conversation)
     await pushed(world)
     assert order.status == "unpaid" and woo.orders == {}  # no alert yet, so no push
 
     gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B1")
-    await world.services.payments.settle(order.id, "v1")
+    await world.services.payments.check_payment(order.id, "v1")
     await pushed(world)  # no sync: the payment wrote it
     [body] = woo.orders.values()
     assert body["status"] == WOO_STATUS["confirmed"]

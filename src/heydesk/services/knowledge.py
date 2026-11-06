@@ -42,7 +42,13 @@ class KnowledgeService:
         self._ready = False
 
     async def add(
-        self, ws: str, agent_id: str, title: str, text: str, kind: str = "text", filename: str = ""
+        self,
+        workspace_id: str,
+        agent_id: str,
+        title: str,
+        text: str,
+        kind: str = "text",
+        filename: str = "",
     ) -> Document:
         """Chunks, embeds and stores the document, then saves it. Raises if any step fails,
         with nothing left behind."""
@@ -55,7 +61,7 @@ class KnowledgeService:
         if len(chunks) > MAX_CHUNKS:
             raise UnreadableDocument("That document is too long. Split it in two.")
         async with self.sessions() as s:
-            have = await s.scalar(select(func.count()).where(Document.workspace_id == ws))
+            have = await s.scalar(select(func.count()).where(Document.workspace_id == workspace_id))
         if (have or 0) >= MAX_DOCUMENTS:
             raise UnreadableDocument(
                 f"A business can have {MAX_DOCUMENTS} documents. Delete one first."
@@ -63,7 +69,7 @@ class KnowledgeService:
 
         document = Document(
             id=uuid.uuid4().hex,
-            workspace_id=ws,
+            workspace_id=workspace_id,
             agent_id=agent_id,
             title=title.strip()[:200] or filename or "Untitled",
             filename=filename[:255],
@@ -72,40 +78,42 @@ class KnowledgeService:
             chunk_count=len(chunks),
             created_at=self.now(),
         )
-        await self._index(ws, document.id, document.title, chunks)
+        await self._index(workspace_id, document.id, document.title, chunks)
         try:
             async with self.sessions() as s, s.begin():
                 s.add(document)
         except Exception:
-            await self.store.delete_document(ws, document.id)  # no half-saved document
+            await self.store.delete_document(workspace_id, document.id)  # no half-saved document
             raise
         log.info("document added", extra={"document_id": document.id, "chunks": len(chunks)})
         return document
 
-    async def all(self, ws: str) -> list[Document]:
+    async def all(self, workspace_id: str) -> list[Document]:
         """Newest first."""
         async with self.sessions() as s:
             rows = await s.scalars(
                 select(Document)
-                .where(Document.workspace_id == ws)
+                .where(Document.workspace_id == workspace_id)
                 .order_by(Document.created_at.desc())
             )
             return list(rows)
 
-    async def get(self, ws: str, document_id: str) -> Document:
+    async def get(self, workspace_id: str, document_id: str) -> Document:
         async with self.sessions() as s:
             document = await s.scalar(
-                select(Document).where(Document.id == document_id, Document.workspace_id == ws)
+                select(Document).where(
+                    Document.id == document_id, Document.workspace_id == workspace_id
+                )
             )
         if document is None:
             raise NotFound("There's no such document.")
         return document
 
-    async def delete(self, ws: str, document_id: str) -> None:
-        await self.get(ws, document_id)  # 404 unless it's this business's
+    async def delete(self, workspace_id: str, document_id: str) -> None:
+        await self.get(workspace_id, document_id)  # 404 unless it's this business's
         try:
             await self._store_ready()
-            await self.store.delete_document(ws, document_id)
+            await self.store.delete_document(workspace_id, document_id)
         except Exception as error:
             log.exception("deleting chunks failed", extra={"document_id": document_id})
             raise KnowledgeUnavailable("Couldn't remove it just now. Try again.") from error
@@ -123,7 +131,9 @@ class KnowledgeService:
             )
             return list(rows)
 
-    async def search(self, ws: str, question: str, limit: int = SEARCH_LIMIT) -> list[Snippet]:
+    async def search(
+        self, workspace_id: str, question: str, limit: int = SEARCH_LIMIT
+    ) -> list[Snippet]:
         """The best pieces of the business's documents for a question. If the question can't be
         embedded, words alone decide: a turn never fails for that."""
         try:
@@ -132,7 +142,7 @@ class KnowledgeService:
             log.warning("question not embedded; searching by words only")
             vector = None
         await self._store_ready()
-        return await self.store.search(ws, question, vector, limit)
+        return await self.store.search(workspace_id, question, vector, limit)
 
     async def reindex(self) -> int:
         """Rebuilds every document's chunks in the store from the text saved here (after the
@@ -146,12 +156,14 @@ class KnowledgeService:
             )
         return len(documents)
 
-    async def _index(self, ws: str, document_id: str, title: str, chunks: list[str]) -> None:
+    async def _index(
+        self, workspace_id: str, document_id: str, title: str, chunks: list[str]
+    ) -> None:
         try:
             await self._store_ready()
             vectors = await self.embedder.embed_documents(chunks, title)
             await self.store.add(
-                ws,
+                workspace_id,
                 document_id,
                 title,
                 [
@@ -161,14 +173,14 @@ class KnowledgeService:
             )
         except Exception as error:
             log.exception("indexing failed", extra={"document_id": document_id})
-            await self._forget(ws, document_id)
+            await self._forget(workspace_id, document_id)
             raise KnowledgeUnavailable(
                 "Couldn't read that document just now. Nothing was saved: try again."
             ) from error
 
-    async def _forget(self, ws: str, document_id: str) -> None:
+    async def _forget(self, workspace_id: str, document_id: str) -> None:
         try:
-            await self.store.delete_document(ws, document_id)
+            await self.store.delete_document(workspace_id, document_id)
         except Exception:
             log.exception("cleaning up chunks failed", extra={"document_id": document_id})
 

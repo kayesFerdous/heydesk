@@ -17,8 +17,8 @@ class Echo(BaseModel):
     word: str
 
 
-def make_tool(run: Any, timeout_s: float = 5.0) -> Tool:
-    return Tool("echo", "Echoes a word.", Echo, run, timeout_s=timeout_s)
+def make_tool(run: Any, timeout_seconds: float = 5.0) -> Tool:
+    return Tool("echo", "Echoes a word.", Echo, run, timeout_seconds=timeout_seconds)
 
 
 async def echo(ctx: ToolContext[Any], args: Echo) -> ToolResult:
@@ -47,7 +47,7 @@ async def test_problems_come_back_as_data_never_raised() -> None:
     cases = [
         (None, ToolCall("1", "nope", {}), "no tool called 'nope'"),
         (make_tool(echo), ToolCall("1", "echo", {}), "word: Field required"),
-        (make_tool(slow, timeout_s=0.01), good_call, "took too long"),
+        (make_tool(slow, timeout_seconds=0.01), good_call, "took too long"),
         (make_tool(broken), good_call, "went wrong on our side"),
     ]
     for tool, call, hint in cases:

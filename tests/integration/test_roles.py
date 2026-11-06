@@ -241,7 +241,7 @@ async def test_a_suspension_says_why_to_admins_only(app: FastAPI, client: AsyncC
     await admin.aclose()
 
 
-def a_turn(ws: str, at: datetime, **kw: Any) -> Turn:
+def a_turn(workspace_id: str, at: datetime, **kw: Any) -> Turn:
     row: dict[str, Any] = {
         "conversation_id": "c1",
         "channel": "web",
@@ -256,7 +256,7 @@ def a_turn(ws: str, at: datetime, **kw: Any) -> Turn:
         "handed_off": False,
         "interrupted": False,
     }
-    return Turn(workspace_id=ws, at=at, **(row | kw))
+    return Turn(workspace_id=workspace_id, at=at, **(row | kw))
 
 
 async def test_the_overview_adds_up_turns_by_dhaka_day_and_business(app: FastAPI) -> None:

@@ -7,7 +7,7 @@ import pytest
 
 from heydesk.errors import InvalidConfig
 from heydesk.models import Conversation
-from heydesk.ports.courier import CourierAccount, CourierError, Parcel, Tracked
+from heydesk.ports.courier import CourierAccount, CourierError, Parcel, ParcelStatus
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.shop.tools import FindOrderInput, track_order
 from tests.conftest import World, make_ctx
@@ -63,8 +63,8 @@ class Steadfast:
         self.parcels[parcel_id := str(1000 + len(self.parcels))] = parcel
         return parcel_id
 
-    async def status(self, account: CourierAccount, parcel_id: str) -> Tracked:
-        return Tracked("in_review", None)
+    async def status(self, account: CourierAccount, parcel_id: str) -> ParcelStatus:
+        return ParcelStatus("in_review", None)
 
 
 async def test_a_linked_courier_is_checked_books_and_is_tried_again(world: World) -> None:
@@ -88,7 +88,7 @@ async def test_a_linked_courier_is_checked_books_and_is_tried_again(world: World
     await service.sync(DEV_WORKSPACE_ID)
     assert (await service.get(DEV_WORKSPACE_ID)).problem == ""
     [parcel] = courier.parcels.values()  # not the fake courier: the linked one
-    assert parcel.code == "O-101" and parcel.cod * 100 == order.total - order.paid
+    assert parcel.code == "O-101" and parcel.cash_on_delivery * 100 == order.total - order.paid
     [order] = await orders(world)
     assert (order.status, order.parcel_id) == ("shipped", "1000")
 
@@ -110,17 +110,17 @@ async def test_the_buyer_is_reminded_on_the_day_and_asked_after_once_each(world:
     world.clock.advance(minutes=6)  # the fake courier: out for delivery
     await courier.sync(DEV_WORKSPACE_ID)
     await courier.sync(DEV_WORKSPACE_ID)
-    conv = order.conversation_id
-    assert conv
-    assert await told(world, conv, "out for delivery today. Please keep ৳1,010 ready") == 1
+    conversation = order.conversation_id
+    assert conversation
+    assert await told(world, conversation, "out for delivery today. Please keep ৳1,010 ready") == 1
 
     world.clock.advance(minutes=2)
     await courier.sync(DEV_WORKSPACE_ID)  # delivered
-    assert await told(world, conv, "How was your order") == 0  # not before a day
+    assert await told(world, conversation, "How was your order") == 0  # not before a day
     world.clock.advance(hours=24)
     await courier.sync(DEV_WORKSPACE_ID)
     await courier.sync(DEV_WORKSPACE_ID)
-    assert await told(world, conv, "How was your order O-101? Tap 👍 or 👎") == 1
+    assert await told(world, conversation, "How was your order O-101? Tap 👍 or 👎") == 1
 
 
 async def test_nothing_is_sent_outside_messengers_window(world: World) -> None:

@@ -68,65 +68,69 @@ def member(user: UserRow, open_chats: int = 0) -> MemberOut:
 
 
 @router.get("/members")
-async def members(ws: Workspace, services: Svc) -> list[MemberOut]:
+async def members(workspace_id: Workspace, services: Svc) -> list[MemberOut]:
     """The team, each with their open chats."""
-    open_chats = await services.conversations.open_chats(ws)
-    return [member(u, open_chats.get(u.id, 0)) for u in await services.members.members(ws)]
+    open_chats = await services.conversations.open_chats(workspace_id)
+    return [
+        member(u, open_chats.get(u.id, 0)) for u in await services.members.members(workspace_id)
+    ]
 
 
 @router.post("/members", status_code=status.HTTP_201_CREATED)
 async def invite(
-    body: InviteIn, ws: Workspace, principal: User, services: Svc, ip: ClientIp
+    body: InviteIn, workspace_id: Workspace, current_user: User, services: Svc, ip: ClientIp
 ) -> MemberOut:
     """A moderator, by email: they get a code and join by setting a password with it
     (`POST /api/auth/reset`). A 409 if the email already has an account, or the team is full."""
     await services.rate_limits.send_code(ip, body.email)  # 429: filling someone's inbox
-    return member(await services.members.invite(ws, body.email, principal.user_id))
+    return member(await services.members.invite(workspace_id, body.email, current_user.user_id))
 
 
 @router.post("/members/{user_id}/invite", status_code=status.HTTP_204_NO_CONTENT)
 async def resend_invite(
-    user_id: str, ws: Workspace, principal: User, services: Svc, ip: ClientIp
+    user_id: str, workspace_id: Workspace, current_user: User, services: Svc, ip: ClientIp
 ) -> None:
     """The invite again, with a new code. A 409 once they've joined."""
     await services.rate_limits.send_code(ip, user_id)
-    await services.members.resend(ws, user_id, principal.user_id)
+    await services.members.resend(workspace_id, user_id, current_user.user_id)
 
 
 @router.delete("/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove(user_id: str, ws: Workspace, services: Svc) -> None:
+async def remove(user_id: str, workspace_id: Workspace, services: Svc) -> None:
     """Out at once: their login stops working on the next request. An owner can't be removed."""
-    await services.members.remove(ws, user_id)
+    await services.members.remove(workspace_id, user_id)
 
 
 @router.put("/members/{user_id}/available", status_code=status.HTTP_204_NO_CONTENT)
-async def set_available(user_id: str, body: AvailableIn, ws: Workspace, services: Svc) -> None:
+async def set_available(
+    user_id: str, body: AvailableIn, workspace_id: Workspace, services: Svc
+) -> None:
     """The owner switches anyone on or off for new hand-offs; a moderator switches
     themself at `/api/auth/me/available`."""
-    await services.members.set_available(ws, user_id, body.available)
+    await services.members.set_available(workspace_id, user_id, body.available)
 
 
 @router.get("/stats")
 async def stats(
-    ws: Workspace, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
+    workspace_id: Workspace, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> list[MemberStatsOut]:
     """Each member's work in the last `days`, the owners first."""
     since = services.members.now() - timedelta(days=days)
-    done = await services.members.stats(ws, since)
-    open_chats = await services.conversations.open_chats(ws)
+    done = await services.members.stats(workspace_id, since)
+    open_chats = await services.conversations.open_chats(workspace_id)
     none = {"replies": 0, "chats": 0, "tickets_solved": 0, "leads_sold": 0}
     return [
         MemberStatsOut(
             id=u.id, email=u.email, open_chats=open_chats.get(u.id, 0), **done.get(u.id, none)
         )
-        for u in await services.members.members(ws)
+        for u in await services.members.members(workspace_id)
     ]
 
 
 @router.get("/activity")
-async def activity(ws: Workspace, services: Svc, paged: Paged) -> list[EventOut]:
+async def activity(workspace_id: Workspace, services: Svc, paged: Paged) -> list[EventOut]:
     """What the owners and moderators changed, newest first (`limit`, `before`)."""
-    events = await services.members.activity(ws, limit=paged.limit, before=paged.before)
+    events = await services.members.activity(workspace_id, limit=paged.limit, before=paged.before)
     return [
         EventOut(actor_email=e.actor_email, action=e.action, target=e.target, at=e.at)
         for e in events

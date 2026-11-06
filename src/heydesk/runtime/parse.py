@@ -35,43 +35,6 @@ def text(said: str, limit: int = 1000) -> str:
     return cleaned
 
 
-# "7:30 pm", optionally with "today", "tonight" or "at" around it.
-TIME = re.compile(
-    r"(?:(?:today|tonight)\s+)?(?:at\s+)?"
-    r"(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?m\.?)?"
-    r"(?:\s+(?:today|tonight))?"
-)
-
-
-def time_today(said: str, now: datetime, hours: WeeklyHours) -> time:
-    """ "7:30 pm" or "19:30" → 19:30; a bare "7:30" is the next 7:30 from now.
-
-    `now` is the business's local time. It must be later today, and inside opening hours.
-    """
-    match = TIME.fullmatch(" ".join(said.lower().split()))
-    if match is None:
-        raise ValueError(
-            "Pass only a clock time for today, like 7:30 pm. Pickup is today only: "
-            "if they asked for another day, tell them that and ask for a time today."
-        )
-    hour, minute, half = int(match[1]), int(match[2] or 0), match[3]
-    if minute > 59 or hour > 23 or (half and not 1 <= hour <= 12):
-        raise ValueError("That isn't a time of day. Give one like 7:30 pm.")
-    if half:
-        hour = hour % 12 + (12 if half == "p" else 0)
-    elif hour < 12 and time(hour, minute) <= now.time():
-        hour += 12  # "7:30" said in the afternoon means this evening
-    when = time(hour, minute)
-    if when <= now.time():
-        raise ValueError(
-            f"That time has passed: it's {clock_time(now.time())} now. Ask for a later time today."
-        )
-    problem = hours.problem_with(datetime.combine(now.date(), when))
-    if problem:
-        raise ValueError(problem)
-    return when
-
-
 WEEKDAYS = {
     name: n
     for n, names in enumerate(

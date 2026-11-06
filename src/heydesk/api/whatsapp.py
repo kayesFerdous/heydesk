@@ -45,37 +45,39 @@ class WhatsAppOut(BaseModel):
 
 
 @router.get("/api/agent/whatsapp")
-async def get_whatsapp(ws: Workspace, services: Svc) -> WhatsAppOut:
-    return WhatsAppOut(phone_id=(await services.channels.whatsapp_of(ws)).address)
+async def get_whatsapp(workspace_id: Workspace, services: Svc) -> WhatsAppOut:
+    return WhatsAppOut(phone_id=(await services.channels.whatsapp_of(workspace_id)).address)
 
 
 @router.put("/api/agent/whatsapp")
-async def connect_whatsapp(body: WhatsAppIn, ws: Workspace, services: Svc) -> WhatsAppOut:
+async def connect_whatsapp(body: WhatsAppIn, workspace_id: Workspace, services: Svc) -> WhatsAppOut:
     """Connects the business's WhatsApp number: the agent answers its messages."""
     channel = await services.channels.connect_whatsapp(
-        ws, body.token.strip(), body.account_id, body.phone_id
+        workspace_id, body.token.strip(), body.account_id, body.phone_id
     )
     return WhatsAppOut(phone_id=channel.address)
 
 
 @router.get("/api/agent/whatsapp/login")
-async def whatsapp_login(ws: Workspace, services: Svc) -> WhatsAppLoginOut:
+async def whatsapp_login(workspace_id: Workspace, services: Svc) -> WhatsAppLoginOut:
     """What the Connect with WhatsApp button needs. 400 if the server has no app id."""
     return WhatsAppLoginOut(**services.channels.whatsapp_login())
 
 
 @router.post("/api/agent/whatsapp/signup")
-async def whatsapp_signup(body: WhatsAppSignupIn, ws: Workspace, services: Svc) -> WhatsAppOut:
+async def whatsapp_signup(
+    body: WhatsAppSignupIn, workspace_id: Workspace, services: Svc
+) -> WhatsAppOut:
     """Connects the number the owner added in Meta's Embedded Signup window: nothing to copy."""
     channel = await services.channels.connect_whatsapp_signup(
-        ws, body.code, body.account_id, body.phone_id
+        workspace_id, body.code, body.account_id, body.phone_id
     )
     return WhatsAppOut(phone_id=channel.address)
 
 
 @router.delete("/api/agent/whatsapp", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_whatsapp(ws: Workspace, services: Svc) -> None:
-    await services.channels.disconnect_whatsapp(ws)
+async def disconnect_whatsapp(workspace_id: Workspace, services: Svc) -> None:
+    await services.channels.disconnect_whatsapp(workspace_id)
 
 
 @router.get("/api/whatsapp", include_in_schema=False)

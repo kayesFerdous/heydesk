@@ -21,7 +21,7 @@ from heydesk.shop.values import (
     lines_text,
 )
 
-FEW = 5  # "Only 3 left" at this many or fewer
+ONLY_FEW_LEFT = 5  # "Only 3 left" at this many or fewer
 
 STYLE = """
 :root{--bg:#f6f4f0;--card:#fff;--ink:#16130f;--soft:#5f5a53;--faint:#8d877e;--line:#e7e2da;
@@ -185,7 +185,7 @@ def product_page(
         price += f'<span class="save">Save {off}%</span>' if off else ""
     if sold_out:
         stock = '<p class="pill gone"><i></i>Sold out</p>'
-    elif not product.variants and product.stock is not None and product.stock <= FEW:
+    elif not product.variants and product.stock is not None and product.stock <= ONLY_FEW_LEFT:
         stock = f'<p class="pill few"><i></i>Only {product.stock} left</p>'
     else:
         stock = '<p class="pill ok"><i></i>In stock</p>'

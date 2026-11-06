@@ -201,19 +201,19 @@ class AdminService:
             rows = (await s.execute(query)).all()
         return [
             BusinessRow(
-                ws.id,
-                ws.name,
-                ws.status,
-                ws.suspended_reason,
+                workspace.id,
+                workspace.name,
+                workspace.status,
+                workspace.suspended_reason,
                 "shop" if agent_id else None,
                 email,
                 n or 0,
                 last,
-                ws.created_at,
-                ws.plan,
-                ws.paid_until,
+                workspace.created_at,
+                workspace.plan,
+                workspace.paid_until,
             )
-            for ws, agent_id, email, n, last in rows
+            for workspace, agent_id, email, n, last in rows
         ]
 
     def since(self, days: int) -> datetime:
@@ -225,8 +225,8 @@ class AdminService:
         week_ago = self.since(7)
         chats = select(func.count()).where(Conversation.workspace_id == workspace_id)
         async with self.sessions() as s:
-            ws = await s.get(Workspace, workspace_id)
-            if ws is None:
+            workspace = await s.get(Workspace, workspace_id)
+            if workspace is None:
                 raise NotFound("There's no such business.")
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))
             owners = await s.scalars(
@@ -258,14 +258,14 @@ class AdminService:
                 select(Turn).where(Turn.workspace_id == workspace_id, Turn.at >= week_ago)
             )
             return BusinessDetail(
-                id=ws.id,
-                name=ws.name,
-                status=ws.status,
-                suspended_reason=ws.suspended_reason,
+                id=workspace.id,
+                name=workspace.name,
+                status=workspace.status,
+                suspended_reason=workspace.suspended_reason,
                 kind="shop" if agent else None,
                 agent_name=agent.name if agent else None,
                 public_key=agent.public_key if agent else None,
-                created_at=ws.created_at,
+                created_at=workspace.created_at,
                 owners=[Owner(u.email, u.created_at) for u in owners],
                 channels=[ConnectedChannel(c.kind, c.address, c.created_at) for c in channels],
                 payments=("sandbox" if account.sandbox else "live") if account else None,
@@ -292,11 +292,11 @@ class AdminService:
                 )
             )
             by_business = Counter(t.workspace_id for t in turns)
-            top = [ws for ws, _ in by_business.most_common(BUSIEST)]
+            top = [workspace_id for workspace_id, _ in by_business.most_common(BUSIEST)]
             named = await s.execute(
                 select(Workspace.id, Workspace.name).where(Workspace.id.in_(top))
             )
-            names = {ws: name for ws, name in named}
+            names = {workspace_id: name for workspace_id, name in named}
 
         def day_of(at: datetime) -> date:
             return at.astimezone(DAY_ZONE).date()
@@ -317,12 +317,12 @@ class AdminService:
             )
         busiest = [
             BusyBusiness(
-                ws,
-                names.get(ws, ""),
-                by_business[ws],
-                sum(t.cost_micros for t in turns if t.workspace_id == ws),
+                workspace_id,
+                names.get(workspace_id, ""),
+                by_business[workspace_id],
+                sum(t.cost_micros for t in turns if t.workspace_id == workspace_id),
             )
-            for ws in top
+            for workspace_id in top
         ]
         return Overview(
             days=days,

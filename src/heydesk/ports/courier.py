@@ -6,7 +6,7 @@ for a shop with none, outside production."""
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-type Ending = Literal["delivered", "returned"]
+type FinalStatus = Literal["delivered", "returned"]
 
 
 @dataclass(frozen=True)
@@ -26,16 +26,16 @@ class Parcel:
     name: str
     phone: str  # 01XXXXXXXXX
     address: str  # the address and the area, one line: the courier finds the place
-    cod: int  # whole taka to collect
+    cash_on_delivery: int  # whole taka to collect
     items: str  # what's in it, for the rider
     quantity: int
     note: str = ""
 
 
 @dataclass(frozen=True)
-class Tracked:
-    said: str  # the courier's own words: "in_review", "In Transit"
-    ending: Ending | None  # the order's last status, when the courier says it's over
+class ParcelStatus:
+    status_text: str  # the courier's own words: "in_review", "In Transit"
+    final_status: FinalStatus | None  # the order's last status, when the courier says it's over
 
 
 class CourierError(Exception):
@@ -53,4 +53,4 @@ class CourierApi(Protocol):
         """Books the parcel; returns the courier's parcel id."""
         ...
 
-    async def status(self, account: CourierAccount, parcel_id: str) -> Tracked: ...
+    async def status(self, account: CourierAccount, parcel_id: str) -> ParcelStatus: ...

@@ -49,9 +49,9 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])
 
 
-async def shop_store(services: Svc, ws: Workspace) -> ShopStore:
+async def shop_store(services: Svc, workspace_id: Workspace) -> ShopStore:
     """404 until the business has an agent."""
-    return await services.agents.store(ws)
+    return await services.agents.store(workspace_id)
 
 
 type Shop = Annotated[ShopStore, Depends(shop_store)]
@@ -101,7 +101,7 @@ async def products(store: Shop) -> list[Product]:
 
 @router.put("/api/products")
 async def replace_products(
-    body: list[Product], store: Shop, services: Svc, ws: Workspace
+    body: list[Product], store: Shop, services: Svc, workspace_id: Workspace
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
     from the next message. While a Google Sheet or WooCommerce store is linked too: a product
@@ -112,7 +112,7 @@ async def replace_products(
         f"{n}.photos": f"{url} isn't one of your photos: add it with POST /api/products/photos"
         for n, product in enumerate(body)
         for url in product.photos
-        if url not in had and not services.photos.is_products(ws, url)
+        if url not in had and not services.photos.is_product_photo(workspace_id, url)
     }
     if wrong:
         raise InvalidConfig(wrong)
@@ -128,12 +128,12 @@ class PhotoOut(BaseModel):
 async def add_product_photo(
     file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP photo, up to 10 MB")],
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
     _: Shop,
 ) -> PhotoOut:
     """Adds a product photo: saved as a JPEG and indexed, so a visitor's photo can find it.
     It belongs to a product once that product's `photos` are saved with its URL."""
-    photo = await services.photos.add_product_photo(ws, await file.read())
+    photo = await services.photos.add_product_photo(workspace_id, await file.read())
     return PhotoOut(url=photo.url)
 
 
@@ -212,7 +212,7 @@ async def buy(
     agent, item = found
     config = agent.config
     back = await services.channels.chat_link(agent.workspace_id, via)
-    shop, conv = await services.conversations.store_for(agent, chat)
+    shop, conversation = await services.conversations.store_for(agent, chat)
 
     def again(problem: str = "") -> HTMLResponse:  # the product page, the form filled in
         return html_page(
@@ -244,8 +244,8 @@ async def buy(
         saved = await shop.place_order(confirmed, "page")
     except OutOfStock:
         return again("Sold out since you checked. Choose another size or colour.")
-    ws = agent.workspace_id
-    if conv:
+    workspace_id = agent.workspace_id
+    if conversation:
         receipt = cards.receipt(
             "Order placed",
             saved.code,
@@ -255,12 +255,16 @@ async def buy(
             order_url=shop.order_link(saved.id),
         )
         said = card_text(Card(receipt["kind"], receipt["data"]), "web")  # plain words
-        await services.team.tell_visitor(conv.id, said)
+        await services.team.tell_visitor(conversation.id, said)
     if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid
         alert = await order_alert(shop, saved.code, read_back, order.phone, order.lines)
-        await (services.team.alert(conv, alert) if conv else services.team.notify(ws, alert))
-        services.woo.push_soon(ws)  # into a linked WooCommerce store now
-    log.info("page order", extra={"workspace_id": ws, "order_id": saved.id})
+        await (
+            services.team.alert(conversation, alert)
+            if conversation
+            else services.team.notify(workspace_id, alert)
+        )
+        services.woo.push_soon(workspace_id)  # into a linked WooCommerce store now
+    log.info("page order", extra={"workspace_id": workspace_id, "order_id": saved.id})
     return RedirectResponse(f"/o/{saved.id}", status_code=303)  # on this same server
 
 
@@ -308,7 +312,11 @@ async def change_order(
     `reason` too, in the same request or later."""
     found = await store.get(ShopOrder, order_id)
     moved = await store.move_order(order_id, body.status or found.status)
-    if moved.status != found.status and moved.conversation_id and (line := moved.news()):
+    if (
+        moved.status != found.status
+        and moved.conversation_id
+        and (line := moved.status_update_text())
+    ):
         await services.team.tell_visitor(moved.conversation_id, line)
     if body.paid_in is not None or body.reason is not None:
         moved = await store.record_outcome(order_id, body.paid_in, body.reason)
@@ -317,11 +325,13 @@ async def change_order(
 
 
 @router.post("/api/shop/orders", status_code=201)
-async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) -> ShopOrderOut:
+async def add_order(
+    body: TeamOrder, store: Shop, services: Svc, workspace_id: Workspace
+) -> ShopOrderOut:
     """An order the team types for a buyer who called: checked and added up as the
     chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
     The owner hears of it as of any new order."""
-    config = (await services.agents.by_workspace(ws)).config
+    config = (await services.agents.by_workspace(workspace_id)).config
     checked = await checked_order(store, config, body.lines, body)
     if isinstance(checked, str):
         raise InvalidConfig({"order": checked})
@@ -331,15 +341,17 @@ async def add_order(body: TeamOrder, store: Shop, services: Svc, ws: Workspace) 
     except OutOfStock as error:
         raise Conflict(f"Not enough in stock: {error}.") from None
     alert = await order_alert(store, saved.code, read_back, saved.phone, saved.lines)
-    await services.team.notify(ws, alert.replace("New order", "New order, typed by the team", 1))
-    services.woo.push_soon(ws)
+    await services.team.notify(
+        workspace_id, alert.replace("New order", "New order, typed by the team", 1)
+    )
+    services.woo.push_soon(workspace_id)
     [out] = await with_buyers(store, [saved])
     return out
 
 
 async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrderOut]:
     """Each order with its buyer's record, counted for all of them at once."""
-    records = await store.records({o.phone for o in orders})
+    records = await store.buyer_records({o.phone for o in orders})
     return [
         ShopOrderOut.model_validate(o).model_copy(update={"buyer": records[o.phone]})
         for o in orders
@@ -382,7 +394,7 @@ class OfferOut(BaseModel):
 @router.post("/api/shop/offers", status_code=201)
 async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     """Sends the offer to each chat where the buyer wrote in the last `within_hours`, inside
-    the app's window (`tell_in_window`: Messenger and WhatsApp only within 24 hours), and saves
+    the app's window (`tell_visitor_if_allowed`: Messenger and WhatsApp only within 24 hours), and saves
     it as a coupon only those chats may use, until `ends_at`; `update_cart` takes it off by
     itself."""
     now = store.now()
@@ -397,7 +409,7 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     sent = [
         chat
         for chat in await store.chats_since(now - timedelta(hours=body.within_hours))
-        if await services.team.tell_in_window(chat, text)
+        if await services.team.tell_visitor_if_allowed(chat, text)
     ]
     await store.add_offer(coupon, sent)
     log.info("offer sent", extra={"workspace_id": store.workspace_id, "chats": len(sent)})
@@ -413,11 +425,15 @@ async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
 
 @router.get("/api/shop/orders.csv", response_model=None)
 async def orders_csv(
-    store: Shop, services: Svc, ws: Workspace, status: str | None = None, q: str | None = None
+    store: Shop,
+    services: Svc,
+    workspace_id: Workspace,
+    status: str | None = None,
+    q: str | None = None,
 ) -> Response:
     """The orders the list shows with this `status` and `q`, as a spreadsheet's file:
     money in taka, times in the business's own time."""
-    tz = (await services.agents.by_workspace(ws)).config.timezone
+    tz = (await services.agents.by_workspace(workspace_id)).config.timezone
     found = await store.find(ShopOrder, status, q, limit=EXPORT_ROWS)
     rows = [
         [

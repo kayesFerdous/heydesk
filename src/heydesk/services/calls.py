@@ -63,12 +63,12 @@ class CallService:
     # The phone page
 
     @property
-    def rings(self) -> bool:
+    def can_ring(self) -> bool:
         """Whether a call can ring: the /phone page and the voice routes aren't served in
         production (design §12), so there a call would only ever be missed."""
         return self.settings.APP_ENV != "production"
 
-    def number(self, said: str) -> str:
+    def clean_number(self, said: str) -> str:
         """The page's mobile, written as an order's is: "+880 1712-345678" → "01712345678"."""
         try:
             return mobile(said)
@@ -77,13 +77,13 @@ class CallService:
                 "A Bangladeshi mobile number has 11 digits and starts with 01, like 01712345678."
             ) from None
 
-    def listen(self, number: str) -> asyncio.Queue[dict[str, str]]:
+    def wait_for_calls(self, number: str) -> asyncio.Queue[dict[str, str]]:
         """A page waits for `number`'s calls. The newest page for a mobile gets them."""
         queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
         self.phones[number] = queue
         return queue
 
-    def leave(self, number: str, queue: asyncio.Queue[dict[str, str]]) -> None:
+    def stop_waiting(self, number: str, queue: asyncio.Queue[dict[str, str]]) -> None:
         """The page closed; a newer page for the same mobile keeps its place."""
         if self.phones.get(number) is queue:
             del self.phones[number]
@@ -94,26 +94,26 @@ class CallService:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
         An order is queued by itself once; the owner can call it again.
         Only the shop's own calls: a visitor still can't call the shop (`TAKES_VOICE`)."""
-        if not self.rings:
+        if not self.can_ring:
             return
         calls = agent.config.calls
         if not calls.enabled:
             return
-        for order in await self._store(agent, conversation_id).orders_here():
+        for order in await self._store(agent, conversation_id).orders_in_conversation():
             if order.status == "new" and not await self._calls_for(agent.workspace_id, order.id):
                 await self._queue(agent, order, calls.wait_minutes)
 
-    async def call_order(self, ws: str, order_id: str) -> Call:
+    async def call_order(self, workspace_id: str, order_id: str) -> Call:
         """The owner's "Call to confirm": first in the queue."""
-        agent = await self.agents.by_workspace(ws)
-        if not self.rings:
+        agent = await self.agents.by_workspace(workspace_id)
+        if not self.can_ring:
             raise Conflict("Calls ring the /phone page, which this server doesn't serve.")
         if not agent.config.calls.enabled:
             raise Conflict("Calls are off. Turn them on in Settings, Calls.")
         order = await self._store(agent).get(ShopOrder, order_id)  # 404 if it isn't theirs
         if order.status != "new":
             raise Conflict(f"Order {order.code} isn't new: only a new order is called.")
-        if any(c.status != DONE for c in await self._calls_for(ws, order.id)):
+        if any(c.status != DONE for c in await self._calls_for(workspace_id, order.id)):
             raise Conflict(f"Order {order.code} already has a call waiting.")
         return await self._queue(agent, order, 0, priority=1)
 
@@ -142,14 +142,14 @@ class CallService:
 
     async def find(
         self,
-        ws: str,
+        workspace_id: str,
         view: Literal["waiting", "done"] = "waiting",
         order_id: str | None = None,
         limit: int = 100,
     ) -> list[Call]:
         """Waiting: the live calls, then the queue in the order it's called. Done: newest
         first. With `order_id`: that order's calls, newest first."""
-        query = select(Call).where(Call.workspace_id == ws)
+        query = select(Call).where(Call.workspace_id == workspace_id)
         if order_id:
             query = query.where(Call.order_id == order_id).order_by(Call.created_at.desc())
         elif view == "done":
@@ -159,19 +159,19 @@ class CallService:
         async with self.sessions() as s:
             return list(await s.scalars(query.limit(limit)))
 
-    async def call_now(self, ws: str, call_id: str) -> Call:
+    async def call_now(self, workspace_id: str, call_id: str) -> Call:
         """A queued call goes to the front, due now."""
         async with self.sessions() as s, s.begin():
-            call = await self._get(s, call_id, ws)
+            call = await self._get(s, call_id, workspace_id)
             if call.status != QUEUED:
                 raise Conflict("Only a waiting call can move to the front.")
             call.priority, call.next_try_at, call.updated_at = 1, self.now(), self.now()
         return call
 
-    async def stop(self, ws: str, call_id: str) -> Call:
+    async def stop(self, workspace_id: str, call_id: str) -> Call:
         """The owner cancels a queued call: the order stays as it is."""
         async with self.sessions() as s, s.begin():
-            call = await self._get(s, call_id, ws)
+            call = await self._get(s, call_id, workspace_id)
             if call.status != QUEUED:
                 raise Conflict("Only a waiting call can be cancelled.")
             call.status, call.outcome, call.updated_at = DONE, "stopped", self.now()
@@ -189,7 +189,7 @@ class CallService:
                 if not started:
                     await self._after_restart()
                     started = True
-                await self.tick()
+                await self.ring_due_calls()
             except Exception:
                 log.exception("call queue failed")
 
@@ -198,7 +198,7 @@ class CallService:
             for call in await s.scalars(select(Call).where(Call.status == TALKING)):
                 call.status, call.outcome = DONE, "no_decision"
 
-    async def tick(self) -> None:
+    async def ring_due_calls(self) -> None:
         """Rings not answered in time are missed; then the next calls due ring, while a line
         is free. Every business's calls share MAX_LIVE_CALLS."""
         now = self.now()
@@ -208,7 +208,7 @@ class CallService:
                 await s.scalars(select(Call.id).where(Call.status == RINGING, Call.rang_at < late))
             )
         for call_id in missed:
-            await self.missed(call_id)
+            await self.mark_missed(call_id)
         async with self.sessions() as s:
             live = await s.scalar(select(func.count()).where(Call.status.in_(LIVE))) or 0
             due = list(
@@ -249,7 +249,7 @@ class CallService:
             )
         if page is None:  # the buyer's phone is off
             log.info("no phone page for the call", extra={"call_id": call.id})
-            await self.missed(call.id)
+            await self.mark_missed(call.id)
             return False
         page.put_nowait(
             {"call": call.id, "business": agent.config.business_name, "order": call.code}
@@ -257,7 +257,7 @@ class CallService:
         log.info("call ringing", extra={"call_id": call.id})
         return True
 
-    async def missed(self, call_id: str) -> None:
+    async def mark_missed(self, call_id: str) -> None:
         """Not answered, or declined: again later while tries are left; else the owner is told."""
         async with self.sessions() as s:
             call = await self._get(s, call_id)
@@ -299,7 +299,7 @@ class CallService:
         said = said.replace("{total}", money(order.total, order.currency))
         said = said.replace("{items}", spoken_items(order.lines))
         now = self.now()
-        conv = Conversation(
+        conversation = Conversation(
             workspace_id=agent.workspace_id,
             agent_id=agent.agent_id,
             channel="voice",
@@ -312,14 +312,14 @@ class CallService:
             updated_at=now,
         )
         async with self.sessions() as s, s.begin():
-            s.add(conv)
+            s.add(conversation)
             await s.flush()  # its id
             row = await self._get(s, call_id)
-            row.status, row.conversation_id, row.updated_at = TALKING, conv.id, now
-        log.info("call answered", extra={"call_id": call_id, "conversation_id": conv.id})
-        return Answered(call_id, agent, conv.id, said)
+            row.status, row.conversation_id, row.updated_at = TALKING, conversation.id, now
+        log.info("call answered", extra={"call_id": call_id, "conversation_id": conversation.id})
+        return Answered(call_id, agent, conversation.id, said)
 
-    async def ended(self, call_id: str) -> None:
+    async def mark_ended(self, call_id: str) -> None:
         """The call hung up. How it went is the order's status now."""
         async with self.sessions() as s:
             call = await self._get(s, call_id)
@@ -342,18 +342,18 @@ class CallService:
             row.status, row.outcome, row.updated_at = DONE, outcome, self.now()
         log.info("call done", extra={"call_id": call_id, "outcome": outcome})
 
-    async def _calls_for(self, ws: str, order_id: str) -> list[Call]:
+    async def _calls_for(self, workspace_id: str, order_id: str) -> list[Call]:
         async with self.sessions() as s:
             found = await s.scalars(
-                select(Call).where(Call.workspace_id == ws, Call.order_id == order_id)
+                select(Call).where(Call.workspace_id == workspace_id, Call.order_id == order_id)
             )
             return list(found)
 
-    async def _get(self, s: AsyncSession, call_id: str, ws: str | None = None) -> Call:
-        """One call: the owner's routes pass their `ws`; the worker and the phone go by id."""
+    async def _get(self, s: AsyncSession, call_id: str, workspace_id: str | None = None) -> Call:
+        """One call: the owner's routes pass their `workspace_id`; the worker and the phone go by id."""
         query = select(Call).where(Call.id == call_id)
-        if ws is not None:
-            query = query.where(Call.workspace_id == ws)
+        if workspace_id is not None:
+            query = query.where(Call.workspace_id == workspace_id)
         call = await s.scalar(query)
         if call is None:
             raise NotFound("There's no such call.")

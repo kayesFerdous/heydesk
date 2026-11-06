@@ -60,14 +60,14 @@ async def desks() -> list[DeskOut]:
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
-async def create(body: AgentIn, services: Svc, ws: Workspace) -> AgentOut:
-    await services.agents.create(ws, body.config)
-    return agent_out(await services.agents.get(ws))
+async def create(body: AgentIn, services: Svc, workspace_id: Workspace) -> AgentOut:
+    await services.agents.create(workspace_id, body.config)
+    return agent_out(await services.agents.get(workspace_id))
 
 
 @router.get("/api/agent")
-async def read(services: Svc, ws: Workspace) -> AgentOut:
-    return agent_out(await services.agents.get(ws))
+async def read(services: Svc, workspace_id: Workspace) -> AgentOut:
+    return agent_out(await services.agents.get(workspace_id))
 
 
 class LogoOut(BaseModel):
@@ -81,19 +81,19 @@ LOGO_SIDE = 256  # px: a logo is shown small, in the bubble and the chat's heade
 async def add_logo(
     file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP picture, up to 10 MB")],
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
 ) -> LogoOut:
     """The business's logo for the website chat: saved small and set on the widget."""
-    widget = (await services.agents.get(ws)).config.widget  # 404 before anything is saved
-    photo = await services.photos.save(ws, "logo", await file.read(), LOGO_SIDE)
+    widget = (await services.agents.get(workspace_id)).config.widget  # 404 before anything is saved
+    photo = await services.photos.save(workspace_id, "logo", await file.read(), LOGO_SIDE)
     await services.agents.update(
-        ws, {"widget": widget.model_copy(update={"logo": photo.url}).model_dump()}
+        workspace_id, {"widget": widget.model_copy(update={"logo": photo.url}).model_dump()}
     )
     return LogoOut(url=photo.url)
 
 
 @router.patch("/api/agent")
-async def edit(patch: dict[str, Any], services: Svc, ws: Workspace) -> AgentOut:
+async def edit(patch: dict[str, Any], services: Svc, workspace_id: Workspace) -> AgentOut:
     """Top-level fields replace the config's: send the whole `hours`, not a part."""
-    await services.agents.update(ws, patch)
-    return agent_out(await services.agents.get(ws))
+    await services.agents.update(workspace_id, patch)
+    return agent_out(await services.agents.get(workspace_id))

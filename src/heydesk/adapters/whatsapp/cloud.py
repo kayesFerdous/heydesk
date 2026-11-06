@@ -21,7 +21,7 @@ class WhatsAppCloud:
         await self._call("GET", phone_id, token)  # the number is this token's
         await self._call("POST", f"{account_id}/subscribed_apps", token)
 
-    async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
+    async def token_from_code(self, app_id: str, app_secret: str, code: str) -> str:
         params = {"client_id": app_id, "client_secret": app_secret, "code": code}
         body = await self._call("GET", "oauth/access_token", "", params=params)
         return str(body["access_token"])

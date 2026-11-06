@@ -39,43 +39,47 @@ async def test_a_message_is_saved_only_after_a_yes(world: World) -> None:
     agent = await world.agent()
     take = ToolCall("c", "take_message", MESSAGE)
 
-    conv = await world.say(agent, None, [take, "Shall I pass that on?"])
+    conversation = await world.say(agent, None, [take, "Shall I pass that on?"])
     assert (
         "Message: Do you cater weddings?; from Kayes; phone 01712345678"
-        in await world.tool_said(conv)
+        in await world.tool_said(conversation)
     )
     assert await messages(world) == []
 
-    await world.say(agent, conv, [take, "Done."], "yes")
+    await world.say(agent, conversation, [take, "Done."], "yes")
     [saved] = await messages(world)
-    assert (saved.code, saved.body, saved.conversation_id) == ("M-101", MESSAGE["message"], conv)
+    assert (saved.code, saved.body, saved.conversation_id) == (
+        "M-101",
+        MESSAGE["message"],
+        conversation,
+    )
 
 
 async def test_a_name_and_phone_are_optional(world: World) -> None:
     agent = await world.agent()
     take = ToolCall("c", "take_message", {"message": "Loved the biryani!"})
 
-    conv = await world.say(agent, None, [take, "Shall I pass that on?"])
-    said = await world.tool_said(conv)
+    conversation = await world.say(agent, None, [take, "Shall I pass that on?"])
+    said = await world.tool_said(conversation)
     assert '"read_back": "Message: Loved the biryani!"' in said
     assert "ask once whether they'd like to leave a name and phone" in said
 
-    await world.say(agent, conv, [take, "Done."], "yes, no number needed")
+    await world.say(agent, conversation, [take, "Done."], "yes, no number needed")
     [saved] = await messages(world)
     assert (saved.body, saved.name, saved.phone) == ("Loved the biryani!", "", "")
-    assert "can't call back" in await world.tool_said(conv)
+    assert "can't call back" in await world.tool_said(conversation)
 
     bad = ToolCall("c", "take_message", {"message": "Call me", "phone": "12"})
-    conv = await world.say(agent, None, [bad, "What's your number?"])
-    assert "doesn't look like a phone number" in await world.tool_said(conv)
+    conversation = await world.say(agent, None, [bad, "What's your number?"])
+    assert "doesn't look like a phone number" in await world.tool_said(conversation)
 
 
 async def test_the_owner_sees_messages_and_marks_them_handled(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    runtime = app.state.services.conversations.runtime
+    llm = app.state.services.conversations.llm
     take = ToolCall("c", "take_message", MESSAGE)
-    runtime.llm.script = [take, "Shall I pass that on?", take, "Done."]
+    llm.script = [take, "Shall I pass that on?", take, "Done."]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a message please"}
     )
@@ -112,8 +116,8 @@ async def test_the_owner_pages_through_messages(app: FastAPI, client: AsyncClien
 
 
 async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncClient) -> None:
-    runtime = app.state.services.conversations.runtime
-    runtime.llm.script = [ToolCall("c", "handoff_to_human", {}), "Someone will call you."]
+    llm = app.state.services.conversations.llm
+    llm.script = [ToolCall("c", "handoff_to_human", {}), "Someone will call you."]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "a person please"}
     )
@@ -133,7 +137,7 @@ async def test_the_owner_marks_a_hand_off_handled(app: FastAPI, client: AsyncCli
 async def test_the_inbox_lists_the_chats_the_team_is_answering(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    app.state.services.conversations.runtime.llm.script = ["Hello!"]
+    app.state.services.conversations.llm.script = ["Hello!"]
     first = await client.post(
         f"/api/chat/{DEV_KEY}", json={"visitor_id": "test-visitor", "message": "hi"}
     )
@@ -152,16 +156,18 @@ async def test_a_complaint_hands_off_and_opens_one_ticket(
     complaint in the same chat keeps the one ticket, which stays open until solved."""
     agent = await world.agent()
     complaint = ToolCall("c1", "flag_complaint", {"reason": "parcel came damaged"})
-    conv = await world.say(agent, None, [complaint, "I'm sorry. Someone will call you."], "!!!")
-    assert (await world.conversation(conv)).status == "needs_human"
-    result = await world.store(agent, conv).open_ticket("still angry")
+    conversation = await world.say(
+        agent, None, [complaint, "I'm sorry. Someone will call you."], "!!!"
+    )
+    assert (await world.conversation(conversation)).status == "needs_human"
+    result = await world.store(agent, conversation).open_ticket("still angry")
     assert result[1] is False  # the same open ticket
     async with world.sessions() as s:
         [ticket] = list(await s.scalars(select(Ticket)))
     assert (ticket.code, ticket.status, ticket.reason) == ("C-101", "open", "parcel came damaged")
 
     services = app.state.services
-    services.conversations.runtime.llm.script = [
+    services.conversations.llm.script = [
         ToolCall("c1", "flag_complaint", {"reason": "rude rider"}),
         "Sorry about that.",
     ]
@@ -175,8 +181,8 @@ async def test_a_complaint_hands_off_and_opens_one_ticket(
 
 async def test_a_new_complaint_alerts_the_owner_once(world: World) -> None:
     agent = await world.agent()
-    conv = await world.say(agent, None, ["Hello!"], "hi")
-    ctx = make_ctx(world.store(agent, conv), agent=agent.config)
+    conversation = await world.say(agent, None, ["Hello!"], "hi")
+    ctx = make_ctx(world.store(agent, conversation), agent=agent.config)
     first = await flag_complaint(ctx, ComplaintInput(reason="cold food"))
     again = await flag_complaint(ctx, ComplaintInput(reason="still cold"))
     assert first.handoff and first.alert == "😠 Complaint C-101: cold food"
@@ -189,8 +195,8 @@ async def test_a_call_back_is_a_lead_at_the_time_python_read(
     """ "call me Friday 5pm" on Tue 29 Sep → a lead for Fri 2 Oct, 17:00 in Dhaka, saved only
     at the yes; the team taps the outcome, and a lost one's why is counted."""
     agent = await world.agent()
-    conv = await world.say(agent, None, ["Hello!"], "hi")
-    ctx = make_ctx(world.store(agent, conv), agent=agent.config)
+    conversation = await world.say(agent, None, ["Hello!"], "hi")
+    ctx = make_ctx(world.store(agent, conversation), agent=agent.config)
     args = TakeLeadInput(when="friday 5pm", phone="01712345678", note="the family set")
     asked = await take_lead(ctx, args)
     assert asked.data["read_back"] == (

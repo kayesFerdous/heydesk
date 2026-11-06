@@ -7,7 +7,7 @@ parcel has got: one step every `step`, then delivered."""
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from heydesk.ports.courier import CourierAccount, Parcel, Tracked
+from heydesk.ports.courier import CourierAccount, Parcel, ParcelStatus
 
 STEPS = ["Pickup requested", "Picked up by the rider", "In transit", "Out for delivery"]
 
@@ -23,9 +23,9 @@ class FakeCourier:
     async def book(self, account: CourierAccount, parcel: Parcel) -> str:
         return f"FAKE-{parcel.code}-{int(self.now().timestamp())}"
 
-    async def status(self, account: CourierAccount, parcel_id: str) -> Tracked:
+    async def status(self, account: CourierAccount, parcel_id: str) -> ParcelStatus:
         booked = datetime.fromtimestamp(int(parcel_id.rsplit("-", 1)[1]), self.now().tzinfo)
         done = int((self.now() - booked) / self.step)
         if done >= len(STEPS):
-            return Tracked("Delivered", "delivered")
-        return Tracked(STEPS[done], None)
+            return ParcelStatus("Delivered", "delivered")
+        return ParcelStatus(STEPS[done], None)

@@ -20,7 +20,7 @@ async def test_fastapis_own_errors_have_the_same_shape(client: AsyncClient) -> N
 
 async def test_a_full_conversation_asks_for_a_new_one(app: FastAPI, client: AsyncClient) -> None:
     app.state.settings.MAX_TURNS = 2
-    app.state.services.conversations.runtime.llm.script = ["One.", "Two."]
+    app.state.services.conversations.llm.script = ["One.", "Two."]
     url = f"/api/chat/{DEV_KEY}"
     first = await client.post(url, json={"visitor_id": "test-visitor", "message": "hi"})
     conv_id = first.text.split('"conversation_id": "')[1].split('"')[0]

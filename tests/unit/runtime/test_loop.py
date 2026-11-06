@@ -16,7 +16,7 @@ from heydesk.ports.llm import (
 )
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, TurnEnded
-from heydesk.runtime.loop import MAX_MODEL_CALLS, Runtime, TurnInput, run_turn
+from heydesk.runtime.loop import MAX_MODEL_CALLS, TurnInput, run_turn
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult
 from heydesk.shop.shared import HANDOFF, HandoffInput
@@ -70,7 +70,7 @@ def make_turn(text: str = "hi", **kw: object) -> TurnInput:
 
 
 async def collect(turn: TurnInput, llm: FakeLLM) -> list[Event]:
-    return [e async for e in run_turn(turn, Runtime(llm))]
+    return [e async for e in run_turn(turn, llm)]
 
 
 async def test_streams_the_reply_and_adds_it_to_the_transcript() -> None:
@@ -124,7 +124,7 @@ async def test_an_empty_reply_is_a_failure() -> None:
 async def test_interrupt_stops_talking_and_keeps_what_was_streamed() -> None:
     turn = make_turn()
     events: list[Event] = []
-    async for event in run_turn(turn, Runtime(FakeLLM(["one two three"]))):
+    async for event in run_turn(turn, FakeLLM(["one two three"])):
         events.append(event)
         if isinstance(event, Token):
             turn.interrupt.set()  # barge-in after the first word
@@ -234,7 +234,7 @@ async def test_a_barge_in_during_a_tool_stops_before_the_next_model_call() -> No
     turn = make_turn(tools=[UPDATE_ORDER])
     llm = FakeLLM([ORDER, "never said"])
     events: list[Event] = []
-    async for event in run_turn(turn, Runtime(llm)):
+    async for event in run_turn(turn, llm):
         events.append(event)
         if isinstance(event, ToolStarted):
             turn.interrupt.set()

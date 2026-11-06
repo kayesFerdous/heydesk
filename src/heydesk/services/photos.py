@@ -32,8 +32,12 @@ log = logging.getLogger(__name__)
 
 LARGEST_SIDE = 1024  # px: enough to tell one shirt from another, small to send and keep
 MAX_UPLOAD = 10_000_000  # bytes: a phone photo, before it's made smaller
-NEAREST = 10  # photos asked for; a product with several photos shows up once (`photo_line`)
-FETCHING = 4  # links downloaded and embedded at once: a list's first sync can have hundreds
+PHOTOS_TO_SEARCH = (
+    10  # photos asked for; a product with several photos shows up once (`photo_line`)
+)
+MAX_PARALLEL_DOWNLOADS = (
+    4  # links downloaded and embedded at once: a list's first sync can have hundreds
+)
 
 
 @dataclass(frozen=True)
@@ -58,21 +62,23 @@ class PhotoService:
         self.fetch = fetch
         self._ready = False
 
-    async def add_product_photo(self, ws: str, data: bytes) -> Photo:
+    async def add_product_photo(self, workspace_id: str, data: bytes) -> Photo:
         """Saves it and puts it in the index. If it can't be embedded, nothing is kept."""
-        return await self._add_product(ws, f"{ws}/products/{uuid.uuid4().hex}.jpg", data)
+        return await self._add_product(
+            workspace_id, f"{workspace_id}/products/{uuid.uuid4().hex}.jpg", data
+        )
 
-    async def take(self, ws: str, links: list[str]) -> dict[str, str]:
+    async def import_links(self, workspace_id: str, links: list[str]) -> dict[str, str]:
         """Each link's product photo: downloaded and indexed the first time, and only
         looked up after. A link that fails is left out, and tried again at the next sync."""
-        lock = asyncio.Semaphore(FETCHING)
+        lock = asyncio.Semaphore(MAX_PARALLEL_DOWNLOADS)
 
         async def one(link: str) -> tuple[str, str | None]:
-            key = f"{ws}/products/{hashlib.sha256(link.encode()).hexdigest()[:32]}.jpg"
+            key = f"{workspace_id}/products/{hashlib.sha256(link.encode()).hexdigest()[:32]}.jpg"
             async with lock:
                 try:
                     if not await self.media.exists(key):
-                        await self._add_product(ws, key, await self.fetch(link))
+                        await self._add_product(workspace_id, key, await self.fetch(link))
                 except (
                     ImageUnreachable,
                     UnreadablePhoto,
@@ -80,7 +86,8 @@ class PhotoService:
                     KnowledgeUnavailable,
                 ) as error:  # the link, the file, the store or Gemini: the rest go on
                     log.warning(
-                        "photo link not taken", extra={"workspace_id": ws, "error": repr(error)}
+                        "photo link not taken",
+                        extra={"workspace_id": workspace_id, "error": repr(error)},
                     )
                     return link, None
             return link, f"{self.media.url}/{key}"
@@ -88,22 +95,28 @@ class PhotoService:
         taken = await asyncio.gather(*(one(link) for link in dict.fromkeys(links)))
         return {link: url for link, url in taken if url}
 
-    async def _add_product(self, ws: str, key: str, data: bytes) -> Photo:
+    async def _add_product(self, workspace_id: str, key: str, data: bytes) -> Photo:
         photo = await self._put(key, data)
         try:
             await self._index_ready()
-            await self.index.add(ws, photo.url, await self.embedder.embed_image(photo.jpeg))
+            await self.index.add(
+                workspace_id, photo.url, await self.embedder.embed_image(photo.jpeg)
+            )
         except Exception as error:  # Gemini or Qdrant: the owner tries again
-            await self.media.delete(self.key(photo.url))
-            log.warning("photo not indexed", extra={"workspace_id": ws, "error": repr(error)})
+            await self.media.delete(self.key_from_url(photo.url))
+            log.warning(
+                "photo not indexed", extra={"workspace_id": workspace_id, "error": repr(error)}
+            )
             raise KnowledgeUnavailable(
                 "The photo couldn't be added just now. Please try again."
             ) from error
         return photo
 
-    async def save(self, ws: str, folder: str, data: bytes, largest: int = LARGEST_SIDE) -> Photo:
+    async def save(
+        self, workspace_id: str, folder: str, data: bytes, largest: int = LARGEST_SIDE
+    ) -> Photo:
         """A JPEG of at most `largest` px, written to the business's `folder`."""
-        return await self._put(f"{ws}/{folder}/{uuid.uuid4().hex}.jpg", data, largest)
+        return await self._put(f"{workspace_id}/{folder}/{uuid.uuid4().hex}.jpg", data, largest)
 
     async def _put(self, key: str, data: bytes, largest: int = LARGEST_SIDE) -> Photo:
         if len(data) > MAX_UPLOAD:
@@ -118,21 +131,23 @@ class PhotoService:
             ) from error
         return Photo(f"{self.media.url}/{key}", jpeg)
 
-    async def nearest(self, ws: str, jpeg: bytes) -> list[tuple[str, float]] | None:
+    async def nearest(self, workspace_id: str, jpeg: bytes) -> list[tuple[str, float]] | None:
         """The business's product photos most like this one, best first: (url, score). None
         when Gemini or Qdrant didn't answer: the agent then asks what it is."""
         try:
             await self._index_ready()
             vector = await self.embedder.embed_image(jpeg)
-            return await self.index.nearest(ws, vector, NEAREST, self.min_similarity)
+            return await self.index.nearest(
+                workspace_id, vector, PHOTOS_TO_SEARCH, self.min_similarity
+            )
         except Exception:  # Gemini or Qdrant didn't answer
-            log.exception("photo not searched", extra={"workspace_id": ws})
+            log.exception("photo not searched", extra={"workspace_id": workspace_id})
             return None
 
-    def is_products(self, ws: str, url: str) -> bool:
+    def is_product_photo(self, workspace_id: str, url: str) -> bool:
         """`url` is the address of one of this business's product photos: its folder, and a
         name we gave (so no "../" reaches another business's)."""
-        folder = re.escape(f"{self.media.url}/{ws}/products/")
+        folder = re.escape(f"{self.media.url}/{workspace_id}/products/")
         return re.fullmatch(folder + r"[0-9a-f]{32}\.jpg", url) is not None
 
     async def reindex(self) -> int:
@@ -140,22 +155,22 @@ class PhotoService:
         await self._index_ready()
         count = 0
         for key in await self.media.keys():
-            ws, folder, _ = (key.split("/") + ["", ""])[:3]
+            workspace_id, folder, _ = (key.split("/") + ["", ""])[:3]
             if folder != "products":
                 continue
             jpeg = await self.media.get(key)
             await self.index.add(
-                ws, f"{self.media.url}/{key}", await self.embedder.embed_image(jpeg)
+                workspace_id, f"{self.media.url}/{key}", await self.embedder.embed_image(jpeg)
             )
             count += 1
         return count
 
-    async def read(self, url: str) -> bytes:
+    async def read_jpeg(self, url: str) -> bytes:
         """A saved photo's JPEG, to upload where a URL can't be fetched (Telegram).
         Raises MediaUnavailable when it can't be read."""
-        return await self.media.get(self.key(url))
+        return await self.media.get(self.key_from_url(url))
 
-    def key(self, url: str) -> str:
+    def key_from_url(self, url: str) -> str:
         return url.removeprefix(f"{self.media.url}/")
 
     async def _index_ready(self) -> None:

@@ -25,23 +25,23 @@ class LiveHub:
     def __init__(self) -> None:
         self.pages: dict[str, set[asyncio.Queue[str]]] = {}  # open inboxes, by workspace
 
-    def publish(self, ws: str, conversation_id: str) -> None:
-        for queue in self.pages.get(ws, ()):
+    def publish(self, workspace_id: str, conversation_id: str) -> None:
+        for queue in self.pages.get(workspace_id, ()):
             if queue.full():
                 queue.get_nowait()  # the oldest goes; the page still hears about the newest
             queue.put_nowait(conversation_id)
 
     @contextmanager
-    def listen(self, ws: str) -> Iterator[asyncio.Queue[str]]:
+    def listen(self, workspace_id: str) -> Iterator[asyncio.Queue[str]]:
         queue: asyncio.Queue[str] = asyncio.Queue(QUEUE_SIZE)
-        self.pages.setdefault(ws, set()).add(queue)
+        self.pages.setdefault(workspace_id, set()).add(queue)
         try:
             yield queue
         finally:
-            pages = self.pages[ws]
+            pages = self.pages[workspace_id]
             pages.discard(queue)
             if not pages:
-                del self.pages[ws]
+                del self.pages[workspace_id]
 
 
 def watch(sessions: async_sessionmaker[AsyncSession], hub: LiveHub) -> None:
@@ -58,8 +58,8 @@ def watch(sessions: async_sessionmaker[AsyncSession], hub: LiveHub) -> None:
 
     @event.listens_for(session_class, "after_commit")
     def publish(session: Session) -> None:
-        for ws, conversation_id in session.info.pop("changed", ()):
-            hub.publish(ws, conversation_id)
+        for workspace_id, conversation_id in session.info.pop("changed", ()):
+            hub.publish(workspace_id, conversation_id)
 
     @event.listens_for(session_class, "after_rollback")
     def forget(session: Session) -> None:

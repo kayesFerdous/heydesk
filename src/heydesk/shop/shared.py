@@ -1,6 +1,6 @@
 """The tools that aren't about products or orders: hand off to a person, take a message for the team, and search
-the business's documents (only when it has some). And what a desk's writing tool and
-prompt say when the business takes payment first."""
+the business's documents (only when it has some). And what a writing tool says when the
+business takes payment first."""
 
 from datetime import UTC
 from typing import Any
@@ -12,16 +12,6 @@ from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 from heydesk.shop.base import NewLead, NewMessage, Store
 
-
-def pay_first_rule(pay_for: str, tool: str) -> str:
-    """The prompt's line for a business that takes payment first."""
-    return (
-        f"{pay_for[0].upper()}{pay_for[1:]} is paid online first, by the link {tool} gives. "
-        "Nothing is placed or confirmed until that payment comes in: never say it is before a "
-        "message says the payment came in."
-    )
-
-
 RETURNING_RULE = (
     "When you need their details, ask once whether to use these again, and use them only if "
     "they say yes; if something changed, ask only for that. If they want the same as last "
@@ -29,7 +19,7 @@ RETURNING_RULE = (
 )
 
 
-def returning(heading: str, facts: list[str]) -> str:
+def returning_section(heading: str, facts: list[str]) -> str:
     """The prompt's section for a visitor back from the same chat or browser: what
     they had before, to offer again instead of asking for it all."""
     return "\n".join(
@@ -77,7 +67,7 @@ class HandoffInput(BaseModel):
 
 async def handoff_to_human(ctx: ToolContext[Store], args: HandoffInput) -> ToolResult:
     if args.unanswered.strip():  # for the owner to teach
-        await ctx.store.missed(args.unanswered)
+        await ctx.store.save_missed_question(args.unanswered)
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
     # The page shows these on a card after the reply; the conversation is marked needs_human
@@ -162,7 +152,7 @@ async def take_message(ctx: ToolContext[Store], args: TakeMessageInput) -> ToolR
         for label, value in (("from", name), ("phone", phone), ("best time", best_time))
         if value
     )
-    confirmed = confirm(ctx.heard, message, read_back)
+    confirmed = confirm(ctx.last_read_back, message, read_back)
     if confirmed is None:
         result = ask_for_yes(read_back, "take_message")
         if not phone:
@@ -189,7 +179,7 @@ TAKE_MESSAGE = Tool(
     run=take_message,
     label="Noting that down…",
     filler="One moment.",
-    timeout_s=10.0,  # the commit check is a network call
+    timeout_seconds=10.0,  # the commit check is a network call
 )
 
 
@@ -220,7 +210,7 @@ async def take_lead(ctx: ToolContext[Store], args: TakeLeadInput) -> ToolResult:
     read_back = f"We call you on {parse.day_time(when)} at {phone}" + "".join(
         f"; {label} {value}" for label, value in (("about", note), ("for", name)) if value
     )
-    confirmed = confirm(ctx.heard, lead, read_back)
+    confirmed = confirm(ctx.last_read_back, lead, read_back)
     if confirmed is None:
         return ask_for_yes(read_back, "take_lead")
     code = await ctx.store.save_lead(confirmed)
@@ -243,7 +233,7 @@ TAKE_LEAD = Tool(
     run=take_lead,
     label="Noting that down…",
     filler="One moment.",
-    timeout_s=10.0,
+    timeout_seconds=10.0,
 )
 
 
@@ -258,7 +248,7 @@ class SearchKnowledgeInput(BaseModel):
 async def search_knowledge(ctx: ToolContext[Store], args: SearchKnowledgeInput) -> ToolResult:
     found = await ctx.store.search_knowledge(args.question)
     if not found:
-        await ctx.store.missed(args.question)  # for the owner to teach
+        await ctx.store.save_missed_question(args.question)  # for the owner to teach
         return ToolResult(
             ok=True,
             data={
@@ -289,7 +279,7 @@ SEARCH_KNOWLEDGE = Tool(
     run=search_knowledge,
     label="Checking our documents…",
     filler="Let me check that.",
-    timeout_s=10.0,  # a question is embedded, then searched: two network calls
+    timeout_seconds=10.0,  # a question is embedded, then searched: two network calls
 )
 
 

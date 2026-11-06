@@ -14,14 +14,14 @@ from pipecat.frames.frames import ErrorFrame, Frame, TranscriptionFrame
 from pipecat.services.stt_service import SegmentedSTTService
 from pipecat.utils.time import time_now_iso8601
 
-TIMEOUT_S = 15.0
+TIMEOUT_SECONDS = 15.0
 
 
 class WhisperSTT(SegmentedSTTService):
     def __init__(self, url: str, language: str) -> None:
         super().__init__()
         self.language = language
-        self.client = httpx.AsyncClient(base_url=url, timeout=TIMEOUT_S)
+        self.client = httpx.AsyncClient(base_url=url, timeout=TIMEOUT_SECONDS)
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None]:
         started = time.perf_counter()

@@ -95,9 +95,9 @@ async def test_the_agent_answers_and_the_next_message_continues(
         (str(CHAT), "(fake model) You said: hi"),
         (str(CHAT), "(fake model) You said: again"),
     ]
-    [conv] = await telegram_conversations(app)
-    assert conv.contact == str(CHAT)
-    assert [m["content"] for m in conv.messages if m["role"] == "user"] == ["hi", "again"]
+    [conversation] = await telegram_conversations(app)
+    assert conversation.contact == str(CHAT)
+    assert [m["content"] for m in conversation.messages if m["role"] == "user"] == ["hi", "again"]
     [listed] = (await client.get("/api/conversations")).json()
     assert listed["name"] == "Rina Akter"
 
@@ -113,8 +113,8 @@ async def test_start_sends_the_greeting_and_starts_afresh(
     await send(client, path, secret, message("hello"))
 
     assert sent(app)[1][1].startswith("Assalamu alaikum! Welcome to Nakshi Threads.")
-    [conv] = await telegram_conversations(app)  # the same chat, started afresh
-    remembered = conv.messages[conv.history_from :]
+    [conversation] = await telegram_conversations(app)  # the same chat, started afresh
+    remembered = conversation.messages[conversation.history_from :]
     assert remembered[0]["role"] == "assistant"  # the greeting they saw comes first
     assert [m["content"] for m in remembered if m["role"] == "user"] == ["hello"]
 
@@ -125,28 +125,28 @@ async def test_a_quiet_chat_starts_afresh_in_the_same_chat(
     """The team keeps one chat per contact, with its labels; the agent forgets."""
     path, secret = await connect(app, client)
     await send(client, path, secret, message("two biryanis"))
-    [conv] = await telegram_conversations(app)
-    await client.put(f"/api/conversations/{conv.id}/labels", json={"labels": ["vip"]})
+    [conversation] = await telegram_conversations(app)
+    await client.put(f"/api/conversations/{conversation.id}/labels", json={"labels": ["vip"]})
 
     app.state.services.conversations.now.advance(hours=13)
     await send(client, path, secret, message("hi"))
 
-    [conv] = await telegram_conversations(app)
-    assert conv.history_from == 3 and conv.labels == ["vip"]
-    prompt = app.state.services.conversations.runtime.llm.requests[-1]
+    [conversation] = await telegram_conversations(app)
+    assert conversation.history_from == 3 and conversation.labels == ["vip"]
+    prompt = app.state.services.conversations.llm.requests[-1]
     assert "two biryanis" not in str(prompt.messages)  # yesterday's isn't in its history
 
-    whole = (await client.get(f"/api/conversations/{conv.id}")).json()
+    whole = (await client.get(f"/api/conversations/{conversation.id}")).json()
     assert [line["text"] for line in whole["messages"] if line["role"] == "user"] == [
         "two biryanis",
         "hi",
     ]
     assert whole["history_from"] == 3 and not whole["more"]
-    newest = (await client.get(f"/api/conversations/{conv.id}", params={"limit": 1})).json()
+    newest = (await client.get(f"/api/conversations/{conversation.id}", params={"limit": 1})).json()
     assert [line["text"] for line in newest["messages"]] == ["(fake model) You said: hi"]
     assert newest["more"] and newest["count"] == whole["count"] == 6
     before = newest["messages"][0]["index"]
-    older = await client.get(f"/api/conversations/{conv.id}", params={"before": before})
+    older = await client.get(f"/api/conversations/{conversation.id}", params={"before": before})
     assert older.json()["messages"][-1]["text"] == "hi"
 
 
@@ -203,7 +203,7 @@ async def test_a_buyer_sends_a_photo_and_gets_the_product_photo_back(
     path, secret = await connect(app, client)
     fake = services.channels.telegram
     fake.files["large"] = photo("red")
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
 
     await send(client, path, secret, with_photo("eta ache?"))
@@ -232,7 +232,7 @@ async def test_a_tap_is_a_message_and_the_reply_has_the_sizes_in_stock(
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     path, secret = await connect(app, client)
     fake = services.channels.telegram
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     line = {"code": "panjabi-cotton", "quantity": 1, "colour": "Navy"}
     llm.script = [ToolCall("c1", "update_cart", {"lines": [line]}), "Which size?"]
 
@@ -277,7 +277,7 @@ async def test_more_cards_than_photos_are_one_message_to_tap(
     await kurti_with_photo(client)
     path, secret = await connect(app, client)
     fake = services.channels.telegram
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     codes = ["kurti", "panjabi-cotton", "kids-panjabi"]
     llm.script = [ToolCall("c1", "show_photos", {"products": codes}), "Which one?"]
 

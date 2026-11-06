@@ -16,8 +16,8 @@ class Lead(CustomerRequest, Base):
 
     __tablename__ = "leads"
     __table_args__ = (UniqueConstraint("workspace_id", "number"),)
-    LETTER: ClassVar[str] = "L"
-    FLOW: ClassVar[dict[str, set[str]]] = {
+    CODE_LETTER: ClassVar[str] = "L"
+    STATUS_FLOW: ClassVar[dict[str, set[str]]] = {
         "open": set(OUTCOMES),
         **{outcome: {"open"} for outcome in OUTCOMES},
     }

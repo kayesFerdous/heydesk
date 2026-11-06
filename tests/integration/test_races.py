@@ -141,19 +141,19 @@ async def test_an_order_cancelled_twice_at_once_goes_back_in_stock_once(pg: Worl
 
 async def test_lines_added_to_a_chat_at_once_are_all_kept(pg: World) -> None:
     agent = await pg.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
-    conv = pg.services.conversations._new(agent, "web", "a-browser")
+    conversation = pg.services.conversations._new_conversation(agent, "web", "a-browser")
     async with pg.sessions() as s, s.begin():
-        s.add(conv)
+        s.add(conversation)
 
     await at_once(
         *(
-            pg.services.conversations.team_reply(agent.workspace_id, conv.id, f"Reply {n}")
+            pg.services.conversations.team_reply(agent.workspace_id, conversation.id, f"Reply {n}")
             for n in range(AT_ONCE)
         )
     )
 
     async with pg.sessions() as s:
-        saved = await s.get_one(Conversation, conv.id)
+        saved = await s.get_one(Conversation, conversation.id)
     assert sorted(m["content"] for m in saved.messages) == [f"Reply {n}" for n in range(AT_ONCE)]
 
 

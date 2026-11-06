@@ -32,9 +32,9 @@ async def shop_with_calls(services: Services, **settings: Any) -> LiveAgent:
 
 async def order(services: Services, agent: LiveAgent, phone: str = MOBILE) -> ShopOrder:
     """A kurti ordered over two turns, with a yes; returns the order."""
-    runtime = services.conversations.runtime
+    llm = services.conversations.llm
     details = {**DETAILS, "phone": phone}
-    runtime.llm.script = [
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", details),
         READ_BACK,
@@ -85,12 +85,12 @@ async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_i
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services)
-    phone = calls.listen(calls.number("+880 1712-345678"))  # the /phone page
+    phone = calls.wait_for_calls(calls.clean_number("+880 1712-345678"))  # the /phone page
     placed = await order(world.services, agent)
     [queued] = await calls.find(DEV_WORKSPACE_ID)
     assert (queued.status, queued.code, queued.phone) == ("queued", placed.code, MOBILE)
 
-    await calls.tick()
+    await calls.ring_due_calls()
     ring = phone.get_nowait()
     assert ring == {"call": queued.id, "business": "Nakshi Threads", "order": "O-101"}
 
@@ -113,7 +113,7 @@ async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_i
     assert await status_of(world, placed.id) == "confirmed"
     assert (await world.conversation(call.id)).state["calling"]["over"]  # it hangs up
 
-    await calls.ended(answered.call_id)
+    await calls.mark_ended(answered.call_id)
     [done] = await calls.find(DEV_WORKSPACE_ID, "done")
     assert (done.status, done.outcome) == ("done", "confirmed")
     with pytest.raises(NotFound):
@@ -125,11 +125,11 @@ async def test_the_queue_waits_for_the_hours_and_a_free_line_and_call_now_goes_f
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services, start="15:00")  # it's 14:00 in Dhaka
-    phones = [calls.listen(MOBILE), calls.listen("01812345678")]
+    phones = [calls.wait_for_calls(MOBILE), calls.wait_for_calls("01812345678")]
     first = await order(world.services, agent)
     second = await order(world.services, agent, phone="01812345678")
 
-    await calls.tick()
+    await calls.ring_due_calls()
     assert all(c.status == "queued" for c in await calls.find(DEV_WORKSPACE_ID))  # too early
     waiting = await calls.find(DEV_WORKSPACE_ID)
     assert [c.order_id for c in waiting] == [first.id, second.id]  # the oldest first
@@ -138,7 +138,7 @@ async def test_the_queue_waits_for_the_hours_and_a_free_line_and_call_now_goes_f
     assert [c.order_id for c in await calls.find(DEV_WORKSPACE_ID)] == [second.id, first.id]
 
     world.clock.advance(hours=1)
-    await calls.tick()
+    await calls.ring_due_calls()
     assert phones[1].get_nowait()["order"] == second.code
     assert phones[0].empty()  # one line: the next waits for it
     assert [c.status for c in await calls.find(DEV_WORKSPACE_ID)] == ["ringing", "queued"]
@@ -149,7 +149,7 @@ async def test_a_missed_call_is_tried_again_then_the_owner_is_told(world: World)
     agent = await shop_with_calls(world.services, tries=2, retry_minutes=30)
     placed = await order(world.services, agent)
 
-    await calls.tick()  # no page open: the phone is off
+    await calls.ring_due_calls()  # no page open: the phone is off
     [call] = await calls.find(DEV_WORKSPACE_ID)
     assert (call.status, call.tries, call.next_try_at) == (
         "queued",
@@ -157,12 +157,12 @@ async def test_a_missed_call_is_tried_again_then_the_owner_is_told(world: World)
         world.clock.now + timedelta(minutes=30),
     )
 
-    phone = calls.listen(MOBILE)
+    phone = calls.wait_for_calls(MOBILE)
     world.clock.advance(minutes=31)
-    await calls.tick()
+    await calls.ring_due_calls()
     assert phone.get_nowait()["call"] == call.id
     world.clock.advance(seconds=world.services.calls.settings.RING_SECONDS + 1)
-    await calls.tick()  # rang out
+    await calls.ring_due_calls()  # rang out
     [done] = await calls.find(DEV_WORKSPACE_ID, "done")
     assert (done.outcome, done.tries) == ("no_answer", 2)
     assert await status_of(world, placed.id) == "new"  # the owner calls them
@@ -171,16 +171,16 @@ async def test_a_missed_call_is_tried_again_then_the_owner_is_told(world: World)
 async def test_a_declined_call_waits_and_an_order_settled_first_isnt_called(world: World) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services)
-    phone = calls.listen(MOBILE)
+    phone = calls.wait_for_calls(MOBILE)
     placed = await order(world.services, agent)
-    await calls.tick()
-    await calls.missed(phone.get_nowait()["call"])  # Decline
+    await calls.ring_due_calls()
+    await calls.mark_missed(phone.get_nowait()["call"])  # Decline
     [call] = await calls.find(DEV_WORKSPACE_ID)
     assert call.status == "queued"
 
     await world.store(agent).move_order(placed.id, "confirmed")  # the owner phoned them
     world.clock.advance(minutes=31)
-    await calls.tick()
+    await calls.ring_due_calls()
     [done] = await calls.find(DEV_WORKSPACE_ID, "done")
     assert done.outcome == "skipped"
     assert phone.empty()
@@ -195,7 +195,7 @@ async def test_confirm_order_only_works_on_the_shops_call(world: World) -> None:
         str(placed.conversation_id)
     )
     with pytest.raises(HeyDeskError, match="11 digits"):
-        world.services.calls.number("12345")
+        world.services.calls.clean_number("12345")
 
 
 async def test_the_owner_sees_and_steers_the_queue(app: FastAPI, client: AsyncClient) -> None:

@@ -13,7 +13,7 @@ from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
 from heydesk.api.sse import live_frames
 from heydesk.models import Conversation, Lead, TeamMessage, Ticket, Visitor
 from heydesk.services import Services
-from heydesk.services.visitors import is_blocked, key_of
+from heydesk.services.visitors import is_blocked, visitor_key
 
 router = APIRouter(tags=["conversations"])
 
@@ -35,20 +35,20 @@ class ConversationOut(BaseModel):
     updated_at: datetime
 
 
-PREVIEW = 120  # characters of the last line a list row shows
+PREVIEW_CHARS = 120  # characters of the last line a list row shows
 
 
 async def conversations_out(
-    services: Services, ws: str, convs: list[Conversation]
+    services: Services, workspace_id: str, conversations: list[Conversation]
 ) -> list[ConversationOut]:
     """The conversations with the email of whoever has each, and the last thing said."""
-    emails = {u.id: u.email for u in await services.members.members(ws)}
+    emails = {u.id: u.email for u in await services.members.members(workspace_id)}
     out = []
-    for c in convs:
+    for c in conversations:
         said = [line.text for line in lines(c) if line.text]
         update = {
             "assigned_email": emails.get(c.assigned_to or ""),
-            "preview": said[-1][:PREVIEW] if said else "",
+            "preview": said[-1][:PREVIEW_CHARS] if said else "",
         }
         out.append(ConversationOut.model_validate(c).model_copy(update=update))
     return out
@@ -62,10 +62,10 @@ class Line(BaseModel):
     photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url}
 
 
-def lines(conv: Conversation) -> list[Line]:
+def lines(conversation: Conversation) -> list[Line]:
     """What the team sees of a chat, oldest first: tool calls and results left out."""
     said = []
-    for i, m in enumerate(conv.messages):
+    for i, m in enumerate(conversation.messages):
         if m.get("photos"):  # a tool's result, kept only for the photos it showed
             said.append(Line(index=i, role="assistant", text="", photos=m["photos"]))
         elif (
@@ -132,13 +132,13 @@ class MessageOut(BaseModel):
 
 
 @router.get("/api/conversations/live")
-async def live(services: Svc, ws: Workspace) -> StreamingResponse:
+async def live(services: Svc, workspace_id: Workspace) -> StreamingResponse:
     """A stream of `event: changed` frames, one per chat that changed in this business.
     The inbox keeps it open and fetches that chat; a `ping` every 20 seconds keeps a proxy from
     closing it. It needs the Bearer header, so the page reads it with `fetch`, not
     `EventSource`. After a reconnect the page fetches the list again."""
     return StreamingResponse(
-        live_frames(services.live, ws),
+        live_frames(services.live, workspace_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -147,9 +147,9 @@ async def live(services: Svc, ws: Workspace) -> StreamingResponse:
 @router.get("/api/conversations")
 async def conversations(
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
     page: Paged,
-    principal: User,
+    current_user: User,
     status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
     assigned: Literal["me", "none"] | None = None,
@@ -162,10 +162,10 @@ async def conversations(
     Done and snoozed chats are left out, or only the done ones with `done=true`; `q` searches
     every chat's name and what was said, such as a phone or an order code."""
     found = await services.conversations.list(
-        ws,
+        workspace_id,
         status=status,
         channel=channel,
-        assigned_to=principal.user_id if assigned == "me" else None,
+        assigned_to=current_user.user_id if assigned == "me" else None,
         unassigned=assigned == "none",
         q=q,
         done=done,
@@ -173,7 +173,7 @@ async def conversations(
         limit=page.limit,
         before=page.before,
     )
-    return await conversations_out(services, ws, found)
+    return await conversations_out(services, workspace_id, found)
 
 
 class CountsOut(BaseModel):
@@ -185,10 +185,10 @@ class CountsOut(BaseModel):
 
 
 @router.get("/api/conversations/counts")
-async def counts(services: Svc, ws: Workspace, principal: User) -> CountsOut:
+async def counts(services: Svc, workspace_id: Workspace, current_user: User) -> CountsOut:
     """The inbox's numbers: how many chats wait for a person, the caller's and no one's,
     and the orders and messages still new."""
-    return CountsOut(**await services.conversations.counts(ws, principal.user_id))
+    return CountsOut(**await services.conversations.counts(workspace_id, current_user.user_id))
 
 
 class StatsOut(BaseModel):
@@ -211,12 +211,12 @@ class DashboardOut(BaseModel):
 
 @router.get("/api/stats")
 async def stats(
-    services: Svc, ws: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
+    services: Svc, workspace_id: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> DashboardOut:
     """The owner's dashboard: today, yesterday and the last `days` days, in the
     business's own days."""
-    agent = await services.agents.by_workspace(ws)
-    store = await services.agents.store(ws)
+    agent = await services.agents.by_workspace(workspace_id)
+    store = await services.agents.store(workspace_id)
     zone = ZoneInfo(agent.config.timezone)
     today = datetime.combine(store.now().astimezone(zone).date(), time(), zone)
     day = timedelta(days=1)
@@ -237,24 +237,26 @@ async def stats(
 async def conversation(
     conversation_id: str,
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
     before: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int | None, Query(ge=1, le=200)] = None,
 ) -> ConversationWithMessages:
     """The chat with what was said. `limit`: only the newest that many lines, before the line
     `before` if given; the screen loads older ones as the team scrolls up."""
-    conv = await services.conversations.get(ws, conversation_id)
-    said = lines(conv)
+    conversation = await services.conversations.get(workspace_id, conversation_id)
+    said = lines(conversation)
     count = len(said)
     if before is not None:
         said = [line for line in said if line.index < before]
     more = limit is not None and len(said) > limit
     if limit is not None:
         said = said[-limit:]
-    [head] = await conversations_out(services, ws, [conv])
+    [head] = await conversations_out(services, workspace_id, [conversation])
     found = (
-        await services.visitors.find(ws, key_of(conv.channel, conv.contact))
-        if conv.contact
+        await services.visitors.find(
+            workspace_id, visitor_key(conversation.channel, conversation.contact)
+        )
+        if conversation.contact
         else None
     )
     visitor = visitor_out(found, services.visitors.now()) if found else None
@@ -263,7 +265,7 @@ async def conversation(
         messages=said,
         count=count,
         more=more,
-        history_from=conv.history_from,
+        history_from=conversation.history_from,
         visitor=visitor,
     )
 
@@ -274,11 +276,13 @@ class HandBackIn(BaseModel):
 
 @router.patch("/api/conversations/{conversation_id}")
 async def hand_back(
-    conversation_id: str, body: HandBackIn, services: Svc, ws: Workspace
+    conversation_id: str, body: HandBackIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """Marks a hand-off handled. 409 `invalid_transition` if nobody was waiting."""
     [handled] = await conversations_out(
-        services, ws, [await services.conversations.hand_back(ws, conversation_id)]
+        services,
+        workspace_id,
+        [await services.conversations.hand_back(workspace_id, conversation_id)],
     )
     return handled
 
@@ -289,11 +293,13 @@ class DoneIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/done")
 async def mark_done(
-    conversation_id: str, body: DoneIn, services: Svc, ws: Workspace
+    conversation_id: str, body: DoneIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """Done hides the chat until the visitor writes again; `false` shows it again."""
     [marked] = await conversations_out(
-        services, ws, [await services.conversations.mark_done(ws, conversation_id, body.done)]
+        services,
+        workspace_id,
+        [await services.conversations.mark_done(workspace_id, conversation_id, body.done)],
     )
     return marked
 
@@ -304,12 +310,14 @@ class SnoozeIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/snooze")
 async def snooze(
-    conversation_id: str, body: SnoozeIn, services: Svc, ws: Workspace
+    conversation_id: str, body: SnoozeIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """Hides the chat until `until`, when it comes back and the owner gets an alert.
     A 422 for a time not in the next 30 days."""
     [snoozed] = await conversations_out(
-        services, ws, [await services.conversations.snooze(ws, conversation_id, body.until)]
+        services,
+        workspace_id,
+        [await services.conversations.snooze(workspace_id, conversation_id, body.until)],
     )
     return snoozed
 
@@ -320,11 +328,13 @@ class LabelsIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/labels")
 async def set_labels(
-    conversation_id: str, body: LabelsIn, services: Svc, ws: Workspace
+    conversation_id: str, body: LabelsIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """The chat's labels, the whole list; `?label=` on the list filters by one."""
-    conv = await services.conversations.set_labels(ws, conversation_id, body.labels)
-    [labelled] = await conversations_out(services, ws, [conv])
+    conversation = await services.conversations.set_labels(
+        workspace_id, conversation_id, body.labels
+    )
+    [labelled] = await conversations_out(services, workspace_id, [conversation])
     return labelled
 
 
@@ -342,21 +352,26 @@ class NoteOut(BaseModel):
 
 
 @router.get("/api/conversations/{conversation_id}/notes")
-async def notes(conversation_id: str, services: Svc, ws: Workspace) -> list[NoteOut]:
+async def notes(conversation_id: str, services: Svc, workspace_id: Workspace) -> list[NoteOut]:
     """The team's notes on the chat, oldest first. The visitor never sees them."""
-    found = await services.conversations.notes(ws, conversation_id)
+    found = await services.conversations.notes(workspace_id, conversation_id)
     return [NoteOut.model_validate(n) for n in found]
 
 
 @router.post("/api/conversations/{conversation_id}/notes", status_code=201)
 async def add_note(
-    conversation_id: str, body: NoteIn, services: Svc, ws: Workspace, principal: User
+    conversation_id: str, body: NoteIn, services: Svc, workspace_id: Workspace, current_user: User
 ) -> NoteOut:
     """A note for the team: added, never edited; not in the chat."""
     author = next(
-        (m.email for m in await services.members.members(ws) if m.id == principal.user_id), ""
+        (
+            m.email
+            for m in await services.members.members(workspace_id)
+            if m.id == current_user.user_id
+        ),
+        "",
     )
-    note = await services.conversations.add_note(ws, conversation_id, author, body.text)
+    note = await services.conversations.add_note(workspace_id, conversation_id, author, body.text)
     return NoteOut.model_validate(note)
 
 
@@ -366,13 +381,13 @@ class ReplyIn(BaseModel):
 
 @router.post("/api/conversations/{conversation_id}/reply")
 async def reply(
-    conversation_id: str, body: ReplyIn, services: Svc, ws: Workspace
+    conversation_id: str, body: ReplyIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """The team answers from the inbox: the words reach the visitor and the chat, and
     the chat is taken over. On Messenger and WhatsApp only within 24 hours of the
     visitor's last message: Meta refuses it after, and nothing reaches them."""
-    conv = await services.conversations.team_reply(ws, conversation_id, body.text)
-    [replied] = await conversations_out(services, ws, [conv])
+    conversation = await services.conversations.team_reply(workspace_id, conversation_id, body.text)
+    [replied] = await conversations_out(services, workspace_id, [conversation])
     return replied
 
 
@@ -386,11 +401,13 @@ class AssistOut(BaseModel):
 
 
 @router.post("/api/conversations/{conversation_id}/assist")
-async def assist(conversation_id: str, body: AssistIn, services: Svc, ws: Workspace) -> AssistOut:
+async def assist(
+    conversation_id: str, body: AssistIn, services: Svc, workspace_id: Workspace
+) -> AssistOut:
     """The model's help on a chat: `summary`, `ask` (with `question`), or `draft` (the
     next reply, for the team to check and send). No tools, nothing added or sent; traced and
     billed as a turn. A 503 when the model didn't answer."""
-    agent = await services.agents.by_workspace(ws)
+    agent = await services.agents.by_workspace(workspace_id)
     text = await services.conversations.assist(agent, conversation_id, body.kind, body.question)
     return AssistOut(text=text)
 
@@ -401,13 +418,13 @@ class TakeOverIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/takeover")
 async def take_over(
-    conversation_id: str, body: TakeOverIn, services: Svc, ws: Workspace
+    conversation_id: str, body: TakeOverIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
     TAKEOVER_QUIET_MINUTES."""
-    conv = await services.conversations.take_over(ws, conversation_id, body.on)
-    [taken] = await conversations_out(services, ws, [conv])
+    conversation = await services.conversations.take_over(workspace_id, conversation_id, body.on)
+    [taken] = await conversations_out(services, workspace_id, [conversation])
     return taken
 
 
@@ -417,13 +434,19 @@ class AssigneeIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/assignee")
 async def assign(
-    conversation_id: str, body: AssigneeIn, services: Svc, ws: Workspace, principal: User
+    conversation_id: str,
+    body: AssigneeIn,
+    services: Svc,
+    workspace_id: Workspace,
+    current_user: User,
 ) -> ConversationOut:
     """Who has the chat. The owner gives any chat to anyone on the team, or no one; a
     moderator takes an unassigned one for themself (their own id) and gives back their own
     (`null`); anything else is a 403. 404 for someone not on the team."""
-    conv = await services.conversations.assign(ws, conversation_id, principal, body.user_id)
-    [assigned] = await conversations_out(services, ws, [conv])
+    conversation = await services.conversations.assign(
+        workspace_id, conversation_id, current_user, body.user_id
+    )
+    [assigned] = await conversations_out(services, workspace_id, [conversation])
     return assigned
 
 
@@ -434,30 +457,32 @@ class VisitorIn(BaseModel):
 
 @router.patch("/api/visitors/{visitor_id}")
 async def change_visitor(
-    visitor_id: str, body: VisitorIn, services: Svc, ws: Workspace, principal: User
+    visitor_id: str, body: VisitorIn, services: Svc, workspace_id: Workspace, current_user: User
 ) -> VisitorOut:
     """Block or unblock a visitor, or turn the AI off or on for them; the owner or a
     moderator. Their messages run no turn and cost nothing either way."""
-    emails = {u.id: u.email for u in await services.members.members(ws)}
-    by = emails.get(principal.user_id, "HeyDesk")  # an admin isn't on the team
-    visitor = await services.visitors.change(ws, visitor_id, by, body.blocked, body.ai_off)
+    emails = {u.id: u.email for u in await services.members.members(workspace_id)}
+    by = emails.get(current_user.user_id, "HeyDesk")  # an admin isn't on the team
+    visitor = await services.visitors.change(
+        workspace_id, visitor_id, by, body.blocked, body.ai_off
+    )
     return visitor_out(visitor, services.visitors.now())
 
 
 @router.get("/api/visitors/blocked")
-async def blocked(services: Svc, ws: Workspace) -> list[BlockedOut]:
+async def blocked(services: Svc, workspace_id: Workspace) -> list[BlockedOut]:
     """Who is blocked now, by the team, for flooding or for chatting off topic, with their
     latest chat; the newest block first."""
     now = services.visitors.now()
     found = []
-    for v in await services.visitors.blocked(ws):
-        conv = await services.conversations.of_visitor(ws, v.key)
+    for v in await services.visitors.blocked(workspace_id):
+        conversation = await services.conversations.latest_for_visitor(workspace_id, v.key)
         found.append(
             BlockedOut(
                 **visitor_out(v, now).model_dump(),
-                conversation_id=conv.id if conv else None,
-                channel=conv.channel if conv else None,
-                name=conv.name if conv else None,
+                conversation_id=conversation.id if conversation else None,
+                channel=conversation.channel if conversation else None,
+                name=conversation.name if conversation else None,
             )
         )
     return found
@@ -465,24 +490,30 @@ async def blocked(services: Svc, ws: Workspace) -> list[BlockedOut]:
 
 @router.get("/api/messages")
 async def messages(
-    services: Svc, ws: Workspace, page: Paged, status: str | None = None, q: str | None = None
+    services: Svc,
+    workspace_id: Workspace,
+    page: Paged,
+    status: str | None = None,
+    q: str | None = None,
 ) -> list[MessageOut]:
     """Messages for the team, newest first, a page at a time (`limit`, `before`). `q`
     matches the code, the name or the phone."""
-    store = await services.agents.store(ws)
+    store = await services.agents.store(workspace_id)
     found = await store.messages(status, q, limit=page.limit, before=page.before)
     return [MessageOut.model_validate(m) for m in found]
 
 
 @router.get("/api/messages/{message_id}")
-async def message(message_id: str, services: Svc, ws: Workspace) -> MessageOut:
-    store = await services.agents.store(ws)
+async def message(message_id: str, services: Svc, workspace_id: Workspace) -> MessageOut:
+    store = await services.agents.store(workspace_id)
     return MessageOut.model_validate(await store.get(TeamMessage, message_id))
 
 
 @router.patch("/api/messages/{message_id}")
-async def set_status(message_id: str, body: StatusIn, services: Svc, ws: Workspace) -> MessageOut:
-    store = await services.agents.store(ws)
+async def set_status(
+    message_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
+) -> MessageOut:
+    store = await services.agents.store(workspace_id)
     return MessageOut.model_validate(await store.set_status(TeamMessage, message_id, body.status))
 
 
@@ -501,19 +532,22 @@ class TicketOut(BaseModel):
 
 @router.get("/api/tickets")
 async def tickets(
-    services: Svc, ws: Workspace, page: Paged, status: Literal["open", "solved"] | None = None
+    services: Svc,
+    workspace_id: Workspace,
+    page: Paged,
+    status: Literal["open", "solved"] | None = None,
 ) -> list[TicketOut]:
     """Complaints the agent flagged, newest first, a page at a time; `status=open`
     for the ones still to deal with. Each with who has its chat."""
-    store = await services.agents.store(ws)
+    store = await services.agents.store(workspace_id)
     found = await store.find(Ticket, status, limit=page.limit, before=page.before)
     chats = {
         c.id: c
         for c in await services.conversations.by_ids(
-            ws, {t.conversation_id for t in found if t.conversation_id}
+            workspace_id, {t.conversation_id for t in found if t.conversation_id}
         )
     }
-    emails = {u.id: u.email for u in await services.members.members(ws)}
+    emails = {u.id: u.email for u in await services.members.members(workspace_id)}
     return [
         TicketOut.model_validate(t).model_copy(
             update={
@@ -528,10 +562,10 @@ async def tickets(
 
 @router.patch("/api/tickets/{ticket_id}")
 async def set_ticket_status(
-    ticket_id: str, body: StatusIn, services: Svc, ws: Workspace
+    ticket_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
 ) -> TicketOut:
     """`solved`, or `open` again. It stays open until someone marks it solved."""
-    store = await services.agents.store(ws)
+    store = await services.agents.store(workspace_id)
     return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))
 
 
@@ -563,25 +597,27 @@ class WhyOut(BaseModel):
 @router.get("/api/leads")
 async def leads(
     services: Svc,
-    ws: Workspace,
+    workspace_id: Workspace,
     page: Paged,
     status: Literal["open", "sold", "not_now", "lost"] | None = None,
 ) -> list[LeadOut]:
     """Call backs the agent took, newest first; `status=open` for the ones to call."""
-    store = await services.agents.store(ws)
+    store = await services.agents.store(workspace_id)
     found = await store.find(Lead, status, limit=page.limit, before=page.before)
     return [LeadOut.model_validate(lead) for lead in found]
 
 
 @router.get("/api/leads/why")
-async def lost_why(services: Svc, ws: Workspace) -> list[WhyOut]:
+async def lost_reasons(services: Svc, workspace_id: Workspace) -> list[WhyOut]:
     """Why we lose sales: the lost leads' whys, counted, most first."""
-    store = await services.agents.store(ws)
-    return [WhyOut(why=why, count=n) for why, n in await store.lost_why()]
+    store = await services.agents.store(workspace_id)
+    return [WhyOut(why=why, count=n) for why, n in await store.lost_reasons()]
 
 
 @router.patch("/api/leads/{lead_id}")
-async def lead_outcome(lead_id: str, body: LeadIn, services: Svc, ws: Workspace) -> LeadOut:
+async def lead_outcome(
+    lead_id: str, body: LeadIn, services: Svc, workspace_id: Workspace
+) -> LeadOut:
     """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
-    store = await services.agents.store(ws)
+    store = await services.agents.store(workspace_id)
     return LeadOut.model_validate(await store.lead_outcome(lead_id, body.status, body.why))

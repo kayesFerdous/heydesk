@@ -78,17 +78,17 @@ class AgentService:
         self.now = now
 
     async def create(
-        self, ws: str, fields: dict[str, Any], *, public_key: str | None = None
+        self, workspace_id: str, fields: dict[str, Any], *, public_key: str | None = None
     ) -> str:
         """The business's agent. A business has only one."""
         async with self.sessions() as s:
-            business = await s.get(Workspace, ws)
-        name = business.name if business else ws
+            business = await s.get(Workspace, workspace_id)
+        name = business.name if business else workspace_id
         # A business can start with no fields: the name comes from signup
         config = validate({"business_name": name, "name": f"{name} assistant", **fields})
         now = self.now()
         agent = Agent(
-            workspace_id=ws,
+            workspace_id=workspace_id,
             name=config.name,
             public_key=public_key or secrets.token_urlsafe(12),
             config=config.model_dump(mode="json", exclude_unset=True),
@@ -96,15 +96,15 @@ class AgentService:
             updated_at=now,
         )
         async with self.sessions() as s, s.begin():
-            if await s.scalar(select(Agent.id).where(Agent.workspace_id == ws)):
+            if await s.scalar(select(Agent.id).where(Agent.workspace_id == workspace_id)):
                 raise Conflict("This business already has its agent. Edit it instead.")
             s.add(agent)
         return agent.id
 
-    async def update(self, ws: str, patch: dict[str, Any]) -> ShopConfig:
+    async def update(self, workspace_id: str, patch: dict[str, Any]) -> ShopConfig:
         """Top-level fields in `patch` replace the config's. Live from the next message."""
         async with self.sessions() as s, s.begin():
-            agent = await self._get(s, ws)
+            agent = await self._get(s, workspace_id)
             config = validate({**agent.config, **patch})
             agent.config = config.model_dump(
                 mode="json", exclude_unset=True
@@ -113,28 +113,28 @@ class AgentService:
             agent.updated_at = self.now()
         return config
 
-    async def get(self, ws: str) -> AgentInfo:
+    async def get(self, workspace_id: str) -> AgentInfo:
         async with self.sessions() as s:
-            agent = await self._get(s, ws)
+            agent = await self._get(s, workspace_id)
         config = ShopConfig.model_validate(agent.config)
-        store = ShopStore(self.sessions, ws, self.now)
+        store = ShopStore(self.sessions, workspace_id, self.now)
         missing = await shop_missing(config, store)
         if config.pay_first and not await store.pays_first(config):
             missing.append("Connect SSLCommerz or bKash to take payments first.")
         return AgentInfo(agent.id, agent.public_key, config, missing)
 
-    async def store(self, ws: str) -> ShopStore:
+    async def store(self, workspace_id: str) -> ShopStore:
         """The business's data, for its owner's routes. 404 until it has an agent."""
         async with self.sessions() as s:
-            await self._get(s, ws)
-        return ShopStore(self.sessions, ws, self.now, photos=self.photos)
+            await self._get(s, workspace_id)
+        return ShopStore(self.sessions, workspace_id, self.now, photos=self.photos)
 
     async def by_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
 
-    async def by_workspace(self, ws: str) -> LiveAgent:
+    async def by_workspace(self, workspace_id: str) -> LiveAgent:
         """The business's agent, for a service that acts for its owner."""
-        return await self._live(Agent.workspace_id == ws)
+        return await self._live(Agent.workspace_id == workspace_id)
 
     async def by_id(self, agent_id: str) -> LiveAgent:
         """For a messaging app, which knows its agent by id."""
@@ -181,8 +181,8 @@ class AgentService:
         log.info("dev agent ready", extra={"public_key": key})
         return await self.by_key(key)
 
-    async def _get(self, s: AsyncSession, ws: str) -> Agent:
-        agent = await s.scalar(select(Agent).where(Agent.workspace_id == ws))
+    async def _get(self, s: AsyncSession, workspace_id: str) -> Agent:
+        agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))
         if agent is None:
             raise NotFound("This business has no agent yet. Create one first.")
         return agent

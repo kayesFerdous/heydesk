@@ -20,8 +20,8 @@ from heydesk.ports.knowledge_store import ChunkIn, Snippet
 from heydesk.runtime.text import words
 
 POINTS_PER_CALL = 64
-CANDIDATES = 20  # what each of the two searches hands to the fusion
-TF_SATURATION = 1.2  # BM25's k1: a word's 5th mention counts for little more than its 2nd
+RESULTS_PER_SEARCH = 20  # what each of the two searches hands to the fusion
+REPEAT_WORD_DAMPING = 1.2  # BM25's k1: a word's 5th mention counts for little more than its 2nd
 
 
 # Words that say nothing about a topic. Left in, a question like "poem about the moon" would
@@ -165,7 +165,7 @@ def sparse_vector(text: str, *, query: bool = False) -> models.SparseVector:
     counts = Counter(zlib.crc32(w.encode()) for w in words(text) if w not in STOPWORDS)
     if query:
         return models.SparseVector(indices=list(counts), values=[1.0] * len(counts))
-    values = [n * (TF_SATURATION + 1) / (n + TF_SATURATION) for n in counts.values()]
+    values = [n * (REPEAT_WORD_DAMPING + 1) / (n + REPEAT_WORD_DAMPING) for n in counts.values()]
     return models.SparseVector(indices=list(counts), values=values)
 
 
@@ -203,13 +203,15 @@ class QdrantKnowledgeStore:
             self.collection, "document_id", models.PayloadSchemaType.KEYWORD
         )
 
-    async def add(self, ws: str, document_id: str, title: str, chunks: list[ChunkIn]) -> None:
+    async def add(
+        self, workspace_id: str, document_id: str, title: str, chunks: list[ChunkIn]
+    ) -> None:
         points = [
             models.PointStruct(
                 id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{c.position}")),
                 vector={"dense": c.vector, "sparse": sparse_vector(c.text)},
                 payload={
-                    "workspace_id": ws,
+                    "workspace_id": workspace_id,
                     "document_id": document_id,
                     "title": title,
                     "position": c.position,
@@ -221,13 +223,13 @@ class QdrantKnowledgeStore:
         for start in range(0, len(points), POINTS_PER_CALL):
             await self.client.upsert(self.collection, points[start : start + POINTS_PER_CALL])
 
-    async def delete_document(self, ws: str, document_id: str) -> None:
+    async def delete_document(self, workspace_id: str, document_id: str) -> None:
         await self.client.delete(
             self.collection,
             models.FilterSelector(
                 filter=models.Filter(
                     must=[
-                        _field_equals("workspace_id", ws),
+                        _field_equals("workspace_id", workspace_id),
                         _field_equals("document_id", document_id),
                     ]
                 )
@@ -235,23 +237,25 @@ class QdrantKnowledgeStore:
         )
 
     async def search(
-        self, ws: str, question: str, vector: list[float] | None, limit: int
+        self, workspace_id: str, question: str, vector: list[float] | None, limit: int
     ) -> list[Snippet]:
-        mine = models.Filter(must=[_field_equals("workspace_id", ws)])
+        mine = models.Filter(must=[_field_equals("workspace_id", workspace_id)])
         legs: list[models.Prefetch] = []
         if vector is not None:
             legs.append(
                 models.Prefetch(
                     query=vector,
                     using="dense",
-                    limit=CANDIDATES,
+                    limit=RESULTS_PER_SEARCH,
                     filter=mine,
                     score_threshold=self.dense_min_score or None,
                 )
             )
         asked = sparse_vector(question, query=True)
         if asked.indices:
-            legs.append(models.Prefetch(query=asked, using="sparse", limit=CANDIDATES, filter=mine))
+            legs.append(
+                models.Prefetch(query=asked, using="sparse", limit=RESULTS_PER_SEARCH, filter=mine)
+            )
         if not legs:
             return []
         found = await self.client.query_points(

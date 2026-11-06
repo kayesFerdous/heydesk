@@ -48,12 +48,12 @@ from heydesk.shop.tools import (
     update_cart,
 )
 from heydesk.shop.values import (
-    LONG_LIST,
+    LONG_PRODUCT_LIST,
     PRODUCT_COLUMNS,
     STATUS_WORDS,
     Coupon,
     Product,
-    added,
+    merge_products,
     mobile,
     products_from_csv,
     stock_cell,
@@ -86,14 +86,14 @@ async def stock(
 ) -> int | None:
     """What's left of a product, or of its variant of that size and colour."""
     product = next(p for p in await world.store(agent).products() if p.code == code)
-    counter = product.counter(size, colour)
-    return None if counter is None else product.count(counter)
+    stock_index = product.stock_index(size, colour)
+    return None if stock_index is None else product.stock_at(stock_index)
 
 
 async def place_an_order(app: FastAPI, client: AsyncClient) -> str:
     """A whole order on the chat API, with a yes. Returns the conversation id."""
-    runtime = app.state.services.conversations.runtime
-    runtime.llm.script = [
+    llm = app.state.services.conversations.llm
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
         READ_BACK,
@@ -120,8 +120,10 @@ async def buy(world: World, agent: LiveAgent, *lines: dict[str, object]) -> str:
         ToolCall("c1", "update_cart", {"lines": list(lines)}),
         ToolCall("c2", "place_order", DETAILS),
     ]
-    conv = await world.say(agent, None, [*first, READ_BACK], "a black kurti, size M…")
-    await world.say(agent, conv, [ToolCall("c3", "place_order", DETAILS), "Done: O-101."], "yes")
+    conversation = await world.say(agent, None, [*first, READ_BACK], "a black kurti, size M…")
+    await world.say(
+        agent, conversation, [ToolCall("c3", "place_order", DETAILS), "Done: O-101."], "yes"
+    )
     [saved] = await orders(world)
     return saved.code
 
@@ -270,17 +272,21 @@ async def test_an_order_is_saved_only_at_the_yes_and_taken_out_of_stock(world: W
             {"lines": [KURTI | {"code": "panjabi-silk", "size": "M", "colour": "Gold"}]},
         )
     ]
-    conv = await world.say(agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK])
-    await world.say(agent, conv, [READ_BACK], "hmm, maybe")  # not a yes: the model asks again
+    conversation = await world.say(
+        agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK]
+    )
+    await world.say(
+        agent, conversation, [READ_BACK], "hmm, maybe"
+    )  # not a yes: the model asks again
     assert await orders(world) == []
 
-    await world.say(agent, conv, [ToolCall("c4", "place_order", DETAILS), "Done."], "yes")
+    await world.say(agent, conversation, [ToolCall("c4", "place_order", DETAILS), "Done."], "yes")
     [saved] = await orders(world)
-    assert (saved.code, saved.conversation_id, saved.status) == ("O-101", conv, "new")
+    assert (saved.code, saved.conversation_id, saved.status) == ("O-101", conversation, "new")
     assert (saved.subtotal, saved.delivery_charge, saved.total) == (320000, 0, 320000)  # free
     assert (saved.zone, saved.phone) == ("Inside Dhaka", "01712345678")
     assert await stock(world, agent, "panjabi-silk") == 1  # was 2
-    assert (await world.conversation(conv)).state["cart"] == {}
+    assert (await world.conversation(conversation)).state["cart"] == {}
 
 
 async def test_the_owner_hears_about_past_returns_and_what_is_running_low(world: World) -> None:
@@ -313,19 +319,19 @@ async def test_an_order_is_tracked_and_cancelled_with_its_code_and_mobile(world:
     assert await stock(world, agent, "panjabi-cotton", "L", "White") == 1  # was 3
 
     track = ToolCall("t", "track_order", {"code": "o 101", "phone": "+8801712345678"})
-    conv = await world.say(agent, None, [track, "It's received."])
-    assert "the shop will call to confirm it" in await world.tool_said(conv)
+    conversation = await world.say(agent, None, [track, "It's received."])
+    assert "the shop will call to confirm it" in await world.tool_said(conversation)
     stranger = ToolCall("t", "track_order", {"code": code, "phone": "01811111111"})
-    conv = await world.say(agent, None, [stranger, "Not found."])
-    assert "No order matches that code and mobile number" in await world.tool_said(conv)
+    conversation = await world.say(agent, None, [stranger, "Not found."])
+    assert "No order matches that code and mobile number" in await world.tool_said(conversation)
 
     cancel = ToolCall("x", "cancel_order", {"code": code, "phone": "01712345678"})
-    conv = await world.say(agent, None, [cancel, "Cancel O-101: 2 Cotton Panjabi, ৳3,700?"])
+    conversation = await world.say(agent, None, [cancel, "Cancel O-101: 2 Cotton Panjabi, ৳3,700?"])
     assert (
         "Cancel order O-101: 2 × Cotton Panjabi (L, White), total ৳3,700"
-        in await world.tool_said(conv)
+        in await world.tool_said(conversation)
     )
-    await world.say(agent, conv, [cancel, "Cancelled."], "yes")
+    await world.say(agent, conversation, [cancel, "Cancelled."], "yes")
     [cancelled] = await orders(world)
     assert cancelled.status == "cancelled"
     assert await stock(world, agent, "panjabi-cotton", "L", "White") == 3  # back in stock
@@ -339,8 +345,8 @@ async def test_the_owner_moves_orders_along_and_the_buyer_sees_it(
     assert (await client.get("/api/menu")).status_code == 404  # a shop has no menu
     assert len((await client.get("/api/products")).json()) == 6
 
-    runtime = services.conversations.runtime
-    runtime.llm.script = [
+    llm = services.conversations.llm
+    llm.script = [
         ToolCall("c1", "update_cart", {"lines": [KURTI]}),
         ToolCall("c2", "place_order", DETAILS),
         READ_BACK,
@@ -528,8 +534,8 @@ async def test_an_order_changes_before_the_courier_has_it_and_only_after_a_yes(
     [order] = await orders(world)
     store = world.store(agent, order.conversation_id)
 
-    def ctx(heard: str = "") -> ToolContext[Any]:
-        return make_ctx(store, agent=agent.config, heard=heard)
+    def ctx(last_read_back: str = "") -> ToolContext[Any]:
+        return make_ctx(store, agent=agent.config, last_read_back=last_read_back)
 
     no_district = await change_order(ctx(), ChangeOrderInput(address="Zindabazar, Sylhet"))
     assert "district too" in no_district.data["error"]
@@ -702,7 +708,7 @@ def test_rows_of_one_product_per_size_and_colour_become_one_product() -> None:
         ("M", "White", 0),  # no row for it: the shop doesn't make it
         ("L", "Black", 0),
     ]
-    assert "sold out: M/White, L/Black" in shirt.line("BDT")
+    assert "sold out: M/White, L/Black" in shirt.prompt_line("BDT")
     assert (big.code, big.price, big.stock) == ("SKU-003", 54900, 5)
     assert (cap.stock, cap.variants) == (60, [])  # one row stays as it was
 
@@ -775,7 +781,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     kurti_now = next(p for p in (await client.get("/api/products")).json() if p["code"] == "kurti")
     assert kurti_now["photos"] == [url]  # kept
 
-    llm = services.conversations.runtime.llm
+    llm = services.conversations.llm
     llm.script = [ToolCall("c1", "show_photos", {"products": ["kurti"]}), "Is it this one?"]
     body = {"visitor_id": "test-visitor", "message": "eta ache?", "photo": as_base64(photo("red"))}
     res = await client.post(f"/api/chat/{agent.public_key}", json=body)
@@ -815,7 +821,7 @@ async def test_another_business_never_sees_your_photos(app: FastAPI, client: Asy
         )
     finally:
         await second.aclose()
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["What is it?"]
     body = {"visitor_id": "test-visitor", "photo": as_base64(photo("green"))}
     await client.post(f"/api/chat/{agent.public_key}", json=body)
@@ -856,20 +862,20 @@ async def test_show_photos_works_everywhere_but_a_call(world: World) -> None:
 
 
 async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world: World) -> None:
-    """A WooCommerce store can have hundreds of products: over LONG_LIST, the prompt lists
+    """A WooCommerce store can have hundreds of products: over LONG_PRODUCT_LIST, the prompt lists
     only the groups, and find_product returns the closest lines."""
     agent = await world.agent()
     store = world.store(agent)
     tees = [
         Product(code=f"tee-{n}", name=f"Basic Tee {n}", price=50000, category="T-shirts")
-        for n in range(LONG_LIST)
+        for n in range(LONG_PRODUCT_LIST)
     ]
     await store.replace_products([*await store.products(), *tees])
     text = await shop_prompt(agent.config, store)
 
     assert "[kurti]" not in text and "[tee-1]" not in text
     assert "products, too many to list here. Groups: " in text
-    assert f"T-shirts ({LONG_LIST})" in text
+    assert f"T-shirts ({LONG_PRODUCT_LIST})" in text
     assert "Look a product up with find_product" in text
 
     ctx = make_ctx(store, agent=agent.config)
@@ -963,7 +969,7 @@ async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: Worl
 
     silk, kurti = await store.with_photos(products_from_csv(csv))
     [url] = silk.photos
-    assert world.services.photos.is_products(DEV_WORKSPACE_ID, url)
+    assert world.services.photos.is_product_photo(DEV_WORKSPACE_ID, url)
     assert kurti.photos == [ours]
     matches = await world.services.photos.nearest(DEV_WORKSPACE_ID, to_jpeg(photo("red")))
     assert matches and matches[0][0] == url  # a visitor's photo finds it
@@ -1089,7 +1095,7 @@ def test_videos_and_goes_with_come_from_a_csv_and_stay_when_a_file_has_none() ->
     [found] = products_from_csv(text)
     assert found.videos == ["https://youtu.be/abc"] and found.goes_with == ["pajama", "tupi"]
 
-    [kept] = added([found], products_from_csv("Name,Price\nCotton Panjabi,1900\n"))
+    [kept] = merge_products([found], products_from_csv("Name,Price\nCotton Panjabi,1900\n"))
     assert (kept.price, kept.videos, kept.goes_with) == (190000, found.videos, found.goes_with)
     with pytest.raises(ValueError, match="isn't a link"):
         Product(code="x", name="X", price=1, videos=["youtu.be/abc"])
@@ -1138,10 +1144,10 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     doesn't show the buyer's details."""
     services = app.state.services
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
-    services.conversations.runtime.llm.script = ["Hello!"]
+    services.conversations.llm.script = ["Hello!"]
     res = await client.post("/api/chat/dev-shop", json={"visitor_id": "a-buyer-1", "message": "hi"})
-    conv = res.text.split('"conversation_id": "')[1].split('"')[0]
-    url = f"/p/dev-shop/kurti?c={conv}"
+    conversation = res.text.split('"conversation_id": "')[1].split('"')[0]
+    url = f"/p/dev-shop/kurti?c={conversation}"
     assert "Buy now" in (await client.get(url)).text
 
     async def saved() -> list[ShopOrder]:
@@ -1170,14 +1176,18 @@ async def test_buy_now_on_the_product_page_saves_once_at_place_order(
     placed = await client.post(url, data=form | {"heard": heard})
     assert placed.status_code == 303
     [order] = await saved()
-    assert (order.total, order.phone, order.conversation_id) == (196000, "01712345678", conv)
+    assert (order.total, order.phone, order.conversation_id) == (
+        196000,
+        "01712345678",
+        conversation,
+    )
     assert placed.headers["location"].endswith(f"/o/{order.id}")
     assert order.address == "House 12, Road 5, Mirpur 10, Dhaka"  # the district box is kept
 
     page = await client.get(f"/o/{order.id}")
     assert order.code in page.text and "৳1,960" in page.text
     assert "Kayes" not in page.text and "01712345678" not in page.text
-    replies = (await client.get(f"/api/chat/dev-shop/{conv}/team")).json()["replies"]
+    replies = (await client.get(f"/api/chat/dev-shop/{conversation}/team")).json()["replies"]
     assert order.code in replies[-1] and f"/o/{order.id}" in replies[-1]
 
     assert (await client.get("/o/no-such-order")).status_code == 404
@@ -1203,7 +1213,7 @@ async def test_the_team_types_an_order_and_takes_it_to_money_in(
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     told: list[str] = []
 
-    async def notify(ws: str, text: str) -> None:
+    async def notify(workspace_id: str, text: str) -> None:
         told.append(text)
 
     monkeypatch.setattr(services.team, "notify", notify)
@@ -1411,10 +1421,10 @@ async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> No
     world.clock.advance(hours=1)
     await nudge()
     await nudge()
-    conv = await world.conversation(waiting)
-    said = [m["content"] for m in conv.messages if m.get("by") == "team"]
+    conversation = await world.conversation(waiting)
+    said = [m["content"] for m in conversation.messages if m.get("by") == "team"]
     assert said == ["Shall I confirm your order? Tap Yes, or tell me what to change."]
-    assert conv.nudged
+    assert conversation.nudged
 
 
 async def test_a_placed_order_is_not_nudged(world: World) -> None:
@@ -1439,8 +1449,8 @@ async def test_an_offer_goes_to_who_wrote_today_and_only_they_get_it(world: Worl
     assert (sent.code, sent.sent_to) == ("OFFER1", 1)
     assert (await world.conversation(today)).messages[-1]["content"] == offer.text
 
-    def cart_in(conv: str, coupon: str = "") -> Any:
-        ctx = make_ctx(world.store(agent, conv), agent=agent.config, now=world.clock.now)
+    def cart_in(conversation: str, coupon: str = "") -> Any:
+        ctx = make_ctx(world.store(agent, conversation), agent=agent.config, now=world.clock.now)
         return update_cart(ctx, UpdateCartInput(lines=[CartLine(**KURTI)], coupon=coupon))
 
     got = await cart_in(today)
@@ -1473,11 +1483,11 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
     counted."""
     agent = await app.state.services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     yesterday = FIXED_NOW - timedelta(days=1)  # FIXED_NOW is 14:00 in Dhaka
-    ws, other = DEV_WORKSPACE_ID, "other"
+    workspace_id, other = DEV_WORKSPACE_ID, "other"
 
-    def order(n: int, total: int, conv: str | None, source: str, **kw: Any) -> ShopOrder:
+    def order(n: int, total: int, conversation: str | None, source: str, **kw: Any) -> ShopOrder:
         fields: dict[str, Any] = {
-            "workspace_id": ws,
+            "workspace_id": workspace_id,
             "number": n,
             "name": "R",
             "phone": "01812345678",
@@ -1488,16 +1498,16 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
             "currency": "BDT",
             "zone": "Dhaka",
             "address": "x",
-            "conversation_id": conv,
+            "conversation_id": conversation,
             "source": source,
             "created_at": FIXED_NOW,
         }
         return ShopOrder(**fields | kw)
 
-    def turn(conv: str, at: Any, handed_off: bool = False) -> Turn:
+    def turn(conversation: str, at: Any, handed_off: bool = False) -> Turn:
         return Turn(
-            workspace_id=ws,
-            conversation_id=conv,
+            workspace_id=workspace_id,
+            conversation_id=conversation,
             channel="web",
             llm="fake",
             at=at,
@@ -1513,7 +1523,7 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
 
     def lead(n: int, status: str) -> Lead:
         return Lead(
-            workspace_id=ws,
+            workspace_id=workspace_id,
             number=n,
             name="R",
             phone="01812345678",
@@ -1525,8 +1535,15 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
 
     async with app.state.sessions() as s, s.begin():
         s.add(dev_workspace(other, FIXED_NOW))
-        for conv in ("a", "b", "c"):
-            s.add(Conversation(id=conv, workspace_id=ws, agent_id=agent.agent_id, channel="web"))
+        for conversation in ("a", "b", "c"):
+            s.add(
+                Conversation(
+                    id=conversation,
+                    workspace_id=workspace_id,
+                    agent_id=agent.agent_id,
+                    channel="web",
+                )
+            )
         s.add_all(
             [
                 turn("a", FIXED_NOW),

@@ -10,14 +10,18 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.courier import CourierAccount, CourierError, Ending, Parcel, Tracked
+from heydesk.ports.courier import CourierAccount, CourierError, FinalStatus, Parcel, ParcelStatus
 
 LIVE = "https://api-hermes.pathao.com"
 SANDBOX = "https://courier-api-sandbox.pathao.com"
-NORMAL = 48  # delivery_type: normal, not on-demand
-PARCEL = 2  # item_type: a parcel, not a document
-WEIGHT = 0.5  # kg. ponytail: one weight for every parcel; a product weight when shops need it
-ENDINGS: dict[str, Ending] = {  # Pathao's final words, lower case → the order's last status
+NORMAL_DELIVERY = 48  # delivery_type: normal, not on-demand
+PARCEL_ITEM_TYPE = 2  # item_type: a parcel, not a document
+PARCEL_WEIGHT_KG = (
+    0.5  # kg. ponytail: one weight for every parcel; a product weight when shops need it
+)
+FINAL_STATUSES: dict[
+    str, FinalStatus
+] = {  # Pathao's final words, lower case → the order's last status
     "delivered": "delivered",
     "partial_delivery": "delivered",
     "return": "returned",
@@ -50,23 +54,23 @@ class Pathao:
             "recipient_name": parcel.name,
             "recipient_phone": parcel.phone,
             "recipient_address": parcel.address[:220],
-            "delivery_type": NORMAL,
-            "item_type": PARCEL,
+            "delivery_type": NORMAL_DELIVERY,
+            "item_type": PARCEL_ITEM_TYPE,
             "special_instruction": parcel.note,
             "item_quantity": parcel.quantity,
-            "item_weight": WEIGHT,
+            "item_weight": PARCEL_WEIGHT_KG,
             "item_description": parcel.items,
-            "amount_to_collect": parcel.cod,
+            "amount_to_collect": parcel.cash_on_delivery,
         }
         data = (await self._call(account, "POST", "orders", json=body)).get("data") or {}
         if not data.get("consignment_id"):
             raise CourierError("Pathao didn't book it.")
         return str(data["consignment_id"])
 
-    async def status(self, account: CourierAccount, parcel_id: str) -> Tracked:
+    async def status(self, account: CourierAccount, parcel_id: str) -> ParcelStatus:
         data = (await self._call(account, "GET", f"orders/{parcel_id}/info")).get("data") or {}
         said = str(data.get("order_status_slug") or data.get("order_status") or "")
-        return Tracked(said, ENDINGS.get(said.lower().replace(" ", "_")))
+        return ParcelStatus(said, FINAL_STATUSES.get(said.lower().replace(" ", "_")))
 
     async def _token(self, account: CourierAccount) -> str:
         key = (account.sandbox, account.key, account.username)

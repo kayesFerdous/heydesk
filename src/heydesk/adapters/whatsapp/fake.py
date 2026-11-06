@@ -16,7 +16,7 @@ class FakeWhatsApp:
         self.registered: set[str] = set()  # phone ids
         self.typing: list[str] = []  # the message ids "typing…" was shown for
 
-    async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
+    async def token_from_code(self, app_id: str, app_secret: str, code: str) -> str:
         if code not in self.codes:
             raise WhatsAppUnavailable("oauth/access_token: Invalid verification code")
         return self.codes.pop(code)  # a code works once

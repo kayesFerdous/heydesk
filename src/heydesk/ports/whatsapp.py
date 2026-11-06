@@ -18,7 +18,7 @@ class WhatsAppApi(Protocol):
         the token isn't for that account and number, so it is also the check on them."""
         ...
 
-    async def exchange(self, app_id: str, app_secret: str, code: str) -> str:
+    async def token_from_code(self, app_id: str, app_secret: str, code: str) -> str:
         """The business's token for the code Embedded Signup gave the browser. A code
         works once."""
         ...

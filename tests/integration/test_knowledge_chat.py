@@ -24,7 +24,7 @@ async def test_the_agent_looks_in_the_documents_and_answers_from_them(
     app: FastAPI, client: AsyncClient
 ) -> None:
     await client.post("/api/agent/documents", json={"title": "Policies", "text": POLICY})
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = [
         ToolCall("c1", "search_knowledge", {"question": "refund after seven days"}),
         ANSWER,
@@ -45,7 +45,7 @@ async def test_the_agent_looks_in_the_documents_and_answers_from_them(
 async def test_without_documents_there_is_no_search_tool_and_no_documents_section(
     app: FastAPI, client: AsyncClient
 ) -> None:
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     llm.script = ["Hello!"]
 
     await chat(app, client, DEV_KEY, "hi")
@@ -87,7 +87,7 @@ async def test_a_missed_question_is_listed_taught_and_found_next_time(
 ) -> None:
     """A hand-off for a question it didn't know is saved; two asked alike are one row with a
     count; *Teach it* makes a knowledge entry that the search finds."""
-    llm = app.state.services.conversations.runtime.llm
+    llm = app.state.services.conversations.llm
     for asked in ("Do you cater weddings?", "do you cater a wedding"):
         llm.script = [
             ToolCall("c1", "handoff_to_human", {"unanswered": asked}),

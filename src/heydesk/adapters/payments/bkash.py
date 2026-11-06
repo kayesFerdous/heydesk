@@ -21,7 +21,7 @@ from heydesk.ports.payments import Account, Checkout, Paid, PaymentUnavailable
 
 SANDBOX = "https://tokenized.sandbox.bka.sh/v1.2.0-beta/tokenized"
 LIVE = "https://tokenized.pay.bka.sh/v1.2.0-beta/tokenized"
-OK = "0000"  # bKash's statusCode for "done"
+BKASH_SUCCESS = "0000"  # bKash's statusCode for "done"
 
 
 class BkashCheckout:
@@ -46,7 +46,7 @@ class BkashCheckout:
                 "merchantInvoiceNumber": checkout.order_id,
             },
         )
-        if body.get("statusCode") != OK or not body.get("bkashURL"):
+        if body.get("statusCode") != BKASH_SUCCESS or not body.get("bkashURL"):
             raise PaymentUnavailable(str(body.get("statusMessage") or "bKash said no"))
         return str(body["bkashURL"])
 

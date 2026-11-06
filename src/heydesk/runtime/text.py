@@ -92,7 +92,7 @@ def _tail(text: str, overlap: int) -> str:
     return tail[tail.find(" ") + 1 :] if " " in tail else ""
 
 
-ALIKE = 0.75  # how close two questions' words are to count as one
+MIN_QUESTION_MATCH = 0.75  # how close two questions' words are to count as one
 
 
 def group_alike(questions: list[str]) -> list[list[int]]:
@@ -104,7 +104,7 @@ def group_alike(questions: list[str]) -> list[list[int]]:
     for i, question in enumerate(questions):
         said = " ".join(words(question))
         for first, members in groups:
-            if SequenceMatcher(None, first, said).ratio() >= ALIKE:
+            if SequenceMatcher(None, first, said).ratio() >= MIN_QUESTION_MATCH:
                 members.append(i)
                 break
         else:

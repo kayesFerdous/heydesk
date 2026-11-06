@@ -29,7 +29,7 @@ class ToolContext[S]:
     store: S
     state: dict[str, Any]  # the conversation state so far; return changes in ToolResult.state
     now: datetime  # when the turn started, in UTC
-    heard: str  # the last read-back the visitor heard, before this turn: "" if none
+    last_read_back: str  # the last read-back the visitor heard, before this turn: "" if none
     # "web", "voice", "telegram", "messenger", "whatsapp": all but voice show photos
     channel: str = "web"
 
@@ -106,7 +106,7 @@ class Tool:
     run: Callable[[ToolContext[Any], Any], Awaitable[ToolResult]]  # gets an `input_model` instance
     label: str = ""  # web status line while it runs: "Checking the menu…"
     filler: str = ""  # voice line at the start: "Let me check that."
-    timeout_s: float = 5.0
+    timeout_seconds: float = 5.0
 
     @property
     def spec(self) -> ToolSpec:
@@ -145,7 +145,7 @@ async def run_tool(tool: Tool | None, call: ToolCall, ctx: ToolContext[Any]) -> 
         )
         return fail(f"The arguments don't fit: {problems}. Fix them and call {tool.name} again.")
     try:
-        async with asyncio.timeout(tool.timeout_s):
+        async with asyncio.timeout(tool.timeout_seconds):
             return await tool.run(ctx, args)
     except TimeoutError:
         return fail("That took too long. Try once more; if it fails again, offer the hand-off.")
