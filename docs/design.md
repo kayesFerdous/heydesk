@@ -460,11 +460,12 @@ SQLAlchemy doesn't see in-place edits.
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup` | A new business and its owner → 204, and an email with a 6-digit code; no token until it's typed (D93, D94) |
-| POST | `/api/auth/login` | → `{token}`; a 401 for a wrong email or password; a 403 `email_not_verified` for the right one before the code is typed (D94) |
-| POST | `/api/auth/verify` | `{email, code}`: the code from the signup email → `{token}`, the first login; a 403 if it's wrong or expired |
+| POST | `/api/auth/login` | → `{token}` and the session cookie (D174); a 401 for a wrong email or password; a 403 `email_not_verified` for the right one before the code is typed (D94) |
+| POST | `/api/auth/verify` | `{email, code}`: the code from the signup email → `{token}` and the session cookie, the first login; a 403 if it's wrong or expired |
 | POST | `/api/auth/verify/resend` | `{email}` → 204, always: another email with the code if the account exists and isn't verified |
 | POST | `/api/auth/forgot` | `{email}` → 204, always: an email with a reset code if the account exists (D93) |
-| POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}`; a 403 if the code is wrong, expired or used |
+| POST | `/api/auth/reset` | `{email, code, new_password}` → `{token}` and the session cookie; a 403 if the code is wrong, expired or used |
+| POST | `/api/auth/logout` | Clears the session cookie → 204 (D174) |
 | GET | `/api/auth/me` | Who you are: email, role (`owner`, `moderator` or `admin`), your business, `available`, and your Telegram alerts link (`telegram_link`, `telegram_linked`, D148) |
 | PUT | `/api/auth/password` | Your own password: `{current_password, new_password}` → 204; a 403 if the current one is wrong (D68) |
 | GET/POST/DELETE | `/api/team/members` | The owner's team (D97): everyone in the business (`active`, or `invited` until they join); add a moderator by `{email}` → 201, and an email with a code; `POST …/{id}/invite` sends it again; `DELETE …/{id}` removes one, out at once. A 409 for an email with an account, or past 10 moderators |
@@ -530,7 +531,9 @@ conversations; `at` for the audit log). Fewer than `limit` rows means it was the
 last page.
 
 Everything under `/api` except chat, `/api/desks`, auth and the Telegram, Messenger, WhatsApp and Woo webhooks needs
-`Authorization: Bearer <token>`.
+a login: the browser's `heydesk_session` cookie (HttpOnly, `SameSite=Strict`, `Secure` in
+production), or `Authorization: Bearer <token>` for Swagger and scripts (D174). The frontend
+reaches `/api` through its own origin, so the cookie is first-party.
 
 **Three roles** (D23, D97). An **owner** belongs to one business: the token says which
 (rule 6), and they only ever see it. A **moderator** is someone the owner added to it:

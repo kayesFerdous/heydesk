@@ -65,7 +65,7 @@ The details are in [docs/design.md](docs/design.md), and the reason for each cho
 ## Security
 
 - **Logins:** passwords are hashed with argon2. Login tokens are signed (JWT) and expire after
-  7 days. In production the server refuses to start with an empty `JWT_SECRET` or a fake provider.
+  7 days. A browser keeps its token in an HttpOnly, `SameSite=Strict` cookie that page scripts can't read. In production the server refuses to start with an empty `JWT_SECRET` or a fake provider.
 - **Tenants:** every table and query carries `workspace_id`, and tests check that one business
   can't see another's data.
 - **Admins:** admins are made only from the command line, and the database confirms the role on

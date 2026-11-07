@@ -332,7 +332,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Owner & admin app",
    "type": "client",
    "file": "../heydesk-frontend",
-   "purpose": "The business owner's and the platform admin's web app; talks to the REST API with a Bearer token.",
+   "purpose": "The business owner's and the platform admin's web app; talks to the REST API with an HttpOnly session cookie.",
    "inputs": "owner clicks",
    "outputs": "REST calls",
    "unverified": "Lives in the separate frontend repo (../heydesk-frontend, scripts/dev.sh), not in this one."
@@ -362,8 +362,8 @@ tr.hl td { background: var(--accent-soft); }
    "label": "deps: auth & scope",
    "type": "api",
    "file": "src/heydesk/api/deps.py",
-   "purpose": "Bearer token → CurrentUser; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
-   "inputs": "Authorization, X-Business",
+   "purpose": "Session cookie or Bearer token → CurrentUser; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
+   "inputs": "Session cookie or Authorization, X-Business",
    "outputs": "workspace_id",
    "fn": "current_workspace"
   },
@@ -1563,7 +1563,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "c-owner",
    "target": "a-deps",
-   "label": "Bearer token"
+   "label": "Session cookie"
   },
   {
    "source": "c-cli",
@@ -5687,7 +5687,7 @@ tr.hl td { background: var(--accent-soft); }
    "nodes": [
     {
      "id": "req",
-     "label": "Request with Authorization: Bearer",
+     "label": "Request with session cookie or Bearer token",
      "shape": "event",
      "fn": "current_user"
     },
@@ -7113,7 +7113,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "c-owner",
      "to": "a-deps",
-     "data": "every owner call: Bearer token",
+     "data": "every owner call: session cookie",
      "file": "src/heydesk/api/deps.py",
      "fn": "current_workspace"
     }

@@ -1,13 +1,15 @@
-"""Sign up, log in, who am I; the token goes in `Authorization: Bearer …` (design §9).
+"""Sign up, log in, who am I; a browser keeps the token in a cookie its scripts can't read,
+and anything else sends it in `Authorization: Bearer …` (design §9).
 The emailed codes verify an owner's email and reset a forgotten password."""
 
 from typing import Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import ClientIp, Svc, User
+from heydesk.api.deps import SESSION_COOKIE, ClientIp, Svc, User
 from heydesk.errors import NotFound
+from heydesk.services.users import TOKEN_DAYS
 
 router = APIRouter(tags=["auth"])
 
@@ -74,6 +76,22 @@ class AvailableIn(BaseModel):
     available: bool
 
 
+def logged_in(request: Request, response: Response, token: str) -> TokenOut:
+    """Sets the session cookie. HttpOnly: a script injected into the page can't read it.
+    Strict: another site can't make the browser send it. Secure needs https, so it's off in
+    development. The body still has the token, for Swagger and scripts."""
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=TOKEN_DAYS * 24 * 60 * 60,
+        path="/api",
+        httponly=True,
+        samesite="strict",
+        secure=request.app.state.settings.APP_ENV == "production",
+    )
+    return TokenOut(token=token)
+
+
 @router.post("/api/auth/signup", status_code=status.HTTP_204_NO_CONTENT)
 async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> None:
     """A new business and its owner, and an email with a code; `verify` logs them in.
@@ -83,17 +101,27 @@ async def signup(body: SignupIn, services: Svc, ip: ClientIp) -> None:
 
 
 @router.post("/api/auth/login")
-async def login(body: LoginIn, services: Svc, ip: ClientIp) -> TokenOut:
+async def login(
+    body: LoginIn, request: Request, response: Response, services: Svc, ip: ClientIp
+) -> TokenOut:
     """A 403 `email_not_verified` for the right password before the code is typed."""
     await services.rate_limits.login(ip, body.email)  # 429: password guessing
-    return TokenOut(token=await services.users.login(body.email, body.password))
+    return logged_in(request, response, await services.users.login(body.email, body.password))
+
+
+@router.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(response: Response) -> None:
+    """Clears the session cookie, which the page's scripts can't do themselves."""
+    response.delete_cookie(SESSION_COOKIE, path="/api")
 
 
 @router.post("/api/auth/verify")
-async def verify_email(body: CodeIn, services: Svc) -> TokenOut:
+async def verify_email(
+    body: CodeIn, request: Request, response: Response, services: Svc
+) -> TokenOut:
     """The code emailed at signup → logged in. A 403 if it's wrong or expired."""
     await services.rate_limits.check_code(body.email)  # 429: guessing the code
-    return TokenOut(token=await services.users.verify_email(body.email, body.code))
+    return logged_in(request, response, await services.users.verify_email(body.email, body.code))
 
 
 @router.post("/api/auth/verify/resend", status_code=status.HTTP_204_NO_CONTENT)
@@ -111,13 +139,14 @@ async def forgot_password(body: EmailIn, services: Svc, ip: ClientIp) -> None:
 
 
 @router.post("/api/auth/reset")
-async def reset_password(body: ResetIn, services: Svc) -> TokenOut:
+async def reset_password(
+    body: ResetIn, request: Request, response: Response, services: Svc
+) -> TokenOut:
     """The emailed code and a new password → logged in. A 403 if the code is wrong or expired.
     An invited moderator joins this way, with the code in their invite."""
     await services.rate_limits.check_code(body.email)  # 429: guessing the code
-    return TokenOut(
-        token=await services.users.reset_with_code(body.email, body.code, body.new_password)
-    )
+    token = await services.users.reset_with_code(body.email, body.code, body.new_password)
+    return logged_in(request, response, token)
 
 
 @router.put("/api/auth/password", status_code=status.HTTP_204_NO_CONTENT)
