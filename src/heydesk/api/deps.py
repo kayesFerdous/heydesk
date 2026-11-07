@@ -15,6 +15,7 @@ from heydesk.services import Services
 from heydesk.services.users import CurrentUser
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
+SESSION_COOKIE = "heydesk_session"  # the browser's copy of the token; page scripts can't read it
 
 # An admin names the business they're acting in; an owner's is always their own
 BUSINESS_HEADER = "X-Business"
@@ -36,13 +37,16 @@ def get_services(request: Request) -> Services:
 
 
 def get_current_user(
+    request: Request,
     services: Annotated[Services, Depends(get_services)],
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> CurrentUser:
-    """The logged-in user (`Authorization: Bearer <token>`)."""
-    if credentials is None:
-        raise Unauthorized("Log in first, and send the token as 'Authorization: Bearer …'.")
-    return services.users.user_from_token(credentials.credentials)
+    """The logged-in user: the browser's session cookie, or `Authorization: Bearer <token>`
+    for Swagger and scripts."""
+    token = credentials.credentials if credentials else request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise Unauthorized("Log in first.")
+    return services.users.user_from_token(token)
 
 
 async def current_workspace(

@@ -50,6 +50,20 @@ async def test_wrong_password_no_token_or_a_bad_token_is_401(app: FastAPI) -> No
     assert [r.status_code for r in (wrong, no_token, bad)] == [401, 401, 401]
 
 
+async def test_a_browser_stays_logged_in_with_a_cookie_scripts_cant_read(app: FastAPI) -> None:
+    await as_second_account(app)
+    login = {"email": "second@example.com", "password": NEW["password"]}
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as browser:
+        logged_in = await browser.post("/api/auth/login", json=login)
+        cookie = logged_in.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=strict" in cookie and "path=/api" in cookie
+
+        assert (await browser.get("/api/auth/me")).status_code == 200
+
+        assert (await browser.post("/api/auth/logout")).status_code == 204
+        assert (await browser.get("/api/auth/me")).status_code == 401
+
+
 async def test_an_email_signs_up_once_and_leaves_no_empty_business(app: FastAPI) -> None:
     second = await as_second_account(app)
     again = await second.post("/api/auth/signup", json=NEW | {"email": "second@example.com"})
