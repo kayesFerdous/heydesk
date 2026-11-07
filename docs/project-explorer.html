@@ -502,7 +502,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Inbox API",
    "type": "api",
    "file": "src/heydesk/api/conversations.py",
-   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), each with its last line as `preview` (D167), the counts waiting per tab with the orders and messages still new (D129, D167), one transcript, hand back to the agent, who has it (D126); messages for the team; the owner's dashboard `GET /api/stats` (today, yesterday, last N days: chats, handed off, sales and total, chats that bought, order sources, open leads; D144).",
+   "purpose": "Conversations (paged; Mine / Unassigned; search; Done and Snooze, D128), each with its last line as `preview` (D167), the counts waiting per tab with the orders and messages still new (D129, D167), one transcript, hand back to the agent, who has it (D126); messages for the team; the owner's dashboard `GET /api/stats` (today, yesterday, last N days: chats, handed off, sales and total, chats that bought, order sources, open leads; D144; each day's sales in `daily`, D176).",
    "inputs": "filters; days",
    "outputs": "ConversationOut, MessageOut, DashboardOut",
    "fn": "conversation"
