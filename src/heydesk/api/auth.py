@@ -13,7 +13,7 @@ router = APIRouter(tags=["auth"])
 
 
 EMAIL = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=320)
-CODE = Field(pattern=r"^\s*\d{6}\s*$")
+CODE = Field(pattern=r"^\d{6}$")
 type Role = Literal["admin", "owner", "moderator"]
 ROLES: dict[str, Role] = {"admin": "admin", "owner": "owner", "moderator": "moderator"}
 

@@ -1,42 +1,46 @@
 <!doctype html>
-<!-- The email with a code: the same passbook look as the console, built from tables and
-     inline styles because that is all email apps keep. The four words in capitals are filled
-     in by users.py (send_code); the plain-text version goes with it. -->
+<!-- The email with a code, to verify an email or set a new password: the console's look (a white
+     island on a warm canvas, ink text, a small lime mark), built from tables and inline styles
+     because that is all email apps keep. users.py (send_code) fills in the words in capitals;
+     the plain-text version goes with it. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>HEADING</title>
   </head>
-  <body style="margin:0;padding:0;background:#F3F5F9;">
+  <body style="margin:0;padding:0;background:#F4F3EF;">
     <!-- The line an inbox shows under the subject -->
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">It works for 15 minutes.</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F5F9;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your code works for 15 minutes.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#F4F3EF" style="background:#F4F3EF;">
       <tr>
         <td align="center" style="padding:40px 16px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:500px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <!-- The wordmark, with the lime mark -->
             <tr>
-              <td style="padding:0 4px 20px;font-family:Geist,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;letter-spacing:-0.5px;color:#004AAC;">
-                heydesk
+              <td style="padding:0 8px 20px;font-size:19px;font-weight:700;letter-spacing:-0.4px;color:#111111;">
+                <span style="display:inline-block;width:10px;height:10px;margin-right:8px;border-radius:50%;background:#D4F36B;border:1px solid #111111;"></span>heydesk
               </td>
             </tr>
             <tr>
-              <td style="background:#FFFFFF;border:1px solid #E2E7EF;border-radius:10px;padding:36px 32px;font-family:Geist,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0B1A33;">
-                <h1 style="margin:0 0 10px;font-size:22px;line-height:1.3;font-weight:600;letter-spacing:-0.4px;">HEADING</h1>
-                <p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#4D5A70;">INTRO</p>
-                <!-- The code, set like a serial in a ruled box -->
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+              <td bgcolor="#FFFFFF" style="background:#FFFFFF;border:1px solid #E7E7E2;border-radius:20px;padding:36px 32px;color:#111111;">
+                <h1 style="margin:0 0 10px;font-size:26px;line-height:1.25;font-weight:600;letter-spacing:-0.6px;color:#111111;">HEADING</h1>
+                <p style="margin:0 0 28px;font-size:15px;line-height:1.6;color:#5C5C56;">INTRO</p>
+                <!-- The code, a serial in a mono face -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
                   <tr>
-                    <td style="border:1px solid #C9D2DF;border-radius:8px;padding:16px 14px 16px 24px;font-family:'Geist Mono',ui-monospace,Menlo,Consolas,'Courier New',monospace;font-size:32px;font-weight:600;letter-spacing:10px;color:#0B1A33;">CODE</td>
+                    <td align="center" bgcolor="#F5F5F2" style="background:#F5F5F2;border-radius:12px;padding:22px 12px;font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,'Courier New',monospace;font-size:36px;line-height:1.1;font-weight:500;letter-spacing:10px;color:#111111;">CODE</td>
                   </tr>
                 </table>
-                <p style="margin:0;font-size:14px;line-height:1.6;color:#4D5A70;">It works for 15 minutes. Don&#39;t share it with anyone.</p>
+                <p style="margin:0;font-size:14px;line-height:1.6;color:#5C5C56;">It works for 15 minutes. Don&#39;t share it with anyone.</p>
+                <p style="margin:24px 0 0;padding-top:20px;border-top:1px solid #E7E7E2;font-size:13px;line-height:1.6;color:#5C5C56;">NOTE</p>
               </td>
             </tr>
             <tr>
-              <td style="padding:20px 4px 0;font-family:Geist,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#4D5A70;">
-                NOTE
+              <td align="center" style="padding:20px 8px 0;font-size:12px;line-height:1.6;color:#5C5C56;">
+                HeyDesk, the AI front desk for online shops
               </td>
             </tr>
           </table>

@@ -55,16 +55,24 @@ EMAILS: dict[Email, tuple[str, str, str, str]] = {
         "Your code to join BUSINESS on HeyDesk: CODE",
         "Join BUSINESS on HeyDesk",
         (
-            "You've been added to the team as a moderator. On HeyDesk's login page, choose "
-            "Forgot password, then enter this email, this code and a new password."
+            "INVITER added you to BUSINESS as a moderator, to answer the customers its AI agent "
+            "hands over to a person."
         ),
         (
-            "INVITER added you. After 15 minutes, Forgot password sends a new code. If you "
-            "don't know them, ignore this email."
+            "After 15 minutes, Forgot password sends a new code. If you don't know INVITER, "
+            "ignore this email."
         ),
     ),
 }
-EMAIL_HTML = (Path(__file__).parent / "email_code.html").read_text(encoding="utf-8")
+# The invite's steps in its plain text; email_invite.html has the same words as a list
+INVITE_STEPS = (
+    "To join:\n"
+    "1. Open the HeyDesk sign-in page and choose Forgot password: SIGN_IN\n"
+    "2. Enter this email address: TO_EMAIL\n"
+    "3. Enter this code and choose your password:"
+)
+CODE_HTML = (Path(__file__).parent / "email_code.html").read_text(encoding="utf-8")
+INVITE_HTML = (Path(__file__).parent / "email_invite.html").read_text(encoding="utf-8")
 hasher = PasswordHash.recommended()  # argon2
 
 
@@ -88,11 +96,13 @@ class UserService:
         secret: str,
         mailer: Mailer,
         now: Callable[[], datetime],
+        sign_in_url: str = "",  # where an invite's button goes; the command line sends none
     ) -> None:
         self.sessions = sessions
         self.secret = secret
         self.mailer = mailer
         self.now = now
+        self.sign_in_url = sign_in_url
 
     async def signup(self, email: str, password: str, workspace_name: str) -> None:
         """A new business and its owner, in one transaction: a taken email leaves nothing behind.
@@ -288,33 +298,38 @@ class UserService:
     async def send_code(
         self, user: User, email: Email, business: str = "", inviter: str = ""
     ) -> None:
-        """An email with a code. The template's words are swapped from the code out, and the
+        """An email with a code; an invite has its own page. The fixed words go in first and the
         business's name last, so nothing an owner typed can be swapped again."""
         code = self._code(user, "verify" if email == "verify" else "reset", self._window())
         subject, heading, intro, note = EMAILS[email]
 
         def fill(line: str, escape: bool = False) -> str:
-            name, who = (
-                (html.escape(business), html.escape(inviter)) if escape else (business, inviter)
+            clean = html.escape if escape else str
+            return (
+                line.replace("CODE", code)
+                .replace("SIGN_IN", clean(self.sign_in_url))
+                .replace("TO_EMAIL", clean(user.email))
+                .replace("INVITER", clean(inviter))
+                .replace("BUSINESS", clean(business))
             )
-            return line.replace("CODE", code).replace("INVITER", who).replace("BUSINESS", name)
 
+        steps = f"{INVITE_STEPS}\n\n" if email == "invite" else ""
         text = (
-            f"{intro}\n\n{code}\n\nIt works for 15 minutes. Don't share it with anyone.\n\n{note}"
+            f"{intro}\n\n{steps}{code}\n\n"
+            f"It works for 15 minutes. Don't share it with anyone.\n\n{note}"
         )
         page = (
-            EMAIL_HTML.replace("CODE", code)
-            .replace("NOTE", fill(note, escape=True))
+            (INVITE_HTML if email == "invite" else CODE_HTML)
+            .replace("HEADING", heading)
             .replace("INTRO", intro)
-            .replace("HEADING", fill(heading, escape=True))
+            .replace("NOTE", note)
         )
-        await self.mailer.send(user.email, fill(subject), fill(text), page)
+        await self.mailer.send(user.email, fill(subject), fill(text), fill(page, escape=True))
 
     def _check_code(self, user: User, purpose: Purpose, code: str) -> None:
         window = self._window()
         if not any(
-            hmac.compare_digest(code.strip(), self._code(user, purpose, w))
-            for w in (window, window - 1)
+            hmac.compare_digest(code, self._code(user, purpose, w)) for w in (window, window - 1)
         ):
             raise Forbidden(WRONG_CODE)
 

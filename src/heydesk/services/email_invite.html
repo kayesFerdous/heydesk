@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- The invitation to join a team as a moderator: a black panel that says who is asking, then
+     the code, the steps and the way in. Tables and inline styles because that is all email apps
+     keep. users.py (send_code) fills in the words in capitals; the plain-text version goes
+     with it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>HEADING</title>
+  </head>
+  <body style="margin:0;padding:0;background:#F4F3EF;">
+    <!-- The line an inbox shows under the subject -->
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">INVITER invited you to the team. Your code to join is inside.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#F4F3EF" style="background:#F4F3EF;">
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <!-- Who is asking, on black -->
+            <tr>
+              <td bgcolor="#111111" style="background:#111111;border-radius:20px;padding:30px 32px 34px;color:#FFFFFF;">
+                <div style="font-size:17px;font-weight:700;letter-spacing:-0.3px;color:#FFFFFF;">heydesk</div>
+                <div style="margin:30px 0 14px;">
+                  <span style="display:inline-block;padding:5px 12px;border-radius:999px;background:#D4F36B;font-size:12px;font-weight:600;color:#111111;">Team invitation</span>
+                </div>
+                <h1 style="margin:0 0 12px;font-size:30px;line-height:1.2;font-weight:600;letter-spacing:-0.8px;color:#FFFFFF;">HEADING</h1>
+                <p style="margin:0;font-size:15px;line-height:1.6;color:#D4D4CC;">INTRO</p>
+              </td>
+            </tr>
+            <tr><td height="10" style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>
+            <tr>
+              <td bgcolor="#FFFFFF" style="background:#FFFFFF;border:1px solid #E7E7E2;border-radius:20px;padding:30px 32px 32px;color:#111111;">
+                <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#5C5C56;">Your code to join</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+                  <tr>
+                    <td align="center" bgcolor="#F5F5F2" style="background:#F5F5F2;border-radius:12px;padding:20px 12px;font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,'Courier New',monospace;font-size:34px;line-height:1.1;font-weight:500;letter-spacing:9px;color:#111111;">CODE</td>
+                  </tr>
+                </table>
+                <!-- The steps, the same words as the plain text -->
+                <p style="margin:0 0 14px;font-size:16px;font-weight:600;letter-spacing:-0.2px;color:#111111;">How to join</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;font-size:14px;line-height:1.55;color:#5C5C56;">
+                  <tr>
+                    <td width="36" valign="top" style="padding:0 0 12px;"><div style="width:24px;height:24px;border-radius:50%;background:#F0F8D2;font-size:12px;font-weight:600;line-height:24px;text-align:center;color:#111111;">1</div></td>
+                    <td valign="top" style="padding:2px 0 12px;">Open the HeyDesk sign-in page and choose <strong style="color:#111111;">Forgot password</strong>.</td>
+                  </tr>
+                  <tr>
+                    <td width="36" valign="top" style="padding:0 0 12px;"><div style="width:24px;height:24px;border-radius:50%;background:#F0F8D2;font-size:12px;font-weight:600;line-height:24px;text-align:center;color:#111111;">2</div></td>
+                    <td valign="top" style="padding:2px 0 12px;">Enter this email address: <strong style="color:#111111;overflow-wrap:anywhere;">TO_EMAIL</strong>.</td>
+                  </tr>
+                  <tr>
+                    <td width="36" valign="top"><div style="width:24px;height:24px;border-radius:50%;background:#F0F8D2;font-size:12px;font-weight:600;line-height:24px;text-align:center;color:#111111;">3</div></td>
+                    <td valign="top" style="padding-top:2px;">Enter the code above and choose your password.</td>
+                  </tr>
+                </table>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" bgcolor="#111111" style="background:#111111;border-radius:10px;">
+                      <a href="SIGN_IN" style="display:block;padding:14px 20px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;color:#FFFFFF;">Open HeyDesk</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0;padding-top:20px;border-top:1px solid #E7E7E2;font-size:13px;line-height:1.6;color:#5C5C56;">NOTE</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px 8px 0;font-size:12px;line-height:1.6;color:#5C5C56;">
+                HeyDesk, the AI front desk for online shops
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

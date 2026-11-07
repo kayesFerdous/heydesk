@@ -617,7 +617,7 @@ can ask for another email (`/verify/resend`). A forgotten password is
 the email. No code is stored: it's an HMAC (with `JWT_SECRET`) of the user, the purpose
 (`verify` or `reset`), their password hash and a 15-minute window, made again to check it, so
 it works for 15 to 30 minutes and a reset code is spent when the password changes. Email goes
-through the `Mailer` port (an HTML email, `services/email_code.html`, with the same words as plain text): Brevo's API (`BREVO_API_KEY`, from `MAIL_FROM`, both required in
+through the `Mailer` port (an HTML email in the console's look, with the same words as plain text: `services/email_code.html` for verify and reset, `services/email_invite.html` for a moderator's invite, D174): Brevo's API (`BREVO_API_KEY`, from `MAIL_FROM`, both required in
 production), or, without a key, printed in the terminal. A user made on the command line is
 verified already, and so is everyone from before D93 (the migration).
 An admin's page for one business (`GET /api/admin/businesses/{id}`, D69) has its

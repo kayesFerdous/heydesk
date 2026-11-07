@@ -1,13 +1,19 @@
 """The business's team: an owner adds moderators by email; a moderator runs the inbox,
 not the settings; a removed one is out at once; the owner sees what the team changed."""
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from heydesk.models import User
 from heydesk.services.billing import PLANS
 from tests.conftest import emailed_code, new_business
 
 MOD = "rafi@example.com"
+
+
+def invitee() -> User:
+    return User(id="u1", email=MOD, password_hash="hash")
 
 
 async def join(app: FastAPI, email: str = MOD) -> AsyncClient:
@@ -24,6 +30,29 @@ async def invite(client: AsyncClient, email: str = MOD) -> str:
     added = await client.post("/api/team/members", json={"email": email})
     assert added.status_code == 201, added.text
     return str(added.json()["id"])
+
+
+async def test_an_invite_has_its_own_page_and_a_business_name_cannot_inject(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pages: list[str] = []
+    mailer = app.state.services.users.mailer
+    send = mailer.send
+
+    async def keep_page(to: str, subject: str, text: str, html: str = "") -> None:
+        pages.append(html)
+        await send(to, subject, text, html)
+
+    monkeypatch.setattr(mailer, "send", keep_page)
+    user = invitee()
+    await app.state.services.users.send_code(user, "invite", "<b>NOTE</b> Shop", "boss@example.com")
+    await app.state.services.users.send_code(user, "reset")
+
+    invite_page, reset_page = pages
+    assert "How to join" in invite_page and "How to join" not in reset_page
+    assert "&lt;b&gt;NOTE&lt;/b&gt; Shop" in invite_page  # escaped, and not swapped again
+    assert "boss@example.com" in invite_page and user.email in invite_page
+    assert "/sign-in" in invite_page
 
 
 async def test_an_invited_moderator_joins_with_the_emailed_code(
