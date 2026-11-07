@@ -91,8 +91,12 @@ async def test_a_new_owner_logs_in_only_after_typing_the_emailed_code(app: FastA
         code = emailed_code(app, "second@example.com")
         wrong = "000000" if code != "000000" else "111111"
         bad = await anon.post("/api/auth/verify", json={"email": NEW["email"], "code": wrong})
+        spaced = await anon.post(
+            "/api/auth/verify", json={"email": NEW["email"], "code": f" {code} "}
+        )
         good = await anon.post("/api/auth/verify", json={"email": NEW["email"], "code": code})
 
+        assert spaced.status_code == 422  # exactly six digits
         assert bad.status_code == 403
         assert good.status_code == 200 and good.json()["token"]
         assert (await anon.post("/api/auth/login", json=login)).status_code == 200

@@ -224,7 +224,9 @@ def build_services(
         settings,
         now,
     )
-    users = UserService(sessions, settings.jwt_secret, build_mailer(settings), now)
+    users = UserService(
+        sessions, settings.jwt_secret, build_mailer(settings), now, f"{settings.public_url}/sign-in"
+    )
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
