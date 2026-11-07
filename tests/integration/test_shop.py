@@ -1576,6 +1576,13 @@ async def test_the_dashboard_adds_up_one_business_today_yesterday_and_the_week(
     week = stats["period"]
     assert (week["conversations"], week["sales"], week["amount"], week["bought"]) == (3, 4, 3800, 2)
 
+    # The days one by one, in the business's own days: the cancelled order isn't in them.
+    daily = stats["daily"]
+    assert len(daily) == 7
+    assert daily[-1] == {"start": "2026-09-29T00:00:00+06:00", "sales": 3, "amount": 3500}
+    assert (daily[-2]["sales"], daily[-2]["amount"]) == (1, 300)
+    assert sum(d["amount"] for d in daily[:-2]) == 0
+
 
 async def test_the_same_mobile_and_items_again_is_asked_about_first(world: World) -> None:
     """A second order of the same items from the same mobile within DUPLICATE_HOURS isn't

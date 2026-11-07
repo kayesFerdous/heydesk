@@ -474,7 +474,7 @@ SQLAlchemy doesn't see in-place edits.
 | PUT | `/api/auth/me/available` | `{available}`: switch yourself on or off for new hand-offs (D149) |
 | GET | `/api/team/activity` | What the owners and moderators changed, newest first, paged (D97) |
 | GET/PATCH/POST | `/api/admin/…` | Admins only (404 for owners): businesses (suspend), users (reset an owner's password, never an admin's: D68), the audit log. `GET /api/admin/businesses/{id}`: one business at a glance (D69). `GET /api/admin/overview?days=7`: what every agent did (D72). `GET /api/admin/failed-turns`: turns that ended with the polite line (D73) |
-| GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; and the currency |
+| GET | `/api/stats?days=7` | The owner's dashboard (D144): today, yesterday and the last `days` days (1 to 90) in the business's own days, each with chats the agent answered, how many it handed off, sales (orders, not cancelled or unpaid) and their total, chats that bought, where they came from (chat, page, team) and leads not sold; the sales and total of each of those days (`daily`, D176); and the currency |
 | GET | `/api/desks` | The shop's label and config JSON Schema, for the frontend (D172) |
 | GET/POST/PATCH | `/api/agent` | The business's one agent: create as a kind, read, edit; problems per field |
 | POST | `/api/agent/logo` | The business's logo (multipart): saved as a 256 px JPEG (transparent is white) and set as `widget.logo` → `{url}` (D82) |
@@ -1653,7 +1653,8 @@ the rest the agent handled alone. **Sales** are the shop's
 orders made in it and not `cancelled` or `unpaid`; their **amount** adds each order's `total`. **Bought** counts the chats those sales belong to. A shop order's
 `source` says where it came from: the chat, the product page's *Buy now*, or the team. **Leads**
 are the call backs asked for in it that aren't `sold`. The rows are read and counted in Python,
-as the admin's overview is (D72).
+as the admin's overview is (D72). **`daily`** lists the last `days` days one by one, each with when
+it began where the business is and its sales and amount, for the console's bars (D176).
 
 ### The same order twice (D146)
 

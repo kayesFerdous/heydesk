@@ -117,6 +117,19 @@ class ShopStore(Store):
             leads=leads or 0,
         )
 
+    async def sales_between(self, start: datetime, end: datetime) -> list[tuple[datetime, int]]:
+        """When each sale from `start` up to `end` was made and its total, for the daily bars."""
+        async with self.sessions() as s:
+            rows = await s.execute(
+                select(ShopOrder.created_at, ShopOrder.total).where(
+                    ShopOrder.workspace_id == self.workspace_id,
+                    ShopOrder.created_at >= start,
+                    ShopOrder.created_at < end,
+                    ShopOrder.status.not_in(NOT_SALE_STATUSES),
+                )
+            )
+            return [(at, total) for at, total in rows]
+
     def order_link(self, order_id: str) -> str:
         """The order's page for the buyer, `/o/<id>`; the id is long and random."""
         return f"{self.public_url}/o/{order_id}"
