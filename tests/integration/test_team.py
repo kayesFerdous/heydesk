@@ -119,6 +119,15 @@ async def test_a_web_visitor_gets_the_team_reply_on_the_page(
     await send(client, path, secret, from_owner("Hello from the team!", f"…\nRef: {conv_id}"))
     assert (await client.get(team)).json() == {"replies": ["Hello from the team!"]}
 
+    # a reload shows the chat again, from the browser's token alone
+    history = f"/api/chat/{DEV_KEY}/history"
+    past = (await client.get(history, params={"visitor_id": "test-visitor"})).json()
+    assert past["conversation_id"] == conv_id
+    assert {"role": "user", "text": "hello"} in past["messages"]
+    assert past["messages"][-1] == {"role": "team", "text": "Hello from the team!"}
+    other = (await client.get(history, params={"visitor_id": "someone-else"})).json()
+    assert other == {"conversation_id": None, "messages": []}
+
     body = {"visitor_id": "test-visitor", "message": "great", "conversation_id": conv_id}
     quiet = await client.post(f"/api/chat/{DEV_KEY}", json=body)
     assert "event: token" not in quiet.text and "event: done" in quiet.text

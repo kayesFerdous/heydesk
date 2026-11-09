@@ -6041,6 +6041,14 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "c-webchat",
      "to": "a-chat",
+     "data": "on load: GET /history?visitor_id → last web chat's id and lines",
+     "file": "src/heydesk/services/conversations.py",
+     "fn": "last_web_chat",
+     "note": "A reload shows the chat again and carries on in it; no chat yet → the greeting."
+    },
+    {
+     "from": "c-webchat",
+     "to": "a-chat",
      "data": "POST {message, conversation_id, visitor_id}",
      "file": "src/heydesk/api/chat.py",
      "fn": "chat"

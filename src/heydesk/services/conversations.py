@@ -340,6 +340,35 @@ class ConversationService:
             conversation = await self._get(s, agent, conversation_id)
         return [m["content"] for m in conversation.messages if m.get("by") == TEAM_AUTHOR]
 
+    async def last_web_chat(
+        self, agent: LiveAgent, visitor_id: str
+    ) -> tuple[str, list[dict[str, str]]] | None:
+        """This browser's latest web chat with the agent, so a reload shows it again: its id
+        and the lines said, oldest first. `role` is user, assistant or team. None: no chat yet."""
+        async with self.sessions() as s:
+            conversation = await s.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.workspace_id == agent.workspace_id,
+                    Conversation.agent_id == agent.agent_id,
+                    Conversation.channel == "web",
+                    Conversation.contact == visitor_id,
+                )
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+        if conversation is None:
+            return None
+        lines = [
+            {"role": TEAM_AUTHOR if m.get("by") == TEAM_AUTHOR else m["role"], "text": m["content"]}
+            for m in conversation.messages
+            # tool calls and their results aren't lines anyone said
+            if m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+            and m["content"].strip()
+        ]
+        return conversation.id, lines
+
     async def store_for(
         self, agent: LiveAgent, conversation_id: str
     ) -> tuple[ShopStore, Conversation | None]:

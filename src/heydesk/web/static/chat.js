@@ -224,7 +224,19 @@ $("restart").addEventListener("click", () => {
     $("agent-name").textContent = agent.name;
     $("call").hidden = !agent.voice;  // only when the shop takes calls
     greeting = agent.greeting;
-    add("agent", greeting);
+    // This browser's last chat, if it has one: shown again, and the next message carries on in it
+    const past = await fetch(`/api/chat/${AGENT_KEY}/history?visitor_id=${visitorId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (past?.conversation_id) {
+      conversationId = past.conversation_id;
+      for (const m of past.messages) {
+        add(m.role === "user" ? "you" : "agent", m.text);
+        if (m.role === "team") teamShown++;
+      }
+    } else {
+      add("agent", greeting);
+    }
   } catch (failure) {
     add("err", `Couldn't load the agent: ${failure.message}`);
   }
