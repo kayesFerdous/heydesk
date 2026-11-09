@@ -3039,26 +3039,31 @@ tr.hl td { background: var(--accent-soft); }
    "desk": "shop",
    "file": "src/heydesk/shop/tools.py",
    "fn": "find_product",
-   "purpose": "Look up products by words (long lists).",
+   "purpose": "Look up products in a group by words (long lists); cards only for full matches.",
    "writes": false,
    "confirm": null,
    "inputs": [
     [
-     "query",
-     "string; What they're looking for: a name, a group, a colour or what it's for; minLength 1; maxLength 200"
+     "group",
+     "string; One of the groups in the Products section, if you can tell which; maxLength 200"
+    ],
+    [
+     "words",
+     "string; The other words that pick it out: a name, a brand or what it's for. Leave out sizes and colours: each product's line has them; maxLength 200"
     ]
    ],
    "outputs": [
-    "{products: [lines], shown: [names]}",
-    "nothing → try other words"
+    "{products: [lines], shown: [names], next?: \"8 of N\"}",
+    "none with every word → {closest: [lines], next}, no cards",
+    "unknown group → the groups; nothing → try other words"
    ],
    "effects": [
-    "Photos event: a card for each product found, photo or not (not on voice, D125)"
+    "Photos event: a card for each product with every word, photo or not (not on voice, D125, D177)"
    ],
    "label_web": "Looking for it…",
    "filler": "Let me look.",
    "timeout": 5.0,
-   "description": "Look up the shop's products by a name, a group, a colour or what it's for. Returns up to 8, each with its code, price, sizes, colours and stock, and shows the visitor their cards (`shown`). Use it when the Products section says to."
+   "description": "Look up the shop's products: pick the group they mean from the Products section, and the words that pick it out (a brand, a name). Returns up to 8 with every word, each with its code, price, sizes, colours and stock, and shows the visitor their cards (`shown`); with none, the closest (`closest`), not shown. Use it when the Products section says to."
   },
   {
    "id": "t-shop-update_cart",
@@ -3928,7 +3933,7 @@ tr.hl td { background: var(--accent-soft); }
      "owner": "python",
      "file": "src/heydesk/shop/__init__.py",
      "fn": "shop_prompt",
-     "text": "# Products\nThe shop has 140 products, too many to list here. Groups: Panjabi (80), Saree (60).\nLook a product up with find_product before you say anything about it (its price, sizes, colours or stock), and use the codes it gives. If it finds nothing, try other words before you say the shop doesn't have it.",
+     "text": "# Products\nThe shop has 140 products, too many to list here. Groups: Panjabi (80), Saree (60).\nLook a product up with find_product before you say anything about it (its price, sizes, colours or stock), and use the codes it gives. Give it the group they mean (\"headphone ase?\" is Headphones) and the words that pick it out (\"logitech\"). If it finds nothing, try other words or another group before you say the shop doesn't have it.",
      "when": {
       "desk": "shop",
       "long_list": true

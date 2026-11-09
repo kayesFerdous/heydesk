@@ -159,8 +159,10 @@ async def shop_prompt(config: ShopConfig, store: ShopStore) -> str:
         )
         products.append(
             "Look a product up with find_product before you say anything about it (its "
-            "price, sizes, colours or stock), and use the codes it gives. If it finds "
-            "nothing, try other words before you say the shop doesn't have it."
+            "price, sizes, colours or stock), and use the codes it gives. Give it the group "
+            'they mean ("headphone ase?" is Headphones) and the words that pick it out '
+            '("logitech"). If it finds nothing, try other words or another group before you '
+            "say the shop doesn't have it."
         )
     else:
         products.append("Each line: name [code] price, sizes, colours: description")

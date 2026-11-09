@@ -879,12 +879,15 @@ async def test_a_long_list_gives_the_groups_and_find_product_looks_them_up(world
     assert "Look a product up with find_product" in text
 
     ctx = make_ctx(store, agent=agent.config)
-    found = await find_product(ctx, FindProductInput(query="silk panjabi"))
+    found = await find_product(ctx, FindProductInput(words="silk panjabi"))
     assert found.ok
     assert found.data["products"][0].startswith("- Silk Panjabi [panjabi-silk] ৳3,200")
-    assert len((await find_product(ctx, FindProductInput(query="tee"))).data["products"]) == 8
-    nothing = await find_product(ctx, FindProductInput(query="umbrella"))
+    tees = await find_product(ctx, FindProductInput(group="t-shirts"))
+    assert len(tees.data["products"]) == 8 and f"of {LONG_PRODUCT_LIST}" in tees.data["next"]
+    nothing = await find_product(ctx, FindProductInput(words="umbrella"))
     assert not nothing.ok and "Try other words" in nothing.data["error"]
+    wrong = await find_product(ctx, FindProductInput(group="Shoes"))
+    assert not wrong.ok and "T-shirts" in wrong.data["error"]
     added = await update_cart(ctx, cart({"code": "tee-3", "quantity": 1}))
     assert added.ok  # the cart still takes any code
 
@@ -994,15 +997,47 @@ async def test_find_product_shows_a_card_for_each_it_found(world: World) -> None
     )
     ctx = make_ctx(store, agent=agent.config)
 
-    found = await find_product(ctx, FindProductInput(query="silk panjabi"))
+    found = await find_product(ctx, FindProductInput(words="silk panjabi"))
     assert found.photos and found.photos[0]["url"] == url
     assert found.photos[0]["code"] == "panjabi-silk" and found.data["shown"][0] == "Silk Panjabi"
     assert [c["name"] for c in found.photos] == found.data["shown"]  # the rest have no photo
     assert all(c["url"] == "" for c in found.photos[1:])
     on_a_call = await find_product(
-        make_ctx(store, agent=agent.config, channel="voice"), FindProductInput(query="silk")
+        make_ctx(store, agent=agent.config, channel="voice"), FindProductInput(words="silk")
     )
     assert on_a_call.photos is None and "shown" not in on_a_call.data
+
+
+async def test_find_product_looks_in_the_group_and_shows_only_what_has_every_word(
+    world: World,
+) -> None:
+    """Asked "logitech er headphone ase?": only Logitech headphones are shown. With none, the
+    keyboards that say Logitech aren't shown as cards, and the other headphones are only told."""
+    agent = await world.agent()
+    store = world.store(agent)
+
+    def item(code: str, name: str, group: str) -> Product:
+        return Product(code=code, name=name, price=100000, category=group)
+
+    gear = [
+        item("mx-keys", "Logitech MX Keys", "Keyboards"),
+        item("m185", "Logitech M185", "Mice"),
+        item("g435", "Logitech G435", "Headphones"),
+        item("xm5", "Sony WH-1000XM5", "Headphones"),
+    ]
+    await store.replace_products(gear)
+    ctx = make_ctx(store, agent=agent.config)
+
+    found = await find_product(ctx, FindProductInput(group="Headphones", words="logitech"))
+    assert found.data["shown"] == ["Logitech G435"]
+    assert [c["code"] for c in found.photos or []] == ["g435"]
+
+    await store.replace_products([g for g in gear if g.code != "g435"])
+    none = await find_product(ctx, FindProductInput(group="Headphones", words="logitech"))
+    assert none.photos is None and "shown" not in none.data
+    assert "Sony WH-1000XM5" in none.data["closest"][0]  # the group's others, to offer
+    loose = await find_product(ctx, FindProductInput(words="logitech headphone"))
+    assert loose.photos is None and "closest" in loose.data  # the keyboards stay off the screen
 
 
 def bdt(minor: int, text: str) -> dict[str, object]:

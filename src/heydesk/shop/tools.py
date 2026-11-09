@@ -25,6 +25,7 @@ from heydesk.shop.values import (
     CANCELLABLE,
     CHANGEABLE,
     LOW_STOCK,
+    MAX_FOUND_PRODUCTS,
     MAX_PRODUCT_CARDS,
     OWN_STOCK,
     STATUS_WORDS,
@@ -49,28 +50,59 @@ type Ctx = ToolContext[ShopStore]
 
 
 class FindProductInput(BaseModel):
-    query: str = Field(
-        min_length=1,
+    group: str = Field(
+        default="",
         max_length=200,
-        description="What they're looking for: a name, a group, a colour or what it's for",
+        description="One of the groups in the Products section, if you can tell which",
+    )
+    words: str = Field(
+        default="",
+        max_length=200,
+        description=(
+            "The other words that pick it out: a name, a brand or what it's for. Leave out "
+            "sizes and colours: each product's line has them"
+        ),
     )
 
 
 async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
-    """For a shop with too many products to list in the prompt: the closest ones, as
-    the prompt's own lines. Each is shown as a card, side by side, except on a call."""
-    found = find_products(await ctx.store.products(), args.query)
+    """For a shop with too many products to list in the prompt: the model picks the group
+    and the words, Python finds the products. Only the ones with every word are shown as
+    cards (except on a call); the closest others are only told, so no wrong photos show."""
+    products = await ctx.store.products()
+    groups = list(dict.fromkeys(p.category for p in products))
+    if args.group and args.group.lower() not in {g.lower() for g in groups}:
+        return fail(f"No group {args.group!r}. The groups are: {', '.join(groups)}.")
+    if not args.group and not args.words.strip():
+        return fail("Give a group or some words to look for.")
+    found, every = find_products(products, args.words, args.group)
+    where = f"in {args.group}" if args.group else "in the shop"
     if not found:
         return fail(
-            f"Nothing in the shop matches {args.query!r}. Try other words (a group, a colour), "
-            "or ask what it's like. Don't say the shop doesn't have it yet."
+            f"Nothing {where} matches {args.words!r}. Try other words or another group, or "
+            "ask what it's like. Don't say the shop doesn't have it yet."
         )
     currency = ctx.agent.currency
-    data: dict[str, Any] = {"products": [p.prompt_line(currency) for p in found]}
+    lines = [p.prompt_line(currency) for p in found[:MAX_FOUND_PRODUCTS]]
+    if not every:  # no cards: these aren't what they asked for
+        return ToolResult(
+            ok=True,
+            data={
+                "closest": lines,
+                "next": (
+                    f"Nothing {where} has all of {args.words!r}. Say so, and offer these "
+                    "instead; show_photos shows them if they want to see."
+                ),
+            },
+        )
+    data: dict[str, Any] = {"products": lines}
+    if len(found) > MAX_FOUND_PRODUCTS:
+        data["next"] = f"These are {MAX_FOUND_PRODUCTS} of {len(found)}. Ask what they'd like."
     if ctx.channel == "voice":
         return ToolResult(ok=True, data=data)
-    data["shown"] = [p.name for p in found]  # their cards are on the screen already
-    return ToolResult(ok=True, data=data, photos=product_cards(found, currency))
+    shown = found[:MAX_FOUND_PRODUCTS]
+    data["shown"] = [p.name for p in shown]  # their cards are on the screen already
+    return ToolResult(ok=True, data=data, photos=product_cards(shown, currency))
 
 
 def product_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
@@ -91,9 +123,11 @@ def product_cards(products: list[Product], currency: str) -> list[dict[str, str]
 FIND_PRODUCT = Tool(
     name="find_product",
     description=(
-        "Look up the shop's products by a name, a group, a colour or what it's for. Returns up "
-        "to 8, each with its code, price, sizes, colours and stock, and shows the visitor "
-        "their cards (`shown`). Use it when the Products section says to."
+        "Look up the shop's products: pick the group they mean from the Products section, "
+        "and the words that pick it out (a brand, a name). Returns up to 8 with every word, "
+        "each with its code, price, sizes, colours and stock, and shows the visitor their "
+        "cards (`shown`); with none, the closest (`closest`), not shown. Use it when the "
+        "Products section says to."
     ),
     input_model=FindProductInput,
     run=find_product,
