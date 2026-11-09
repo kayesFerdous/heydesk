@@ -410,20 +410,28 @@ def groups_text(products: list[Product]) -> str:
     return ", ".join(f"{group} ({n})" for group, n in counts.items())
 
 
-def find_products(products: list[Product], query: str) -> list[Product]:
-    """The products whose words match `query` best, at most `MAX_FOUND_PRODUCTS`. A word in the name
-    or group counts twice, one in the sizes, colours or description once; a tie keeps the
-    shop's order. Plain word matching: "lal" doesn't find Red."""
-    words = {w for w in re.findall(r"\w+", query.lower()) if len(w) > 1}
+def find_products(
+    products: list[Product], words: str, group: str = ""
+) -> tuple[list[Product], bool]:
+    """The products in `group` (any group when it's empty) that have every one of `words` in
+    their name, group, description, sizes or colours, in the shop's order, and True. When none
+    has them all: the ones with the most (in a group, the whole group if none has any), and
+    False. Plain word matching: "lal" doesn't find Red,
+    so the model picks the group, which it can tell from any words."""
+    if group:
+        products = [p for p in products if p.category.lower() == group.lower()]
+    wanted = {w for w in re.findall(r"\w+", words.lower()) if len(w) > 1}
 
-    def score(p: Product) -> int:
-        named = f"{p.name} {p.category}".lower()
-        rest = " ".join([p.description, *p.sizes, *p.colours]).lower()
-        return sum(2 if w in named else 1 if w in rest else 0 for w in words)
+    def hits(p: Product) -> int:
+        text = " ".join([p.name, p.category, p.description, *p.sizes, *p.colours]).lower()
+        return sum(w in text for w in wanted)
 
-    scored = [(score(p), i, p) for i, p in enumerate(products)]
-    best = sorted((s for s in scored if s[0]), key=lambda s: (-s[0], s[1]))
-    return [p for _, _, p in best[:MAX_FOUND_PRODUCTS]]
+    counted = [(hits(p), p) for p in products]
+    every = [p for n, p in counted if n == len(wanted)]
+    if every:
+        return every, True
+    best = max((n for n, _ in counted), default=0)
+    return [p for n, p in counted if n == best and (n or group)], False
 
 
 BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
