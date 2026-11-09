@@ -217,7 +217,8 @@ async def fetch_image(url: str, local: bool = False) -> bytes:
 
 
 async def download(url: str, local: bool) -> bytes:
-    async with httpx.AsyncClient(timeout=15) as client:
+    # A name for ourselves: some hosts (Wikimedia) refuse the default client name with a 403
+    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "HeyDesk/1.0"}) as client:
         for _ in range(REDIRECTS + 1):
             await check_public_url(url, local)
             async with client.stream("GET", url) as response:
