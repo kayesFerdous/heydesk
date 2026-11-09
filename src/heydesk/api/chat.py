@@ -1,7 +1,7 @@
 import base64
 import binascii
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -81,6 +81,23 @@ def decoded(photo: str) -> bytes:
         return base64.b64decode(photo.split(",", 1)[-1], validate=True)
     except (binascii.Error, ValueError):
         raise UnreadablePhoto("The photo didn't arrive whole. Please send it again.") from None
+
+
+class HistoryOut(BaseModel):
+    conversation_id: str | None  # none: this browser hasn't chatted yet
+    messages: list[dict[str, str]]  # {role: user | assistant | team, text}, oldest first
+
+
+@router.get("/api/chat/{public_key}/history")
+async def history(
+    public_key: str, services: Svc, visitor_id: str = Query(min_length=8, max_length=64)
+) -> HistoryOut:
+    """The browser's last chat, so a reload shows it and carries on in it."""
+    agent = await services.agents.by_key(public_key)  # 404 if unknown
+    found = await services.conversations.last_web_chat(agent, visitor_id)
+    if found is None:
+        return HistoryOut(conversation_id=None, messages=[])
+    return HistoryOut(conversation_id=found[0], messages=found[1])
 
 
 class TeamOut(BaseModel):

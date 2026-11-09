@@ -459,6 +459,7 @@ SQLAlchemy doesn't see in-place edits.
 | GET | `/` | Dev chat page (development only) |
 | GET | `/api/chat/{key}` | Agent name, greeting, `photos` (true when it takes photos, D57), `voice` (true when it takes calls, so the page shows its Call button, D108) and `widget` (the website chat's look, its nudge and starters filled in like the greeting, D82) |
 | POST | `/api/chat/{key}` | `{message, conversation_id?, visitor_id, photo?}` → Server-Sent Events; `photo` is a JPEG or PNG in base64 (D57) |
+| GET | `/api/chat/{key}/history?visitor_id=` | The browser's last web chat with the agent (`contact` is its token): `{conversation_id, messages: [{role: user / assistant / team, text}]}`, so a reload shows it and the next message carries on in it; none yet → `conversation_id: null` and the page shows the greeting (D178) |
 | GET | `/api/chat/{key}/{conversation_id}/team` | What the team wrote from Telegram; the chat page asks every few seconds (D43) |
 | POST | `/api/auth/signup` | A new business and its owner → 204, and an email with a 6-digit code; no token until it's typed (D93, D94) |
 | POST | `/api/auth/login` | → `{token}` and the session cookie (D174); a 401 for a wrong email or password; a 403 `email_not_verified` for the right one before the code is typed (D94) |
