@@ -1001,7 +1001,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "errors & logs",
    "type": "core",
    "file": "src/heydesk/errors.py",
-   "purpose": "HeyDeskError family → JSON errors; JSON logs with ids only (logs.py).",
+   "purpose": "HeyDeskError family → JSON errors. Logs with ids only (logs.py): JSON lines in production, readable coloured lines in development; one line per request, a 4xx a warning, a 5xx an error.",
    "inputs": "exceptions",
    "outputs": "{error:{code,message}}",
    "fn": "register_exception_handlers"
@@ -9354,7 +9354,7 @@ tr.hl td { background: var(--accent-soft); }
     {"what": "The tools", "where": "Python code"},
     {"what": "Document chunks, and photo vectors", "where": "Qdrant"},
     {"what": "Photos sent by visitors", "where": "This server's disk, or Cloudflare R2. Only the URL goes in `messages`"},
-    {"what": "The trace's step-by-step detail", "where": "JSON logs. `turns` keeps only the totals"}
+    {"what": "The trace's step-by-step detail", "where": "JSON logs (development's readable line sums it up: `turn finished: model → find_product → model · 1843 ms …`). `turns` keeps only the totals"}
   ]
 }
 </script>

@@ -27,7 +27,8 @@ Open three tabs:
 2. The owner, logged in as `demo@heydesk.test` / `demo password`: <http://localhost:8080>
 3. The admin, in a private window, as `admin@heydesk.test` / `admin password`
 
-Keep a terminal with `scripts/dev.sh logs api` open: the `turn finished` lines are the trace.
+Keep a terminal with `scripts/dev.sh logs api` open: each `turn finished` line sums up a turn's
+trace (the steps and tools, the time, the tokens), and a failure shows in yellow or red.
 
 ## 1. The problem (30 s)
 

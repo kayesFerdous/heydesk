@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -31,6 +32,8 @@ from heydesk.wiring import (
     build_qdrant,
     build_services,
 )
+
+log = logging.getLogger(__name__)
 
 
 def create_app(
@@ -95,6 +98,14 @@ def create_app(
             run_once_after(settings.SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),
         ]
         loops = [asyncio.create_task(job) for job in jobs]
+        log.info(
+            "HeyDesk ready",
+            extra={
+                "env": settings.APP_ENV,
+                "llm": settings.LLM_PROVIDER,
+                "embedder": settings.EMBEDDER,
+            },
+        )
         yield
         for loop in loops:
             loop.cancel()

@@ -45,3 +45,21 @@ class Trace:
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.data, "total_ms": self.elapsed_ms(), "steps": self.steps}
+
+
+def summary(trace: dict[str, Any]) -> str:
+    """A finished turn's trace in one line for the logs, like
+    `model → find_product → model · 1843 ms, first words at 612 ms · 2281 tokens · web`."""
+    steps = trace["steps"]
+    took = f"{trace['total_ms']} ms"
+    if trace["first_output_ms"] is not None:
+        took += f", first words at {trace['first_output_ms']} ms"
+    tokens = sum(s["tokens"]["input"] + s["tokens"]["output"] for s in steps if "tokens" in s)
+    parts = [" → ".join(s.get("tool", s["name"]) for s in steps) or "no steps", took]
+    parts.append(f"{tokens} tokens")
+    if trace["error"]:
+        parts.append(trace["error"])
+    if trace.get("interrupted"):
+        parts.append("interrupted")
+    parts.append(trace["channel"])
+    return " · ".join(parts)

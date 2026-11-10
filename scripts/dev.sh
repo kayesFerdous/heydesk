@@ -256,7 +256,7 @@ start() { # api | web | all, then options
       echo "$out"
       die "The migration failed"
     }
-    PYTHONUNBUFFERED=1 run api "$C" uv run uvicorn heydesk.main:app $reload --port $API_PORT
+    PYTHONUNBUFFERED=1 FORCE_COLOR=1 run api "$C" uv run uvicorn heydesk.main:app $reload --port $API_PORT
     local api_pid=$LAST_PID
   fi
   if [[ -n $web ]]; then

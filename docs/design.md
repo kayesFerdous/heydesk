@@ -661,9 +661,18 @@ SSE events: `open {conversation_id}`, `token {text}`, `status {label}`,
 (D110), `choices {items: [text]}` (just before `done`, when the reply has buttons, D99, D110),
 `done {interrupted}`, `error {message}`.
 
-Every turn logs one JSON line, `turn finished`, with its trace: steps, timings,
-tokens, cost, error (rule 7). The same save adds a row to `turns` (D71, changing D15's
+Every turn logs one line with its trace: steps, timings, tokens, cost, error (rule 7). It
+says `turn finished: …`, or `turn failed: …` as a warning when the visitor got the polite
+line, followed by the trace in short (`model → find_product → model · 1843 ms, first words
+at 612 ms · 2281 tokens · web`, D180). The same save adds a row to `turns` (D71, changing D15's
 "no trace table"): the sums without the steps or anyone's words, for the admin.
+
+**Logs** (`logs.py`, D180) carry ids only. Production writes JSON lines (`LOG_JSON=true`) with
+every field, the whole trace included. Development writes lines a person can read: the local
+time, the level in colour, where it came from, the message and its `key=value` details
+(`14:02:30  INFO     request        GET /api/agent  status=200 ms=8.4`). Every request logs one
+line when it ends; a 4xx is a warning, a 5xx an error. A passing `/health` isn't logged.
+Startup logs `HeyDesk ready` with the environment, model and embedder.
 
 ### Limits on a public chat (D51)
 
