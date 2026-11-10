@@ -10,8 +10,8 @@ from sqlalchemy import select
 from heydesk.models import Conversation, Lead, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from heydesk.shop import tools_for
-from heydesk.shop.shared import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
+from heydesk.shop.tools import tools_for
+from heydesk.shop.tools.inbox import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
 from tests.conftest import DEV_KEY, World, make_ctx, said_yes
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}

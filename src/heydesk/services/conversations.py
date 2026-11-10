@@ -34,10 +34,11 @@ from heydesk.services.team import HUMAN_STATUS, TEAM_AUTHOR, TeamService, handof
 from heydesk.services.users import CurrentUser
 from heydesk.services.visitors import VisitorService, is_blocked
 from heydesk.services.woo import WooService
-from heydesk.shop import shop_note, shop_prompt, tools_for
 from heydesk.shop.models import ShopOrder
+from heydesk.shop.products import photo_line
+from heydesk.shop.prompt import shop_note, shop_prompt
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import photo_line
+from heydesk.shop.tools import tools_for
 
 log = logging.getLogger(__name__)
 

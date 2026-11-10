@@ -7,11 +7,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from heydesk.db import Base, new_id
 from heydesk.models.customer_request import CustomerRequest
 from heydesk.runtime.speech import money
-from heydesk.shop.values import lines_text
+from heydesk.shop.orders import lines_text
 
 
 class ProductRow(Base):
-    """One of a shop's products (`values.Product`)."""
+    """One of a shop's products (`products.Product`)."""
 
     __tablename__ = "products"
     __table_args__ = (UniqueConstraint("workspace_id", "code"),)
@@ -35,7 +35,7 @@ class ProductRow(Base):
 
 
 class CouponRow(Base):
-    """A shop's coupon code (`values.Coupon`)."""
+    """A shop's coupon code (`orders.Coupon`)."""
 
     __tablename__ = "coupons"
     __table_args__ = (UniqueConstraint("workspace_id", "code"),)

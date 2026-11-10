@@ -29,21 +29,13 @@ from heydesk.runtime.speech import local_time
 from heydesk.services.agents import LiveAgent
 from heydesk.services.channels import card_text
 from heydesk.shop import page
-from heydesk.shop.csv_import import Suggestion, suggest
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
 from heydesk.shop.models import ShopOrder
+from heydesk.shop.orders import STATUS_WORDS, Buyer, BuyerRecord, BuyForm, Coupon, lines_text
+from heydesk.shop.products import Product
 from heydesk.shop.store import OutOfStock, ShopStore
-from heydesk.shop.tools import CartLine, TeamOrder, checked_order, order_alert
-from heydesk.shop.values import (
-    PRODUCT_COLUMNS,
-    STATUS_WORDS,
-    Buyer,
-    BuyerRecord,
-    BuyForm,
-    Coupon,
-    Product,
-    lines_text,
-    products_from_csv,
-)
+from heydesk.shop.tools.cart import CartLine
+from heydesk.shop.tools.orders import TeamOrder, checked_order, order_alert
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])

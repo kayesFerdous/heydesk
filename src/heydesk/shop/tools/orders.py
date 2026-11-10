@@ -1,4 +1,4 @@
-"""The shop's tools: keep the cart up to date (Python adds it up, rule 1), place a
+"""The order tools: place a
 cash-on-delivery order, and track, change or cancel one: the order placed in this chat, or any
 with its code and the buyer's mobile. A delivered order can get an exchange request.
 On the web chat, it can show products' photos.
@@ -16,18 +16,12 @@ from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
-from heydesk.shop.base import NewMessage, TooLate
+from heydesk.shop.config import ShopConfig
+from heydesk.shop.delivery import ADDRESS_LIMIT, Zone, match_zone, with_district
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.shared import awaiting_payment
-from heydesk.shop.store import CouponGone, OutOfStock, ShopStore
-from heydesk.shop.values import (
-    ADDRESS_LIMIT,
+from heydesk.shop.orders import (
     CANCELLABLE,
     CHANGEABLE,
-    LOW_STOCK,
-    MAX_FOUND_PRODUCTS,
-    MAX_PRODUCT_CARDS,
-    OWN_STOCK,
     STATUS_WORDS,
     STEPS,
     BuyForm,
@@ -35,281 +29,44 @@ from heydesk.shop.values import (
     OrderCancel,
     OrderConfirm,
     OrderEdit,
-    Product,
-    ShopConfig,
-    Zone,
     cart_text,
-    find_products,
     lines_text,
-    match_zone,
     mobile,
-    with_district,
 )
+from heydesk.shop.products import (
+    LOW_STOCK,
+    OWN_STOCK,
+)
+from heydesk.shop.records import NewMessage, TooLate
+from heydesk.shop.store import CouponGone, OutOfStock, ShopStore
+from heydesk.shop.tools.cart import CartLine, lines_with_prices, stock_problem
 
 type Ctx = ToolContext[ShopStore]
 
 
-class FindProductInput(BaseModel):
-    group: str = Field(
-        default="",
-        max_length=200,
-        description="One of the groups in the Products section, if you can tell which",
-    )
-    words: str = Field(
-        default="",
-        max_length=200,
-        description=(
-            "The other words that pick it out: a name, a brand or what it's for. Leave out "
-            "sizes and colours: each product's line has them"
-        ),
-    )
-
-
-async def find_product(ctx: Ctx, args: FindProductInput) -> ToolResult:
-    """For a shop with too many products to list in the prompt: the model picks the group
-    and the words, Python finds the products. Only the ones with every word are shown as
-    cards (except on a call); the closest others are only told, so no wrong photos show."""
-    products = await ctx.store.products()
-    groups = list(dict.fromkeys(p.category for p in products))
-    if args.group and args.group.lower() not in {g.lower() for g in groups}:
-        return fail(f"No group {args.group!r}. The groups are: {', '.join(groups)}.")
-    if not args.group and not args.words.strip():
-        return fail("Give a group or some words to look for.")
-    found, every = find_products(products, args.words, args.group)
-    where = f"in {args.group}" if args.group else "in the shop"
-    if not found:
-        return fail(
-            f"Nothing {where} matches {args.words!r}. Try other words or another group, or "
-            "ask what it's like. Don't say the shop doesn't have it yet."
-        )
-    currency = ctx.agent.currency
-    lines = [p.prompt_line(currency) for p in found[:MAX_FOUND_PRODUCTS]]
-    if not every:  # no cards: these aren't what they asked for
-        return ToolResult(
-            ok=True,
-            data={
-                "closest": lines,
-                "next": (
-                    f"Nothing {where} has all of {args.words!r}. Say so, and offer these "
-                    "instead; show_photos shows them if they want to see."
-                ),
-            },
-        )
-    data: dict[str, Any] = {"products": lines}
-    if len(found) > MAX_FOUND_PRODUCTS:
-        data["next"] = f"These are {MAX_FOUND_PRODUCTS} of {len(found)}. Ask what they'd like."
-    if ctx.channel == "voice":
-        return ToolResult(ok=True, data=data)
-    shown = found[:MAX_FOUND_PRODUCTS]
-    data["shown"] = [p.name for p in shown]  # their cards are on the screen already
-    return ToolResult(ok=True, data=data, photos=product_cards(shown, currency))
-
-
-def product_cards(products: list[Product], currency: str) -> list[dict[str, str]]:
-    """Each product's card for the visitor's screen: its first photo (or none), name, price and
-    first video. A tap on its Order button says "Order [code]"."""
-    return [
-        {
-            "code": p.code,
-            "name": p.name,
-            "price": money(p.price, currency),
-            "url": p.photos[0] if p.photos else "",
-            "video": p.videos[0] if p.videos else "",
-        }
-        for p in products
-    ]
-
-
-FIND_PRODUCT = Tool(
-    name="find_product",
-    description=(
-        "Look up the shop's products: pick the group they mean from the Products section, "
-        "and the words that pick it out (a brand, a name). Returns up to 8 with every word, "
-        "each with its code, price, sizes, colours and stock, and shows the visitor their "
-        "cards (`shown`); with none, the closest (`closest`), not shown. Use it when the "
-        "Products section says to."
-    ),
-    input_model=FindProductInput,
-    run=find_product,
-    label="Looking for it…",
-    filler="Let me look.",
-)
-
-
-class CartLine(BaseModel):
-    code: str = Field(description="The product's code, shown in [brackets]")
-    quantity: int = Field(ge=1, le=20)
-    size: str = Field(default="", description="One of the product's sizes, if it has any")
-    colour: str = Field(default="", description="One of the product's colours, if it has any")
-
-
-class UpdateCartInput(BaseModel):
-    coupon: str = Field(
-        default="",
-        description="A coupon code the visitor gave, like EID10. Leave it out to keep the "
-        "one the order has.",
-    )
-    lines: list[CartLine] = Field(
-        description="Every product in the order, not just the change. An empty list clears it."
-    )
-
-
-def _lines_with_prices(
-    products: dict[str, Product], given: list[CartLine]
-) -> list[dict[str, Any]] | ToolResult:
-    """The lines as an order keeps them, with the shop's prices, the same product, size and
-    colour added up; or what's wrong with them. Stock isn't checked here."""
-    unknown = [line.code for line in given if line.code not in products]
-    if unknown:
-        return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
-
-    wanted: dict[tuple[str, str, str], int] = {}  # the same product, size and colour is added up
-    problems = []
-    choices: list[str] = []  # buttons for the first question: what's in stock
-    for line in given:
-        product = products[line.code]
-        size = None
-        try:
-            size = product.match_option("size", line.size)
-            key = (line.code, size, product.match_option("colour", line.colour))
-        except ValueError as error:
-            problems.append(str(error))
-            choices = choices or (
-                product.in_stock("size", colour=line.colour)
-                if size is None
-                else product.in_stock("colour", size=size)
-            )
-            continue
-        wanted[key] = wanted.get(key, 0) + line.quantity
-    if problems:
-        return ToolResult(ok=False, data={"error": " ".join(problems)}, choices=choices)
-    return [
-        {
+def awaiting_payment(
+    code: str,
+    link: str,
+    amount: str,
+    pay_for: str,
+    state: dict[str, Any] | None = None,
+    card: dict[str, Any] | None = None,
+) -> ToolResult:
+    """What a writing tool returns once it saved something unpaid: a link to pay, no
+    alert. Only the payment check places it; no tool can. `card`: its receipt, with the link."""
+    return ToolResult(
+        ok=True,
+        data={
             "code": code,
-            "name": products[code].name,
-            "size": size,
-            "colour": colour,
-            "quantity": quantity,
-            "price": products[code].price,
-        }
-        for (code, size, colour), quantity in wanted.items()
-    ]
-
-
-def _stock_problem(
-    products: dict[str, Product],
-    lines: list[dict[str, Any]],
-    held: list[dict[str, Any]] | None = None,
-) -> str:
-    """What there isn't enough of for `lines`, for the model to tell the visitor; "" when
-    there's enough. `held` are an order's own items, still counted as on the shelf for it."""
-    needed: dict[tuple[str, int], int] = {}  # (code, counter) → how many, from each count
-    for line, sign in [(line, 1) for line in lines] + [(line, -1) for line in held or []]:
-        product = products.get(line["code"])
-        stock_index = product.stock_index(line["size"], line["colour"]) if product else None
-        if stock_index is not None:
-            key = (line["code"], stock_index)
-            needed[key] = needed.get(key, 0) + sign * line["quantity"]
-    short = []
-    for (code, stock_index), quantity in needed.items():
-        product, left = products[code], products[code].stock_at(stock_index)
-        if quantity > left:
-            others = (
-                f" (left: {product.available_variants()})"
-                if stock_index != OWN_STOCK and product.available_variants()
-                else ""
-            )
-            short.append(
-                f"{product.display_name(stock_index)}: "
-                + (f"only {left} left" if left else "sold out")
-                + others
-            )
-    return f"Not enough in stock. {'; '.join(short)}. Tell the visitor." if short else ""
-
-
-async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
-    products = {p.code: p for p in await ctx.store.products()}
-    lines = _lines_with_prices(products, args.lines)
-    if isinstance(lines, ToolResult):
-        return lines
-
-    short = _stock_problem(products, lines)
-    if short:
-        return fail(short)
-
-    config = cast(ShopConfig, ctx.agent)
-    currency = config.currency
-    subtotal = sum(line["price"] * line["quantity"] for line in lines)
-    said = [
-        f"{lines_text([line])} = {money(line['price'] * line['quantity'], currency)}"
-        for line in lines
-    ]
-    data = {"order": said, "subtotal": money(subtotal, currency)}
-    if 0 < subtotal < config.free_delivery_over:
-        data["free_delivery_if_you_add"] = money(config.free_delivery_over - subtotal, currency)
-    elif subtotal and config.free_delivery_over:
-        # Said outright: with nothing said, Maira made up a nudge with no amount (13 Oct)
-        data["delivery"] = "free"
-    cart: dict[str, Any] = {"lines": lines, "subtotal": subtotal}
-    state: dict[str, Any] = {"cart": cart}
-    offer = _goes_with(products, lines, ctx.state.get("offered") or [])
-    if offer:  # each is offered once in a chat
-        data["goes_with"] = [p.prompt_line(currency) for p in offer]
-        state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
-    kept = ((ctx.state.get("cart") or {}).get("coupon") or {}).get("code", "")
-    # the buyer's code, the cart's, or an offer sent to this chat
-    code = "".join(args.coupon.split()).upper() or kept or await ctx.store.offer_code()
-    if not code or not subtotal:
-        return ToolResult(ok=True, data=data, state=state)
-    coupon = await ctx.store.coupon(code)  # Python checks it and takes it off
-    problem = coupon.problem(ctx.now) if coupon else f"There's no coupon {code}."
-    if coupon is None or problem:  # the order is kept, without it
-        hint = f"{problem} Tell the visitor; the order is kept without a coupon."
-        return ToolResult(ok=False, data=data | {"coupon_problem": hint}, state=state)
-    cart["coupon"] = {"code": coupon.code, "kind": coupon.kind, "value": coupon.value}
-    cart["discount"] = coupon.discount(subtotal)
-    data["coupon"] = coupon.describe(currency)
-    if cart["discount"]:
-        data["discount"] = money(-cart["discount"], currency)
-        data["subtotal_after_coupon"] = money(subtotal - cart["discount"], currency)
-    if coupon.kind == "free_delivery":
-        data["delivery"] = "free"
-        data.pop("free_delivery_if_you_add", None)
-    return ToolResult(ok=True, data=data, state=state)
-
-
-def _goes_with(
-    products: dict[str, Product], lines: list[dict[str, Any]], offered: list[str]
-) -> list[Product]:
-    """What goes with the cart's products (`Product.goes_with`): the ones not in it, not
-    offered before and not sold out; at most 2."""
-    in_cart = {line["code"] for line in lines}
-    codes = dict.fromkeys(code for line in lines for code in products[line["code"]].goes_with)
-    fits = [
-        products[code]
-        for code in codes
-        if code in products
-        and code not in in_cart
-        and code not in offered
-        and not products[code].sold_out()
-    ]
-    return fits[:2]
-
-
-UPDATE_CART = Tool(
-    name="update_cart",
-    description=(
-        "Set the visitor's whole order: every product with its quantity, and its size and "
-        "colour when it has them, and a coupon code if they gave one. Call it after every "
-        "change. Checks the sizes, colours, stock and coupon, and returns each line, the "
-        "subtotal and any discount; tell the visitor them exactly as given. "
-        "It may also say how much more would make the delivery free, or that it's free, and "
-        "what goes with it (`goes_with`)."
-    ),
-    input_model=UpdateCartInput,
-    run=update_cart,
-    label="Updating your order…",
-)
+            "pay_link": link,
+            "next": f"Send them the link to pay {pay_for}, {amount}, by bKash, Nagad or a card. "
+            "It isn't placed or "
+            "confirmed until it's paid: don't say it is. A message will appear here when the "
+            "payment comes in.",
+        },
+        state=state,
+        card=card,
+    )
 
 
 DUPLICATE_HOURS = 6  # the same mobile and items again within this is asked about
@@ -500,10 +257,10 @@ async def checked_order(
     its read-back and how it's paid, checked as the chat's are; or what to fix, in plain
     words."""
     products = {p.code: p for p in await store.products()}
-    lines = _lines_with_prices(products, wanted)
+    lines = lines_with_prices(products, wanted)
     if isinstance(lines, ToolResult):
         return "Choose a size and colour that's in stock."
-    if _stock_problem(products, lines):
+    if stock_problem(products, lines):
         return "There aren't that many left. Choose fewer, or another size or colour."
     check = ArgumentChecker()
     address = check.take(
@@ -816,10 +573,10 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
     lines, subtotal = found.lines, found.subtotal
     if args.items:
         products = {p.code: p for p in await ctx.store.products()}
-        priced = _lines_with_prices(products, args.items)
+        priced = lines_with_prices(products, args.items)
         if isinstance(priced, ToolResult):
             return priced
-        short = _stock_problem(products, priced, found.lines)
+        short = stock_problem(products, priced, found.lines)
         if short:
             return fail(short)
         lines, subtotal = priced, sum(line["price"] * line["quantity"] for line in priced)
@@ -1004,56 +761,3 @@ REQUEST_EXCHANGE = Tool(
     label="Noting your exchange…",
     timeout_seconds=10.0,
 )
-
-
-class ShowPhotosInput(BaseModel):
-    products: list[str] = Field(
-        min_length=1,
-        max_length=MAX_PRODUCT_CARDS,
-        description=f"Up to {MAX_PRODUCT_CARDS} product codes, shown in [brackets]",
-    )
-
-
-async def show_photos(ctx: Ctx, args: ShowPhotosInput) -> ToolResult:
-    """Each product's card, side by side, on the visitor's screen: its first photo, name and
-    price."""
-    if ctx.channel == "voice":  # Messenger and Telegram send them as photos
-        return fail("Photos can't be shown here. Describe the product from its line instead.")
-    products = {p.code: p for p in await ctx.store.products()}
-    unknown = [code for code in args.products if code not in products]
-    if unknown:
-        return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
-    chosen = [products[code] for code in dict.fromkeys(args.products)]
-    data: dict[str, Any] = {"shown": [p.name for p in chosen]}
-    if any(not p.photos for p in chosen):
-        data["no_photo"] = [p.name for p in chosen if not p.photos]
-        data["next"] = "Describe the ones with no photo from their line."
-    else:
-        data["next"] = "They can see the photos now. Ask if it's what they're looking for."
-    if any(p.videos for p in chosen):  # the card has a Video button
-        data["video"] = [p.name for p in chosen if p.videos]
-    return ToolResult(ok=True, data=data, photos=product_cards(chosen, ctx.agent.currency))
-
-
-SHOW_PHOTOS = Tool(
-    name="show_photos",
-    description=(
-        f"Show the visitor up to {MAX_PRODUCT_CARDS} products side by side, each with its photo, name and "
-        "price: to ask if a photo they sent is one of them, or when they ask to see a product."
-    ),
-    input_model=ShowPhotosInput,
-    run=show_photos,
-    label="Finding the photos…",
-)
-
-TOOLS = [
-    FIND_PRODUCT,
-    UPDATE_CART,
-    PLACE_ORDER,
-    TRACK_ORDER,
-    CHANGE_ORDER,
-    CANCEL_ORDER,
-    CONFIRM_ORDER,
-    REQUEST_EXCHANGE,
-    SHOW_PHOTOS,
-]

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, Workspace
 from heydesk.services.agents import AgentInfo
-from heydesk.shop.values import ShopConfig
+from heydesk.shop.config import ShopConfig
 
 router = APIRouter(tags=["agents"])
 

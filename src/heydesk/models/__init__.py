@@ -1,4 +1,4 @@
-"""The tables outside the shop's own (`shop/models.py`); importing `heydesk.shop` registers
+"""The tables outside the shop's own (`shop/models.py`); importing `heydesk.shop.models` registers
 those."""
 
 from heydesk.models.agent import Agent

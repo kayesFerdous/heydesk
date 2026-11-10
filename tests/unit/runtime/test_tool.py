@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime import parse
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, run_tool
-from heydesk.shop.tools import UPDATE_CART
+from heydesk.shop.tools.cart import UPDATE_CART
 from tests.conftest import make_ctx
 
 CTX = make_ctx()

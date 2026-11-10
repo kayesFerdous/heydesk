@@ -18,7 +18,7 @@ from heydesk.db import Base, make_engine
 from heydesk.models import Conversation, TeamMessage, Visitor
 from heydesk.services.agents import LiveAgent
 from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
-from heydesk.shop.values import NewOrder
+from heydesk.shop.orders import NewOrder
 from heydesk.wiring import build_services
 from tests.conftest import SEEDS, Clock, World, make_knowledge, make_test_settings
 

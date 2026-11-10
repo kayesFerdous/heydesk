@@ -33,7 +33,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 from heydesk.shop.models import ShopOrder
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import products_from_woo, woo_ids
+from heydesk.shop.woo_import import products_from_woo, woo_ids
 
 log = logging.getLogger(__name__)
 

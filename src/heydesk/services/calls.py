@@ -27,9 +27,10 @@ from heydesk.ports.llm import LanguageModel
 from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService, LiveAgent
 from heydesk.services.team import TeamService
+from heydesk.shop.config import CallSettings
 from heydesk.shop.models import ShopOrder
+from heydesk.shop.orders import mobile, spoken_items
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import CallSettings, mobile, spoken_items
 
 log = logging.getLogger(__name__)
 

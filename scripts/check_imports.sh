@@ -12,7 +12,7 @@ io='fastapi|starlette|sqlalchemy|groq|httpx|livekit|pipecat'
 
 forbid "domain/ is pure" $src/domain "${imp}(${io}|pydantic|heydesk\.(runtime|ports|shop|models|services|api|adapters|wiring|db))"
 forbid "runtime/ is framework-free" $src/runtime "${imp}(${io}|heydesk\.(shop|models|services|api|adapters|wiring|db))"
-forbid "tools reach the DB only through their store" "$src/shop/shared.py $src/shop/tools.py" "${imp}(${io}|heydesk\.(models|services|api|adapters|wiring|db))"
+forbid "tools reach the DB only through their store" $src/shop/tools "${imp}(${io}|heydesk\.(models|services|api|adapters|wiring|db))"
 forbid "ports/ import nothing from the project" $src/ports "${imp}heydesk\."
 forbid "only wiring.py imports adapters" "$src/runtime $src/shop $src/models $src/services $src/api" "${imp}heydesk\.adapters"
 forbid "only the shop's api.py knows HTTP" "$src/services $src/models $src/shop --exclude=api.py" "${imp}(fastapi|starlette)"

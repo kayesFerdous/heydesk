@@ -22,8 +22,7 @@ from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
-from heydesk.shop.csv_import import Suggestion, suggest
-from heydesk.shop.values import PRODUCT_COLUMNS, products_from_csv
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
 
 log = logging.getLogger(__name__)
 

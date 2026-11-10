@@ -22,8 +22,8 @@ from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 from heydesk.shop.models import ShopOrder
+from heydesk.shop.orders import lines_text
 from heydesk.shop.store import STATUSES_TO_BOOK, ShopStore
-from heydesk.shop.values import lines_text
 
 log = logging.getLogger(__name__)
 

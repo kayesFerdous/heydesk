@@ -1,4 +1,4 @@
-"""The tool contract (design §7). The tools themselves live in `shop/tools.py` and `shop/shared.py`.
+"""The tool contract (design §7). The tools themselves live in `shop/tools/`.
 
 `run_tool` never raises: bad arguments, a timeout or a bug all come back as
 `ok=False` with a hint, so the model can recover or offer the hand-off.

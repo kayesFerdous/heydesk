@@ -20,9 +20,10 @@ from heydesk.models import Agent, Workspace
 from heydesk.services.billing import dev_workspace
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
-from heydesk.shop import shop_missing
+from heydesk.shop.config import ShopConfig
+from heydesk.shop.products import Product
+from heydesk.shop.prompt import shop_missing
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import Product, ShopConfig
 
 log = logging.getLogger(__name__)
 

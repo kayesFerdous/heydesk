@@ -13,9 +13,9 @@ from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Account, Paid
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
-from heydesk.shop import shop_prompt
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.tools import FindOrderInput, track_order
+from heydesk.shop.prompt import shop_prompt
+from heydesk.shop.tools.orders import FindOrderInput, track_order
 from tests.conftest import SEEDS, World, make_ctx
 
 SHOP_ORDER = {"lines": [{"code": "kurti", "quantity": 1, "size": "M", "colour": "Black"}]}

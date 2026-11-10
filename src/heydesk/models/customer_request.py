@@ -54,7 +54,7 @@ class CustomerRequest:
 
 
 async def next_number(s: AsyncSession, table: type[CustomerRequest], workspace_id: str) -> int:
-    """The business's next number in this table: 101, 102… Call it after `Store._lock`,
+    """The business's next number in this table: 101, 102… Call it after `RecordStore._lock`,
     or two saves at once get the same number."""
     last = await s.scalar(select(func.max(table.number)).where(table.workspace_id == workspace_id))
     return last + 1 if last else FIRST_NUMBER

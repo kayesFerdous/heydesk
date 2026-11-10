@@ -18,7 +18,7 @@ from heydesk.ports.payments import Paid
 from heydesk.ports.woo import WooStore, WooUnreachable
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.woo import TOPICS, WOO_STATUS
-from heydesk.shop.values import products_from_woo
+from heydesk.shop.woo_import import products_from_woo
 from tests.conftest import SEEDS, World
 from tests.integration.test_payments import SHOP_DETAILS, found, paying_first, take
 from tests.integration.test_shop import buy, orders, stock

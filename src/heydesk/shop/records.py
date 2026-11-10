@@ -1,6 +1,7 @@
-"""The data under the shop that isn't about products and orders (`Store`: messages for the
-team, the documents search, conversations). `shop/store.py` adds those; the tools that use
-only this part are in `shop/shared.py`.
+"""The records every chat can make that aren't products or orders (`RecordStore`): messages
+for the team, call backs, complaints, missed questions, notes on a visitor, and the
+numbering every record shares. `shop/store.py` adds the products and orders; the tools that
+use only this part are in `shop/tools/inbox.py`.
 """
 
 from collections.abc import Callable, Sequence
@@ -60,7 +61,7 @@ class NewLead:
     phone: str
 
 
-class Store:
+class RecordStore:
     """One business's data, for its tools and its owner's routes (rule 6: every query is
     scoped to `workspace_id`). `ShopStore` subclasses this and adds the shop's tables.
 
