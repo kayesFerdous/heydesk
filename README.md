@@ -41,14 +41,41 @@ flowchart LR
   from the business's current config. The model may call the shop's tools. A tool checks facts
   in Python, and a writing tool only saves after a read-back and a yes. Every turn is saved with
   its tokens, time and cost (never the customer's words) for the admin.
-- **Desks:** each kind of business is one folder in `src/heydesk/desks/` with its own prompt,
-  tools, tables and routes. A new kind is a new folder.
+- **The shop:** everything about the online shop (its prompt, tools, tables and routes) is in
+  one folder, `src/heydesk/shop/`.
 - **Layers:** imports point inwards (routes → services → shop → runtime → ports). `runtime/`
   knows no framework, database or SDK; only `wiring.py` picks the adapters.
   `scripts/check_imports.sh` enforces this in CI.
 
 The details are in [docs/design.md](docs/design.md), and the reason for each choice in
 [docs/decisions.md](docs/decisions.md).
+
+## Project structure
+
+```
+src/heydesk/
+├── main.py          the FastAPI app: middleware, routes, background jobs
+├── wiring.py        builds the adapters from settings and hands them to the services
+├── config.py        settings from .env      db.py  engine and sessions      errors.py  HTTP errors
+├── api/             routes: read the request, call one service, return its answer
+├── services/        the use cases: conversations (a visitor's turn), inbox (the team's side),
+│                    channels and channel_links (the chat apps), users, billing, sheets, woo…
+├── shop/            the online shop
+│   ├── prompt.py    its part of the system prompt
+│   ├── tools/       what the model can call: products, cart, orders, inbox
+│   ├── products.py  delivery.py  orders.py  config.py   its shapes (pydantic, no database)
+│   ├── models.py    its tables      store.py  records.py   its data access, one business at a time
+│   └── api.py       the owner's routes and the public product page
+├── runtime/         the engine: the turn loop, the tool contract, the commit check, the prompt
+├── domain/          Confirmed[T]: only the commit check makes one, and only it can be saved
+├── ports/           Protocols for everything outside: the model, Telegram, payments, storage…
+├── adapters/        one class per port, each with a fake, so the tests run offline and free
+├── models/          the shared tables (SQLAlchemy 2.0, typed)
+└── voice/           the voice channel (Pipecat)
+tests/unit/          runtime/ and adapters/, with FakeLLM and a fixed clock
+tests/integration/   the API and the shop's tools against a real in-memory SQLite database
+migrations/          Alembic
+```
 
 ## Tech stack
 
