@@ -2,7 +2,6 @@
 connected and disconnected by the owner, and which business a page or number belongs to.
 Answering the messages that come in is `services/channels.py`."""
 
-import asyncio
 import contextlib
 import logging
 import secrets
@@ -261,14 +260,6 @@ class ChannelLinkService:
             return await s.scalar(
                 select(Channel).where(Channel.kind == MESSENGER, Channel.address == page_id)
             )
-
-    async def run(self, every: float) -> None:
-        """Sets the Telegram bots up again, `every` seconds after the start."""
-        await asyncio.sleep(every)
-        try:
-            await self.refresh_telegram()
-        except Exception:
-            log.exception("telegram webhooks not refreshed")
 
     async def _save(
         self,

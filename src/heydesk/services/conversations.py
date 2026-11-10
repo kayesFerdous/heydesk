@@ -23,6 +23,7 @@ from heydesk.ports.llm import LanguageModel
 from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
+from heydesk.runtime.text import one_line
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import CallService
 from heydesk.services.inbox import InboxService, get_conversation, least_busy
@@ -383,17 +384,6 @@ class ConversationService:
         )
         return store, conversation
 
-    async def run(self, every: float) -> None:
-        """Brings snoozed chats back when they're due, and nudges unfinished orders,
-        every `every` seconds, until cancelled (the app's lifespan starts it)."""
-        while True:
-            await asyncio.sleep(every)
-            try:
-                await self.inbox.wake_snoozed()
-                await self.nudge_unfinished()
-            except Exception:
-                log.exception("snooze and nudge round failed")
-
     async def nudge_unfinished(self) -> None:
         """A shop order read back and never said yes to, 1–3 hours on: the chat's last
         turn ran `place_order` and no order came of it. One nudge per chat, ever, with the
@@ -446,7 +436,7 @@ class ConversationService:
             conversation = await get_conversation(s, workspace_id, conversation_id)
         config = agent.config
         store = ShopStore(self.sessions, workspace_id, self.now, conversation_id=conversation.id)
-        asked = ASSIST[kind].replace("{question}", " ".join(question.split())[:500])
+        asked = ASSIST[kind].replace("{question}", one_line(question, 500))
         turn = TurnInput(
             system=build_system_prompt(
                 config,

@@ -1,18 +1,17 @@
-import csv
-import io
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import Depends, Query, Request, Response
+from fastapi import Depends, Query, Request
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from heydesk.errors import Forbidden, HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
 from heydesk.services.users import CurrentUser
+from heydesk.shop.records import PAGE  # the most rows one list request returns
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 SESSION_COOKIE = "heydesk_session"  # the browser's copy of the token; page scripts can't read it
@@ -113,41 +112,6 @@ async def admin_only(
     return current_user
 
 
-PAGE = 100  # the most rows one list request returns
-# ponytail: an export is the newest 10,000 rows in one file; page it if a business has more
-EXPORT_ROWS = 10_000
-FORMULA = ("=", "+", "-", "@", "\t", "\r")  # a spreadsheet runs a cell that starts with these
-
-
-def phone_cell(phone: str) -> str:
-    """01812345678 as "01812-345678": a spreadsheet reads the digits alone as a number and
-    drops the 0."""
-    return f"{phone[:5]}-{phone[5:]}" if len(phone) == 11 and phone.isdigit() else phone
-
-
-def amount_cell(minor: int) -> int | float:
-    """৳1,045.50 as 1045.5, and ৳3,200 as 3200: a number a spreadsheet adds up."""
-    return minor // 100 if minor % 100 == 0 else minor / 100
-
-
-def csv_file(name: str, columns: list[str], rows: list[list[Any]]) -> Response:
-    """A list as a file a spreadsheet opens: UTF-8 with a BOM, so Excel reads Bangla. A
-    visitor's words that start like a formula get a ' first, so they stay words."""
-
-    def cell(value: Any) -> Any:
-        return f"'{value}" if isinstance(value, str) and value.startswith(FORMULA) else value
-
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(columns)
-    writer.writerows([cell(v) for v in row] for row in rows)
-    return Response(
-        "\ufeff" + out.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'},
-    )
-
-
 @dataclass(frozen=True)
 class Page:
     """Which slice of a newest-first list to return: up to `limit` rows, all older than
@@ -174,28 +138,3 @@ type ClientIp = Annotated[str, Depends(client_ip)]
 
 class StatusIn(BaseModel):
     status: str  # where it may go depends on what it is: see the 409 message
-
-
-class ImportIn(BaseModel):
-    """A CSV file of products."""
-
-    csv: str = Field(
-        max_length=2_000_000, description="The file's text: a header row, then one per row"
-    )
-    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
-    mapping: dict[str, str] | None = Field(
-        default=None,
-        description="Our field → the file's column, as the owner checked it after /suggest "
-        ". Without it, the file's columns are matched to ours by name",
-    )
-
-
-class SuggestIn(BaseModel):
-    csv: str = Field(max_length=2_000_000, description="The file's text, as for the import")
-
-
-class ImportOut[T](BaseModel):
-    saved: bool
-    count: int
-    preview: list[T]  # the first few, as they'll be saved
-    added: int | None = None  # a shop's import: how many were new; the rest were updated

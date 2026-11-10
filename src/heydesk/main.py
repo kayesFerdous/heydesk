@@ -22,6 +22,7 @@ from heydesk.ports.payments import Gateways
 from heydesk.ports.photo_index import PhotoIndex
 from heydesk.ports.telegram import TelegramApi
 from heydesk.ports.whatsapp import WhatsAppApi
+from heydesk.services.background import run_every, run_once_after
 from heydesk.wiring import (
     build_embedder,
     build_knowledge_store,
@@ -83,18 +84,17 @@ def create_app(
                     "Run: uv run alembic upgrade head"
                 ) from error
             app.state.dev_agent_key = agent.public_key
-        loops = [
-            asyncio.create_task(app.state.services.sheets.run(settings.SHEET_SYNC_MINUTES * 60)),
-            asyncio.create_task(app.state.services.woo.run(settings.WOO_SYNC_MINUTES * 60)),
-            asyncio.create_task(app.state.services.calls.run(settings.CALL_QUEUE_SECONDS)),
-            asyncio.create_task(app.state.services.courier.run(settings.COURIER_SYNC_MINUTES * 60)),
-            asyncio.create_task(
-                app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
-            ),
-            asyncio.create_task(
-                app.state.services.channel_links.run(settings.SNOOZE_CHECK_SECONDS)
-            ),
+        services = app.state.services
+        jobs = [
+            run_every(settings.SHEET_SYNC_MINUTES * 60, services.sheets.sync_all),
+            run_every(settings.WOO_SYNC_MINUTES * 60, services.woo.sync_all),
+            run_every(settings.COURIER_SYNC_MINUTES * 60, services.courier.sync_all),
+            run_every(settings.CALL_QUEUE_SECONDS, services.calls.check_queue),
+            run_every(settings.SNOOZE_CHECK_SECONDS, services.inbox.wake_snoozed),
+            run_every(settings.SNOOZE_CHECK_SECONDS, services.conversations.nudge_unfinished),
+            run_once_after(settings.SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),
         ]
+        loops = [asyncio.create_task(job) for job in jobs]
         yield
         for loop in loops:
             loop.cancel()

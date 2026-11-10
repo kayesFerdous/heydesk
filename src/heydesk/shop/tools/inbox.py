@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.runtime import parse
 from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 from heydesk.shop.records import NewLead, NewMessage, RecordStore
 
@@ -99,7 +100,7 @@ async def take_message(ctx: ToolContext[RecordStore], args: TakeMessageInput) ->
     phone = check.take("phone", args.phone, parse.phone) if args.phone.strip() else ""
     if body is None or name is None or phone is None:
         return check.result()
-    best_time = " ".join(args.best_time.split())[:100] if phone else ""
+    best_time = one_line(args.best_time, 100) if phone else ""
 
     message = NewMessage(body, name, phone, best_time)
     read_back = f"Message: {body}" + "".join(
@@ -159,7 +160,7 @@ async def take_lead(ctx: ToolContext[RecordStore], args: TakeLeadInput) -> ToolR
     name = check.take("name", args.name, parse.name) if args.name.strip() else ""
     if when is None or phone is None or name is None:
         return check.result()
-    note = " ".join(args.note.split())[:300]
+    note = one_line(args.note, 300)
 
     lead = NewLead(when.astimezone(UTC), note, name, phone)
     read_back = f"We call you on {parse.day_time(when)} at {phone}" + "".join(
@@ -256,7 +257,7 @@ async def remember(ctx: ToolContext[RecordStore], args: RememberInput) -> ToolRe
     """Keeps a note on the visitor for their next conversations. A note on the same
     `about` replaces the old one, so a changed taste isn't kept twice."""
     about = " ".join(args.about.lower().split())
-    kept = await ctx.store.remember(about, " ".join(args.note.split()))
+    kept = await ctx.store.remember(about, one_line(args.note))
     return ToolResult(
         ok=True,
         data={"kept": kept, "next": "Carry on; don't tell them you noted it."},
@@ -289,7 +290,7 @@ class OffTopicInput(BaseModel):
 async def off_topic(ctx: ToolContext[RecordStore], args: OffTopicInput) -> ToolResult:
     """Says the model's line as it is and ends the turn: no second model call. Each call is a
     strike; enough in a row block the visitor for a while."""
-    return ToolResult(ok=True, data={"said": True}, reply=" ".join(args.reply.split()))
+    return ToolResult(ok=True, data={"said": True}, reply=one_line(args.reply))
 
 
 OFF_TOPIC = Tool(

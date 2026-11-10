@@ -16,6 +16,7 @@ from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation, Lead, PaymentAccount, Turn
 from heydesk.models.customer_request import UNPAID, next_number
+from heydesk.runtime.text import one_line
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.csv_import import products_from_csv
 from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
@@ -648,7 +649,7 @@ class ShopStore(RecordStore):
             if paid_in is not None:
                 order.paid_in = paid_in
             if reason is not None:
-                order.reason = " ".join(reason.split())[:200]
+                order.reason = one_line(reason, 200)
             order.updated_at = self.now()
         return order
 

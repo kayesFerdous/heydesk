@@ -26,6 +26,7 @@ from heydesk.models import (
 )
 from heydesk.models.customer_request import CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
+from heydesk.runtime.text import one_line
 
 if TYPE_CHECKING:  # only a type here: services import the shop
     from heydesk.services.knowledge import KnowledgeService
@@ -108,7 +109,7 @@ class RecordStore:
 
     async def save_missed_question(self, question: str) -> None:
         """A question it couldn't answer, for the owner to teach."""
-        question = " ".join(question.split())[:300]
+        question = one_line(question, 300)
         if not question:
             return
         async with self.sessions() as s, s.begin():
@@ -168,7 +169,7 @@ class RecordStore:
             )
         if found is not None:
             return found, False
-        reason = " ".join(reason.split())[:300] or "complaint"
+        reason = one_line(reason, 300) or "complaint"
         return await self.add(Ticket, status="open", name="", phone="", reason=reason), True
 
     async def messages(
@@ -370,7 +371,7 @@ class RecordStore:
         async with self.sessions() as s, s.begin():
             lead = await self._get_row(s, Lead, lead_id)
             self._move(lead, status)
-            lead.why = " ".join(why.split())[:200].lower() if status == "lost" else ""
+            lead.why = one_line(why, 200).lower() if status == "lost" else ""
         return lead
 
     async def lost_reasons(self) -> list[tuple[str, int]]:

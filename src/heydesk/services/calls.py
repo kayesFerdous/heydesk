@@ -59,6 +59,7 @@ class CallService:
         self.llm = llm  # for the first line's message, in the model's own format
         self.settings = settings
         self.now = now
+        self.restarted = False  # the first queue check finishes calls a restart left talking
         self.phones: dict[str, asyncio.Queue[dict[str, str]]] = {}  # waiting pages, by mobile
 
     # The phone page
@@ -180,19 +181,13 @@ class CallService:
 
     # The queue worker
 
-    async def run(self, every: float) -> None:
-        """Checks the queue every `every` seconds until cancelled (the app's lifespan starts
-        it). First, a call left talking by a restart is done: nothing is talking now."""
-        started = False
-        while True:
-            await asyncio.sleep(every)
-            try:
-                if not started:
-                    await self._after_restart()
-                    started = True
-                await self.ring_due_calls()
-            except Exception:
-                log.exception("call queue failed")
+    async def check_queue(self) -> None:
+        """One look at the queue (a background job). The first time, a call left talking by a
+        restart is done: nothing is talking now."""
+        if not self.restarted:
+            await self._after_restart()
+            self.restarted = True
+        await self.ring_due_calls()
 
     async def _after_restart(self) -> None:
         async with self.sessions() as s, s.begin():

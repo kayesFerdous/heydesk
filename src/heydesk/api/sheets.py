@@ -7,8 +7,9 @@ from typing import Any
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import ImportOut, Svc, Workspace
+from heydesk.api.deps import Svc, Workspace
 from heydesk.models import SheetLink
+from heydesk.shop.api import ImportOut
 from heydesk.shop.csv_import import Suggestion
 
 router = APIRouter(tags=["sheet"])

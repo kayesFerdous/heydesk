@@ -7,7 +7,6 @@ then, and the owner is told to pack it) and asks about each shipped one; the cou
 word makes it delivered or returned. The buyer hears each move in their chat. A courier
 problem stops that shop's round, is noted on the link, and the owner hears once."""
 
-import asyncio
 import logging
 from datetime import UTC, timedelta
 from typing import cast
@@ -217,30 +216,28 @@ class CourierService:
             line = f"How was your order {order.code}? Tap 👍 or 👎, or write to us."
             await self.team.tell_visitor_if_allowed(order.conversation_id, line, ["👍", "👎"])
 
-    async def run(self, every: float) -> None:
-        """Every `every` seconds, until cancelled (the app's lifespan starts it), a round for
-        each shop with a parcel to book or follow. One failing doesn't stop the others."""
-        while True:
-            await asyncio.sleep(every)
-            async with self.sessions() as s:
-                busy = await s.scalars(
-                    select(ShopOrder.workspace_id)
-                    .where(
-                        or_(
-                            and_(ShopOrder.status.in_(STATUSES_TO_BOOK), ShopOrder.parcel_id == ""),
-                            and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
-                            and_(  # its buyer is asked how it was
-                                ShopOrder.status == "delivered",
-                                ShopOrder.review_asked.is_(False),
-                                ShopOrder.conversation_id.is_not(None),
-                            ),
-                        )
+    async def sync_all(self) -> None:
+        """A round for each shop with a parcel to book or follow (a background job). One
+        failing doesn't stop the others."""
+        async with self.sessions() as s:
+            busy = await s.scalars(
+                select(ShopOrder.workspace_id)
+                .where(
+                    or_(
+                        and_(ShopOrder.status.in_(STATUSES_TO_BOOK), ShopOrder.parcel_id == ""),
+                        and_(ShopOrder.status == "shipped", ShopOrder.parcel_id != ""),
+                        and_(  # its buyer is asked how it was
+                            ShopOrder.status == "delivered",
+                            ShopOrder.review_asked.is_(False),
+                            ShopOrder.conversation_id.is_not(None),
+                        ),
                     )
-                    .distinct()
                 )
-                shops = list(busy)
-            for workspace_id in shops:
-                try:
-                    await self.sync(workspace_id)
-                except Exception:
-                    log.exception("courier round failed", extra={"workspace_id": workspace_id})
+                .distinct()
+            )
+            shops = list(busy)
+        for workspace_id in shops:
+            try:
+                await self.sync(workspace_id)
+            except Exception:
+                log.exception("courier round failed", extra={"workspace_id": workspace_id})

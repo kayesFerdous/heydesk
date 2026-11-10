@@ -1,10 +1,16 @@
-"""Words and chunks: how text is cut up for search. Pure."""
+"""Words and chunks: how text is cut up for search, and tidied to one line. Pure."""
 
 import re
 import unicodedata
 from difflib import SequenceMatcher
 
 LETTERS = {"L", "M", "N"}  # letters, combining marks (Bengali vowel signs), numbers
+
+
+def one_line(text: str, limit: int | None = None) -> str:
+    """`text` on one line with single spaces, cut to `limit` characters: what a visitor or the
+    model wrote, ready to save in a column of that size."""
+    return " ".join(text.split())[:limit]
 
 
 def words(text: str) -> list[str]:

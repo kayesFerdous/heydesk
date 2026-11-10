@@ -15,6 +15,7 @@ from heydesk.domain.values import parse_code
 from heydesk.runtime import cards, parse
 from heydesk.runtime.guards import ask_for_yes, confirm
 from heydesk.runtime.speech import money
+from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.delivery import ADDRESS_LIMIT, Zone, match_zone, with_district
@@ -221,7 +222,7 @@ async def new_order(
         address=address,
         name=name,
         phone=phone,
-        note=" ".join(note.split())[:500],
+        note=one_line(note, 500),
         status=(  # one way to confirm it: the advance, the shop's call, or none
             "unpaid"
             if charge and zone.pay_first and await store.pays_first(config)
@@ -614,7 +615,7 @@ async def change_order(ctx: Ctx, args: ChangeOrderInput) -> ToolResult:
         zone=zone.name if zone else found.zone,
         delivery_charge=charge,
         phone=phone or found.phone,
-        note=" ".join(args.note.split())[:500] or found.note,
+        note=one_line(args.note, 500) or found.note,
     )
     changes = [
         (label, old, new)
@@ -726,7 +727,7 @@ async def request_exchange(ctx: Ctx, args: ExchangeInput) -> ToolResult:
         )
     if (size, colour) == (line["size"], line["colour"]):
         return fail("That's the size and colour they have. Ask what they want instead.")
-    reason = " ".join(args.reason.split())[:300]
+    reason = one_line(args.reason, 300)
     swap = {**line, "quantity": 1, "size": size, "colour": colour}
     read_back = (
         f"Exchange for order {found.code}: {lines_text([{**line, 'quantity': 1}])} for "
