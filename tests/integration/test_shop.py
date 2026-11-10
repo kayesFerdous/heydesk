@@ -782,7 +782,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     assert shown == {"items": [item]}
 
     conv_id = res.text.split('"conversation_id": "')[1].split('"')[0]
-    [_, said, _, tool, _] = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages
+    [_, said, _, tool, _] = (await services.inbox.get(DEV_WORKSPACE_ID, conv_id)).messages
     assert (
         said["content"] == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
     )

@@ -1,19 +1,18 @@
-"""Conversations, and the messages for the team (design §9)."""
+"""The team's inbox: the chats, live updates, and what the team does with one (design §9)."""
 
-from dataclasses import asdict
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from typing import Annotated, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Paged, StatusIn, Svc, User, Workspace
+from heydesk.api.deps import Paged, Svc, User, Workspace
 from heydesk.api.sse import live_frames
-from heydesk.models import Conversation, Lead, TeamMessage, Ticket, Visitor
+from heydesk.api.visitors import VisitorOut, visitor_out
+from heydesk.models import Conversation
 from heydesk.services import Services
-from heydesk.services.visitors import is_blocked, visitor_key
+from heydesk.services.visitors import visitor_key
 
 router = APIRouter(tags=["conversations"])
 
@@ -78,29 +77,6 @@ def lines(conversation: Conversation) -> list[Line]:
     return said
 
 
-class VisitorOut(BaseModel):
-    """What the team decided about one visitor."""
-
-    id: str
-    blocked: bool
-    blocked_why: str | None  # "team", "flooding" or "off_topic"
-    blocked_until: datetime | None  # None while blocked: until someone unblocks them
-    blocked_by: str | None  # the email of who pressed Block
-    ai_off: bool  # the team answers them by hand
-
-
-def visitor_out(visitor: Visitor, now: datetime) -> VisitorOut:
-    blocked = is_blocked(visitor, now)
-    return VisitorOut(
-        id=visitor.id,
-        blocked=blocked,
-        blocked_why=visitor.blocked_why if blocked else None,
-        blocked_until=visitor.blocked_until if blocked else None,
-        blocked_by=visitor.blocked_by if blocked else None,
-        ai_off=visitor.ai_off,
-    )
-
-
 class ConversationWithMessages(ConversationOut):
     messages: list[Line]  # what was said, oldest first; tool calls and results left out
     count: int = 0  # every line in the chat, however many came
@@ -108,27 +84,6 @@ class ConversationWithMessages(ConversationOut):
     history_from: int = 0  # the agent remembers the lines from this index on
     # who wrote it, for Block and AI off; None for a chat from before visitors were known
     visitor: VisitorOut | None = None
-
-
-class BlockedOut(VisitorOut):
-    conversation_id: str | None  # their latest chat
-    channel: str | None
-    name: str | None
-
-
-class MessageOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    conversation_id: str | None
-    code: str  # what the visitor was told: "M-104"
-    status: str  # new / handled
-    name: str
-    phone: str
-    body: str
-    best_time: str
-    created_at: datetime
-    updated_at: datetime
 
 
 @router.get("/api/conversations/live")
@@ -161,7 +116,7 @@ async def conversations(
     optionally from one channel, and only the caller's (`assigned=me`) or no one's.
     Done and snoozed chats are left out, or only the done ones with `done=true`; `q` searches
     every chat's name and what was said, such as a phone or an order code."""
-    found = await services.conversations.list(
+    found = await services.inbox.list(
         workspace_id,
         status=status,
         channel=channel,
@@ -188,64 +143,7 @@ class CountsOut(BaseModel):
 async def counts(services: Svc, workspace_id: Workspace, current_user: User) -> CountsOut:
     """The inbox's numbers: how many chats wait for a person, the caller's and no one's,
     and the orders and messages still new."""
-    return CountsOut(**await services.conversations.counts(workspace_id, current_user.user_id))
-
-
-class StatsOut(BaseModel):
-    conversations: int  # chats the agent answered
-    handed_off: int  # of those, handed to a person; the rest the agent handled alone
-    sales: int  # orders or bookings, not cancelled or waiting for payment
-    amount: int  # their total, minor units
-    bought: int  # chats that ended in one
-    sources: dict[str, int]  # chat, page or team
-    leads: int  # call backs asked for and not sold
-
-
-class DayOut(BaseModel):
-    start: datetime  # when the day began where the business is
-    sales: int
-    amount: int  # minor units
-
-
-class DashboardOut(BaseModel):
-    days: int
-    currency: str
-    today: StatsOut
-    yesterday: StatsOut
-    period: StatsOut  # the last `days` days, today included
-    daily: list[DayOut]  # those days one by one, oldest first and today last
-
-
-@router.get("/api/stats")
-async def stats(
-    services: Svc, workspace_id: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
-) -> DashboardOut:
-    """The owner's dashboard: today, yesterday and the last `days` days, in the
-    business's own days, with the sales of each of those days."""
-    agent = await services.agents.by_workspace(workspace_id)
-    store = await services.agents.store(workspace_id)
-    zone = ZoneInfo(agent.config.timezone)
-    today = datetime.combine(store.now().astimezone(zone).date(), time(), zone)
-    day = timedelta(days=1)
-
-    async def between(start: datetime, end: datetime) -> StatsOut:
-        return StatsOut(**asdict(await store.stats(start, end)))
-
-    first = today - (days - 1) * day
-    sold = await store.sales_between(first, today + day)
-
-    def day_out(start: datetime) -> DayOut:
-        totals = [total for at, total in sold if start <= at < start + day]
-        return DayOut(start=start, sales=len(totals), amount=sum(totals))
-
-    return DashboardOut(
-        days=days,
-        currency=agent.config.currency,
-        today=await between(today, today + day),
-        yesterday=await between(today - day, today),
-        period=await between(first, today + day),
-        daily=[day_out(first + back * day) for back in range(days)],
-    )
+    return CountsOut(**await services.inbox.counts(workspace_id, current_user.user_id))
 
 
 @router.get("/api/conversations/{conversation_id}")
@@ -258,7 +156,7 @@ async def conversation(
 ) -> ConversationWithMessages:
     """The chat with what was said. `limit`: only the newest that many lines, before the line
     `before` if given; the screen loads older ones as the team scrolls up."""
-    conversation = await services.conversations.get(workspace_id, conversation_id)
+    conversation = await services.inbox.get(workspace_id, conversation_id)
     said = lines(conversation)
     count = len(said)
     if before is not None:
@@ -297,7 +195,7 @@ async def hand_back(
     [handled] = await conversations_out(
         services,
         workspace_id,
-        [await services.conversations.hand_back(workspace_id, conversation_id)],
+        [await services.inbox.hand_back(workspace_id, conversation_id)],
     )
     return handled
 
@@ -314,7 +212,7 @@ async def mark_done(
     [marked] = await conversations_out(
         services,
         workspace_id,
-        [await services.conversations.mark_done(workspace_id, conversation_id, body.done)],
+        [await services.inbox.mark_done(workspace_id, conversation_id, body.done)],
     )
     return marked
 
@@ -332,7 +230,7 @@ async def snooze(
     [snoozed] = await conversations_out(
         services,
         workspace_id,
-        [await services.conversations.snooze(workspace_id, conversation_id, body.until)],
+        [await services.inbox.snooze(workspace_id, conversation_id, body.until)],
     )
     return snoozed
 
@@ -346,9 +244,7 @@ async def set_labels(
     conversation_id: str, body: LabelsIn, services: Svc, workspace_id: Workspace
 ) -> ConversationOut:
     """The chat's labels, the whole list; `?label=` on the list filters by one."""
-    conversation = await services.conversations.set_labels(
-        workspace_id, conversation_id, body.labels
-    )
+    conversation = await services.inbox.set_labels(workspace_id, conversation_id, body.labels)
     [labelled] = await conversations_out(services, workspace_id, [conversation])
     return labelled
 
@@ -369,7 +265,7 @@ class NoteOut(BaseModel):
 @router.get("/api/conversations/{conversation_id}/notes")
 async def notes(conversation_id: str, services: Svc, workspace_id: Workspace) -> list[NoteOut]:
     """The team's notes on the chat, oldest first. The visitor never sees them."""
-    found = await services.conversations.notes(workspace_id, conversation_id)
+    found = await services.inbox.notes(workspace_id, conversation_id)
     return [NoteOut.model_validate(n) for n in found]
 
 
@@ -386,7 +282,7 @@ async def add_note(
         ),
         "",
     )
-    note = await services.conversations.add_note(workspace_id, conversation_id, author, body.text)
+    note = await services.inbox.add_note(workspace_id, conversation_id, author, body.text)
     return NoteOut.model_validate(note)
 
 
@@ -401,7 +297,7 @@ async def reply(
     """The team answers from the inbox: the words reach the visitor and the chat, and
     the chat is taken over. On Messenger and WhatsApp only within 24 hours of the
     visitor's last message: Meta refuses it after, and nothing reaches them."""
-    conversation = await services.conversations.team_reply(workspace_id, conversation_id, body.text)
+    conversation = await services.inbox.team_reply(workspace_id, conversation_id, body.text)
     [replied] = await conversations_out(services, workspace_id, [conversation])
     return replied
 
@@ -438,7 +334,7 @@ async def take_over(
     """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
     TAKEOVER_QUIET_MINUTES."""
-    conversation = await services.conversations.take_over(workspace_id, conversation_id, body.on)
+    conversation = await services.inbox.take_over(workspace_id, conversation_id, body.on)
     [taken] = await conversations_out(services, workspace_id, [conversation])
     return taken
 
@@ -458,181 +354,8 @@ async def assign(
     """Who has the chat. The owner gives any chat to anyone on the team, or no one; a
     moderator takes an unassigned one for themself (their own id) and gives back their own
     (`null`); anything else is a 403. 404 for someone not on the team."""
-    conversation = await services.conversations.assign(
+    conversation = await services.inbox.assign(
         workspace_id, conversation_id, current_user, body.user_id
     )
     [assigned] = await conversations_out(services, workspace_id, [conversation])
     return assigned
-
-
-class VisitorIn(BaseModel):
-    blocked: bool | None = None  # true: no reply at all, until false
-    ai_off: bool | None = None  # true: their messages go to the team, with no AI turn
-
-
-@router.patch("/api/visitors/{visitor_id}")
-async def change_visitor(
-    visitor_id: str, body: VisitorIn, services: Svc, workspace_id: Workspace, current_user: User
-) -> VisitorOut:
-    """Block or unblock a visitor, or turn the AI off or on for them; the owner or a
-    moderator. Their messages run no turn and cost nothing either way."""
-    emails = {u.id: u.email for u in await services.members.members(workspace_id)}
-    by = emails.get(current_user.user_id, "HeyDesk")  # an admin isn't on the team
-    visitor = await services.visitors.change(
-        workspace_id, visitor_id, by, body.blocked, body.ai_off
-    )
-    return visitor_out(visitor, services.visitors.now())
-
-
-@router.get("/api/visitors/blocked")
-async def blocked(services: Svc, workspace_id: Workspace) -> list[BlockedOut]:
-    """Who is blocked now, by the team, for flooding or for chatting off topic, with their
-    latest chat; the newest block first."""
-    now = services.visitors.now()
-    found = []
-    for v in await services.visitors.blocked(workspace_id):
-        conversation = await services.conversations.latest_for_visitor(workspace_id, v.key)
-        found.append(
-            BlockedOut(
-                **visitor_out(v, now).model_dump(),
-                conversation_id=conversation.id if conversation else None,
-                channel=conversation.channel if conversation else None,
-                name=conversation.name if conversation else None,
-            )
-        )
-    return found
-
-
-@router.get("/api/messages")
-async def messages(
-    services: Svc,
-    workspace_id: Workspace,
-    page: Paged,
-    status: str | None = None,
-    q: str | None = None,
-) -> list[MessageOut]:
-    """Messages for the team, newest first, a page at a time (`limit`, `before`). `q`
-    matches the code, the name or the phone."""
-    store = await services.agents.store(workspace_id)
-    found = await store.messages(status, q, limit=page.limit, before=page.before)
-    return [MessageOut.model_validate(m) for m in found]
-
-
-@router.get("/api/messages/{message_id}")
-async def message(message_id: str, services: Svc, workspace_id: Workspace) -> MessageOut:
-    store = await services.agents.store(workspace_id)
-    return MessageOut.model_validate(await store.get(TeamMessage, message_id))
-
-
-@router.patch("/api/messages/{message_id}")
-async def set_status(
-    message_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
-) -> MessageOut:
-    store = await services.agents.store(workspace_id)
-    return MessageOut.model_validate(await store.set_status(TeamMessage, message_id, body.status))
-
-
-class TicketOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    code: str  # "C-101"
-    conversation_id: str | None
-    status: str  # open / solved
-    reason: str  # the agent's words for what's wrong
-    assigned_email: str | None = None  # who has its chat
-    created_at: datetime  # how old it is
-    updated_at: datetime
-
-
-@router.get("/api/tickets")
-async def tickets(
-    services: Svc,
-    workspace_id: Workspace,
-    page: Paged,
-    status: Literal["open", "solved"] | None = None,
-) -> list[TicketOut]:
-    """Complaints the agent flagged, newest first, a page at a time; `status=open`
-    for the ones still to deal with. Each with who has its chat."""
-    store = await services.agents.store(workspace_id)
-    found = await store.find(Ticket, status, limit=page.limit, before=page.before)
-    chats = {
-        c.id: c
-        for c in await services.conversations.by_ids(
-            workspace_id, {t.conversation_id for t in found if t.conversation_id}
-        )
-    }
-    emails = {u.id: u.email for u in await services.members.members(workspace_id)}
-    return [
-        TicketOut.model_validate(t).model_copy(
-            update={
-                "assigned_email": emails.get(
-                    getattr(chats.get(t.conversation_id or ""), "assigned_to", None) or ""
-                )
-            }
-        )
-        for t in found
-    ]
-
-
-@router.patch("/api/tickets/{ticket_id}")
-async def set_ticket_status(
-    ticket_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
-) -> TicketOut:
-    """`solved`, or `open` again. It stays open until someone marks it solved."""
-    store = await services.agents.store(workspace_id)
-    return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))
-
-
-class LeadOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    code: str  # "L-101"
-    conversation_id: str | None
-    status: str  # open / sold / not_now / lost
-    name: str
-    phone: str
-    call_at: datetime  # when to call them
-    note: str  # what they want
-    why: str  # a lost one's reason
-    created_at: datetime
-
-
-class LeadIn(BaseModel):
-    status: Literal["open", "sold", "not_now", "lost"]
-    why: str = Field(default="", max_length=200)  # for lost: "price", "delivery charge"
-
-
-class WhyOut(BaseModel):
-    why: str
-    count: int
-
-
-@router.get("/api/leads")
-async def leads(
-    services: Svc,
-    workspace_id: Workspace,
-    page: Paged,
-    status: Literal["open", "sold", "not_now", "lost"] | None = None,
-) -> list[LeadOut]:
-    """Call backs the agent took, newest first; `status=open` for the ones to call."""
-    store = await services.agents.store(workspace_id)
-    found = await store.find(Lead, status, limit=page.limit, before=page.before)
-    return [LeadOut.model_validate(lead) for lead in found]
-
-
-@router.get("/api/leads/why")
-async def lost_reasons(services: Svc, workspace_id: Workspace) -> list[WhyOut]:
-    """Why we lose sales: the lost leads' whys, counted, most first."""
-    store = await services.agents.store(workspace_id)
-    return [WhyOut(why=why, count=n) for why, n in await store.lost_reasons()]
-
-
-@router.patch("/api/leads/{lead_id}")
-async def lead_outcome(
-    lead_id: str, body: LeadIn, services: Svc, workspace_id: Workspace
-) -> LeadOut:
-    """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
-    store = await services.agents.store(workspace_id)
-    return LeadOut.model_validate(await store.lead_outcome(lead_id, body.status, body.why))

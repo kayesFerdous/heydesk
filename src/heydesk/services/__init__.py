@@ -4,9 +4,11 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.billing import BillingService
 from heydesk.services.calls import CallService
+from heydesk.services.channel_links import ChannelLinkService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
+from heydesk.services.inbox import InboxService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.live import LiveHub
 from heydesk.services.members import MemberService
@@ -26,9 +28,11 @@ class Services:
     agents: AgentService
     billing: BillingService  # paying HeyDesk for a plan
     calls: CallService  # the shop's call to confirm an order, to a /phone page
-    channels: ChannelService
+    channel_links: ChannelLinkService  # connecting Telegram, Messenger and WhatsApp
+    channels: ChannelService  # answering them
     conversations: ConversationService
     courier: CourierService  # books and follows a shop's parcels
+    inbox: InboxService  # the team's side of the chats
     knowledge: KnowledgeService
     live: LiveHub  # tells an open inbox a chat changed
     members: MemberService  # the business's moderators and what its team did

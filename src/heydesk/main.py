@@ -91,7 +91,9 @@ def create_app(
             asyncio.create_task(
                 app.state.services.conversations.run(settings.SNOOZE_CHECK_SECONDS)
             ),
-            asyncio.create_task(app.state.services.channels.run(settings.SNOOZE_CHECK_SECONDS)),
+            asyncio.create_task(
+                app.state.services.channel_links.run(settings.SNOOZE_CHECK_SECONDS)
+            ),
         ]
         yield
         for loop in loops:

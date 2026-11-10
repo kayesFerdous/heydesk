@@ -161,7 +161,7 @@ async def test_a_chat_taken_over_and_left_quiet_is_the_agents_again(world: World
     the next message is answered."""
     agent = await world.agent()
     conversation = await world.say(agent, None, ["Hello!"], "hi")
-    await world.services.conversations.take_over(agent.workspace_id, conversation, True)
+    await world.services.inbox.take_over(agent.workspace_id, conversation, True)
     await world.say(agent, conversation, ["Should not be said."], "anyone?")
     assert "Should not be said." not in str((await world.conversation(conversation)).messages)
     world.clock.advance(minutes=31)

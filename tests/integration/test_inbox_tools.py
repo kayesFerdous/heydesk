@@ -49,10 +49,10 @@ async def test_a_snoozed_chat_comes_back_at_its_time_with_an_alert(
     assert (await put(client, conversation, "snooze", {"until": later})).status_code == 200
     assert await listed(client) == []
 
-    await services.conversations.wake_snoozed()  # not yet
+    await services.inbox.wake_snoozed()  # not yet
     assert not any("snoozed" in text for text in to(app, OWNER))
     services.conversations.now.advance(hours=2)
-    await services.conversations.wake_snoozed()
+    await services.inbox.wake_snoozed()
     assert await listed(client) == [conversation]
     assert any("A chat you snoozed is back" in text for text in to(app, OWNER))
 

@@ -147,7 +147,7 @@ async def test_lines_added_to_a_chat_at_once_are_all_kept(pg: World) -> None:
 
     await at_once(
         *(
-            pg.services.conversations.team_reply(agent.workspace_id, conversation.id, f"Reply {n}")
+            pg.services.inbox.team_reply(agent.workspace_id, conversation.id, f"Reply {n}")
             for n in range(AT_ONCE)
         )
     )

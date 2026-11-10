@@ -295,5 +295,5 @@ async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
     await client.get(f"{pay}/bkash", params={"paymentID": "P1", "status": "success"})  # again
     shown = (await client.get(f"/api/shop/orders/{order['id']}")).json()
     assert (shown["status"], shown["paid"], shown["payment_ref"]) == ("confirmed", 6000, "TRX1")
-    told = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages
+    told = (await services.inbox.get(DEV_WORKSPACE_ID, conv_id)).messages
     assert sum("Payment received" in str(m) for m in told) == 1  # placed once

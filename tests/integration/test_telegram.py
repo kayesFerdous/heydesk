@@ -312,7 +312,7 @@ async def test_starting_again_points_the_bot_back_at_us(app: FastAPI, client: As
     fake = services.channels.telegram
     fake.webhooks.clear()  # what Telegram had was old
 
-    await services.channels.refresh_telegram()
+    await services.channel_links.refresh_telegram()
 
     url, again = fake.webhooks[TOKEN]
     assert url.removeprefix("https://heydesk.test") == path and again == secret
