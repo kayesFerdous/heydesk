@@ -70,7 +70,7 @@ def member(user: UserRow, open_chats: int = 0) -> MemberOut:
 @router.get("/members")
 async def members(workspace_id: Workspace, services: Svc) -> list[MemberOut]:
     """The team, each with their open chats."""
-    open_chats = await services.conversations.open_chats(workspace_id)
+    open_chats = await services.inbox.open_chats(workspace_id)
     return [
         member(u, open_chats.get(u.id, 0)) for u in await services.members.members(workspace_id)
     ]
@@ -117,7 +117,7 @@ async def stats(
     """Each member's work in the last `days`, the owners first."""
     since = services.members.now() - timedelta(days=days)
     done = await services.members.stats(workspace_id, since)
-    open_chats = await services.conversations.open_chats(workspace_id)
+    open_chats = await services.inbox.open_chats(workspace_id)
     none = {"replies": 0, "chats": 0, "tickets_solved": 0, "leads_sold": 0}
     return [
         MemberStatsOut(

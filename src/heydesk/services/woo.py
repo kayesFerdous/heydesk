@@ -33,7 +33,7 @@ from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 from heydesk.shop.models import ShopOrder
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import products_from_woo, woo_ids
+from heydesk.shop.woo_import import products_from_woo, woo_ids
 
 log = logging.getLogger(__name__)
 
@@ -275,25 +275,23 @@ class WooService:
         except Exception:
             log.exception("woo sync failed", extra={"workspace_id": workspace_id})
 
-    async def run(self, every: float) -> None:
-        """Every `every` seconds, until cancelled (the app's lifespan starts it), syncs each
-        store without webhooks, and each with them once every FULL_SYNC_SECONDS, checking its
-        webhooks too: a store linked without them (linked before webhooks were added, or with no public address
-        then) gets them now. One store failing doesn't stop the others."""
-        while True:
-            await asyncio.sleep(every)
-            async with self.sessions() as s:
-                linked = list(await s.execute(select(WooLink.workspace_id, WooLink.hooks)))
-            for workspace_id, hooks in linked:
-                last = self.checked.get(workspace_id)
-                if hooks and last is not None and time.monotonic() - last < FULL_SYNC_SECONDS:
-                    continue  # its webhooks keep it up to date
-                self.checked[workspace_id] = time.monotonic()
-                try:
-                    await self.sync(workspace_id)
-                    await self.keep_hooks(workspace_id)
-                except Exception:
-                    log.exception("woo sync failed", extra={"workspace_id": workspace_id})
+    async def sync_all(self) -> None:
+        """Syncs each store without webhooks, and each with them once every FULL_SYNC_SECONDS
+        (a background job), checking its webhooks too: a store linked without them (linked
+        before webhooks were added, or with no public address then) gets them now. One store
+        failing doesn't stop the others."""
+        async with self.sessions() as s:
+            linked = list(await s.execute(select(WooLink.workspace_id, WooLink.hooks)))
+        for workspace_id, hooks in linked:
+            last = self.checked.get(workspace_id)
+            if hooks and last is not None and time.monotonic() - last < FULL_SYNC_SECONDS:
+                continue  # its webhooks keep it up to date
+            self.checked[workspace_id] = time.monotonic()
+            try:
+                await self.sync(workspace_id)
+                await self.keep_hooks(workspace_id)
+            except Exception:
+                log.exception("woo sync failed", extra={"workspace_id": workspace_id})
 
     async def keep_hooks(self, workspace_id: str) -> None:
         """Puts back our webhooks as they should be: one Woo turned off after failed posts is

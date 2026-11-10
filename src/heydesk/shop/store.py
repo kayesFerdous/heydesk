@@ -1,7 +1,7 @@
-"""A shop's data: its products and orders, plus the rest (`Store`).
+"""A shop's data: its products and orders, plus the rest (`RecordStore`).
 
 Placing an order takes its items out of stock in the same transaction, and cancelling it puts
-them back. Every write to the stock takes the business's lock first (`Store._lock`), so two
+them back. Every write to the stock takes the business's lock first (`RecordStore._lock`), so two
 buyers at the same moment can't both get the last one."""
 
 from collections import Counter
@@ -16,12 +16,13 @@ from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation, Lead, PaymentAccount, Turn
 from heydesk.models.customer_request import UNPAID, next_number
-from heydesk.shop.base import PAGE, Store, TooLate
+from heydesk.runtime.text import one_line
+from heydesk.shop.config import ShopConfig
+from heydesk.shop.csv_import import products_from_csv
 from heydesk.shop.models import CouponRow, ProductRow, ShopOrder
-from heydesk.shop.values import (
+from heydesk.shop.orders import (
     CHANGEABLE,
     FINISHED_STATUSES,
-    OWN_STOCK,
     STATUSES_HOLDING_STOCK,
     Buyer,
     BuyerRecord,
@@ -30,14 +31,16 @@ from heydesk.shop.values import (
     OrderCancel,
     OrderConfirm,
     OrderEdit,
+)
+from heydesk.shop.products import (
+    OWN_STOCK,
     Product,
-    ShopConfig,
     merge_products,
     merge_sheet_products,
     minus_ordered,
-    products_from_csv,
     stock_snapshot,
 )
+from heydesk.shop.records import PAGE, RecordStore, TooLate
 
 STATUSES_TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
 NOT_SALE_STATUSES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
@@ -64,7 +67,7 @@ class Stats:
     leads: int  # call backs asked for in it and not sold
 
 
-class ShopStore(Store):
+class ShopStore(RecordStore):
     async def pays_first(self, config: ShopConfig) -> bool:
         """Whether the agent asks for payment before placing anything: the owner turned it on
         (`pay_first`) and connected the business's SSLCommerz store or bKash account. Without
@@ -646,7 +649,7 @@ class ShopStore(Store):
             if paid_in is not None:
                 order.paid_in = paid_in
             if reason is not None:
-                order.reason = " ".join(reason.split())[:200]
+                order.reason = one_line(reason, 200)
             order.updated_at = self.now()
         return order
 

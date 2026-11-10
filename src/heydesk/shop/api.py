@@ -9,44 +9,52 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import (
-    EXPORT_ROWS,
-    ImportIn,
-    ImportOut,
-    Paged,
-    SuggestIn,
-    Svc,
-    Workspace,
-    amount_cell,
-    csv_file,
-    phone_cell,
-)
+from heydesk.api.csv_export import EXPORT_ROWS, amount_cell, csv_file, phone_cell
+from heydesk.api.deps import Paged, Svc, Workspace
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card
 from heydesk.runtime.guards import confirm
 from heydesk.runtime.speech import local_time
+from heydesk.runtime.text import one_line
 from heydesk.services.agents import LiveAgent
 from heydesk.services.channels import card_text
 from heydesk.shop import page
-from heydesk.shop.csv_import import Suggestion, suggest
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
 from heydesk.shop.models import ShopOrder
+from heydesk.shop.orders import STATUS_WORDS, Buyer, BuyerRecord, BuyForm, Coupon, lines_text
+from heydesk.shop.products import Product
 from heydesk.shop.store import OutOfStock, ShopStore
-from heydesk.shop.tools import CartLine, TeamOrder, checked_order, order_alert
-from heydesk.shop.values import (
-    PRODUCT_COLUMNS,
-    STATUS_WORDS,
-    Buyer,
-    BuyerRecord,
-    BuyForm,
-    Coupon,
-    Product,
-    lines_text,
-    products_from_csv,
-)
+from heydesk.shop.tools.cart import CartLine
+from heydesk.shop.tools.orders import TeamOrder, checked_order, order_alert
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])
+
+
+class ImportIn(BaseModel):
+    """A CSV file of products."""
+
+    csv: str = Field(
+        max_length=2_000_000, description="The file's text: a header row, then one per row"
+    )
+    dry_run: bool = Field(default=False, description="Check the file and show what would be saved")
+    mapping: dict[str, str] | None = Field(
+        default=None,
+        description="Our field → the file's column, as the owner checked it after /suggest "
+        ". Without it, the file's columns are matched to ours by name",
+    )
+
+
+class SuggestIn(BaseModel):
+    csv: str = Field(max_length=2_000_000, description="The file's text, as for the import")
+
+
+class ImportOut[T](BaseModel):
+    saved: bool
+    count: int
+    preview: list[T]  # the first few, as they'll be saved
+    added: int | None = None  # a shop's import: how many were new; the rest were updated
 
 
 async def shop_store(services: Svc, workspace_id: Workspace) -> ShopStore:
@@ -405,7 +413,7 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
         coupon = Coupon(code=code, kind=body.kind, value=body.value, ends_at=body.ends_at)
     except ValueError as error:
         raise InvalidConfig({"value": str(error)}) from None
-    text = " ".join(body.text.split())
+    text = one_line(body.text)
     sent = [
         chat
         for chat in await store.chats_since(now - timedelta(hours=body.within_hours))

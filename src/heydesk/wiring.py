@@ -51,9 +51,11 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.billing import BillingService
 from heydesk.services.calls import CallService
+from heydesk.services.channel_links import ChannelLinkService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
 from heydesk.services.courier import CourierService
+from heydesk.services.inbox import InboxService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.live import LiveHub, watch
 from heydesk.services.members import MemberService
@@ -212,12 +214,14 @@ def build_services(
         hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
     calls = CallService(sessions, agents, team, llm, settings, now)
+    inbox = InboxService(sessions, llm, team, now)
     conversations = ConversationService(
         sessions,
         llm,
         knowledge,
         photos,
         team,
+        inbox,
         visitors,
         woo_service,
         calls,
@@ -232,6 +236,9 @@ def build_services(
         agents=agents,
         billing=BillingService(sessions, gateways, settings, now),
         calls=calls,
+        channel_links=ChannelLinkService(
+            sessions, agents, telegram, messenger, whatsapp, settings, now
+        ),
         channels=ChannelService(
             sessions,
             agents,
@@ -256,6 +263,7 @@ def build_services(
             fallback=None if settings.APP_ENV == "production" else "fake",
             review_after=timedelta(hours=settings.REVIEW_AFTER_HOURS),
         ),
+        inbox=inbox,
         knowledge=knowledge,
         live=live,
         members=MemberService(sessions, users, now),

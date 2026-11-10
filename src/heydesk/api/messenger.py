@@ -56,7 +56,7 @@ def messenger_out(channel: Channel) -> MessengerOut:
 
 @router.get("/api/agent/messenger")
 async def get_messenger(workspace_id: Workspace, services: Svc) -> MessengerOut:
-    return messenger_out(await services.channels.messenger_of(workspace_id))
+    return messenger_out(await services.channel_links.channel_of(workspace_id, "messenger"))
 
 
 @router.put("/api/agent/messenger")
@@ -64,7 +64,7 @@ async def connect_messenger(
     body: MessengerIn, workspace_id: Workspace, services: Svc
 ) -> MessengerOut:
     """Connects the business's Facebook Page (its id and access token): the agent answers its messages."""
-    channel = await services.channels.connect_messenger(
+    channel = await services.channel_links.connect_messenger(
         workspace_id, body.token.strip(), body.page_id
     )
     return messenger_out(channel)
@@ -73,7 +73,7 @@ async def connect_messenger(
 @router.get("/api/agent/messenger/login")
 async def facebook_login(workspace_id: Workspace, services: Svc) -> FacebookLoginOut:
     """What the Connect with Facebook button needs. 400 if the server has no app id."""
-    return FacebookLoginOut(**services.channels.facebook_login())
+    return FacebookLoginOut(**services.channel_links.facebook_login())
 
 
 @router.post("/api/agent/messenger/pages")
@@ -81,7 +81,7 @@ async def facebook_pages(
     body: FacebookLoginIn, workspace_id: Workspace, services: Svc
 ) -> list[FacebookPageOut]:
     """The Pages the owner's Facebook login manages, to pick one. Never their tokens."""
-    pages = await services.channels.facebook_pages(body.user_token)
+    pages = await services.channel_links.facebook_pages(body.user_token)
     return [FacebookPageOut(id=p["id"], name=p["name"]) for p in pages]
 
 
@@ -91,13 +91,13 @@ async def connect_facebook(
 ) -> MessengerOut:
     """Connects the chosen Page with its token from the login: no id or token to copy."""
     return messenger_out(
-        await services.channels.connect_facebook(workspace_id, body.user_token, body.page_id)
+        await services.channel_links.connect_facebook(workspace_id, body.user_token, body.page_id)
     )
 
 
 @router.delete("/api/agent/messenger", status_code=status.HTTP_204_NO_CONTENT)
 async def disconnect_messenger(workspace_id: Workspace, services: Svc) -> None:
-    await services.channels.disconnect_messenger(workspace_id)
+    await services.channel_links.disconnect_messenger(workspace_id)
 
 
 @router.get("/api/messenger", include_in_schema=False)
@@ -124,7 +124,7 @@ async def messenger_webhook(
     if not services.channels.messenger_signed(body, signature):
         raise NotFound("Not found")
     for entry in json.loads(body).get("entry", []):
-        channel = await services.channels.messenger_page(str(entry.get("id")))
+        channel = await services.channel_links.messenger_page(str(entry.get("id")))
         if channel is None:  # a Page that was disconnected
             continue
         for event in entry.get("messaging", []):

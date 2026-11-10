@@ -19,7 +19,7 @@ from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, Tur
 from heydesk.runtime.loop import MAX_MODEL_CALLS, TurnInput, run_turn
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult
-from heydesk.shop.shared import HANDOFF, HandoffInput
+from heydesk.shop.tools.inbox import HANDOFF, HandoffInput
 from tests.conftest import AGENT, FIXED_NOW
 
 PRICES = {"chk-biryani": ("Chicken Biryani", 45000), "borhani": ("Borhani", 13000)}

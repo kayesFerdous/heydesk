@@ -1,6 +1,7 @@
-"""The data under the shop that isn't about products and orders (`Store`: messages for the
-team, the documents search, conversations). `shop/store.py` adds those; the tools that use
-only this part are in `shop/shared.py`.
+"""The records every chat can make that aren't products or orders (`RecordStore`): messages
+for the team, call backs, complaints, missed questions, notes on a visitor, and the
+numbering every record shares. `shop/store.py` adds the products and orders; the tools that
+use only this part are in `shop/tools/inbox.py`.
 """
 
 from collections.abc import Callable, Sequence
@@ -25,6 +26,7 @@ from heydesk.models import (
 )
 from heydesk.models.customer_request import CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
+from heydesk.runtime.text import one_line
 
 if TYPE_CHECKING:  # only a type here: services import the shop
     from heydesk.services.knowledge import KnowledgeService
@@ -60,7 +62,7 @@ class NewLead:
     phone: str
 
 
-class Store:
+class RecordStore:
     """One business's data, for its tools and its owner's routes (rule 6: every query is
     scoped to `workspace_id`). `ShopStore` subclasses this and adds the shop's tables.
 
@@ -107,7 +109,7 @@ class Store:
 
     async def save_missed_question(self, question: str) -> None:
         """A question it couldn't answer, for the owner to teach."""
-        question = " ".join(question.split())[:300]
+        question = one_line(question, 300)
         if not question:
             return
         async with self.sessions() as s, s.begin():
@@ -167,7 +169,7 @@ class Store:
             )
         if found is not None:
             return found, False
-        reason = " ".join(reason.split())[:300] or "complaint"
+        reason = one_line(reason, 300) or "complaint"
         return await self.add(Ticket, status="open", name="", phone="", reason=reason), True
 
     async def messages(
@@ -369,7 +371,7 @@ class Store:
         async with self.sessions() as s, s.begin():
             lead = await self._get_row(s, Lead, lead_id)
             self._move(lead, status)
-            lead.why = " ".join(why.split())[:200].lower() if status == "lost" else ""
+            lead.why = one_line(why, 200).lower() if status == "lost" else ""
         return lead
 
     async def lost_reasons(self) -> list[tuple[str, int]]:

@@ -19,7 +19,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
-import heydesk.shop  # noqa: E402, F401  (registers the shop's tables on Base.metadata)
+import heydesk.shop.models  # noqa: E402, F401  (registers the shop's tables on Base.metadata)
 import heydesk.models  # noqa: E402, F401  (registers the shared tables)
 from heydesk.config import Settings  # noqa: E402
 from heydesk.db import Base, Encrypted, UTCDateTime  # noqa: E402

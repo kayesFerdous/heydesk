@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-import heydesk.shop  # noqa: F401  (registers the shop's tables)
+import heydesk.shop.models  # noqa: F401  (registers the shop's tables)
 from heydesk.adapters.embedder.fake import FakeEmbedder
 from heydesk.adapters.knowledge.photos import QdrantPhotoIndex
 from heydesk.adapters.knowledge.qdrant import QdrantKnowledgeStore
@@ -28,8 +28,8 @@ from heydesk.runtime.config import Handoff
 from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
+from heydesk.shop.config import ShopConfig
 from heydesk.shop.store import ShopStore
-from heydesk.shop.values import ShopConfig
 from heydesk.wiring import build_services
 
 FIXED_NOW = datetime(2026, 9, 29, 8, 0, tzinfo=UTC)  # Tuesday, 14:00 in Dhaka

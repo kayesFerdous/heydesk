@@ -9,7 +9,7 @@ from heydesk.errors import InvalidConfig
 from heydesk.models import Conversation
 from heydesk.ports.courier import CourierAccount, CourierError, Parcel, ParcelStatus
 from heydesk.services.agents import DEV_WORKSPACE_ID
-from heydesk.shop.tools import FindOrderInput, track_order
+from heydesk.shop.tools.orders import FindOrderInput, track_order
 from tests.conftest import World, make_ctx
 from tests.integration.test_shop import KURTI, buy, orders
 

@@ -7,7 +7,6 @@ the products it has from elsewhere). A
 sheet with a problem keeps the old list, and the owner hears once.
 """
 
-import asyncio
 import hashlib
 import logging
 import re
@@ -22,8 +21,7 @@ from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
-from heydesk.shop.csv_import import Suggestion, suggest
-from heydesk.shop.values import PRODUCT_COLUMNS, products_from_csv
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
 
 log = logging.getLogger(__name__)
 
@@ -142,18 +140,16 @@ class SheetService:
         log.info("sheet synced", extra={"workspace_id": workspace_id, "problem": bool(problem)})
         return saved
 
-    async def run(self, every: float) -> None:
-        """Syncs every linked sheet, one after another, every `every` seconds, until cancelled
-        (the app's lifespan starts it). One sheet failing doesn't stop the others."""
-        while True:
-            await asyncio.sleep(every)
-            async with self.sessions() as s:
-                linked = list(await s.scalars(select(SheetLink.workspace_id)))
-            for workspace_id in linked:
-                try:
-                    await self.sync(workspace_id)
-                except Exception:
-                    log.exception("sheet sync failed", extra={"workspace_id": workspace_id})
+    async def sync_all(self) -> None:
+        """Syncs every linked sheet, one after another (a background job). One sheet failing
+        doesn't stop the others."""
+        async with self.sessions() as s:
+            linked = list(await s.scalars(select(SheetLink.workspace_id)))
+        for workspace_id in linked:
+            try:
+                await self.sync(workspace_id)
+            except Exception:
+                log.exception("sheet sync failed", extra={"workspace_id": workspace_id})
 
     async def _read(self, url: str) -> str:
         try:

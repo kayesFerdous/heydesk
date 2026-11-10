@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from heydesk.ports.llm import ToolCall
-from heydesk.shop import tools_for
+from heydesk.shop.tools import tools_for
 from tests.conftest import DEV_KEY, new_business
 
 POLICY = "Refunds are given within seven days with the receipt. Parking is free in front."

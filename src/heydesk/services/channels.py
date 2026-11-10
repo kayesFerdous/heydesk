@@ -1,5 +1,5 @@
-"""Messaging apps: a business connects its own Telegram bot, Facebook Page or
-WhatsApp number, and the agent answers there.
+"""Messaging apps: the agent answers a business's own Telegram bot, Facebook Page or
+WhatsApp number (connecting them is `services/channel_links.py`).
 
 The app posts each message to our webhook. The agent waits a moment for the visitor's next
 message, then answers all of them in one turn, sent as one message.
@@ -17,18 +17,15 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
-from heydesk.db import new_id
 from heydesk.errors import (
     HeyDeskError,
-    InvalidConfig,
     NotFound,
     VisitorSilenced,
 )
-from heydesk.models import Channel, User
+from heydesk.models import Channel
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OUR_APP_TAG, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -36,6 +33,7 @@ from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 from heydesk.runtime.events import Card
 from heydesk.services.agents import AgentService
+from heydesk.services.channel_links import find_channel
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import MESSENGER, TELEGRAM, WHATSAPP, TeamService
@@ -161,211 +159,6 @@ class ChannelService:
         # "Cotton Shirt · ৳950": a buyer's reply to one names the product
         self.cards_sent: dict[str, str] = {}
 
-    async def connect_telegram(self, workspace_id: str, token: str) -> Channel:
-        """Checks the token with Telegram and points the bot's messages at us. Connecting
-        again (a new token) replaces the old bot."""
-        if not self.settings.PUBLIC_URL:
-            raise HeyDeskError("The server has no PUBLIC_URL, so Telegram can't reach it.")
-        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
-        try:
-            username = await self.telegram.get_me(token)
-        except TelegramUnavailable:
-            raise InvalidConfig(
-                {"token": "Telegram doesn't know this token. Copy it again from @BotFather."}
-            ) from None
-        async with self.sessions() as s:
-            channel = await self._find_channel(s, workspace_id, TELEGRAM)
-        channel_id = channel.id if channel else new_id()
-        secret = secrets.token_urlsafe(32)
-        url = f"{self.settings.PUBLIC_URL.rstrip('/')}/api/telegram/{channel_id}"
-        await self.telegram.set_webhook(token, url, secret)  # first: if it fails, nothing saved
-        channel = await self._save(
-            workspace_id, agent.id, TELEGRAM, channel_id, token, secret, username
-        )
-        log.info("telegram connected", extra={"channel_id": channel_id})
-        return channel
-
-    async def refresh_telegram(self) -> None:
-        """Points every bot's webhook at this server again, as the app starts. Telegram keeps
-        the `allowed_updates` it was given when connected, so a bot connected before button
-        taps never got them; and a tunnel's address changes on every run. Oldest first:
-        a bot connected twice answers for the newest. Messages waiting for us are kept."""
-        if not self.settings.PUBLIC_URL:
-            return
-        async with self.sessions() as s:
-            found = await s.scalars(
-                select(Channel).where(Channel.kind == TELEGRAM).order_by(Channel.created_at)
-            )
-            channels = list(found)
-        for channel in channels:
-            url = f"{self.settings.PUBLIC_URL.rstrip('/')}/api/telegram/{channel.id}"
-            try:
-                await self.telegram.set_webhook(channel.token, url, channel.secret, False)
-            except TelegramUnavailable as error:  # a revoked token: the rest still go
-                log.warning("webhook not set: %s", error, extra={"channel_id": channel.id})
-
-    async def telegram_of(self, workspace_id: str) -> Channel:
-        return await self._get_channel(
-            workspace_id, TELEGRAM, "This business hasn't connected a Telegram bot."
-        )
-
-    async def disconnect_telegram(self, workspace_id: str) -> None:
-        channel = await self.telegram_of(workspace_id)
-        # a token revoked in @BotFather: Telegram has stopped sending anyway
-        with contextlib.suppress(TelegramUnavailable):
-            await self.telegram.delete_webhook(channel.token)
-        await self._delete(channel)
-
-    async def connect_messenger(self, workspace_id: str, token: str, page_id: str) -> Channel:
-        """Subscribes our app to the Page's messages, which also checks that the token is for
-        that Page. Connecting again (a new token, or another Page) replaces the old one."""
-        if not self.settings.META_APP_SECRET:
-            raise HeyDeskError("The server has no META_APP_SECRET, so Messenger can't reach it.")
-        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
-        try:
-            taken = await self.messenger_page(page_id)
-            if taken is not None and taken.workspace_id != workspace_id:
-                raise InvalidConfig({"page_id": "This Page is connected to another business."})
-            await self.messenger.subscribe(token, page_id)  # first: if it fails, nothing saved
-        except MessengerUnavailable:
-            raise InvalidConfig(
-                {
-                    "token": "Facebook doesn't accept this token for this Page. "
-                    "Check the Page id, or make a new Page access token."
-                }
-            ) from None
-        async with self.sessions() as s:
-            channel = await self._find_channel(s, workspace_id, MESSENGER)
-        channel_id = channel.id if channel else new_id()
-        channel = await self._save(
-            workspace_id, agent.id, MESSENGER, channel_id, token, "", page_id
-        )
-        log.info("messenger connected", extra={"channel_id": channel_id})
-        return channel
-
-    def facebook_login(self) -> dict[str, str]:
-        """What the owner's Connect with Facebook button needs: our app's id, and the
-        Facebook Login for Business configuration that holds the permissions it asks for."""
-        s = self.settings
-        if not (s.META_APP_ID and s.META_APP_SECRET and s.META_LOGIN_CONFIG_ID):
-            raise HeyDeskError(
-                "The server has no META_APP_ID or META_LOGIN_CONFIG_ID, so Facebook login is off."
-            )
-        return {"app_id": s.META_APP_ID, "config_id": s.META_LOGIN_CONFIG_ID}
-
-    async def facebook_pages(self, user_token: str) -> list[dict[str, str]]:
-        """The Pages the owner's Facebook login manages, with their tokens."""
-        self.facebook_login()  # the app's id and secret are set
-        try:
-            return await self.messenger.pages(
-                self.settings.META_APP_ID, self.settings.META_APP_SECRET, user_token
-            )
-        except MessengerUnavailable:
-            raise InvalidConfig(
-                {"user_token": "Facebook didn't accept this login. Try connecting again."}
-            ) from None
-
-    async def connect_facebook(self, workspace_id: str, user_token: str, page_id: str) -> Channel:
-        """Connects one of the login's Pages with its own token, as if typed in."""
-        pages = await self.facebook_pages(user_token)
-        page = next((p for p in pages if p["id"] == page_id), None)
-        if page is None:
-            raise InvalidConfig({"page_id": "This Facebook login doesn't manage that Page."})
-        return await self.connect_messenger(workspace_id, page["token"], page_id)
-
-    async def messenger_of(self, workspace_id: str) -> Channel:
-        return await self._get_channel(
-            workspace_id, MESSENGER, "This business hasn't connected a Facebook Page."
-        )
-
-    async def disconnect_messenger(self, workspace_id: str) -> None:
-        channel = await self.messenger_of(workspace_id)
-        with contextlib.suppress(MessengerUnavailable):  # a token that has expired
-            await self.messenger.unsubscribe(channel.token, channel.address)
-        await self._delete(channel)
-
-    async def connect_whatsapp(
-        self, workspace_id: str, token: str, account_id: str, phone_id: str
-    ) -> Channel:
-        """Subscribes our app to the business account's messages, which also checks the token,
-        the account and the number. Connecting again replaces the old number."""
-        if not self.settings.META_APP_SECRET:
-            raise HeyDeskError("The server has no META_APP_SECRET, so WhatsApp can't reach it.")
-        agent = await self.agents.get(workspace_id)  # 404 if the business has no agent yet
-        taken = await self.whatsapp_number(phone_id)
-        if taken is not None and taken.workspace_id != workspace_id:
-            raise InvalidConfig({"phone_id": "This number is connected to another business."})
-        try:
-            # first: if it fails, nothing saved
-            await self.whatsapp.subscribe(token, account_id, phone_id)
-        except WhatsAppUnavailable:
-            raise InvalidConfig(
-                {
-                    "token": "Meta doesn't accept this token for this account and number. "
-                    "Check both ids, or make a new access token."
-                }
-            ) from None
-        async with self.sessions() as s:
-            channel = await self._find_channel(s, workspace_id, WHATSAPP)
-        channel_id = channel.id if channel else new_id()
-        channel = await self._save(
-            workspace_id, agent.id, WHATSAPP, channel_id, token, "", phone_id
-        )
-        log.info("whatsapp connected", extra={"channel_id": channel_id})
-        return channel
-
-    def whatsapp_login(self) -> dict[str, str]:
-        """What the owner's Connect with WhatsApp button needs: our app's id, and the
-        Embedded Signup configuration."""
-        s = self.settings
-        if not (s.META_APP_ID and s.META_APP_SECRET and s.META_WA_CONFIG_ID):
-            raise HeyDeskError(
-                "The server has no META_APP_ID or META_WA_CONFIG_ID, so WhatsApp signup is off."
-            )
-        return {"app_id": s.META_APP_ID, "config_id": s.META_WA_CONFIG_ID}
-
-    async def connect_whatsapp_signup(
-        self, workspace_id: str, code: str, account_id: str, phone_id: str
-    ) -> Channel:
-        """Embedded Signup's code becomes the business's token, the number is registered on
-        the Cloud API, then it's connected as if typed in."""
-        self.whatsapp_login()  # the app's id, secret and configuration are set
-        taken = await self.whatsapp_number(phone_id)
-        if taken is not None and taken.workspace_id != workspace_id:
-            raise InvalidConfig({"phone_id": "This number is connected to another business."})
-        try:
-            token = await self.whatsapp.token_from_code(
-                self.settings.META_APP_ID, self.settings.META_APP_SECRET, code
-            )
-        except WhatsAppUnavailable:
-            raise InvalidConfig(
-                {"code": "Meta didn't accept this signup. Try connecting again."}
-            ) from None
-        try:  # the PIN isn't kept: the owner can reset it in WhatsApp Manager
-            await self.whatsapp.register(token, phone_id, f"{secrets.randbelow(10**6):06d}")
-        except WhatsAppUnavailable:
-            raise InvalidConfig(
-                {"phone_id": "Meta couldn't put this number on WhatsApp's Cloud API. Try again."}
-            ) from None
-        return await self.connect_whatsapp(workspace_id, token, account_id, phone_id)
-
-    async def whatsapp_of(self, workspace_id: str) -> Channel:
-        return await self._get_channel(
-            workspace_id, WHATSAPP, "This business hasn't connected a WhatsApp number."
-        )
-
-    async def disconnect_whatsapp(self, workspace_id: str) -> None:
-        """Our app stays subscribed to the account (it may have other numbers); this number's
-        messages find no channel and aren't answered."""
-        await self._delete(await self.whatsapp_of(workspace_id))
-
-    async def whatsapp_number(self, phone_id: str) -> Channel | None:
-        """The business connected to a number: one webhook serves every number, so it's by id."""
-        async with self.sessions() as s:
-            return await s.scalar(
-                select(Channel).where(Channel.kind == WHATSAPP, Channel.address == phone_id)
-            )
-
     def messenger_verify(self, token: str) -> bool:
         """The verify token we set in the Meta app's dashboard, for Messenger's and WhatsApp's
         webhooks. None set: no webhook."""
@@ -378,13 +171,6 @@ class ChannelService:
         secret = self.settings.META_APP_SECRET.encode()
         expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
         return bool(secret) and hmac.compare_digest(expected, signature)
-
-    async def messenger_page(self, page_id: str) -> Channel | None:
-        """The business connected to a Page: one webhook serves every Page, so it's by the id."""
-        async with self.sessions() as s:
-            return await s.scalar(
-                select(Channel).where(Channel.kind == MESSENGER, Channel.address == page_id)
-            )
 
     async def telegram_webhook(self, channel_id: str, secret: str) -> Channel:
         """The channel a webhook call is for. 404 unless the secret is the one we gave Telegram."""
@@ -428,14 +214,6 @@ class ChannelService:
         with contextlib.suppress(MessengerUnavailable):  # "Seen", as a person would
             await self.messenger.mark_seen(channel.token, chat_id)
         await self._answer(channel, chat_id, message)
-
-    async def run(self, every: float) -> None:
-        """Sets the Telegram bots up again, `every` seconds after the start."""
-        await asyncio.sleep(every)
-        try:
-            await self.refresh_telegram()
-        except Exception:
-            log.exception("telegram webhooks not refreshed")
 
     async def answer_whatsapp(
         self, channel: Channel, message: dict[str, Any], name: str | None = None
@@ -763,7 +541,7 @@ class ChannelService:
         if kind not in (MESSENGER, TELEGRAM):
             return ""
         async with self.sessions() as s:
-            channel = await self._find_channel(s, workspace_id, kind)
+            channel = await find_channel(s, workspace_id, kind)
         if channel is None:
             return ""
         return f"https://{'m.me' if kind == MESSENGER else 't.me'}/{channel.address}"
@@ -787,50 +565,3 @@ class ChannelService:
             except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):
                 return
             await asyncio.sleep(4)
-
-    async def _save(
-        self,
-        workspace_id: str,
-        agent_id: str,
-        kind: str,
-        channel_id: str,
-        token: str,
-        secret: str,
-        address: str,
-    ) -> Channel:
-        async with self.sessions() as s, s.begin():
-            channel = await self._find_channel(s, workspace_id, kind)
-            if channel is None:
-                channel = Channel(
-                    id=channel_id,
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                    kind=kind,
-                    created_at=self.now(),
-                )
-                s.add(channel)
-            channel.token, channel.secret, channel.address = token, secret, address
-            channel.owner_chat_id = None  # a new bot: the owner links their chat with it again
-            if kind == TELEGRAM:  # and so does each moderator
-                await s.execute(
-                    update(User)
-                    .where(User.workspace_id == workspace_id)
-                    .values(telegram_chat_id=None)
-                )
-        return channel
-
-    async def _get_channel(self, workspace_id: str, kind: str, missing: str) -> Channel:
-        async with self.sessions() as s:
-            channel = await self._find_channel(s, workspace_id, kind)
-        if channel is None:
-            raise NotFound(missing)
-        return channel
-
-    async def _delete(self, channel: Channel) -> None:
-        async with self.sessions() as s, s.begin():
-            await s.delete(await s.get_one(Channel, channel.id))
-
-    async def _find_channel(self, s: AsyncSession, workspace_id: str, kind: str) -> Channel | None:
-        return await s.scalar(
-            select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
-        )

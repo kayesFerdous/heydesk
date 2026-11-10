@@ -27,38 +27,26 @@ from heydesk.ports.media import ImageUnreachable
 from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent, dev_workspace
 from heydesk.services.photos import to_jpeg
-from heydesk.shop import csv_import, shop_missing, shop_note, shop_prompt
+from heydesk.shop import csv_import
 from heydesk.shop.api import OfferIn, send_offer
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, products_from_csv, stock_cell
+from heydesk.shop.delivery import with_district
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.tools import (
-    CartLine,
+from heydesk.shop.orders import STATUS_WORDS, Coupon, mobile
+from heydesk.shop.products import LONG_PRODUCT_LIST, Product, merge_products
+from heydesk.shop.prompt import shop_missing, shop_note, shop_prompt
+from heydesk.shop.tools.cart import CartLine, UpdateCartInput, update_cart
+from heydesk.shop.tools.orders import (
     ChangeOrderInput,
     ExchangeInput,
     FindOrderInput,
-    FindProductInput,
     PlaceOrderInput,
-    ShowPhotosInput,
-    UpdateCartInput,
     change_order,
-    find_product,
     place_order,
     request_exchange,
-    show_photos,
     track_order,
-    update_cart,
 )
-from heydesk.shop.values import (
-    LONG_PRODUCT_LIST,
-    PRODUCT_COLUMNS,
-    STATUS_WORDS,
-    Coupon,
-    Product,
-    merge_products,
-    mobile,
-    products_from_csv,
-    stock_cell,
-    with_district,
-)
+from heydesk.shop.tools.products import FindProductInput, ShowPhotosInput, find_product, show_photos
 from tests.conftest import DEV_KEY, FIXED_NOW, SEEDS, World, make_ctx, new_business, said_yes
 
 KURTI = {"code": "kurti", "quantity": 1, "size": "m", "colour": "black"}
@@ -794,7 +782,7 @@ async def test_a_visitor_sends_a_photo_and_the_agent_shows_the_closest_product(
     assert shown == {"items": [item]}
 
     conv_id = res.text.split('"conversation_id": "')[1].split('"')[0]
-    [_, said, _, tool, _] = (await services.conversations.get(DEV_WORKSPACE_ID, conv_id)).messages
+    [_, said, _, tool, _] = (await services.inbox.get(DEV_WORKSPACE_ID, conv_id)).messages
     assert (
         said["content"] == "[Photo. Closest products in the shop: Cotton Kurti [kurti]]\neta ache?"
     )

@@ -4,6 +4,7 @@ Their columns become our fields by a `mapping` the owner checked ({"price": "MRP
 `suggest` makes the first one from the column names alone, and without a mapping
 columns match by name ("Price (৳)" → `price`). The shop turns each row into a product; every
 row's problems come back at once, and nothing is saved unless the whole file is clean.
+`products_from_csv` and `PRODUCT_COLUMNS`, at the end, are the shop's use of it.
 """
 
 import csv
@@ -15,6 +16,7 @@ from difflib import SequenceMatcher
 from pydantic import BaseModel, ValidationError
 
 from heydesk.errors import InvalidConfig
+from heydesk.shop.products import Product, Variant, grouped
 
 MAX_ROWS = 2000
 YES_WORDS = {"yes", "y", "true", "1", "available", "in stock", ""}
@@ -178,3 +180,154 @@ def parse[T](
     if problems:
         raise InvalidConfig(problems)
     return found
+
+
+# A shop's products from a CSV file
+
+PRODUCT_COLUMNS = [
+    Column(
+        name="name",
+        about="the product's name",
+        required=True,
+        aliases=[
+            "product",
+            "product name",
+            "item",
+            "item name",
+            "title",
+            "item title",
+            "naam",
+            "পণ্য",
+            "পণ্যের নাম",
+            "নাম",
+        ],
+    ),
+    Column(
+        name="price",
+        about="its price: 1850 or ৳1,850",
+        required=True,
+        aliases=["mrp", "rate", "selling price", "sale price", "dam", "daam", "taka", "দাম", "মূল্য"],
+    ),
+    Column(
+        name="was_price",
+        about="its price before a sale; empty when not on sale",
+        aliases=[
+            "regular price",
+            "old price",
+            "original price",
+            "compare at price",
+            "ager dam",
+            "আগের দাম",
+        ],
+    ),
+    Column(
+        name="category",
+        about="a group it's listed under: Panjabi, Saree",
+        aliases=["group", "type", "collection", "ক্যাটাগরি", "ধরন"],
+    ),
+    Column(
+        name="description",
+        about="a line or two about it",
+        aliases=["details", "about", "desc", "বিবরণ"],
+    ),
+    Column(name="sizes", about='the sizes it comes in: "M; L; XL"', aliases=["size", "সাইজ"]),
+    Column(
+        name="colours",
+        about='the colours it comes in: "white; black"',
+        aliases=["colour", "color", "colors", "rong", "rang", "রং", "রঙ"],
+    ),
+    Column(
+        name="stock",
+        about='how many are left, or per size and colour: "M: 5; L: 0"; empty when not counted',
+        aliases=["qty", "quantity", "stock qty", "inventory", "স্টক", "পরিমাণ"],
+    ),
+    Column(
+        name="code",
+        about="the shop's own short id or SKU for it",
+        aliases=["sku", "id", "product id", "product code", "item code", "কোড"],
+    ),
+    Column(
+        name="photos",
+        about="links to its photos, up to 3: https://…jpg",
+        aliases=["photo", "image", "images", "picture", "pic", "image url", "ছবি"],
+    ),
+    Column(
+        name="videos",
+        about="links to its videos, up to 3: https://youtu.be/…",
+        aliases=["video", "youtube", "video link", "ভিডিও"],
+    ),
+    Column(
+        name="goes_with",
+        about='codes of up to 3 products that go with it: "pajama-white; tupi"',
+        aliases=["goes with", "pair with", "pairs with", "related", "upsell", "add on"],
+    ),
+]
+
+
+def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[Product]:
+    """Columns: name, price, and optionally was_price (before a sale), category, description,
+    sizes ("M; L; XL"), colours, stock (a number, "M: 5; L White: 0" per size and colour, or
+    empty: not counted), code, photos (links), videos (links) and goes_with (codes).
+    `mapping` names them in the file."""
+
+    def row(cells: dict[str, str]) -> Product:
+        sizes = items(cells.get("sizes", ""))
+        colours = items(cells.get("colours") or cells.get("colors", ""))
+        stock, variants = stock_cell(cells.get("stock", ""), sizes, colours)
+        was = cells.get("was_price", "")
+        return Product.model_validate(
+            {
+                "code": cells.get("code") or slug(cells["name"]),
+                "name": cells["name"],
+                "description": cells.get("description", ""),
+                "price": parse_money(cells["price"]),
+                "was_price": parse_money(was) if was else None,
+                "category": cells.get("category") or "Products",
+                "sizes": sizes,
+                "colours": colours,
+                "stock": stock,
+                "variants": variants,
+                "photos": links(cells.get("photos", "")),
+                "videos": links(cells.get("videos", "")),
+                "goes_with": items(cells.get("goes_with", ""))[:3],
+            }
+        )
+
+    return grouped(parse(text, needs(PRODUCT_COLUMNS), row, mapping))
+
+
+def links(text: str) -> list[str]:
+    """A photos (or videos) cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|"."""
+    found = [
+        part for part in re.split(r"[\s,;|]+", text) if part.startswith(("http://", "https://"))
+    ]
+    return list(dict.fromkeys(found))[:3]
+
+
+def stock_cell(text: str, sizes: list[str], colours: list[str]) -> tuple[int | None, list[Variant]]:
+    """A CSV stock cell: "" (not counted), "12" (the product's own stock), or a count per
+    size and colour, "M: 5; L: 0" or "L White: 2; L/Navy: 0". Raises ValueError."""
+    text = text.strip()
+    if not text:
+        return None, []
+    if text.isdigit():
+        return int(text), []
+    names = {  # "l white" → ("L", "White"); "l" → ("L", ""); "white" → ("", "White")
+        " ".join(part for part in (size, colour) if part).lower(): (size, colour)
+        for size in [*sizes, ""]
+        for colour in [*colours, ""]
+        if size or colour
+    }
+    variants = []
+    for part in re.split(r"[;\n]", text):
+        if not part.strip():
+            continue
+        said, _, count = part.rpartition(":")
+        key = " ".join(said.replace("/", " ").lower().split())
+        if key not in names or not count.strip().isdigit():
+            raise ValueError(
+                f"stock {part.strip()!r}: write a size or colour and a number, like M: 5"
+            )
+        size, colour = names[key]
+        variants.append(Variant(size=size, colour=colour, stock=int(count)))
+    return None, variants

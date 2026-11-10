@@ -51,3 +51,6 @@ CLAUDE.local*
 proposal_uml/
 *.pdf
 presentation-draft.md
+
+# Demo recordings
+*.mp4
