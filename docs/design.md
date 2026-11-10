@@ -62,14 +62,21 @@ src/heydesk/
 │                        Graph API, WhatsApp's Cloud API (D103), SSLCommerz, bKash (D109), Google Sheets' CSV (D58), WooCommerce's REST API (D75),
 │                        photo files on the disk or in Cloudflare R2 (D101)
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech, cards
-├── shop/                the shop (D172): __init__ (prompt, note, tools_for) · tools · values · models · store · api · page
-│   ├── base.py          Store: the data that isn't products or orders (messages, documents search, a list replaced whole)
-│   ├── shared.py        take_message, handoff_to_human, off_topic, search_knowledge
-│   └── csv_import.py    reading a CSV file into the products; matching its columns to ours (D50, D53, D115)
+├── shop/                the shop (D172, D179)
+│   ├── prompt.py        its sections of the system prompt, the note, what's missing from its setup
+│   ├── tools/           what the model calls: products · cart · orders · inbox (messages, hand-off, notes…);
+│   │                    `tools_for()` in its __init__
+│   ├── products.py · delivery.py · orders.py · config.py    its shapes, no database
+│   ├── csv_import.py · woo_import.py   a CSV file or a Woo store as products (D50, D53, D115, D75)
+│   ├── records.py       RecordStore: what any chat can make (messages, call backs, complaints) and its numbering
+│   ├── store.py         ShopStore(RecordStore): adds the products, orders and coupons
+│   └── models.py · api.py · page.py · districts.py
 ├── models/              the shared tables; `customer_request.py` is what orders and messages share
-├── services/            agents, conversations, users, admin, visitors (the limits, D51), rate_limits (D52),
-│                        knowledge, photos (D57), sheets (D58), woo (D75), channels (Telegram,
-│                        Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43), payments (D47)
+├── services/            agents, conversations (a visitor's turn), inbox (the team's side of a chat), users,
+│                        admin, visitors (the limits, D51), rate_limits (D52), knowledge, photos (D57),
+│                        sheets (D58), woo (D75), channels and channel_links (answering and connecting
+│                        Telegram, Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43),
+│                        payments (D47), background (`run_every`: the jobs the app runs on its own)
 ├── api/                 routes: read the request, call one service or store, return
 ├── voice/               the voice channel (M2); bangla_tts.py, the Bangla voice's client (D84)
 └── web/static/          the dev chat page
@@ -86,14 +93,15 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 
 | File | What's in it |
 |---|---|
-| `__init__.py` | Its `ROLE` text, `shop_prompt()` (its sections of the system prompt, with its facts), `shop_note()`, `shop_missing()` and `tools_for()` |
-| `tools.py` | Its tools: the shop's `find_product` (D80), `update_cart`, `place_order`, `track_order`, `change_order`, `cancel_order`, `request_exchange`, `show_photos` |
-| `values.py` | Its shapes, no database: `Product`, `Zone`, `match_zone()`, `ShopConfig`, `mobile()`; `districts.py`, Bangladesh's 64 districts and their old spellings (D98) |
+| `prompt.py` | Its `ROLE` text, `shop_prompt()` (its sections of the system prompt, with its facts), `shop_note()` and `shop_missing()` |
+| `tools/` | Its tools, one file per part of a visit: `products.py` (`find_product`, D80, and `show_photos`), `cart.py` (`update_cart`), `orders.py` (`place_order`, `track_order`, `change_order`, `cancel_order`, `confirm_order`, `request_exchange`) and `inbox.py` (`take_message`, `take_lead`, `handoff_to_human`, `flag_complaint`, `remember`, `off_topic`, `search_knowledge`); `tools_for()` is in its `__init__.py` |
+| `products.py`, `delivery.py`, `orders.py`, `config.py` | Its shapes, no database: `Product`; `Zone` and `match_zone()`; the order statuses, `NewOrder`, `Coupon` and `mobile()`; `ShopConfig`. `districts.py` is Bangladesh's 64 districts and their old spellings (D98) |
+| `csv_import.py`, `woo_import.py` | A CSV file's rows, or a Woo store's products, as ours |
 | `models.py` | Its tables: `products`, `coupons` and `shop_orders` |
-| `store.py` | Its data access, for its tools and its owner routes, always one workspace |
+| `records.py`, `store.py` | Its data access, for its tools and its owner routes, always one workspace: `RecordStore` (messages, call backs, complaints, notes) and `ShopStore`, which adds the products and orders |
 | `api.py` | Its owner routes: `/api/products`, `/api/shop/…` |
 
-`tools_for(has_documents)` is the shop's tools, then the shared ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
+`tools_for(has_documents)` is the shop's tools, then the inbox ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
 `search_knowledge` when the business has documents (D35).
 
 **The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
@@ -181,8 +189,7 @@ still needed comes back from the writing tool itself (§7).
 
 ## 7. Tools
 
-The contract lives in `runtime/tool.py`; the tools live in `shop/tools.py`
-or `shop/shared.py`. A tool reaches the database only through `ctx.store`.
+The contract lives in `runtime/tool.py`; the tools live in `shop/tools/`. A tool reaches the database only through `ctx.store`.
 
 ```python
 @dataclass(frozen=True)
@@ -590,7 +597,7 @@ from `team_events`. A ticket or lead counts for whoever tapped it, and only whil
 **Finding a chat (D128).** The list leaves out a chat that is *Done* (`done_at`) or snoozed
 (`snoozed_until` still to come). *Done* lasts until the visitor writes again: saving their next
 turn clears `done_at` and `snoozed_until`. *Snooze* takes a time in the next 30 days
-(`MAX_SNOOZE_DAYS`); `ConversationService.run` checks every `SNOOZE_CHECK_SECONDS` (60), clears
+(`MAX_SNOOZE_DAYS`); `InboxService.wake_snoozed` runs every `SNOOZE_CHECK_SECONDS` (60), clears
 the ones that are due and alerts the owner ("⏰ A chat you snoozed is back", with its `Ref:`).
 The same round nudges an unfinished order (D139): a shop chat, `active`, last touched 1 to 3
 hours ago, whose last turn (not an `assist` one) ran `place_order` with no order saved since,
@@ -741,7 +748,7 @@ their file ─► 1. read: rows as {their column: text}            csv_import.pe
 ```
 
 **The fields are listed once:** `PRODUCT_COLUMNS` in
-`shop/values.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
+`shop/csv_import.py`, each a `Column(name, about, required, aliases)`. `about` is what the field holds, in
 plain words, for the owner's screen; `aliases` are the other names sheets give it, in English,
 Bangla and Banglish (`"mrp"`, `"dam"`, `"দাম"`). The required ones are what `parse` needs.
 
@@ -808,8 +815,8 @@ every SHEET_SYNC_MINUTES (5):
   the owner's screen says to keep cost prices and buyers out of that tab.
 - **Fetching** is `fetch_csv(url) -> str` (`adapters/sheets.py`, httpx, 10s; the `FetchCsv`
   port raises `SheetUnreadable` with a line for the owner), passed in by `wiring.py`; tests
-  set `SheetService.fetch` to a fake that returns a string. A loop started in the lifespan
-  (`SheetService.run`) syncs every linked sheet each `SHEET_SYNC_MINUTES`, one after another,
+  set `SheetService.fetch` to a fake that returns a string. A background job started in the lifespan
+  (`SheetService.sync_all`, with `run_every`) syncs every linked sheet each `SHEET_SYNC_MINUTES`, one after another,
   and stops with the app. `POST /api/agent/sheet/sync` syncs one now.
 - **Same text, no work.** `checked` is the SHA-256 of the last text fetched. Most syncs stop
   there: no parse, no write.
@@ -863,7 +870,7 @@ every SHEET_SYNC_MINUTES (5):
   fields, the same as the import's, and the store takes the sheet's text
   (`ShopStore.import_sheet(text, mapping, seen) -> seen`): the
   shop merges, in one transaction with reading the orders that hold stock (`merge_sheet_products`,
-  `minus_ordered`, `STATUSES_HOLDING_STOCK` in `values.py`).
+  `minus_ordered` in `products.py`, `STATUSES_HOLDING_STOCK` in `orders.py`).
 
 **Routes:**
 
@@ -908,7 +915,7 @@ sync:
   variations fetched with it), `can_write(store)` (the check above), `create_order(store, body)
   -> id`, `set_status(store, id, status)`. It raises `WooUnreachable` with a line for the owner. Tests use a fake.
 - **Their fields are the same in every store, so the match is in code** (`products_from_woo`,
-  `shop/values.py`), and the owner never sees a mapping:
+  `shop/woo_import.py`), and the owner never sees a mapping:
 
   | Ours | Woo's |
   |---|---|
@@ -995,7 +1002,7 @@ A shop's products come from a CSV file, a linked Google Sheet or WooCommerce sto
 by hand. **None of them replaces the list; each adds to it and updates what it has.**
 
 ```python
-def added(ours, found, gone=None) -> list[Product]:     # values.py
+def added(ours, found, gone=None) -> list[Product]:     # products.py
     kept = [p for p in ours if p.code not in gone]
     for p in found:
         same = the one free p with p.code, else the only free one with the same name
@@ -1053,8 +1060,8 @@ an unknown code is the same 404 page.
   so `# Right now` tells the web chat too that a tapped button arrives as its words (`BUTTON_REPLY_RULE`).
 - **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
   stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
-  area's charge and days. It posts back to the page. `form_order` (`shop/tools.py`)
-  checks it as `place_order` does (`_lines_with_prices`, `_stock_problem`, `match_zone`, `mobile`), and
+  area's charge and days. It posts back to the page. `checked_order` (`shop/tools/orders.py`)
+  checks it as `place_order` does (`lines_with_prices`, `stock_problem`, `match_zone`, `mobile`), and
   `new_order` builds the order and its read-back for both. The first post shows **Check your
   order**, the order read back, with the details and `heard` (that read-back) in hidden
   fields; *Place order* posts them again, and `confirm(heard, order, read_back)` saves it only
@@ -1093,7 +1100,7 @@ Two things make them feel known:
 ### Telegram (D42)
 
 A business connects **its own bot**: it makes one with @BotFather and sends the token to
-`PUT /api/agent/telegram`. `ChannelService` checks the token (`getMe`), then sets the bot's
+`PUT /api/agent/telegram`. `ChannelLinkService` checks the token (`getMe`), then sets the bot's
 webhook to `PUBLIC_URL/api/telegram/{channel id}` with a random secret, and saves the row.
 `GET /api/agent/telegram` gives the `t.me` link the business shares with its customers.
 
@@ -1126,7 +1133,7 @@ there is **one webhook for every Page**, set once in the app's dashboard to
 `META_APP_SECRET`; a post without a good signature is a 404.
 
 A business connects **its Page** with the Page's id and a Page access token
-(`PUT /api/agent/messenger {token, page_id}`, D61). `ChannelService` refuses a Page another
+(`PUT /api/agent/messenger {token, page_id}`, D61). `ChannelLinkService` refuses a Page another
 business has, subscribes our app to its `messages` (Facebook only accepts that for the right
 token and Page, so it is the check), and saves the row with the Page id as `address`. There is
 no `/me` call: Meta wants App Review before a dashboard token may read the Page itself.
@@ -1152,7 +1159,7 @@ WhatsApp's Cloud API is Messenger's shape: our one Meta app, **one webhook for e
 
 A business connects **its number** with three things from its Meta Business settings:
 `PUT /api/agent/whatsapp {token, account_id, phone_id}`, a system user's token, the WhatsApp
-Business Account's id and the number's id. `ChannelService` refuses a number another business
+Business Account's id and the number's id. `ChannelLinkService` refuses a number another business
 has; `WhatsAppApi.subscribe` reads the number with the token (the check) and subscribes our app
 to the account's messages. The number's id is the `address`.
 
@@ -1529,7 +1536,7 @@ The agent asks for payment only when `pay_first` is on (a shop: in some area,
 prompt says nothing about paying, the tools place orders as before, and `missing` says
 "Connect SSLCommerz or bKash…". `services/payments.py` (`PaymentService`), `api/payments.py` (the pages) and the `PaymentGateway` port, one gateway for each
 provider (`Gateways`: `adapters/payments/sslcommerz.py` and `bkash.py`; `PAYMENTS=fake` for
-tests) do it. `shop/shared.py` has the tool's answer (`awaiting_payment`), and `shop_prompt` the prompt's
+tests) do it. `shop/tools/orders.py` has the tool's answer (`awaiting_payment`), and `shop_prompt` the prompt's
 line.
 
 ```
@@ -1632,7 +1639,7 @@ A paid order is never queued for a call: the queue takes only `new` orders. With
 ### Orders the team types, and the end of an order (D131)
 
 - **A buyer who called:** *New order* on the inbox posts `/api/shop/orders`. `checked_order`
-  (`shop/tools.py`, the product page's too) prices it and checks the stock, the area and
+  (`shop/tools/orders.py`, the product page's too) prices it and checks the stock, the area and
   the mobile; `ShopStore.add_team_order` saves it `confirmed`, in no chat. It takes a plain
   `NewOrder`, not a `Confirmed`: the team member who typed it is the yes (rule 2's one
   exception, and the only writing method without one). The owner's alert says "typed by the
@@ -1718,7 +1725,7 @@ ParcelStatus(said, ending)`. Its adapters: `Steadfast` and `Pathao` (`adapters/c
 shop's own merchant login linked at `/api/agent/courier` (checked when saved; `courier_links`,
 secrets encrypted), and `FakeCourier`, which moves a parcel one step every 2 minutes and
 delivers it after 8. A shop with no link uses the fake one, except in production (by hand).
-`CourierService.run`, every `COURIER_SYNC_MINUTES`, for each shop with a parcel to book or follow:
+`CourierService.sync_all`, every `COURIER_SYNC_MINUTES`, for each shop with a parcel to book or follow:
 
 1. Each `confirmed` or `packed` order with no `parcel_id` is booked (one `on_hold` waits, D131) (the cash still owed in whole taka,
    the order code as the invoice): it's `shipped`, the buyer hears so, the owner is told to pack it.

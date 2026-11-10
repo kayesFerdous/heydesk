@@ -88,7 +88,7 @@ passes their words as they are.
 
 ## 2. The shop's own sections
 
-In `shop/__init__.py`. They say who the
+In `shop/prompt.py`. They say who the
 agent is and how it should sound, what it can do and how, and that anything else gets a message
 or a person.
 
