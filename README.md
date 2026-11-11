@@ -85,7 +85,7 @@ migrations/          Alembic
 | Data | SQLAlchemy 2.0 (async) and Alembic on SQLite; Qdrant for documents and photos |
 | Talking | Gigalogy's Maira (default) or Groq (`openai/gpt-oss-120b`), behind one `LanguageModel` port |
 | Knowledge and photos | Gemini embeddings, hybrid (meaning + exact word) search in Qdrant |
-| Voice | Pipecat over WebRTC, Silero VAD; Deepgram, Chorus or our Whisper to hear; a Bangla voice (our TTS server) or Piper to speak |
+| Voice | Pipecat over WebRTC, Silero VAD; Deepgram or Chorus to hear calls and voice notes; a Bangla voice (our voice server) or Piper to speak |
 | Channels and payments | Telegram Bot API, Messenger (Graph API), SSLCommerz, bKash |
 | Tooling | uv, pytest, ruff, mypy (strict on the core), Docker, GitHub Actions (checks, a dependency audit, the image) |
 
@@ -143,10 +143,9 @@ In `.env`, pick the providers:
   local folder. `EMBEDDER=fake` runs offline but only matches words.
 - **Voice:** `VOICE_LANGUAGE=bn` (the default) hears and speaks Bangla on every call, so the
   Bangla voice must be running: `uv run --directory tts_server uvicorn server:app --port 8010`,
-  or `tts_server/kaggle_tts.ipynb` on Kaggle with its URL in `BANGLA_TTS_URL`. `en` speaks with
-  Piper, which runs locally. To hear: Deepgram (`DEEPGRAM_API_KEY`), `STT_PROVIDER=chorus` for
-  Gigalogy's Chorus, or `STT_PROVIDER=whisper` for our Bangla–English Whisper
-  (`tts_server/kaggle_stt.ipynb` on Kaggle, its URL in `WHISPER_STT_URL`).
+  or `tts_server/kaggle_tts.ipynb` on Kaggle with its URL in `BANGLA_VOICE_URL`. `en` speaks with
+  Piper, which runs locally. Calls and voice notes are heard by Deepgram (`DEEPGRAM_API_KEY`), or
+  with `STT_PROVIDER=chorus` by Gigalogy's Chorus (the Gigalogy keys; about 23 s each).
 
 ### With Docker
 

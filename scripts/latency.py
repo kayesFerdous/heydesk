@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 FIRST_SOUND = re.compile(r"first sound: ([\d.]+)s")
-CHORUS = re.compile(r"chorus: ([\d.]+)s")
+HEARD = re.compile(r"heard: ([\d.]+)s")  # a call on Chorus: each utterance
 MODEL = re.compile(r'"first_output_ms": (\d+)')  # the turn's trace: its first token
 
 
@@ -24,7 +24,7 @@ def report(name: str, seconds: list[float]) -> str:
 def main(path: str) -> None:
     text = Path(path).read_text(encoding="utf-8")
     print(report("last word → first sound", [float(s) for s in FIRST_SOUND.findall(text)]))
-    print(report("speech-to-text (Chorus)", [float(s) for s in CHORUS.findall(text)]))
+    print(report("hearing an utterance (Chorus)", [float(s) for s in HEARD.findall(text)]))
     print(report("model's first token", [int(ms) / 1000 for ms in MODEL.findall(text)]))
 
 

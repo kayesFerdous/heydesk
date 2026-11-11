@@ -971,7 +971,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Voice call pipeline",
    "type": "core",
    "file": "src/heydesk/voice/call.py",
-   "purpose": "Pipecat pipeline: audio → VAD → STT → Agent (a turn per utterance, barge-in) → TTS → audio.",
+   "purpose": "Pipecat pipeline: audio → VAD → hear (STT_PROVIDER) → CallAgent (a turn per utterance, barge-in) → speak (SpeakableText first) → audio.",
    "inputs": "WebRTC audio",
    "outputs": "spoken reply",
    "fn": "run_call"
@@ -1129,16 +1129,16 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Transcriber",
    "type": "port",
    "file": "src/heydesk/ports/transcriber.py",
-   "purpose": "A visitor's voice note in words (D147); raises TranscriberUnavailable.",
+   "purpose": "Speech in words: a visitor's voice note, and on Chorus each thing a caller says (D147, D183). STT_PROVIDER picks the adapter; raises TranscriberUnavailable.",
    "inputs": "audio bytes, filename",
    "outputs": "words"
   },
   {
-   "id": "ad-groq-transcriber",
-   "label": "GroqTranscriber",
+   "id": "ad-deepgram-transcriber",
+   "label": "DeepgramTranscriber",
    "type": "adapter",
-   "file": "src/heydesk/adapters/transcriber/groq.py",
-   "purpose": "Groq's whisper-large-v3-turbo: the chat apps' ogg and mp4 as they come, any language (D147). FakeTranscriber offline.",
+   "file": "src/heydesk/adapters/transcriber/deepgram.py",
+   "purpose": "STT_PROVIDER=deepgram (the default): the whole file to Deepgram's nova-3-general in VOICE_LANGUAGE, so Bangla comes back in Bangla letters (D183). FakeTranscriber offline.",
    "inputs": "audio, filename",
    "outputs": "words"
   },
@@ -1339,28 +1339,19 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "id": "ad-chorus",
-   "label": "ChorusSTT",
+   "label": "ChorusTranscriber",
    "type": "adapter",
-   "file": "src/heydesk/voice/chorus.py",
-   "purpose": "Gigalogy Chorus: upload a WAV per utterance, poll for the text.",
-   "inputs": "",
-   "outputs": ""
-  },
-  {
-   "id": "ad-whisper",
-   "label": "WhisperSTT",
-   "type": "adapter",
-   "file": "src/heydesk/voice/whisper_stt.py",
-   "purpose": "Our Bangla–English Whisper: one upload per utterance.",
-   "inputs": "",
-   "outputs": ""
+   "file": "src/heydesk/adapters/transcriber/chorus.py",
+   "purpose": "STT_PROVIDER=chorus: upload the file (a voice note, or a call's utterance through WholeUtterances), then ask every 0.5 s until the words are ready; about 23 s (D183).",
+   "inputs": "audio, filename",
+   "outputs": "words"
   },
   {
    "id": "ad-banglatts",
-   "label": "BanglaTTS",
+   "label": "BanglaVoice",
    "type": "adapter",
-   "file": "src/heydesk/voice/bangla_tts.py",
-   "purpose": "Each sentence to our Bangla TTS server; raw PCM back.",
+   "file": "src/heydesk/voice/bangla_voice.py",
+   "purpose": "Each sentence to our Bangla voice server (BANGLA_VOICE_URL); raw PCM back.",
    "inputs": "",
    "outputs": ""
   },
@@ -1496,7 +1487,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Deepgram STT",
    "type": "external",
    "file": "pipecat DeepgramSTTService",
-   "purpose": "Streaming speech-to-text (default STT_PROVIDER).",
+   "purpose": "STT_PROVIDER=deepgram (the default): streams a call, and hears a voice note as one file. nova-3-general in VOICE_LANGUAGE.",
    "inputs": "",
    "outputs": ""
   },
@@ -1505,19 +1496,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Gigalogy Chorus",
    "type": "external",
    "file": "api.maira.gigalogy.com/chorus",
-   "purpose": "Upload-and-poll speech-to-text.",
+   "purpose": "Upload-and-poll speech-to-text: Groq's whisper-large-v3 behind a queue, about 23 s a clip (11 Nov).",
    "inputs": "",
    "outputs": ""
-  },
-  {
-   "id": "x-whisper",
-   "label": "Whisper on Kaggle",
-   "type": "external",
-   "file": "tts_server/kaggle_stt.ipynb",
-   "purpose": "kayees/whisper-medium-bn-en-cs-faster served from a Kaggle GPU (WHISPER_STT_URL).",
-   "inputs": "",
-   "outputs": "",
-   "unverified": "Runs as a notebook on Kaggle; its uptime and address can't be confirmed from the code."
   },
   {
    "id": "x-banglatts",
@@ -2372,22 +2353,17 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "v-call",
    "target": "x-deepgram",
-   "label": "STT"
+   "label": "hear (deepgram, streamed)"
   },
   {
    "source": "v-call",
    "target": "ad-chorus",
-   "label": "STT"
-  },
-  {
-   "source": "v-call",
-   "target": "ad-whisper",
-   "label": "STT"
+   "label": "hear (chorus): WholeUtterances"
   },
   {
    "source": "v-call",
    "target": "ad-banglatts",
-   "label": "TTS bn"
+   "label": "speak bn"
   },
   {
    "source": "v-call",
@@ -2580,9 +2556,9 @@ tr.hl td { background: var(--accent-soft); }
    "label": "upload + poll"
   },
   {
-   "source": "ad-whisper",
-   "target": "x-whisper",
-   "label": "/transcribe"
+   "source": "ad-deepgram-transcriber",
+   "target": "x-deepgram",
+   "label": "POST /v1/listen"
   },
   {
    "source": "ad-banglatts",
@@ -5979,7 +5955,7 @@ tr.hl td { background: var(--accent-soft); }
     },
     {
      "id": "voice",
-     "label": "VOICE_LANGUAGE bn → BanglaTTS + Bangla rule; STT_PROVIDER",
+     "label": "VOICE_LANGUAGE bn → BanglaVoice + Bangla rule; STT_PROVIDER",
      "shape": "decision",
      "file": "src/heydesk/voice/call.py",
      "fn": "run_call"
@@ -6626,7 +6602,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "v-call",
      "to": "x-deepgram",
-     "data": "speech-to-text (or Chorus / Whisper)",
+     "data": "speech-to-text (Deepgram, or Chorus with STT_PROVIDER=chorus)",
      "file": "src/heydesk/voice/call.py",
      "fn": "run_call"
     },
@@ -6662,7 +6638,7 @@ tr.hl td { background: var(--accent-soft); }
      "from": "v-call",
      "to": "x-banglatts",
      "data": "one sentence → PCM (bn), or Piper (en)",
-     "file": "src/heydesk/voice/bangla_tts.py",
+     "file": "src/heydesk/voice/bangla_voice.py",
      "fn": "run_tts"
     },
     {
@@ -8577,7 +8553,7 @@ tr.hl td { background: var(--accent-soft); }
    "diagram": "flowchart LR\n  t[\"মোট ৳360, 7:30 pm\"] -->|\"speakable(bn)\"| w[\"মোট তিনশো ষাট টাকা, সন্ধ্যা সাতটা …\"] --> v[\"Bangla TTS\"]",
    "files": [
     "src/heydesk/runtime/speech.py",
-    "src/heydesk/voice/bangla_tts.py"
+    "src/heydesk/voice/bangla_voice.py"
    ],
    "flow": "voice-call"
   },

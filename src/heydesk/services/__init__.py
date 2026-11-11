@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from heydesk.ports.transcriber import Transcriber
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.billing import BillingService
@@ -41,6 +42,7 @@ class Services:
     rate_limits: RateLimiter
     sheets: SheetService
     team: TeamService  # the owner's alerts, and the business's lines to a visitor
+    transcriber: Transcriber | None  # speech in words: voice notes, and calls on Chorus
     users: UserService
     visitors: VisitorService
     woo: WooService  # a shop's linked WooCommerce store

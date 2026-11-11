@@ -437,7 +437,7 @@ doctor() {
     groq) key GROQ_API_KEY "LLM_PROVIDER=groq" ;;
   esac
   [[ $(setting EMBEDDER gemini) == gemini ]] && key GEMINI_API_KEY "EMBEDDER=gemini"
-  [[ $(setting STT_PROVIDER deepgram) == deepgram ]] && key DEEPGRAM_API_KEY "voice calls"
+  [[ $(setting STT_PROVIDER deepgram) == deepgram ]] && key DEEPGRAM_API_KEY "calls and voice notes"
   if [[ -n $(setting PUBLIC_URL) ]]; then ok "PUBLIC_URL: $(setting PUBLIC_URL)"; else warn "PUBLIC_URL is empty: public links use Cloudflare"; fi
 
   echo "${B}Database${N}"
