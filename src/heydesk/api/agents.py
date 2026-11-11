@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, UploadFile, status
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.services.agents import AgentInfo
 from heydesk.shop.config import ShopConfig
 
@@ -60,13 +60,13 @@ async def desks() -> list[DeskOut]:
 
 
 @router.post("/api/agent", status_code=status.HTTP_201_CREATED)
-async def create(body: AgentIn, services: Svc, workspace_id: Workspace) -> AgentOut:
+async def create(body: AgentIn, services: Svc, workspace_id: WorkspaceId) -> AgentOut:
     await services.agents.create(workspace_id, body.config)
     return agent_out(await services.agents.get(workspace_id))
 
 
 @router.get("/api/agent")
-async def read(services: Svc, workspace_id: Workspace) -> AgentOut:
+async def read(services: Svc, workspace_id: WorkspaceId) -> AgentOut:
     return agent_out(await services.agents.get(workspace_id))
 
 
@@ -81,7 +81,7 @@ LOGO_SIDE = 256  # px: a logo is shown small, in the bubble and the chat's heade
 async def add_logo(
     file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP picture, up to 10 MB")],
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
 ) -> LogoOut:
     """The business's logo for the website chat: saved small and set on the widget."""
     widget = (await services.agents.get(workspace_id)).config.widget  # 404 before anything is saved
@@ -93,7 +93,7 @@ async def add_logo(
 
 
 @router.patch("/api/agent")
-async def edit(patch: dict[str, Any], services: Svc, workspace_id: Workspace) -> AgentOut:
+async def edit(patch: dict[str, Any], services: Svc, workspace_id: WorkspaceId) -> AgentOut:
     """Top-level fields replace the config's: send the whole `hours`, not a part."""
     await services.agents.update(workspace_id, patch)
     return agent_out(await services.agents.get(workspace_id))

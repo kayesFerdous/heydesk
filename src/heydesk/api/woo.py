@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.errors import NotFound
 from heydesk.models import WooLink
 
@@ -34,25 +34,25 @@ def woo_out(link: WooLink) -> WooOut:
 
 
 @router.put("/api/agent/woo")
-async def link_woo(body: WooIn, workspace_id: Workspace, services: Svc) -> WooOut:
+async def link_woo(body: WooIn, workspace_id: WorkspaceId, services: Svc) -> WooOut:
     """Checks the key, links the store and takes the products from it now. Then our orders are
     written there, and it's synced when its webhooks say something changed."""
     return woo_out(await services.woo.link(workspace_id, body.url, body.key, body.secret))
 
 
 @router.get("/api/agent/woo")
-async def get_woo(workspace_id: Workspace, services: Svc) -> WooOut:
+async def get_woo(workspace_id: WorkspaceId, services: Svc) -> WooOut:
     return woo_out(await services.woo.get(workspace_id))
 
 
 @router.post("/api/agent/woo/sync")
-async def sync_woo(workspace_id: Workspace, services: Svc) -> WooOut:
+async def sync_woo(workspace_id: WorkspaceId, services: Svc) -> WooOut:
     """Writes the orders that changed and reads the products now."""
     return woo_out(await services.woo.sync(workspace_id))
 
 
 @router.delete("/api/agent/woo", status_code=status.HTTP_204_NO_CONTENT)
-async def unlink_woo(workspace_id: Workspace, services: Svc) -> None:
+async def unlink_woo(workspace_id: WorkspaceId, services: Svc) -> None:
     """Stops syncing. The list stays and can be edited here again."""
     await services.woo.unlink(workspace_id)
 

@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.models import Document
 from heydesk.runtime.text import group_alike
 from heydesk.services.extract import extract_text, kind_of
@@ -40,7 +40,7 @@ class DocumentWithText(DocumentOut):
 
 
 @router.post("/api/agent/documents", status_code=status.HTTP_201_CREATED)
-async def add_text(body: DocumentIn, services: Svc, workspace_id: Workspace) -> DocumentOut:
+async def add_text(body: DocumentIn, services: Svc, workspace_id: WorkspaceId) -> DocumentOut:
     """Add pasted text to the agent's knowledge."""
     agent = await services.agents.get(workspace_id)  # 404 until the business has an agent
     kind = "markdown" if body.text.lstrip().startswith("#") else "text"
@@ -52,7 +52,7 @@ async def add_text(body: DocumentIn, services: Svc, workspace_id: Workspace) -> 
 async def add_file(
     file: Annotated[UploadFile, File(description="A .txt, .md or .pdf file, up to 10 MB")],
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     title: Annotated[str, Form()] = "",
 ) -> DocumentOut:
     """Add a file: its text is read (a PDF by its text layer) and added like pasted text."""
@@ -65,20 +65,20 @@ async def add_file(
 
 
 @router.get("/api/agent/documents")
-async def list_documents(services: Svc, workspace_id: Workspace) -> list[DocumentOut]:
+async def list_documents(services: Svc, workspace_id: WorkspaceId) -> list[DocumentOut]:
     return [DocumentOut.model_validate(d) for d in await services.knowledge.all(workspace_id)]
 
 
 @router.get("/api/agent/documents/{document_id}")
 async def read_document(
-    document_id: str, services: Svc, workspace_id: Workspace
+    document_id: str, services: Svc, workspace_id: WorkspaceId
 ) -> DocumentWithText:
     document: Document = await services.knowledge.get(workspace_id, document_id)
     return DocumentWithText.model_validate(document)
 
 
 @router.delete("/api/agent/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(document_id: str, services: Svc, workspace_id: Workspace) -> None:
+async def delete_document(document_id: str, services: Svc, workspace_id: WorkspaceId) -> None:
     await services.knowledge.delete(workspace_id, document_id)
 
 
@@ -96,7 +96,7 @@ class TeachIn(BaseModel):
 
 
 @router.get("/api/agent/missed")
-async def missed(services: Svc, workspace_id: Workspace) -> list[MissedOut]:
+async def missed(services: Svc, workspace_id: WorkspaceId) -> list[MissedOut]:
     """What the agent couldn't answer, grouped by likeness, the most asked first."""
     store = await services.agents.store(workspace_id)
     rows = await store.missed_questions()
@@ -112,7 +112,7 @@ async def missed(services: Svc, workspace_id: Workspace) -> list[MissedOut]:
 
 
 @router.post("/api/agent/missed/teach", status_code=status.HTTP_201_CREATED)
-async def teach(body: TeachIn, services: Svc, workspace_id: Workspace) -> DocumentOut:
+async def teach(body: TeachIn, services: Svc, workspace_id: WorkspaceId) -> DocumentOut:
     """*Teach it*: the answer becomes a knowledge entry, so `search_knowledge` finds it next
     time, and the group leaves the list."""
     agent = await services.agents.get(workspace_id)

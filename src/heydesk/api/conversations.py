@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Paged, Svc, User, Workspace
+from heydesk.api.deps import LoggedInUser, Paged, Svc, WorkspaceId
 from heydesk.api.sse import live_frames
 from heydesk.api.visitors import VisitorOut, visitor_out
 from heydesk.models import Conversation
@@ -87,7 +87,7 @@ class ConversationWithMessages(ConversationOut):
 
 
 @router.get("/api/conversations/live")
-async def live(services: Svc, workspace_id: Workspace) -> StreamingResponse:
+async def live(services: Svc, workspace_id: WorkspaceId) -> StreamingResponse:
     """A stream of `event: changed` frames, one per chat that changed in this business.
     The inbox keeps it open and fetches that chat; a `ping` every 20 seconds keeps a proxy from
     closing it. It needs the Bearer header, so the page reads it with `fetch`, not
@@ -102,9 +102,9 @@ async def live(services: Svc, workspace_id: Workspace) -> StreamingResponse:
 @router.get("/api/conversations")
 async def conversations(
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     page: Paged,
-    current_user: User,
+    current_user: LoggedInUser,
     status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
     assigned: Literal["me", "none"] | None = None,
@@ -140,7 +140,7 @@ class CountsOut(BaseModel):
 
 
 @router.get("/api/conversations/counts")
-async def counts(services: Svc, workspace_id: Workspace, current_user: User) -> CountsOut:
+async def counts(services: Svc, workspace_id: WorkspaceId, current_user: LoggedInUser) -> CountsOut:
     """The inbox's numbers: how many chats wait for a person, the caller's and no one's,
     and the orders and messages still new."""
     return CountsOut(**await services.inbox.counts(workspace_id, current_user.user_id))
@@ -150,7 +150,7 @@ async def counts(services: Svc, workspace_id: Workspace, current_user: User) -> 
 async def conversation(
     conversation_id: str,
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     before: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int | None, Query(ge=1, le=200)] = None,
 ) -> ConversationWithMessages:
@@ -189,7 +189,7 @@ class HandBackIn(BaseModel):
 
 @router.patch("/api/conversations/{conversation_id}")
 async def hand_back(
-    conversation_id: str, body: HandBackIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: HandBackIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """Marks a hand-off handled. 409 `invalid_transition` if nobody was waiting."""
     [handled] = await conversations_out(
@@ -206,7 +206,7 @@ class DoneIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/done")
 async def mark_done(
-    conversation_id: str, body: DoneIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: DoneIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """Done hides the chat until the visitor writes again; `false` shows it again."""
     [marked] = await conversations_out(
@@ -223,7 +223,7 @@ class SnoozeIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/snooze")
 async def snooze(
-    conversation_id: str, body: SnoozeIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: SnoozeIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """Hides the chat until `until`, when it comes back and the owner gets an alert.
     A 422 for a time not in the next 30 days."""
@@ -241,7 +241,7 @@ class LabelsIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/labels")
 async def set_labels(
-    conversation_id: str, body: LabelsIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: LabelsIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """The chat's labels, the whole list; `?label=` on the list filters by one."""
     conversation = await services.inbox.set_labels(workspace_id, conversation_id, body.labels)
@@ -263,7 +263,7 @@ class NoteOut(BaseModel):
 
 
 @router.get("/api/conversations/{conversation_id}/notes")
-async def notes(conversation_id: str, services: Svc, workspace_id: Workspace) -> list[NoteOut]:
+async def notes(conversation_id: str, services: Svc, workspace_id: WorkspaceId) -> list[NoteOut]:
     """The team's notes on the chat, oldest first. The visitor never sees them."""
     found = await services.inbox.notes(workspace_id, conversation_id)
     return [NoteOut.model_validate(n) for n in found]
@@ -271,7 +271,11 @@ async def notes(conversation_id: str, services: Svc, workspace_id: Workspace) ->
 
 @router.post("/api/conversations/{conversation_id}/notes", status_code=201)
 async def add_note(
-    conversation_id: str, body: NoteIn, services: Svc, workspace_id: Workspace, current_user: User
+    conversation_id: str,
+    body: NoteIn,
+    services: Svc,
+    workspace_id: WorkspaceId,
+    current_user: LoggedInUser,
 ) -> NoteOut:
     """A note for the team: added, never edited; not in the chat."""
     author = next(
@@ -292,7 +296,7 @@ class ReplyIn(BaseModel):
 
 @router.post("/api/conversations/{conversation_id}/reply")
 async def reply(
-    conversation_id: str, body: ReplyIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: ReplyIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """The team answers from the inbox: the words reach the visitor and the chat, and
     the chat is taken over. On Messenger and WhatsApp only within 24 hours of the
@@ -313,7 +317,7 @@ class AssistOut(BaseModel):
 
 @router.post("/api/conversations/{conversation_id}/assist")
 async def assist(
-    conversation_id: str, body: AssistIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: AssistIn, services: Svc, workspace_id: WorkspaceId
 ) -> AssistOut:
     """The model's help on a chat: `summary`, `ask` (with `question`), or `draft` (the
     next reply, for the team to check and send). No tools, nothing added or sent; traced and
@@ -329,7 +333,7 @@ class TakeOverIn(BaseModel):
 
 @router.put("/api/conversations/{conversation_id}/takeover")
 async def take_over(
-    conversation_id: str, body: TakeOverIn, services: Svc, workspace_id: Workspace
+    conversation_id: str, body: TakeOverIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
@@ -348,8 +352,8 @@ async def assign(
     conversation_id: str,
     body: AssigneeIn,
     services: Svc,
-    workspace_id: Workspace,
-    current_user: User,
+    workspace_id: WorkspaceId,
+    current_user: LoggedInUser,
 ) -> ConversationOut:
     """Who has the chat. The owner gives any chat to anyone on the team, or no one; a
     moderator takes an unassigned one for themself (their own id) and gives back their own

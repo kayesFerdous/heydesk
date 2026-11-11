@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import SESSION_COOKIE, ClientIp, Svc, User
+from heydesk.api.deps import SESSION_COOKIE, ClientIp, LoggedInUser, Svc
 from heydesk.errors import NotFound
 from heydesk.services.users import TOKEN_DAYS
 
@@ -151,7 +151,7 @@ async def reset_password(
 
 @router.put("/api/auth/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
-    body: PasswordIn, current_user: User, services: Svc, ip: ClientIp
+    body: PasswordIn, current_user: LoggedInUser, services: Svc, ip: ClientIp
 ) -> None:
     """Your own password: the current one, then the new one. A 403 if the current is wrong."""
     await services.rate_limits.login(ip, current_user.user_id)  # 429: guessing the current one
@@ -161,7 +161,7 @@ async def change_password(
 
 
 @router.get("/api/auth/me")
-async def me(current_user: User, services: Svc) -> MeOut:
+async def me(current_user: LoggedInUser, services: Svc) -> MeOut:
     user, business = await services.users.me(current_user)
     link, linked = (None, False)
     if user.workspace_id:
@@ -184,7 +184,7 @@ async def me(current_user: User, services: Svc) -> MeOut:
 
 
 @router.put("/api/auth/me/available", status_code=status.HTTP_204_NO_CONTENT)
-async def set_available(body: AvailableIn, current_user: User, services: Svc) -> None:
+async def set_available(body: AvailableIn, current_user: LoggedInUser, services: Svc) -> None:
     """Switches yourself on or off for new hand-offs."""
     if current_user.workspace_id is None:
         raise NotFound("Only a business's team takes hand-offs.")

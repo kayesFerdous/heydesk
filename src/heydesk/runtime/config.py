@@ -1,4 +1,7 @@
-"""What every business edits about its agent (design §5). `ShopConfig` adds the shop's fields."""
+"""What the owner edits about their agent (design §5), in two classes. `AgentConfig` here has the
+agent's general fields; `shop/config.py`'s `ShopConfig` subclasses it and adds the shop's own
+(delivery, calls, policies). The engine (`runtime/`) can't import the shop, so it knows the
+config only as an `AgentConfig`. The `agents.config` column holds a whole `ShopConfig`."""
 
 from typing import Annotated, Literal
 
@@ -37,8 +40,8 @@ class Widget(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """The fields every kind of business has. A desk's config subclasses this: the shop adds
-    `delivery` and `policies`, and sets its own `greeting`."""
+    """The agent's general fields: its name, the business's hours, what it says, and how it
+    hands off. `ShopConfig` adds the shop's fields and sets its own `greeting`."""
 
     model_config = ConfigDict(extra="forbid")  # an unknown field is a 422
 

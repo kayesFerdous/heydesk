@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Paged, StatusIn, Svc, Workspace
+from heydesk.api.deps import Paged, StatusIn, Svc, WorkspaceId
 from heydesk.models import Lead, TeamMessage, Ticket
 
 router = APIRouter(tags=["records"])
@@ -30,7 +30,7 @@ class MessageOut(BaseModel):
 @router.get("/api/messages")
 async def messages(
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     page: Paged,
     status: str | None = None,
     q: str | None = None,
@@ -43,14 +43,14 @@ async def messages(
 
 
 @router.get("/api/messages/{message_id}")
-async def message(message_id: str, services: Svc, workspace_id: Workspace) -> MessageOut:
+async def message(message_id: str, services: Svc, workspace_id: WorkspaceId) -> MessageOut:
     store = await services.agents.store(workspace_id)
     return MessageOut.model_validate(await store.get(TeamMessage, message_id))
 
 
 @router.patch("/api/messages/{message_id}")
 async def set_status(
-    message_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
+    message_id: str, body: StatusIn, services: Svc, workspace_id: WorkspaceId
 ) -> MessageOut:
     store = await services.agents.store(workspace_id)
     return MessageOut.model_validate(await store.set_status(TeamMessage, message_id, body.status))
@@ -72,7 +72,7 @@ class TicketOut(BaseModel):
 @router.get("/api/tickets")
 async def tickets(
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     page: Paged,
     status: Literal["open", "solved"] | None = None,
 ) -> list[TicketOut]:
@@ -101,7 +101,7 @@ async def tickets(
 
 @router.patch("/api/tickets/{ticket_id}")
 async def set_ticket_status(
-    ticket_id: str, body: StatusIn, services: Svc, workspace_id: Workspace
+    ticket_id: str, body: StatusIn, services: Svc, workspace_id: WorkspaceId
 ) -> TicketOut:
     """`solved`, or `open` again. It stays open until someone marks it solved."""
     store = await services.agents.store(workspace_id)
@@ -136,7 +136,7 @@ class WhyOut(BaseModel):
 @router.get("/api/leads")
 async def leads(
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     page: Paged,
     status: Literal["open", "sold", "not_now", "lost"] | None = None,
 ) -> list[LeadOut]:
@@ -147,7 +147,7 @@ async def leads(
 
 
 @router.get("/api/leads/why")
-async def lost_reasons(services: Svc, workspace_id: Workspace) -> list[WhyOut]:
+async def lost_reasons(services: Svc, workspace_id: WorkspaceId) -> list[WhyOut]:
     """Why we lose sales: the lost leads' whys, counted, most first."""
     store = await services.agents.store(workspace_id)
     return [WhyOut(why=why, count=n) for why, n in await store.lost_reasons()]
@@ -155,7 +155,7 @@ async def lost_reasons(services: Svc, workspace_id: Workspace) -> list[WhyOut]:
 
 @router.patch("/api/leads/{lead_id}")
 async def lead_outcome(
-    lead_id: str, body: LeadIn, services: Svc, workspace_id: Workspace
+    lead_id: str, body: LeadIn, services: Svc, workspace_id: WorkspaceId
 ) -> LeadOut:
     """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
     store = await services.agents.store(workspace_id)

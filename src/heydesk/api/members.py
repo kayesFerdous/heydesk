@@ -8,8 +8,8 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel
 
 from heydesk.api.auth import EMAIL
-from heydesk.api.deps import ClientIp, Paged, Svc, User, Workspace
-from heydesk.models import User as UserRow
+from heydesk.api.deps import ClientIp, LoggedInUser, Paged, Svc, WorkspaceId
+from heydesk.models import User
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 
@@ -53,7 +53,7 @@ class EventOut(BaseModel):
     at: datetime
 
 
-def member(user: UserRow, open_chats: int = 0) -> MemberOut:
+def member(user: User, open_chats: int = 0) -> MemberOut:
     return MemberOut(
         id=user.id,
         email=user.email,
@@ -68,7 +68,7 @@ def member(user: UserRow, open_chats: int = 0) -> MemberOut:
 
 
 @router.get("/members")
-async def members(workspace_id: Workspace, services: Svc) -> list[MemberOut]:
+async def members(workspace_id: WorkspaceId, services: Svc) -> list[MemberOut]:
     """The team, each with their open chats."""
     open_chats = await services.inbox.open_chats(workspace_id)
     return [
@@ -78,7 +78,11 @@ async def members(workspace_id: Workspace, services: Svc) -> list[MemberOut]:
 
 @router.post("/members", status_code=status.HTTP_201_CREATED)
 async def invite(
-    body: InviteIn, workspace_id: Workspace, current_user: User, services: Svc, ip: ClientIp
+    body: InviteIn,
+    workspace_id: WorkspaceId,
+    current_user: LoggedInUser,
+    services: Svc,
+    ip: ClientIp,
 ) -> MemberOut:
     """A moderator, by email: they get a code and join by setting a password with it
     (`POST /api/auth/reset`). A 409 if the email already has an account, or the team is full."""
@@ -88,7 +92,7 @@ async def invite(
 
 @router.post("/members/{user_id}/invite", status_code=status.HTTP_204_NO_CONTENT)
 async def resend_invite(
-    user_id: str, workspace_id: Workspace, current_user: User, services: Svc, ip: ClientIp
+    user_id: str, workspace_id: WorkspaceId, current_user: LoggedInUser, services: Svc, ip: ClientIp
 ) -> None:
     """The invite again, with a new code. A 409 once they've joined."""
     await services.rate_limits.send_code(ip, user_id)
@@ -96,14 +100,14 @@ async def resend_invite(
 
 
 @router.delete("/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove(user_id: str, workspace_id: Workspace, services: Svc) -> None:
+async def remove(user_id: str, workspace_id: WorkspaceId, services: Svc) -> None:
     """Out at once: their login stops working on the next request. An owner can't be removed."""
     await services.members.remove(workspace_id, user_id)
 
 
 @router.put("/members/{user_id}/available", status_code=status.HTTP_204_NO_CONTENT)
 async def set_available(
-    user_id: str, body: AvailableIn, workspace_id: Workspace, services: Svc
+    user_id: str, body: AvailableIn, workspace_id: WorkspaceId, services: Svc
 ) -> None:
     """The owner switches anyone on or off for new hand-offs; a moderator switches
     themself at `/api/auth/me/available`."""
@@ -112,7 +116,7 @@ async def set_available(
 
 @router.get("/stats")
 async def stats(
-    workspace_id: Workspace, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
+    workspace_id: WorkspaceId, services: Svc, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> list[MemberStatsOut]:
     """Each member's work in the last `days`, the owners first."""
     since = services.members.now() - timedelta(days=days)
@@ -128,7 +132,7 @@ async def stats(
 
 
 @router.get("/activity")
-async def activity(workspace_id: Workspace, services: Svc, paged: Paged) -> list[EventOut]:
+async def activity(workspace_id: WorkspaceId, services: Svc, paged: Paged) -> list[EventOut]:
     """What the owners and moderators changed, newest first (`limit`, `before`)."""
     events = await services.members.activity(workspace_id, limit=paged.limit, before=paged.before)
     return [

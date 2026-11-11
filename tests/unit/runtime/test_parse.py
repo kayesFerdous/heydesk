@@ -10,12 +10,12 @@ from tests.conftest import FIXED_NOW
 DHAKA = ZoneInfo("Asia/Dhaka")
 NOW = FIXED_NOW.astimezone(DHAKA)  # Tuesday 14:00
 NO_HOURS = WeeklyHours()
-CLINIC_HOURS = WeeklyHours.model_validate(  # open 9 am to 10 pm every day except Sunday
+SHOP_HOURS = WeeklyHours.model_validate(  # open 9 am to 10 pm every day except Sunday
     {day: ["09:00", "22:00"] for day in ("mon", "tue", "wed", "thu", "fri", "sat")}
 )
 
 
-def day_and_time(said: str, hours: WeeklyHours = CLINIC_HOURS) -> str:
+def day_and_time(said: str, hours: WeeklyHours = SHOP_HOURS) -> str:
     return f"{parse.day_and_time(said, NOW, hours):%Y-%m-%dT%H:%M}"
 
 
@@ -49,7 +49,10 @@ def test_details_that_dont_fit_are_refused(parser: object, said: str) -> None:
         ("5 Oct 6:30 pm", "2026-10-05T18:30"),
         ("October 6th, 4 pm", "2026-10-06T16:00"),
         ("2026-10-02 3 pm", "2026-10-02T15:00"),
-        ("Saturday 3 Oct at 5 pm", "2026-10-03T17:00"),  # how find_doctor writes the day
+        (
+            "Saturday 3 Oct at 5 pm",
+            "2026-10-03T17:00",
+        ),  # the day, date and time written out in full
         ("Sat 3 Oct 5 pm", "2026-10-03T17:00"),
     ],
 )
@@ -60,7 +63,7 @@ def test_a_day_and_time_is_worked_out_by_python(said: str, saved: str) -> None:
 @pytest.mark.parametrize(
     ("said", "hint"),
     [
-        ("tomorrow at 11 pm", "Wednesdays we're open 09:00–22:00"),  # the clinic shuts at 10
+        ("tomorrow at 11 pm", "Wednesdays we're open 09:00–22:00"),  # the shop shuts at 10
         ("tomorrow at 8 am", "outside our hours"),
         ("tomorrow at 10 pm", "outside our hours"),  # close is not inclusive
         ("sunday at 5 pm", "closed on Sundays"),

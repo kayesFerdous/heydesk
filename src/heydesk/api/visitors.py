@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, User, Workspace
+from heydesk.api.deps import LoggedInUser, Svc, WorkspaceId
 from heydesk.models import Visitor
 from heydesk.services.visitors import is_blocked
 
@@ -48,7 +48,11 @@ class VisitorIn(BaseModel):
 
 @router.patch("/api/visitors/{visitor_id}")
 async def change_visitor(
-    visitor_id: str, body: VisitorIn, services: Svc, workspace_id: Workspace, current_user: User
+    visitor_id: str,
+    body: VisitorIn,
+    services: Svc,
+    workspace_id: WorkspaceId,
+    current_user: LoggedInUser,
 ) -> VisitorOut:
     """Block or unblock a visitor, or turn the AI off or on for them; the owner or a
     moderator. Their messages run no turn and cost nothing either way."""
@@ -61,7 +65,7 @@ async def change_visitor(
 
 
 @router.get("/api/visitors/blocked")
-async def blocked(services: Svc, workspace_id: Workspace) -> list[BlockedOut]:
+async def blocked(services: Svc, workspace_id: WorkspaceId) -> list[BlockedOut]:
     """Who is blocked now, by the team, for flooding or for chatting off topic, with their
     latest chat; the newest block first."""
     now = services.visitors.now()

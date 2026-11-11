@@ -7,7 +7,7 @@ from heydesk.runtime.prompt import (
 )
 from tests.conftest import FIXED_NOW
 
-DESK = "# Your role\nYou are the host for {business_name}. Use {braces} as you like."
+SHOP_SECTION = "# Your role\nYou are the host for {business_name}. Use {braces} as you like."
 
 
 def agent(**kw: object) -> AgentConfig:
@@ -22,14 +22,14 @@ def agent(**kw: object) -> AgentConfig:
 
 
 def prompt(documents: list[str] | None = None, **kw: object) -> str:
-    return build_system_prompt(agent(**kw), DESK, "web", FIXED_NOW, documents or [])
+    return build_system_prompt(agent(**kw), SHOP_SECTION, "web", FIXED_NOW, documents or [])
 
 
 def test_platform_rules_first_and_right_now_last() -> None:
     text = prompt()
 
     assert text.startswith(PLATFORM_RULES)
-    assert "Codes in [brackets] (a product's, a dish's, a doctor's) are for tools only" in text
+    assert "Codes in [brackets] (a product's) are for tools only" in text
     text = prompt(notes="Be formal.", documents=["Menu guide"])
     headings = ("# Your role", "# Notes", "# FAQ\nParking", "# Documents", "# Right now")
     positions = [text.index(h) for h in headings]
@@ -85,13 +85,13 @@ def test_documents_are_named_with_when_to_search_them() -> None:
 
 
 def test_on_voice_a_misheard_name_is_matched_to_a_listed_one_and_checked() -> None:
-    text = build_system_prompt(agent(), DESK, "voice", FIXED_NOW, [])
+    text = build_system_prompt(agent(), SHOP_SECTION, "voice", FIXED_NOW, [])
     assert "can be misheard" in text and "take the closest listed one and check it" in text
 
 
 def test_a_call_in_bangla_is_told_to_write_everything_in_bangla_letters() -> None:
     def right_now(channel: str, language: str) -> str:
-        text = build_system_prompt(agent(), DESK, channel, FIXED_NOW, [], language)
+        text = build_system_prompt(agent(), SHOP_SECTION, channel, FIXED_NOW, [], language)
         return text.split("# Right now\n")[1]
 
     assert BANGLA_VOICE in right_now("voice", "bn")

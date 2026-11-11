@@ -50,6 +50,20 @@ flowchart LR
 The details are in [docs/design.md](docs/design.md), and the reason for each choice in
 [docs/decisions.md](docs/decisions.md).
 
+## Words you'll see
+
+| Word | What it is in the code |
+|---|---|
+| Business, workspace, shop | One thing. A row in `workspaces`; the code and tables say `workspace_id`, the API and screens say *business*, and its code is in `shop/` (HeyDesk serves only online shops) |
+| Agent | The business's AI front desk: one per workspace, a row in `agents` |
+| `ShopConfig` | What the owner edits about the agent, saved in `agents.config`. It subclasses `AgentConfig` (`runtime/config.py`), the general fields: the engine in `runtime/` knows only those, since it can't import the shop |
+| `Settings` | The server's own `.env` (`config.py`), never the owner's |
+| Store | `ShopStore`: one business's data, the only way the tools reach the database |
+| Visitor | Someone talking to an agent, on any channel |
+| Team | The business's owner and its moderators; an admin runs the whole platform |
+
+The full list, with records, notes and the rest, is design.md §2.
+
 ## Project structure
 
 ```
