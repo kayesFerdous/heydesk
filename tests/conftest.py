@@ -73,6 +73,7 @@ def make_test_settings() -> Settings:
         EMBEDDER="fake",
         EMBEDDING_DIMENSIONS=64,
         QDRANT_LOCAL_PATH=":memory:",
+        REDIS_URL="",  # the rate limits and the live inbox in memory
         PUBLIC_URL="https://heydesk.test",
         META_APP_SECRET="app-secret",
         META_APP_ID="4242",

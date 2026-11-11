@@ -45,6 +45,24 @@ jobs:
       - run: uv run alembic upgrade head
       - run: uv run alembic check
 
+  redis:  # the rate limits and the live inbox on a real Redis, as in production
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -m redis
+
   audit:  # known vulnerabilities in the dependencies the server runs
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +96,7 @@ jobs:
           exit 1
 
   deploy:  # a merge to main goes live on Render, only after every job above passed
-    needs: [check, postgres, audit, image]
+    needs: [check, postgres, redis, audit, image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production  # GitHub > Settings > Environments can make it wait for an approval

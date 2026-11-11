@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from qdrant_client import AsyncQdrantClient
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.adapters.courier.fake import FakeCourier
@@ -110,6 +111,14 @@ def build_qdrant(settings: Settings) -> AsyncQdrantClient:
     return AsyncQdrantClient(path=settings.QDRANT_LOCAL_PATH)
 
 
+def build_redis(settings: Settings) -> Redis | None:
+    """One Redis client for the rate limits and the live inbox, when `REDIS_URL` is set. A Redis
+    that doesn't answer in 2 seconds counts as down (the live inbox's wait for news is exempt)."""
+    if not settings.REDIS_URL:
+        return None
+    return Redis.from_url(settings.REDIS_URL, socket_timeout=2, socket_connect_timeout=2)
+
+
 def build_knowledge_store(settings: Settings, client: AsyncQdrantClient) -> KnowledgeStore:
     # The floor was measured on Gemini's scores; the fake embedder's mean something else
     floor = settings.KNOWLEDGE_MIN_SIMILARITY if settings.EMBEDDER == "gemini" else 0.0
@@ -191,8 +200,9 @@ def build_services(
     woo: WooApi | None = None,
     fetch_photo: FetchImage | None = None,
     couriers: dict[str, CourierApi] | None = None,
+    redis: Redis | None = None,
 ) -> Services:
-    live = LiveHub()
+    live = LiveHub(redis)
     watch(sessions, live)
     gateways = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
@@ -202,8 +212,8 @@ def build_services(
     messenger = messenger or MessengerGraph()
     whatsapp = whatsapp or WhatsAppCloud()
     team = TeamService(sessions, llm, telegram, messenger, whatsapp, now)
-    visitors = VisitorService(sessions, settings, now)
-    rate_limits = RateLimiter()
+    rate_limits = RateLimiter(redis)
+    visitors = VisitorService(sessions, settings, now, rate_limits)
     public = settings.PUBLIC_URL.rstrip("/")
     woo_service = WooService(
         sessions,

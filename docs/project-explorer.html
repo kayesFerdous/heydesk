@@ -672,10 +672,20 @@ tr.hl td { background: var(--accent-soft); }
    "label": "RateLimiter",
    "type": "service",
    "file": "src/heydesk/services/rate_limits.py",
-   "purpose": "Burst limits in memory: chat 6/min per visitor & 60/min per IP, login, signup, email codes.",
+   "purpose": "Burst limits in Redis (memory without REDIS_URL): chat 6/min per visitor & 60/min per IP, login, signup, email codes, and the messaging apps' flood count. Redis down: the request goes through.",
    "inputs": "ip, visitor, email",
    "outputs": "TooFast (429)",
    "fn": "chat"
+  },
+  {
+   "id": "s-live",
+   "label": "LiveHub",
+   "type": "service",
+   "file": "src/heydesk/services/live.py",
+   "purpose": "Tells open inbox pages a chat changed. With Redis, every change goes out on the heydesk:live channel and each process's `run` hands it to its own pages.",
+   "inputs": "workspace id, conversation id (after a commit)",
+   "outputs": "changed {conversation_id} on the inbox stream",
+   "fn": "publish"
   },
   {
    "id": "s-knowledge",
@@ -1559,7 +1569,16 @@ tr.hl td { background: var(--accent-soft); }
    "label": "Process memory",
    "type": "store",
    "file": "(in-process)",
-   "purpose": "Rate-limit counters, /phone ring queues, WebRTC connections, Woo tasks & lock. Lost on restart; one process only.",
+   "purpose": "/phone ring queues, WebRTC connections, a chat's waiting messages, Woo tasks & lock; the rate limits and inbox news only without REDIS_URL. Lost on restart; one process only.",
+   "inputs": "",
+   "outputs": ""
+  },
+  {
+   "id": "st-redis",
+   "label": "Redis",
+   "type": "store",
+   "file": "REDIS_URL · compose.yaml · render.yaml (Key Value)",
+   "purpose": "Shared by every server process: rate-limit counts, and the live inbox's pub/sub channel. Optional; nothing in it needs to outlast a few minutes.",
    "inputs": "",
    "outputs": ""
   }
@@ -2067,8 +2086,23 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "s-ratelimits",
-   "target": "st-memory",
+   "target": "st-redis",
    "label": "counters"
+  },
+  {
+   "source": "s-ratelimits",
+   "target": "st-memory",
+   "label": "counters (no REDIS_URL)"
+  },
+  {
+   "source": "s-visitors",
+   "target": "s-ratelimits",
+   "label": "flood count"
+  },
+  {
+   "source": "s-live",
+   "target": "st-redis",
+   "label": "PUBLISH / SUBSCRIBE heydesk:live"
   },
   {
    "source": "s-knowledge",
@@ -7256,8 +7290,8 @@ tr.hl td { background: var(--accent-soft); }
    "file": "src/heydesk/services/live.py",
    "where": "`LiveHub.pages` (workspace → one queue per open inbox stream), filled by `GET /api/conversations/live`",
    "written": "`watch`: `after_flush` collects the changed conversations, `after_commit` publishes them",
-   "sync": "One server process only (D158). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page groups the frames that come together, then fetches the counts and the list once (D167), and the list again after a reconnect.",
-   "failure": "A restart or a dropped connection ends the stream; the page reconnects and fetches the list. A page 100 events behind loses the oldest."
+   "sync": "Each process keeps its own pages; with Redis a change goes out on `heydesk:live` and every process's `LiveHub.run` hands it to its pages, so any process's change reaches any page (D158, D182). A `changed {conversation_id}` frame per chat, a `ping` every 20 seconds; the page groups the frames that come together, then fetches the counts and the list once (D167), and the list again after a reconnect.",
+   "failure": "A restart or a dropped connection ends the stream; the page reconnects and fetches the list. A page 100 events behind loses the oldest. Redis down: changes are missed until `run` listens again (5 seconds)."
   },
   {
    "what": "A chat's waiting messages, and WhatsApp's recent ones",
@@ -7340,11 +7374,10 @@ tr.hl td { background: var(--accent-soft); }
   {
    "what": "Burst rate limits",
    "file": "src/heydesk/services/rate_limits.py",
-   "where": "process memory",
-   "written": "RateLimiter",
-   "sync": "Not shared between processes.",
-   "failure": "Lost on restart.",
-   "unverified": "One process assumed: nothing in the code shares counters between workers."
+   "where": "Redis when `REDIS_URL` is set; otherwise process memory",
+   "written": "RateLimiter (and the flood count, through `RateLimiter.hit`)",
+   "sync": "In Redis every process adds to one count, and a restart keeps it (D182). In memory: each process its own.",
+   "failure": "Redis down or slower than 2 seconds: the request is let through and a warning logged."
   },
   {
    "what": "Documents & chunks",
@@ -9169,8 +9202,8 @@ tr.hl td { background: var(--accent-soft); }
   "gates": [
     {"group": "In the route, before any business is known"},
     {"name": "The body has the right shape", "who": "web", "fn": "ChatIn", "file": "src/heydesk/api/chat.py", "rule": "`visitor_id` is 8 to 64 characters; a photo is at most about 2 MB", "kept": "nothing", "kind": "stop", "fail": "422, from FastAPI"},
-    {"name": "Not too fast", "who": "web", "fn": "rate_limits.chat", "file": "src/heydesk/services/rate_limits.py", "rule": "**6 messages a minute** per visitor, **60 a minute** per IP", "kept": "server memory (lost on restart)", "kind": "stop", "fail": "429 `TooFast`"},
-    {"name": "No flood", "who": "apps", "fn": "visitors.count_message", "file": "src/heydesk/services/visitors.py", "rule": "**20 messages a minute** (`FLOOD_MESSAGES`), counted before bubbles are joined", "kept": "memory, then `visitors`", "kind": "stop", "fail": "Blocked for 24 hours, and told once"},
+    {"name": "Not too fast", "who": "web", "fn": "rate_limits.chat", "file": "src/heydesk/services/rate_limits.py", "rule": "**6 messages a minute** per visitor, **60 a minute** per IP", "kept": "Redis (memory without REDIS_URL)", "kind": "stop", "fail": "429 `TooFast`"},
+    {"name": "No flood", "who": "apps", "fn": "visitors.count_message", "file": "src/heydesk/services/visitors.py", "rule": "**20 messages a minute** (`FLOOD_MESSAGES`), counted before bubbles are joined", "kept": "Redis (memory without REDIS_URL), then `visitors`", "kind": "stop", "fail": "Blocked for 24 hours, and told once"},
     {"group": "Which business?"},
     {"name": "The agent exists, and its business is active", "who": "all", "fn": "agents._live", "file": "src/heydesk/services/agents.py", "rule": "`agents.public_key` matches; `workspaces.status == \"active\"`", "kept": "`agents`, `workspaces`", "kind": "stop", "fail": "404 `NotFound` or `Unavailable`"},
     {"group": "Inside start_turn"},
@@ -9202,7 +9235,7 @@ tr.hl td { background: var(--accent-soft); }
   ],
   "trace": [
     {"d": 0, "k": "route", "fn": "POST /api/chat/{public_key}", "file": "src/heydesk/api/chat.py", "does": "The chat page sends the message", "note": "FastAPI checks the body against `ChatIn`, and gets `services` from `app.state` and the visitor's IP."},
-    {"d": 1, "k": "check", "fn": "rate_limits.chat(visitor_id, ip)", "file": "src/heydesk/services/rate_limits.py", "does": "6 a minute per visitor, 60 per IP", "note": "Counted in memory, not the database. Too many: a 429, before anything else happens.", "code": "await self._check(CHAT_PER_VISITOR, \"chat-visitor\", visitor)\nawait self._check(self.chat_per_ip, \"chat-ip\", ip)"},
+    {"d": 1, "k": "check", "fn": "rate_limits.chat(visitor_id, ip)", "file": "src/heydesk/services/rate_limits.py", "does": "6 a minute per visitor, 60 per IP", "note": "Counted in Redis (memory without REDIS_URL), not the database. Too many: a 429, before anything else happens.", "code": "await self._check(CHAT_PER_VISITOR, \"chat-visitor\", visitor)\nawait self._check(self.chat_per_ip, \"chat-ip\", ip)"},
     {"d": 1, "k": "read", "fn": "agents.by_key(public_key) → _live", "file": "src/heydesk/services/agents.py", "does": "Loads the business and its config", "db": "SELECT agents, workspaces, documents", "note": "Reads the agent row, its workspace (404 unless active), and the document titles. The config is validated on every message, so an edit is live on the next one.", "code": "agent = await s.scalar(select(Agent).where(where))\nbusiness = await s.get(Workspace, agent.workspace_id)\nreturn LiveAgent(..., desk, ShopConfig.model_validate(agent.config), await self.knowledge.titles(agent.id))"},
     {"d": 1, "k": "route", "fn": "conversations.start_turn(...)", "file": "src/heydesk/services/conversations.py", "does": "Prepares the turn (doesn't run it)", "note": "Everything from here to `TurnInput` is preparation. No model call yet."},
     {"d": 2, "k": "check", "fn": "text and photo checks", "file": "src/heydesk/services/conversations.py", "does": "1 to 2,000 characters; photos allowed?"},
@@ -9349,7 +9382,7 @@ tr.hl td { background: var(--accent-soft); }
     {"what": "`_save_order`, `Store.add`", "lock": "The business's row", "why": "Numbers (O-101), stock and a coupon's last use must be taken one at a time."}
   ],
   "elsewhere": [
-    {"what": "Rate-limit and flood counters", "where": "Server memory: lost on restart, and not shared between servers"},
+    {"what": "Rate-limit and flood counters", "where": "Redis, shared by every server process; in memory when REDIS_URL is empty"},
     {"what": "The system prompt", "where": "Nowhere: rebuilt for every turn"},
     {"what": "The tools", "where": "Python code"},
     {"what": "Document chunks, and photo vectors", "where": "Qdrant"},

@@ -2,7 +2,9 @@
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 
+from heydesk.services.rate_limits import RateLimiter
 from tests.conftest import DEV_KEY
 
 CHAT = f"/api/chat/{DEV_KEY}"
@@ -53,3 +55,11 @@ async def test_signing_up_again_and_again_is_limited(app: FastAPI) -> None:
 
     body = {"email": "shop9@example.com", "password": "a long password", "workspace_name": "S"}
     assert (await anon.post("/api/auth/signup", json=body)).status_code == 429
+
+
+async def test_a_redis_that_is_down_lets_requests_through() -> None:
+    down = Redis.from_url("redis://127.0.0.1:1", socket_connect_timeout=1)  # nothing listens
+    limiter = RateLimiter(down)
+    for _ in range(10):  # past every limit, and no error: the chat keeps working
+        await limiter.chat("browser-token-1", "203.0.113.9")
+    await down.aclose()

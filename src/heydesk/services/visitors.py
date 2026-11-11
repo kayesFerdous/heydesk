@@ -15,9 +15,6 @@ from contextlib import suppress
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from limits import parse
-from limits.aio.storage import MemoryStorage
-from limits.aio.strategies import SlidingWindowCounterRateLimiter
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,6 +24,7 @@ from heydesk.errors import NotFound, VisitorLimited, VisitorSilenced
 from heydesk.models import Visitor
 from heydesk.services.agents import LiveAgent
 from heydesk.services.billing import plan_problem
+from heydesk.services.rate_limits import RateLimiter
 from heydesk.shop.tools.inbox import OFF_TOPIC
 
 log = logging.getLogger(__name__)
@@ -38,11 +36,12 @@ class VisitorService:
         sessions: async_sessionmaker[AsyncSession],
         settings: Settings,
         now: Callable[[], datetime],
+        rate_limits: RateLimiter,
     ) -> None:
         self.sessions = sessions
         self.settings = settings
         self.now = now
-        self.flood = SlidingWindowCounterRateLimiter(MemoryStorage())  # in memory
+        self.rate_limits = rate_limits  # counts the floods, in Redis when there is one
 
     async def check_not_blocked(self, agent: LiveAgent, key: str) -> bool:
         """Raises when they're blocked: `VisitorLimited` the first time, with how to reach
@@ -64,8 +63,8 @@ class VisitorService:
     async def count_message(self, workspace_id: str, key: str) -> None:
         """One message from a messaging app. `FLOOD_MESSAGES` in a minute block them for
         `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit."""
-        limit = parse(f"{self.settings.FLOOD_MESSAGES}/minute")
-        if await self.flood.hit(limit, "flood", workspace_id, key):
+        limit = f"{self.settings.FLOOD_MESSAGES}/minute"
+        if await self.rate_limits.hit(limit, "flood", workspace_id, key):
             return
         await self._first_seen(
             workspace_id, key, self.now().date()
