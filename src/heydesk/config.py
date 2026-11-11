@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Required in production. Set it once: with another key the saved ones can't be read
     SECRETS_KEY: str = ""
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]  # Vite dev server
+    # Redis, which every server process shares: the rate limits and the live inbox. Empty: both
+    # are kept in this process's memory, which is enough for one process, development and tests
+    REDIS_URL: str = ""
 
     LLM_PROVIDER: Literal["gigalogy", "groq", "fake"] = "gigalogy"
     GROQ_API_KEY: str = ""

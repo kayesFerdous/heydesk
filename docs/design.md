@@ -73,7 +73,8 @@ src/heydesk/
 │   └── models.py · api.py · page.py · districts.py
 ├── models/              the shared tables; `customer_request.py` is what orders and messages share
 ├── services/            agents, conversations (a visitor's turn), inbox (the team's side of a chat), users,
-│                        admin, visitors (the limits, D51), rate_limits (D52), knowledge, photos (D57),
+│                        admin, visitors (the limits, D51), rate_limits (D52),
+│                        live (the inbox's news, D158; both in Redis when there is one, D182), knowledge, photos (D57),
 │                        sheets (D58), woo (D75), channels and channel_links (answering and connecting
 │                        Telegram, Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43),
 │                        payments (D47), background (`run_every`: the jobs the app runs on its own)
@@ -714,7 +715,7 @@ any message ─► visitors.let_in (first, before the photo, the conversation or
                            is answered
 a messaging app's message ─► visitors.arrived: FLOOD_MESSAGES (20) in a minute ─► blocked
                              `flooding` for BLOCK_HOURS (counted per message, before D117's
-                             batching; in memory, like D52)
+                             batching; counted with the rate limits, D52)
 ```
 
 - **A block keeps nothing.** A blocked visitor's messages aren't saved or shown: they're spam,
@@ -740,11 +741,39 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 | `POST /api/auth/forgot`, `/verify/resend` | email, and IP: a full inbox, our 300 free emails a day | 3 an hour, 10 an hour |
 | `POST /api/auth/verify`, `/reset` | email: guessing the 6 digits | 5 in 15 minutes |
 
-The counts are in this server's memory: a restart clears them, and a second server process would
-keep its own. The IP is the real visitor's when a trusted proxy sends `X-Forwarded-For`.
+The counts are in Redis when `REDIS_URL` is set (D182): every server process adds to the same
+count and a restart keeps it. Without Redis they are in this process's memory. The IP is the real visitor's when a trusted proxy sends `X-Forwarded-For`.
 uvicorn trusts `127.0.0.1` by default; on Render, `FORWARDED_ALLOW_IPS` in `render.yaml` trusts
 the private network the proxy comes from (D181). Not `*`: Render adds to whatever header the
 client sent, and `*` takes the first address, which the client can fake.
+
+### Redis: what every server process shares (D182)
+
+Redis holds what changes many times a minute and matters only for minutes. Postgres keeps what
+the team sees and must never lose.
+
+| Kept in | What | Why there |
+|---|---|---|
+| Redis | the rate limits and the flood count (D52) | many writes a second, gone after a minute; every process adds to one count, and a deploy doesn't reset it |
+| Redis | the live inbox's news (D158), by pub/sub on `heydesk:live` | a change one process made reaches the pages open on any process |
+| Postgres | blocks, strikes and the day's turns (D51, D127) | the team sees and edits them, and they must outlast anything |
+
+```
+a commit touches a conversation ─► LiveHub.publish ─► PUBLISH heydesk:live "<workspace> <conversation>"
+every process: LiveHub.run (SUBSCRIBE) ─► deliver ─► its own open pages of that workspace
+```
+
+- **Optional.** With `REDIS_URL` empty (development, tests) the same classes keep both in memory.
+  `wiring.build_redis` makes one client at start; the rate limits use its connections.
+- **Redis down never stops a visitor.** A rate limit that can't count lets the request through and
+  logs a warning; an inbox change that can't be sent shows on the page's next refresh; `run` listens
+  again after `RETRY_SECONDS`. A 2-second timeout makes a hung Redis count as down.
+- **Still each process's own**, so production stays one instance: the `/phone` pages (calls), a
+  chat's messages waiting to be answered and WhatsApp's recent messages (channels), Woo's push
+  lock, and the background jobs, which would run once in every process.
+- Locally `compose.yaml` runs a `redis` container; production has a Render Key Value
+  (Redis-compatible; the free plan keeps nothing on disk, and nothing here needs it). CI's `redis`
+  job runs `pytest -m redis` against a real Redis; a plain `pytest` stays offline.
 
 ### Importing a list: their columns, our fields (D50, D53, D115)
 
@@ -1892,11 +1921,12 @@ the call ends ─► done; its outcome from the order: confirmed, cancelled, or 
 | `deploy` | only on a push to `main` (a merged PR), after all four: Render's deploy hook with this commit, then `/health` until it names this commit |
 
 Production is Render (`render.yaml`, a Blueprint): one web service from the `Dockerfile` and a
-Render Postgres in Singapore. Render's own auto-deploy is off, so nothing goes live that CI didn't
+Render Postgres and a Render Key Value (Redis, D182) in Singapore. Render's own auto-deploy is off, so nothing goes live that CI didn't
 pass. The image runs `alembic upgrade head` on start. `DATABASE_URL` takes Render's
 `postgresql://…` as given; `Settings` names the asyncpg driver. Nothing lives on the server's
-disk, which a deploy wipes: Qdrant is Qdrant Cloud, photos are in R2. One instance only, because
-the call queue is in its memory. Voice goes through the
+disk, which a deploy wipes: Qdrant is Qdrant Cloud, photos are in R2. One instance only: Redis
+shares the rate limits and the live inbox, but the call queue's pages, the chats' waits and the
+background jobs are still in each process's memory (D182). Voice goes through the
 Cloudflare TURN relay, since Render takes no UDP. The frontend deploys from its own repo.
 
 ## 12. Left out on purpose
@@ -1922,7 +1952,7 @@ version handles them.
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
 | Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
-| Billing, phone numbers, hosting | No plans or billing; voice in the browser only: the shop's confirmation calls, and no Call button (D108, D164, D168); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres (D161), no staging, and a rollback is Render's *Rollback* button |
+| Billing, phone numbers, hosting | No plans or billing; voice in the browser only: the shop's confirmation calls, and no Call button (D108, D164, D168); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres and Redis (D161, D182), no staging, and a rollback is Render's *Rollback* button |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
 | Cards kept on the message, a card on a reloaded chat or in the owner's view | A card is shown once, when its tool runs; the words say the same (D110) |
 | Owner takeover: a chat the owner never gives back with `/done` | It stays with the team until it's quiet for `TAKEOVER_QUIET_MINUTES` (D135); after `CONVERSATION_IDLE_HOURS` the agent starts afresh in the same chat (D157) |

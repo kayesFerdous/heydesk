@@ -1,4 +1,4 @@
-# The backend and Qdrant on one machine: docker compose up --build, then http://localhost:8000
+# The backend, Qdrant and Redis on one machine: docker compose up --build, then http://localhost:8000
 # Settings come from .env when there is one; without it, the fake providers run offline.
 
 services:
@@ -13,19 +13,24 @@ services:
       DECIDER: ${DECIDER:-fake}
       EMBEDDER: ${EMBEDDER:-fake}
       QDRANT_URL: http://qdrant:6333  # the container below, not a cloud cluster
+      REDIS_URL: redis://redis:6379  # the rate limits and the live inbox
       # The container's own paths, even when .env has local ones
       DATABASE_URL: sqlite+aiosqlite:////data/heydesk.db
       MEDIA_DIR: /data/media
       LOG_JSON: "true"
     volumes:
       - heydesk-data:/data  # the SQLite database and the photos
-    depends_on: [qdrant]
+    depends_on: [qdrant, redis]
     restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:v1.19.1  # the same minor version as qdrant-client
     volumes:
       - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  redis:  # counts and messages that last minutes: nothing to keep on disk
+    image: redis:7-alpine
     restart: unless-stopped
 
 volumes:

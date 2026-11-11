@@ -30,6 +30,7 @@ from heydesk.wiring import (
     build_llm,
     build_photo_index,
     build_qdrant,
+    build_redis,
     build_services,
 )
 
@@ -65,6 +66,7 @@ def create_app(
             qdrant = build_qdrant(settings)
             store = store or build_knowledge_store(settings, qdrant)
             photos = photos or build_photo_index(settings, qdrant)
+        redis = build_redis(settings)
         app.state.services = build_services(
             sessions,
             llm or build_llm(settings),
@@ -77,6 +79,7 @@ def create_app(
             messenger=messenger,
             whatsapp=whatsapp,
             payments=payments,
+            redis=redis,
         )
         if dev:
             try:
@@ -97,6 +100,8 @@ def create_app(
             run_every(settings.SNOOZE_CHECK_SECONDS, services.conversations.nudge_unfinished),
             run_once_after(settings.SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),
         ]
+        if redis is not None:  # other processes' inbox news, for this one's open pages
+            jobs.append(services.live.run())
         loops = [asyncio.create_task(job) for job in jobs]
         log.info(
             "HeyDesk ready",
@@ -104,11 +109,14 @@ def create_app(
                 "env": settings.APP_ENV,
                 "llm": settings.LLM_PROVIDER,
                 "embedder": settings.EMBEDDER,
+                "redis": redis is not None,
             },
         )
         yield
         for loop in loops:
             loop.cancel()
+        if redis is not None:
+            await redis.aclose()
         await engine.dispose()
 
     app = FastAPI(title="HeyDesk", lifespan=lifespan)

@@ -1,4 +1,4 @@
-# Render Blueprint: the backend, built from the Dockerfile, and its Postgres database.
+# Render Blueprint: the backend, built from the Dockerfile, its Postgres database and Redis.
 # Render > New > Blueprint > this repo. Values marked `sync: false` are typed in Render's dashboard
 # once; the rest of .env.example can be added there the same way.
 # Render doesn't deploy on its own: CI's deploy job does, after every check passed.
@@ -33,6 +33,11 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: heydesk-db
+          property: connectionString
+      - key: REDIS_URL  # the Key Value instance below
+        fromService:
+          type: keyvalue
+          name: heydesk-redis
           property: connectionString
       # Made once by Render and kept. Never change SECRETS_KEY: the saved secrets need it
       - key: JWT_SECRET
@@ -79,3 +84,11 @@ services:
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN
         sync: false
+
+  # Render Key Value (Redis-compatible): the rate limits and the live inbox, shared by every
+  # instance. The free plan keeps nothing on disk, which is fine: its counts last minutes
+  - type: keyvalue
+    name: heydesk-redis
+    plan: free
+    region: singapore
+    ipAllowList: []  # only our Render services reach it, never the internet
