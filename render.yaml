@@ -25,6 +25,11 @@ services:
         value: "8000"
       - key: APP_ENV
         value: production
+      # Render's proxy reaches us from its private network. Trusting only those addresses lets
+      # uvicorn take the visitor's real IP from X-Forwarded-For, for the per-IP rate limits.
+      # Not "*": Render adds to the header a client sends, so "*" would trust a faked address
+      - key: FORWARDED_ALLOW_IPS
+        value: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1"
       - key: DATABASE_URL
         fromDatabase:
           name: heydesk-db

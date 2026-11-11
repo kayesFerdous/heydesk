@@ -26,7 +26,8 @@ class BusinessRequired(HeyDeskError):
 
 def client_ip(request: Request) -> str:
     """The caller's address, for the rate limits. Behind a proxy, uvicorn takes the real
-    address from the proxy's X-Forwarded-For header, if the proxy is on this machine."""
+    address from the proxy's X-Forwarded-For header, if it trusts the proxy: one on this
+    machine, or on Render one in the private network (`FORWARDED_ALLOW_IPS` in render.yaml)."""
     return request.client.host if request.client else "unknown"
 
 
