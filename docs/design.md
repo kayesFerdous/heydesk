@@ -741,8 +741,10 @@ The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
 | `POST /api/auth/verify`, `/reset` | email: guessing the 6 digits | 5 in 15 minutes |
 
 The counts are in this server's memory: a restart clears them, and a second server process would
-keep its own. The IP is the real visitor's when a proxy on the same machine sends
-`X-Forwarded-For` (uvicorn trusts it from `127.0.0.1` by default).
+keep its own. The IP is the real visitor's when a trusted proxy sends `X-Forwarded-For`.
+uvicorn trusts `127.0.0.1` by default; on Render, `FORWARDED_ALLOW_IPS` in `render.yaml` trusts
+the private network the proxy comes from (D181). Not `*`: Render adds to whatever header the
+client sent, and `*` takes the first address, which the client can fake.
 
 ### Importing a list: their columns, our fields (D50, D53, D115)
 
