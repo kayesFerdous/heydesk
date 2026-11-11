@@ -24,6 +24,7 @@ from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnde
 from heydesk.runtime.loop import TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.runtime.text import one_line
+from heydesk.runtime.trace import summary
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import CallService
 from heydesk.services.inbox import InboxService, get_conversation, least_busy
@@ -601,7 +602,13 @@ class ConversationService:
             saved.updated_at = self.now()
             if not ended.trace.get("to_team"):  # a message to the team isn't an agent turn
                 s.add(self._turn_row(conversation, ended))
-        log.info("turn finished", extra={"conversation_id": conversation.id, "trace": ended.trace})
+        extra = {"conversation_id": conversation.id, "trace": ended.trace}
+        if ended.trace.get("to_team"):
+            log.info("message saved for the team", extra=extra)
+        elif ended.trace["error"]:  # the visitor got the polite line and the hand-off
+            log.warning("turn failed: %s", summary(ended.trace), extra=extra)
+        else:
+            log.info("turn finished: %s", summary(ended.trace), extra=extra)
 
     def _turn_row(self, conversation: Conversation, ended: TurnEnded) -> Turn:
         """The turn's trace as a row, so the admin can add it up. No one's words."""

@@ -21,11 +21,13 @@ async def test_a_request_logs_one_json_line_with_its_id(capsys: pytest.CaptureFi
         AsyncClient(transport=ASGITransport(app), base_url="http://test") as c,
     ):
         capsys.readouterr()
-        r = await c.get("/health")
+        await c.get("/health")  # a passing health check isn't logged
+        r = await c.get("/nope")
 
     lines = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
     requests = [line for line in lines if line["logger"] == "heydesk.request"]
     assert len(requests) == 1
     assert requests[0]["request_id"] == r.headers["x-request-id"]
-    assert requests[0]["path"] == "/health"
-    assert requests[0]["status"] == 200
+    assert requests[0]["msg"] == "GET /nope"
+    assert requests[0]["status"] == 404
+    assert requests[0]["level"] == "WARNING"  # a failed request stands out
