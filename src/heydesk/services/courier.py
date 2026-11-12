@@ -180,7 +180,7 @@ class CourierService:
 
     async def _tell_visitor_status(self, order: ShopOrder) -> None:
         if order.conversation_id and (line := order.status_update_text()):
-            await self.team.tell_visitor(order.conversation_id, line)
+            await self.team.tell_visitor(order.workspace_id, order.conversation_id, line)
 
     async def _remind(self, shop: ShopStore, order: ShopOrder) -> None:
         """Out for delivery: the buyer keeps the cash ready, once, inside the window."""
@@ -194,7 +194,7 @@ class CourierService:
             else "It's paid: there's nothing to pay the rider."
         )
         line = f"🛵 Your order {order.code} is out for delivery today. {pay}"
-        await self.team.tell_visitor_if_allowed(order.conversation_id, line)
+        await self.team.tell_visitor_if_allowed(order.workspace_id, order.conversation_id, line)
 
     async def _ask_reviews(self, shop: ShopStore) -> None:
         """A day after delivery: one question with two buttons, inside the window. An
@@ -214,7 +214,9 @@ class CourierService:
             ):
                 continue
             line = f"How was your order {order.code}? Tap 👍 or 👎, or write to us."
-            await self.team.tell_visitor_if_allowed(order.conversation_id, line, ["👍", "👎"])
+            await self.team.tell_visitor_if_allowed(
+                order.workspace_id, order.conversation_id, line, ["👍", "👎"]
+            )
 
     async def sync_all(self) -> None:
         """A round for each shop with a parcel to book or follow (a background job). One

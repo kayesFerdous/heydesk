@@ -209,6 +209,7 @@ class PaymentService:
     async def _tell_visitor_paid(self, record: ShopOrder, amount: str) -> None:
         if record.conversation_id:
             await self.team.tell_visitor(
+                record.workspace_id,
                 record.conversation_id,
                 f"✅ Payment received: {amount} for {record.PAY_FOR}. {record.next_step_text()}",
             )
@@ -220,14 +221,18 @@ class PaymentService:
         self.woo.push_soon(record.workspace_id)
 
     async def _alert(self, record: ShopOrder, text: str) -> None:
-        if record.conversation_id is None:
-            return
-        async with self.sessions() as s:
-            conversation = await s.scalar(
-                select(Conversation).where(
-                    Conversation.id == record.conversation_id,
-                    Conversation.workspace_id == record.workspace_id,
+        """To whoever has the order's chat. An order from a product page opened from no chat
+        has none: the owner hears of it."""
+        conversation = None
+        if record.conversation_id:
+            async with self.sessions() as s:
+                conversation = await s.scalar(
+                    select(Conversation).where(
+                        Conversation.id == record.conversation_id,
+                        Conversation.workspace_id == record.workspace_id,
+                    )
                 )
-            )
-        if conversation is not None:
+        if conversation is None:
+            await self.team.notify(record.workspace_id, text)
+        else:
             await self.team.alert(conversation, text)

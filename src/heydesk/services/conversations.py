@@ -420,9 +420,11 @@ class ConversationService:
                 )
                 if placed is None:
                     conversation.nudged = True  # tried, sent or not: never twice
-                    due.append(conversation.id)
-        for conversation_id in due:
-            await self.team.tell_visitor_if_allowed(conversation_id, NUDGE, ["Yes", "Change"])
+                    due.append((conversation.workspace_id, conversation.id))
+        for workspace_id, conversation_id in due:
+            await self.team.tell_visitor_if_allowed(
+                workspace_id, conversation_id, NUDGE, ["Yes", "Change"]
+            )
             log.info("nudged", extra={"conversation_id": conversation_id})
 
     async def assist(

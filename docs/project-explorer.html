@@ -8949,6 +8949,18 @@ tr.hl td { background: var(--accent-soft); }
     "docs/decisions.md"
    ],
    "detail": "Calls queued in production with no /phone page; shop status changes not told to the buyer; clinic tools without owner alerts; paid shop orders late into WooCommerce; the inbox filter missing `human`; design.md's `request_exchange` row; a stale payments docstring; a stray script tag in the embed example; the dev chat page ignoring photos."
+  },
+  {
+   "sev": "low",
+   "title": "Fixed on 12 Nov (D184)",
+   "files": [
+    "src/heydesk/services/payments.py",
+    "src/heydesk/services/team.py",
+    "src/heydesk/shop/records.py",
+    "scripts/check_imports.sh",
+    "docs/design.md"
+   ],
+   "detail": "A paid order from a product page opened from no chat never reached the owner: `PaymentService._alert` stopped when the order had no conversation, and now tells the owner (`team.notify`). `tell_visitor` and `tell_visitor_if_allowed` take the `workspace_id` and look the chat up inside it. Two Telegram messages were sent with a row still locked (`link_member`, `handle_team_reply`); they go out after the transaction. The shop's store named two services under `TYPE_CHECKING`; it's now handed `KnowledgeSearch` and `PhotoImporter`. `check_imports.sh` checks four more layer rules. design.md §12 still listed billing, Facebook Login, WhatsApp signup and voice notes as left out."
   }
  ]
 }

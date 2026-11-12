@@ -14,7 +14,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.models import Channel, Conversation, TeamEvent, Turn, User
@@ -88,6 +88,13 @@ def handoff_alert(messages: list[Message], title: str = "🙋 Someone wants a pe
     return f"{title}\n\n" + "\n".join(lines)
 
 
+def conversation_in(workspace_id: str, conversation_id: str) -> Select[Conversation]:
+    """One conversation, only if it's this business's."""
+    return select(Conversation).where(
+        Conversation.id == conversation_id, Conversation.workspace_id == workspace_id
+    )
+
+
 class TeamService:
     def __init__(
         self,
@@ -152,7 +159,7 @@ class TeamService:
         await self.alert(conversation, f"💬 Customer: {text}")
 
     async def tell_visitor(
-        self, conversation_id: str, text: str, choices: list[str] | None = None
+        self, workspace_id: str, conversation_id: str, text: str, choices: list[str] | None = None
     ) -> None:
         """The business tells the visitor something the agent couldn't know (a payment came
         in). Added to the transcript like a team reply, so the web page shows it and the model
@@ -160,7 +167,8 @@ class TeamService:
         The conversation stays with the agent."""
         async with self.sessions() as s, s.begin():
             # locked: a turn saving at the same moment would drop this line (rule 5)
-            conversation = await s.get_one(Conversation, conversation_id, with_for_update=True)
+            query = conversation_in(workspace_id, conversation_id).with_for_update()
+            conversation = (await s.scalars(query)).one()
             said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
             conversation.messages = [
                 *conversation.messages,
@@ -170,16 +178,19 @@ class TeamService:
         await self.send_to_visitor(conversation, text, choices)
 
     async def tell_visitor_if_allowed(
-        self, conversation_id: str, text: str, choices: list[str] | None = None
+        self, workspace_id: str, conversation_id: str, text: str, choices: list[str] | None = None
     ) -> bool:
         """`tell_visitor` for a message the visitor didn't ask for: only inside the app's
         window, 24 hours since their last message on Messenger and WhatsApp (Meta refuses a
         message after it). Telegram and the web chat have none; a call can't take one. Says
         whether it was sent."""
         async with self.sessions() as s:
-            conversation = await s.get_one(Conversation, conversation_id)
+            query = conversation_in(workspace_id, conversation_id)
+            conversation = (await s.scalars(query)).one()
             last = await s.scalar(
-                select(func.max(Turn.at)).where(Turn.conversation_id == conversation_id)
+                select(func.max(Turn.at)).where(
+                    Turn.workspace_id == workspace_id, Turn.conversation_id == conversation_id
+                )
             )
         if conversation.channel == "voice":
             return False
@@ -187,7 +198,7 @@ class TeamService:
             last = last and (last if last.tzinfo else last.replace(tzinfo=UTC))
             if last is None or self.now() - last > MESSAGING_WINDOW:
                 return False
-        await self.tell_visitor(conversation_id, text, choices)
+        await self.tell_visitor(workspace_id, conversation_id, text, choices)
         return True
 
     async def link_owner(self, channel: Channel, chat_id: str, code: str) -> None:
@@ -207,10 +218,13 @@ class TeamService:
             user = await s.scalar(
                 select(User).where(User.id == user_id, User.workspace_id == channel.workspace_id)
             )
-            if user is None or code != member_code(channel, user_id):
-                await self.send(channel, chat_id, OLD_LINK)
-                return
-            user.telegram_chat_id = chat_id
+            linked = False
+            if user is not None and code == member_code(channel, user_id):
+                user.telegram_chat_id = chat_id
+                linked = True
+        if not linked:  # said after the transaction: no row waits on Telegram
+            await self.send(channel, chat_id, OLD_LINK)
+            return
         log.info("telegram member linked", extra={"channel_id": channel.id})
         await self.send(channel, chat_id, LINKED)
 
@@ -235,61 +249,74 @@ class TeamService:
         if not text or found is None:
             await self.send(channel, owner, PICK_A_CHAT)
             return
-        to_visitor = False
+        answer, to_visitor = "", False
         async with self.sessions() as s, s.begin():
-            conversation = await s.scalar(
-                select(Conversation)
-                .where(
-                    Conversation.id == found[1], Conversation.workspace_id == channel.workspace_id
+            # locked: a turn saving at the same moment would drop this line
+            query = conversation_in(channel.workspace_id, found[1]).with_for_update()
+            conversation = await s.scalar(query)
+            if conversation is not None:
+                answer, to_visitor = await self._apply_team_reply(
+                    s, channel, chat_id, conversation, text
                 )
-                .with_for_update()  # a turn saving at the same moment would drop this line
-            )
-            if conversation is None:
-                await self.send(channel, owner, CHAT_NOT_FOUND)
-                return
-            if text == "/done" or (text == "." and conversation.status == HUMAN_STATUS):  # "."
-                conversation.status, conversation.taken_over_at, answer = "active", None, GIVEN_BACK
-            elif text == ".":  # taken over, with nothing said to them
-                conversation.status, conversation.taken_over_at, answer = (
-                    HUMAN_STATUS,
-                    self.now(),
-                    TAKEN_OVER,
-                )
-            elif conversation.channel == "voice":
-                answer = NOT_A_CHAT
-            else:
-                said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
-                conversation.messages = [
-                    *conversation.messages,
-                    said,
-                ]  # a new list, so SQLAlchemy sees it
-                answer = "" if conversation.status == HUMAN_STATUS else TAKEN_OVER
-                conversation.status, to_visitor = HUMAN_STATUS, True
-                conversation.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
-                who = await s.scalar(
-                    self._member(channel, chat_id)
-                    if chat_id != channel.owner_chat_id
-                    else select(User).where(
-                        User.workspace_id == channel.workspace_id, User.role == "owner"
-                    )
-                )
-                if who is not None:
-                    s.add(
-                        TeamEvent(
-                            workspace_id=channel.workspace_id,
-                            actor_id=who.id,
-                            actor_email=who.email,
-                            action=TELEGRAM_REPLY,
-                            target=f"conversation_id={conversation.id}",
-                            at=self.now(),
-                        )
-                    )
-            conversation.updated_at = self.now()
+        if conversation is None:  # said after the transaction: no row waits on Telegram
+            await self.send(channel, owner, CHAT_NOT_FOUND)
+            return
         if to_visitor:
             await self.send_to_visitor(conversation, text)
         if answer:
             await self.send(channel, owner, f"{answer}\nRef: {conversation.id}")
         log.info("team answered", extra={"conversation_id": conversation.id})
+
+    async def _apply_team_reply(
+        self,
+        s: AsyncSession,
+        channel: Channel,
+        chat_id: str,
+        conversation: Conversation,
+        text: str,
+    ) -> tuple[str, bool]:
+        """Changes the chat as the team's `text` asks, inside the caller's transaction. Returns
+        the answer for the team member, and whether `text` goes to the visitor."""
+        to_visitor = False
+        if text == "/done" or (text == "." and conversation.status == HUMAN_STATUS):  # "."
+            conversation.status, conversation.taken_over_at, answer = "active", None, GIVEN_BACK
+        elif text == ".":  # taken over, with nothing said to them
+            conversation.status, conversation.taken_over_at, answer = (
+                HUMAN_STATUS,
+                self.now(),
+                TAKEN_OVER,
+            )
+        elif conversation.channel == "voice":
+            answer = NOT_A_CHAT
+        else:
+            said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
+            conversation.messages = [
+                *conversation.messages,
+                said,
+            ]  # a new list, so SQLAlchemy sees it
+            answer = "" if conversation.status == HUMAN_STATUS else TAKEN_OVER
+            conversation.status, to_visitor = HUMAN_STATUS, True
+            conversation.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
+            who = await s.scalar(
+                self._member(channel, chat_id)
+                if chat_id != channel.owner_chat_id
+                else select(User).where(
+                    User.workspace_id == channel.workspace_id, User.role == "owner"
+                )
+            )
+            if who is not None:
+                s.add(
+                    TeamEvent(
+                        workspace_id=channel.workspace_id,
+                        actor_id=who.id,
+                        actor_email=who.email,
+                        action=TELEGRAM_REPLY,
+                        target=f"conversation_id={conversation.id}",
+                        at=self.now(),
+                    )
+                )
+        conversation.updated_at = self.now()
+        return answer, to_visitor
 
     async def send_to_visitor(
         self, conversation: Conversation, text: str, choices: list[str] | None = None

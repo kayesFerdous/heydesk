@@ -2,8 +2,11 @@
 payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
 charge in the areas that pay first, and that payment confirms the order."""
 
+import html
+import re
 from typing import Any, cast
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import text
@@ -297,3 +300,39 @@ async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
     assert (shown["status"], shown["paid"], shown["payment_ref"]) == ("confirmed", 6000, "TRX1")
     told = (await services.inbox.get(DEV_WORKSPACE_ID, conv_id)).messages
     assert sum("Payment received" in str(m) for m in told) == 1  # placed once
+
+
+async def test_the_owner_hears_of_a_paid_order_from_a_page_with_no_chat(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """*Buy now* on a product page opened from no chat, in an area that pays first: the
+    owner hears nothing while it's unpaid, and hears of it once it's paid."""
+    services = app.state.services
+    _, gateway = await paying_first(services)
+    told: list[str] = []
+
+    async def notify(workspace_id: str, text: str) -> None:
+        told.append(text)
+
+    monkeypatch.setattr(services.team, "notify", notify)
+    form = {
+        "size": "M",
+        "colour": "Black",
+        "quantity": "1",
+        "name": "Kayes",
+        "phone": "01712345678",
+        "address": "House 12, Road 5, Mirpur 10",
+        "district": "Dhaka",
+    }
+    check = await client.post("/p/dev-shop/kurti", data=form)
+    found = re.search(r'name="heard" value="([^"]*)"', check.text)
+    assert found
+    placed = await client.post("/p/dev-shop/kurti", data=form | {"heard": html.unescape(found[1])})
+    assert placed.status_code == 303
+    [order] = (await client.get("/api/shop/orders")).json()
+    assert (order["status"], order["conversation_id"]) == ("unpaid", None)
+    assert told == []
+
+    gateway.paid["v1"] = Paid(order["id"], 6000, "BDT", "B1")
+    await services.payments.check_payment(order["id"], "v1")
+    assert len(told) == 1 and order["code"] in told[0] and "paid online" in told[0]

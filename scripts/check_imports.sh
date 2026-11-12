@@ -15,8 +15,12 @@ forbid "runtime/ is framework-free" $src/runtime "${imp}(${io}|heydesk\.(shop|mo
 forbid "tools reach the DB only through their store" $src/shop/tools "${imp}(${io}|heydesk\.(models|services|api|adapters|wiring|db))"
 forbid "ports/ import nothing from the project" $src/ports "${imp}heydesk\."
 forbid "only wiring.py imports adapters" "$src/runtime $src/shop $src/models $src/services $src/api" "${imp}heydesk\.adapters"
+forbid "adapters/ know only ports and runtime" $src/adapters "${imp}heydesk\.(shop|models|services|api|wiring|db)"
+forbid "models/ know only the database" $src/models "${imp}heydesk\.(runtime|ports|shop|services|api|adapters|wiring)"
+forbid "the shop imports no services or api (but its api.py)" "$src/shop --exclude=api.py" "${imp}heydesk\.(services|api|wiring)"
+forbid "services/ import no api" $src/services "${imp}heydesk\.(api|wiring)"
 forbid "only the shop's api.py knows HTTP" "$src/services $src/models $src/shop --exclude=api.py" "${imp}(fastapi|starlette)"
-forbid "only runtime/guards.py makes a Confirmed" "$src --exclude=guards.py --exclude=values.py" 'Confirmed\('
+forbid "only runtime/guards.py makes a Confirmed" "$src --exclude=guards.py --exclude=values.py" 'Confirmed(\[[^]]*\])?\('
 if [ -d $src/voice ]; then
   forbid "voice/ is a listener: no DB, no tools" $src/voice "${imp}(sqlalchemy|heydesk\.(models|shop|adapters|db))"
 fi

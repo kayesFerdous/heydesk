@@ -60,9 +60,10 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 ## The rules (design.md §3)
 
 1. **Python does facts**: prices, totals, dates, times. The model only talks.
-2. **Read back, then a yes, then save.** A store's writing methods take only
-   `Confirmed[T]`, made only by `confirm()`: the model judges the yes, Python checks
-   the details are the ones read back on an earlier turn. It fails closed.
+2. **Read back, then a yes, then save.** A tool saves what the visitor gave only
+   through store methods that take a `Confirmed[T]`, made only by `confirm()`: the
+   model judges the yes, Python checks the details are the ones read back on an
+   earlier turn. It fails closed. (The owner's own routes write without one.)
 3. **Platform rules come first** in the prompt and aren't editable.
 4. **The system prompt is built every turn** from the agent's config, with the
    channel, date and time at the end. No versions, no caching (D15).

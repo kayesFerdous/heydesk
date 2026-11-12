@@ -7,7 +7,7 @@ use only this part are in `shop/tools/inbox.py`.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 from sqlalchemy import ScalarResult, String, and_, cast, delete, func, or_, select
@@ -28,13 +28,22 @@ from heydesk.models.customer_request import CustomerRequest, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.text import one_line
 
-if TYPE_CHECKING:  # only a type here: services import the shop
-    from heydesk.services.knowledge import KnowledgeService
-    from heydesk.services.photos import PhotoService
-
 PAGE = 100  # the most rows a list returns at once (newest first)
 BROWSER_CHANNELS = ("web", "voice")  # one browser's token is the contact on both
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most
+
+
+class KnowledgeSearch(Protocol):
+    """What the store needs to search the business's documents. The shop never imports
+    `services/`: the service that does this is handed in."""
+
+    async def search(self, workspace_id: str, question: str) -> list[Snippet]: ...
+
+
+class PhotoImporter(Protocol):
+    """What the store needs to turn a product list's photo links into saved photos."""
+
+    async def import_links(self, workspace_id: str, links: list[str]) -> dict[str, str]: ...
 
 
 class TooLate(ValueError):
@@ -75,9 +84,9 @@ class RecordStore:
         now: Callable[[], datetime],
         *,
         conversation_id: str | None = None,
-        knowledge: "KnowledgeService | None" = None,
+        knowledge: KnowledgeSearch | None = None,
         public_url: str = "",
-        photos: "PhotoService | None" = None,
+        photos: PhotoImporter | None = None,
     ) -> None:
         self.sessions = sessions
         self.workspace_id = workspace_id

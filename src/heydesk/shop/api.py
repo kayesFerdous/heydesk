@@ -263,7 +263,7 @@ async def buy(
             order_url=shop.order_link(saved.id),
         )
         said = card_text(Card(receipt["kind"], receipt["data"]), "web")  # plain words
-        await services.team.tell_visitor(conversation.id, said)
+        await services.team.tell_visitor(workspace_id, conversation.id, said)
     if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid
         alert = await order_alert(shop, saved.code, read_back, order.phone, order.lines)
         await (
@@ -325,7 +325,7 @@ async def change_order(
         and moved.conversation_id
         and (line := moved.status_update_text())
     ):
-        await services.team.tell_visitor(moved.conversation_id, line)
+        await services.team.tell_visitor(store.workspace_id, moved.conversation_id, line)
     if body.paid_in is not None or body.reason is not None:
         moved = await store.record_outcome(order_id, body.paid_in, body.reason)
     [out] = await with_buyers(store, [moved])
@@ -417,7 +417,7 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     sent = [
         chat
         for chat in await store.chats_since(now - timedelta(hours=body.within_hours))
-        if await services.team.tell_visitor_if_allowed(chat, text)
+        if await services.team.tell_visitor_if_allowed(store.workspace_id, chat, text)
     ]
     await store.add_offer(coupon, sent)
     log.info("offer sent", extra={"workspace_id": store.workspace_id, "chats": len(sent)})
