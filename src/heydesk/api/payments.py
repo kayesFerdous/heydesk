@@ -17,7 +17,7 @@ from fastapi import APIRouter, Form, Query, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.errors import NotFound
 from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import Account, PaymentUnavailable, Provider
@@ -43,7 +43,7 @@ class SslCommerzOut(BaseModel):
 
 
 @router.get("/api/agent/sslcommerz")
-async def get_sslcommerz(workspace_id: Workspace, services: Svc) -> SslCommerzOut:
+async def get_sslcommerz(workspace_id: WorkspaceId, services: Svc) -> SslCommerzOut:
     """The business's SSLCommerz store, or 404 when none is connected."""
     saved = await services.payments.account(workspace_id, "sslcommerz")
     if saved is None:
@@ -55,7 +55,7 @@ async def get_sslcommerz(workspace_id: Workspace, services: Svc) -> SslCommerzOu
 
 @router.put("/api/agent/sslcommerz")
 async def connect_sslcommerz(
-    body: SslCommerzIn, workspace_id: Workspace, services: Svc
+    body: SslCommerzIn, workspace_id: WorkspaceId, services: Svc
 ) -> SslCommerzOut:
     """Checks the store with SSLCommerz (a 400 says why it said no), then keeps it. From the
     next message, an agent with paying first on asks for payments into it."""
@@ -67,7 +67,7 @@ async def connect_sslcommerz(
 
 
 @router.delete("/api/agent/sslcommerz", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_sslcommerz(workspace_id: Workspace, services: Svc) -> None:
+async def disconnect_sslcommerz(workspace_id: WorkspaceId, services: Svc) -> None:
     await services.payments.disconnect(workspace_id, "sslcommerz")
 
 
@@ -86,7 +86,7 @@ class BkashOut(BaseModel):
 
 
 @router.get("/api/agent/bkash")
-async def get_bkash(workspace_id: Workspace, services: Svc) -> BkashOut:
+async def get_bkash(workspace_id: WorkspaceId, services: Svc) -> BkashOut:
     """The business's bKash account, or 404 when none is connected."""
     saved = await services.payments.account(workspace_id, "bkash")
     if saved is None:
@@ -95,7 +95,7 @@ async def get_bkash(workspace_id: Workspace, services: Svc) -> BkashOut:
 
 
 @router.put("/api/agent/bkash")
-async def connect_bkash(body: BkashIn, workspace_id: Workspace, services: Svc) -> BkashOut:
+async def connect_bkash(body: BkashIn, workspace_id: WorkspaceId, services: Svc) -> BkashOut:
     """Checks the keys with bKash by asking it for a token (a 400 says why it said no), then
     keeps them. From the next payment link, the visitor can pay by bKash."""
     account = Account(
@@ -111,7 +111,7 @@ async def connect_bkash(body: BkashIn, workspace_id: Workspace, services: Svc) -
 
 
 @router.delete("/api/agent/bkash", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_bkash(workspace_id: Workspace, services: Svc) -> None:
+async def disconnect_bkash(workspace_id: WorkspaceId, services: Svc) -> None:
     await services.payments.disconnect(workspace_id, "bkash")
 
 

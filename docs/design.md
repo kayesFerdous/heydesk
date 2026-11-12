@@ -24,13 +24,19 @@ saved. Nothing is saved without reading it back and hearing a yes.
 
 | Word | Meaning |
 |---|---|
-| Agent | A business's agent: its config (`ShopConfig`), which the business edits. Edits are live on the next message |
-| Store | A business's data (`ShopStore`: products, orders, messages), always scoped to one workspace |
+| Business, workspace, shop | One thing, three words. A business that signed up is a row in `workspaces`, and the code and every table say `workspace_id` (rule 6). The API and the screens say *business* (the `X-Business` header, the admin's `/api/admin/businesses`). HeyDesk serves only online shops, so the business's own code is in `shop/` (D172) |
+| Agent | A business's AI front desk: one per workspace, a row in `agents` with its `public_key` (the chat URL) and its `config` |
+| Config | What the owner edits about the agent: a `ShopConfig` (`shop/config.py`), saved whole in `agents.config` and live on the next message. It subclasses `AgentConfig` (`runtime/config.py`): the agent's general fields, the only part the engine (`runtime/`) knows, since it can't import the shop. `ShopConfig` adds the shop's own (delivery, calls, policies) |
+| Settings | The server's own `.env` (`Settings` in `config.py`): keys, limits, the model. Ours, never the owner's |
+| Store | A business's data (`ShopStore`: products, orders, messages), always scoped to one workspace. `RecordStore` (`shop/records.py`) is the part every chat uses; `ShopStore` adds the products and orders |
+| Record | What a chat saves for the team to act on, with a code the visitor is told: an order (`O-104`, `ShopOrder`), a message for the team (`M-…`, `TeamMessage`), a call back (`L-…`, `Lead`) or a complaint (`C-…`, `Ticket`). They share `CustomerRequest`'s columns |
+| Visitor | Someone talking to an agent on any channel (a *buyer* in the shop's words): a row in `visitors`, named by `visitor_key(channel, contact)` |
+| Team | The people of a business who log in: its owner, and the moderators the owner adds (`users.role`). An admin runs the platform and belongs to no workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
-| Tool | Something the model can call: `update_cart`, `place_order`… The shop's own, plus the shared `take_message`, `handoff_to_human`, `off_topic` and `search_knowledge` |
-| Note | A line from the conversation state (the shop's order so far), added to the system prompt before every model call |
+| Tool | Something the model can call: `update_cart`, `place_order`… The shop's tools are in `shop/tools/`: products, cart and orders, and the inbox ones (`take_message`, `handoff_to_human`, `off_topic`, `search_knowledge`…) |
+| Notes | Four different things. The owner's `notes` in the config, added to the prompt. The team's `Note` on a chat, which the visitor and the model never see. What the agent remembers about a visitor (`Visitor.notes`, the `remember` tool, `visitor_notes()`). And the shop's note (`shop_note()`): the language reminder and the order so far (on a confirmation call, the call too), added to the system prompt before every model call |
 
 ## 3. The rules
 
@@ -105,8 +111,8 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 `tools_for(has_documents)` is the shop's tools, then the inbox ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
 `search_knowledge` when the business has documents (D35).
 
-**The config.** `runtime/config.py`'s `AgentConfig` has what every business has: name, business
-name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. `ShopConfig`
+**The config.** `runtime/config.py`'s `AgentConfig` has the agent's general fields, the only part the
+engine knows: name, business name, timezone, currency, greeting, address, `hours`, the owner's **notes**, FAQ, hand-off. `ShopConfig`
 subclasses it and adds `delivery` (its areas, each with a charge, usual days, its `districts` (of the 64, in English or Bangla, saved in English: Chittagong or চট্টগ্রাম → Chattogram), D98, and `pay_first`, D92; an area with no districts is everywhere else (D100), and there can be one, a 422 otherwise), `call_to_confirm` (default on: a cash-on-delivery order waits for the shop's call; off: it's confirmed when placed; turning it off turns `calls.enabled` off too, D92, D168), `free_delivery_over`, `policies`, `size_guide` (D54) and `exchange_days` (D55); it sets its own default greeting. The console shows a text's tags (`{business_name}`, and the call's `{items}`, `{total}`, `{code}`) as coloured pills the owner adds with buttons and may delete (D169). Every agent also has a `widget`: how the chat looks on the business's own website (D82): `colour`, `side`, `nudge` (the line that pops out of the bubble; empty: none), up to 4 `starters` (tap-to-ask buttons) and `logo` (only one saved by `POST /api/agent/logo`). An unknown field is a 422, so
 there's no role text to overwrite: it's code. Only the fields actually given are saved,
 so a default (a greeting) can change later. One model serves every agent (`MODEL` in `.env`).
@@ -683,9 +689,9 @@ in the browser (`visitor_id` in the chat body, `?visitor=` on a call's offer; a 
 and Telegram's is the chat id.
 
 ```
-start_turn ─► visitors.admit: blocked? the plan ended, or its replies used up (D106)?
-                              the visitor's turns today ≥ VISITOR_DAILY_TURNS (30)?
-                              the business's turns today ≥ WORKSPACE_DAILY_TURNS (500)?
+start_turn ─► visitors.count_turn: blocked? the plan ended, or its replies used up (D106)?
+                                   the visitor's turns today ≥ VISITOR_DAILY_TURNS (30)?
+                                   the business's turns today ≥ WORKSPACE_DAILY_TURNS (500)?
                  yes ─► 429 visitor_limited: "…Please contact us at <hand-off phone>." No model call
                  no  ─► count the turn, run it
 turn ended ─► visitors.after_turn: off_topic ran ─► a strike; OFF_TOPIC_STRIKES (5) in a row
@@ -704,7 +710,7 @@ blocked now, with their latest chat. A visitor is who `visitor_key(channel, cont
 block covers all their chats on that app (a web visitor's chats and calls share one).
 
 ```
-any message ─► visitors.let_in (first, before the photo, the conversation or a count):
+any message ─► visitors.check_not_blocked (first, before the photo, the conversation or a count):
                  blocked? (a why, and no end or an end still to come)
                    first time since the block ─► 429 VisitorLimited with the hand-off line
                    after that ─► VisitorSilenced: a messaging app sends nothing; the web chat
@@ -713,9 +719,9 @@ any message ─► visitors.let_in (first, before the photo, the conversation or
                            to the owner (D43's path): no turn, nothing paid
                  AI on again ─► their next message gives the chat back (`_return_if_quiet`) and
                            is answered
-a messaging app's message ─► visitors.arrived: FLOOD_MESSAGES (20) in a minute ─► blocked
-                             `flooding` for BLOCK_HOURS (counted per message, before D117's
-                             batching; counted with the rate limits, D52)
+a messaging app's message ─► visitors.count_message: FLOOD_MESSAGES (20) in a minute ─► blocked
+                                   `flooding` for BLOCK_HOURS (counted per message, before D117's
+                                   batching; counted with the rate limits, D52)
 ```
 
 - **A block keeps nothing.** A blocked visitor's messages aren't saved or shown: they're spam,
@@ -782,9 +788,9 @@ to rename them to ours: the owner matches each of our fields to one of their col
 Python's suggestion from the column names to start from (no model, D115). Three steps, each knowing nothing of the others:
 
 ```
-their file ─► 1. read: rows as {their column: text}            csv_import.peek / parse
+their file ─► 1. read: rows as {their column: text}            csv_import.preview_csv / parse
            ─► 2. match: {our field: their column}               Python suggests, the owner decides
-           ─► 3. a row becomes our item: Product                the shop's row(), as before
+           ─► 3. a row becomes our item: Product                products_from_csv's row()
 ```
 
 **The fields are listed once:** `PRODUCT_COLUMNS` in
@@ -1637,7 +1643,7 @@ billing page ─► POST /api/billing/checkout {plan, months, gateway} ─► a 
 gateway sends word back (SSLCommerz: /billing/<id>/back and its notice; bKash: /billing/<id>/bkash
              with status=success) ─► check_payment: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
              priced again (quote, D116): applied, or held as review if the plan changed meanwhile
-every turn ─► visitors.admit ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
+every turn ─► visitors.count_turn ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
              or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
 ```
 

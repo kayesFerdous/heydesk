@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.models import SheetLink
 from heydesk.shop.api import ImportOut
 from heydesk.shop.csv_import import Suggestion
@@ -44,14 +44,14 @@ def sheet_out(link: SheetLink) -> SheetOut:
 
 @router.post("/api/agent/sheet/suggest")
 async def suggest_sheet_columns(
-    body: SheetUrl, workspace_id: Workspace, services: Svc
+    body: SheetUrl, workspace_id: WorkspaceId, services: Svc
 ) -> Suggestion:
     """Reads the sheet and suggests which of its columns is which of the list's fields."""
     return await services.sheets.suggest(workspace_id, body.url)
 
 
 @router.put("/api/agent/sheet")
-async def link_sheet(body: SheetIn, workspace_id: Workspace, services: Svc) -> ImportOut[Any]:
+async def link_sheet(body: SheetIn, workspace_id: WorkspaceId, services: Svc) -> ImportOut[Any]:
     """Links the sheet and takes the list from it now, as an import: problems come back per
     row, and nothing is saved until the whole sheet is clean; `dry_run` only checks it. Then
     it's read every few minutes."""
@@ -60,17 +60,17 @@ async def link_sheet(body: SheetIn, workspace_id: Workspace, services: Svc) -> I
 
 
 @router.get("/api/agent/sheet")
-async def get_sheet(workspace_id: Workspace, services: Svc) -> SheetOut:
+async def get_sheet(workspace_id: WorkspaceId, services: Svc) -> SheetOut:
     return sheet_out(await services.sheets.get(workspace_id))
 
 
 @router.post("/api/agent/sheet/sync")
-async def sync_sheet(workspace_id: Workspace, services: Svc) -> SheetOut:
+async def sync_sheet(workspace_id: WorkspaceId, services: Svc) -> SheetOut:
     """Reads the sheet now, instead of waiting for the next few minutes."""
     return sheet_out(await services.sheets.sync(workspace_id))
 
 
 @router.delete("/api/agent/sheet", status_code=status.HTTP_204_NO_CONTENT)
-async def unlink_sheet(workspace_id: Workspace, services: Svc) -> None:
+async def unlink_sheet(workspace_id: WorkspaceId, services: Svc) -> None:
     """Stops reading the sheet. The list stays as it is and can be edited here again."""
     await services.sheets.unlink(workspace_id)

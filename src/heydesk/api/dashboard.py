@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 
 router = APIRouter(tags=["dashboard"])
 
@@ -16,7 +16,7 @@ router = APIRouter(tags=["dashboard"])
 class StatsOut(BaseModel):
     conversations: int  # chats the agent answered
     handed_off: int  # of those, handed to a person; the rest the agent handled alone
-    sales: int  # orders or bookings, not cancelled or waiting for payment
+    sales: int  # orders, not cancelled or waiting for payment
     amount: int  # their total, minor units
     bought: int  # chats that ended in one
     sources: dict[str, int]  # chat, page or team
@@ -40,7 +40,7 @@ class DashboardOut(BaseModel):
 
 @router.get("/api/stats")
 async def stats(
-    services: Svc, workspace_id: Workspace, days: Annotated[int, Query(ge=1, le=90)] = 7
+    services: Svc, workspace_id: WorkspaceId, days: Annotated[int, Query(ge=1, le=90)] = 7
 ) -> DashboardOut:
     """The owner's dashboard: today, yesterday and the last `days` days, in the
     business's own days, with the sales of each of those days."""

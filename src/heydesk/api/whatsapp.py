@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, Query, Request, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.errors import NotFound
 
 router = APIRouter(tags=["whatsapp"])
@@ -45,14 +45,16 @@ class WhatsAppOut(BaseModel):
 
 
 @router.get("/api/agent/whatsapp")
-async def get_whatsapp(workspace_id: Workspace, services: Svc) -> WhatsAppOut:
+async def get_whatsapp(workspace_id: WorkspaceId, services: Svc) -> WhatsAppOut:
     return WhatsAppOut(
         phone_id=(await services.channel_links.channel_of(workspace_id, "whatsapp")).address
     )
 
 
 @router.put("/api/agent/whatsapp")
-async def connect_whatsapp(body: WhatsAppIn, workspace_id: Workspace, services: Svc) -> WhatsAppOut:
+async def connect_whatsapp(
+    body: WhatsAppIn, workspace_id: WorkspaceId, services: Svc
+) -> WhatsAppOut:
     """Connects the business's WhatsApp number: the agent answers its messages."""
     channel = await services.channel_links.connect_whatsapp(
         workspace_id, body.token.strip(), body.account_id, body.phone_id
@@ -61,14 +63,14 @@ async def connect_whatsapp(body: WhatsAppIn, workspace_id: Workspace, services: 
 
 
 @router.get("/api/agent/whatsapp/login")
-async def whatsapp_login(workspace_id: Workspace, services: Svc) -> WhatsAppLoginOut:
+async def whatsapp_login(workspace_id: WorkspaceId, services: Svc) -> WhatsAppLoginOut:
     """What the Connect with WhatsApp button needs. 400 if the server has no app id."""
     return WhatsAppLoginOut(**services.channel_links.whatsapp_login())
 
 
 @router.post("/api/agent/whatsapp/signup")
 async def whatsapp_signup(
-    body: WhatsAppSignupIn, workspace_id: Workspace, services: Svc
+    body: WhatsAppSignupIn, workspace_id: WorkspaceId, services: Svc
 ) -> WhatsAppOut:
     """Connects the number the owner added in Meta's Embedded Signup window: nothing to copy."""
     channel = await services.channel_links.connect_whatsapp_signup(
@@ -78,7 +80,7 @@ async def whatsapp_signup(
 
 
 @router.delete("/api/agent/whatsapp", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_whatsapp(workspace_id: Workspace, services: Svc) -> None:
+async def disconnect_whatsapp(workspace_id: WorkspaceId, services: Svc) -> None:
     await services.channel_links.disconnect_whatsapp(workspace_id)
 
 

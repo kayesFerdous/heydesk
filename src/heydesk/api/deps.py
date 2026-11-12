@@ -129,9 +129,11 @@ def page(
 
 
 type Svc = Annotated[Services, Depends(get_services)]
+# The id of the business (workspace) the request is for: a string, not the `Workspace` row.
 # "function": the activity line is written once the route returns, before the response
-type Workspace = Annotated[str, Depends(current_workspace, scope="function")]
-type User = Annotated[CurrentUser, Depends(get_current_user)]
+type WorkspaceId = Annotated[str, Depends(current_workspace, scope="function")]
+# Who is logged in: a `CurrentUser` from their token, not the `User` row
+type LoggedInUser = Annotated[CurrentUser, Depends(get_current_user)]
 type Admin = Annotated[CurrentUser, Depends(admin_only)]
 type Paged = Annotated[Page, Depends(page)]
 type ClientIp = Annotated[str, Depends(client_ip)]

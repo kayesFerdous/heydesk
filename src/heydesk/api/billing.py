@@ -16,7 +16,7 @@ from fastapi import APIRouter, Form, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.models import SubscriptionPayment
 from heydesk.ports.payments import PaymentUnavailable, Provider
 from heydesk.services.billing import NOTIFY_PATH, PLANS
@@ -74,7 +74,7 @@ class CheckoutOut(BaseModel):
 
 
 @router.get("/api/billing")
-async def get_billing(workspace_id: Workspace, services: Svc) -> BillingOut:
+async def get_billing(workspace_id: WorkspaceId, services: Svc) -> BillingOut:
     """The business's plan, how much of it is used, and the plans it can buy."""
     b = await services.billing.billing(workspace_id)
     plans = [
@@ -104,7 +104,7 @@ async def get_billing(workspace_id: Workspace, services: Svc) -> BillingOut:
 
 @router.get("/api/billing/quote")
 async def get_quote(
-    workspace_id: Workspace, services: Svc, plan: PlanKey, months: Literal[1, 12] = 1
+    workspace_id: WorkspaceId, services: Svc, plan: PlanKey, months: Literal[1, 12] = 1
 ) -> QuoteOut:
     """What paying for `plan` costs now; a 409 says why it can't be bought yet."""
     q = await services.billing.quote(workspace_id, plan, months)
@@ -112,7 +112,7 @@ async def get_quote(
 
 
 @router.post("/api/billing/checkout")
-async def checkout(body: CheckoutIn, workspace_id: Workspace, services: Svc) -> CheckoutOut:
+async def checkout(body: CheckoutIn, workspace_id: WorkspaceId, services: Svc) -> CheckoutOut:
     """Starts paying for a plan; a 400 says why it can't (no store set up, the gateway down)."""
     url = await services.billing.checkout(workspace_id, body.plan, body.months, body.gateway)
     return CheckoutOut(url=url)

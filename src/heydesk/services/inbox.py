@@ -138,7 +138,7 @@ class InboxService:
             return await get_conversation(s, workspace_id, conversation_id)
 
     async def latest_for_visitor(self, workspace_id: str, key: str) -> Conversation | None:
-        """The visitor's latest conversation (`key` as `visitors.key_of` makes it), for the
+        """The visitor's latest conversation (`key` as `visitors.visitor_key` makes it), for the
         blocked list."""
         kind, contact = key.split(":", 1)
         channels = ("web", "voice") if kind == "web" else (kind,)

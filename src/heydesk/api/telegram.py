@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, BackgroundTasks, Body, Header, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, User, Workspace
+from heydesk.api.deps import LoggedInUser, Svc, WorkspaceId
 from heydesk.models import Channel
 from heydesk.services.team import owner_link
 
@@ -40,7 +40,9 @@ def telegram_out(channel: Channel) -> TelegramOut:
 
 
 @router.get("/api/agent/telegram")
-async def get_telegram(workspace_id: Workspace, services: Svc, current_user: User) -> TelegramOut:
+async def get_telegram(
+    workspace_id: WorkspaceId, services: Svc, current_user: LoggedInUser
+) -> TelegramOut:
     out = telegram_out(await services.channel_links.channel_of(workspace_id, "telegram"))
     if current_user.role == "moderator":
         out.owner_link = None
@@ -48,7 +50,9 @@ async def get_telegram(workspace_id: Workspace, services: Svc, current_user: Use
 
 
 @router.put("/api/agent/telegram")
-async def connect_telegram(body: TelegramIn, workspace_id: Workspace, services: Svc) -> TelegramOut:
+async def connect_telegram(
+    body: TelegramIn, workspace_id: WorkspaceId, services: Svc
+) -> TelegramOut:
     """Connects the business's Telegram bot: from now on the agent answers its messages."""
     return telegram_out(
         await services.channel_links.connect_telegram(workspace_id, body.token.strip())
@@ -56,7 +60,7 @@ async def connect_telegram(body: TelegramIn, workspace_id: Workspace, services: 
 
 
 @router.delete("/api/agent/telegram", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_telegram(workspace_id: Workspace, services: Svc) -> None:
+async def disconnect_telegram(workspace_id: WorkspaceId, services: Svc) -> None:
     await services.channel_links.disconnect_telegram(workspace_id)
 
 

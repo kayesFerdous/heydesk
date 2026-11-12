@@ -1,9 +1,9 @@
 """Limits on a public chat, so visitors here for timepass can't spend a business's turns,
 and the team's say over one visitor: Block them, or turn the AI off for them.
 
-Before anything, `let_in` refuses a blocked visitor (telling them once) and says when the AI is
-off for them. A messaging app's every message goes through `arrived`, which blocks a flood.
-Before a turn, `admit` counts it, or refuses when the visitor is blocked, the business's plan
+Before anything, `check_not_blocked` refuses a blocked visitor (telling them once) and says when
+the AI is off for them. A messaging app's every message goes through `count_message`, which
+blocks a flood. Before a turn, `count_turn` counts it, or refuses when the visitor is blocked, the business's plan
 has ended or used its replies, the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
 `after_turn` gives a strike when the model called `off_topic`; enough strikes in a row block the
 visitor for a while. Any real step (another tool) clears the strikes.

@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from heydesk.api.csv_export import EXPORT_ROWS, amount_cell, csv_file, phone_cell
-from heydesk.api.deps import Paged, Svc, Workspace
+from heydesk.api.deps import Paged, Svc, WorkspaceId
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card
@@ -57,7 +57,7 @@ class ImportOut[T](BaseModel):
     added: int | None = None  # a shop's import: how many were new; the rest were updated
 
 
-async def shop_store(services: Svc, workspace_id: Workspace) -> ShopStore:
+async def shop_store(services: Svc, workspace_id: WorkspaceId) -> ShopStore:
     """404 until the business has an agent."""
     return await services.agents.store(workspace_id)
 
@@ -109,7 +109,7 @@ async def products(store: Shop) -> list[Product]:
 
 @router.put("/api/products")
 async def replace_products(
-    body: list[Product], store: Shop, services: Svc, workspace_id: Workspace
+    body: list[Product], store: Shop, services: Svc, workspace_id: WorkspaceId
 ) -> list[Product]:
     """The products become exactly these, in this order (with their stock and photos). Live
     from the next message. While a Google Sheet or WooCommerce store is linked too: a product
@@ -136,7 +136,7 @@ class PhotoOut(BaseModel):
 async def add_product_photo(
     file: Annotated[UploadFile, File(description="A JPEG, PNG or WebP photo, up to 10 MB")],
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     _: Shop,
 ) -> PhotoOut:
     """Adds a product photo: saved as a JPEG and indexed, so a visitor's photo can find it.
@@ -334,7 +334,7 @@ async def change_order(
 
 @router.post("/api/shop/orders", status_code=201)
 async def add_order(
-    body: TeamOrder, store: Shop, services: Svc, workspace_id: Workspace
+    body: TeamOrder, store: Shop, services: Svc, workspace_id: WorkspaceId
 ) -> ShopOrderOut:
     """An order the team types for a buyer who called: checked and added up as the
     chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
@@ -435,7 +435,7 @@ async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
 async def orders_csv(
     store: Shop,
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     status: str | None = None,
     q: str | None = None,
 ) -> Response:

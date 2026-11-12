@@ -193,7 +193,7 @@ class ChannelService:
             message = {"chat": chat, "text": tapped.get("data") or ""}
         chat = message.get("chat") or {}
         if chat.get("type") != "private":
-            return  # groups and edits aren't a visitor talking to the desk
+            return  # groups and edits aren't a visitor talking to the shop
         name = " ".join(filter(None, [chat.get("first_name"), chat.get("last_name")]))
         await self._answer(channel, str(chat["id"]), message | {"name": name})
 

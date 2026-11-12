@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.models.call import QUEUED
 
 router = APIRouter(tags=["calls"])
@@ -39,7 +39,7 @@ class CallIn(BaseModel):
 @router.get("/api/calls")
 async def calls(
     services: Svc,
-    workspace_id: Workspace,
+    workspace_id: WorkspaceId,
     view: Literal["waiting", "done"] = "waiting",
     order_id: str | None = None,
 ) -> list[CallOut]:
@@ -56,19 +56,19 @@ async def calls(
 
 
 @router.post("/api/calls", status_code=201)
-async def call_order(body: CallIn, services: Svc, workspace_id: Workspace) -> CallOut:
+async def call_order(body: CallIn, services: Svc, workspace_id: WorkspaceId) -> CallOut:
     """Call a new order to confirm it, first in the queue. 409 while calls are off, or when the
     order isn't new or already has a call waiting."""
     return CallOut.model_validate(await services.calls.call_order(workspace_id, body.order_id))
 
 
 @router.post("/api/calls/{call_id}/now")
-async def call_now(call_id: str, services: Svc, workspace_id: Workspace) -> CallOut:
+async def call_now(call_id: str, services: Svc, workspace_id: WorkspaceId) -> CallOut:
     """A queued call moves to the front and is due now."""
     return CallOut.model_validate(await services.calls.call_now(workspace_id, call_id))
 
 
 @router.delete("/api/calls/{call_id}")
-async def stop_call(call_id: str, services: Svc, workspace_id: Workspace) -> CallOut:
+async def stop_call(call_id: str, services: Svc, workspace_id: WorkspaceId) -> CallOut:
     """Cancels a queued call (`stopped`); the order stays as it is."""
     return CallOut.model_validate(await services.calls.stop(workspace_id, call_id))

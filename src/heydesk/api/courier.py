@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from heydesk.api.deps import Svc, Workspace
+from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.models import CourierLink
 from heydesk.ports.courier import CourierAccount
 
@@ -41,7 +41,7 @@ def courier_out(link: CourierLink) -> CourierOut:
 
 
 @router.put("/api/agent/courier")
-async def link_courier(body: CourierIn, workspace_id: Workspace, services: Svc) -> CourierOut:
+async def link_courier(body: CourierIn, workspace_id: WorkspaceId, services: Svc) -> CourierOut:
     """Checks the keys with the courier and links it. From then on, each confirmed order is
     booked there, and its status is followed."""
     given = CourierAccount(**body.model_dump())
@@ -49,18 +49,18 @@ async def link_courier(body: CourierIn, workspace_id: Workspace, services: Svc) 
 
 
 @router.get("/api/agent/courier")
-async def get_courier(workspace_id: Workspace, services: Svc) -> CourierOut:
+async def get_courier(workspace_id: WorkspaceId, services: Svc) -> CourierOut:
     return courier_out(await services.courier.get(workspace_id))
 
 
 @router.post("/api/agent/courier/sync")
-async def sync_courier(workspace_id: Workspace, services: Svc) -> CourierOut:
+async def sync_courier(workspace_id: WorkspaceId, services: Svc) -> CourierOut:
     """Books the confirmed orders and reads the parcels' status now."""
     await services.courier.sync(workspace_id)
     return courier_out(await services.courier.get(workspace_id))
 
 
 @router.delete("/api/agent/courier", status_code=status.HTTP_204_NO_CONTENT)
-async def unlink_courier(workspace_id: Workspace, services: Svc) -> None:
+async def unlink_courier(workspace_id: WorkspaceId, services: Svc) -> None:
     """Stops booking. Parcels already booked stay with the courier."""
     await services.courier.unlink(workspace_id)

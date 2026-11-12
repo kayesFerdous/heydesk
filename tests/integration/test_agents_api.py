@@ -1,4 +1,5 @@
-"""Desks and the business's agent through the API (design §9)."""
+"""The business's agent through the API, and `/api/desks`, which the frontend still reads
+(design §9)."""
 
 import io
 
