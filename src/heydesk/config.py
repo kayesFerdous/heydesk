@@ -60,15 +60,14 @@ class Settings(BaseSettings):
     # tells "this one" from "one like it", so the agent always asks; this only drops the unlike.
     PHOTO_MIN_SIMILARITY: float = 0.75
 
-    # Speech-to-text for voice calls: Deepgram streams the words as they're spoken; Chorus and our
-    # Whisper (tts_server/kaggle_stt.ipynb on Kaggle) take each utterance
-    STT_PROVIDER: Literal["deepgram", "chorus", "whisper"] = "deepgram"
+    # What hears speech, on calls and in voice notes alike. Deepgram hears a call as it's spoken;
+    # Chorus (the Gigalogy keys) takes each utterance whole and answers about 23 s later
+    STT_PROVIDER: Literal["deepgram", "chorus"] = "deepgram"
     DEEPGRAM_API_KEY: str = ""
-    WHISPER_STT_URL: str = "http://localhost:8011"
-    # What every voice call hears and speaks: `bn` is Deepgram in Bangla and the Bangla
-    # voice at BANGLA_TTS_URL (tts_server/ or the Kaggle notebook); `en` is Piper
+    # The language calls and voice notes are heard in, and calls speak: `bn` speaks with the
+    # Bangla voice at BANGLA_VOICE_URL (tts_server/ or the Kaggle notebook); `en` with Piper
     VOICE_LANGUAGE: Literal["en", "bn"] = "bn"
-    BANGLA_TTS_URL: str = "http://localhost:8010"
+    BANGLA_VOICE_URL: str = "http://localhost:8010"
 
     # Voice from far away: Cloudflare's free TURN relay carries the audio (dash.cloudflare.com ->
     # Realtime -> TURN). Empty: no relay, which only works on the same network.

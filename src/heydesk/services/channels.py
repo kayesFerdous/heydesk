@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 
 NOT_TEXT_REPLY = "I can only read text messages for now. Please type your question."
 FAILED_REPLY = "Sorry, something went wrong. Please try again."
-MAX_VOICE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
+MAX_VOICE_NOTE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
 MAX_PHOTO_MESSAGES = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list
 
 
@@ -302,7 +302,7 @@ class ChannelService:
             if sent is not None:  # its words, if any, are the caption
                 photo, text = sent, message.get("caption") or ""
             if text is None:
-                text = await self._voice(channel, message)
+                text = await self._voice_note(channel, message)
             if text is None:  # a sticker, a file, a voice note not understood
                 continue
             words, quoted = await self._replied_to_message(channel, message)
@@ -389,7 +389,7 @@ class ChannelService:
     ) -> None:
         await self.team.send(channel, chat_id, text, choices)
 
-    async def _voice(self, channel: Channel, message: dict[str, Any]) -> str | None:
+    async def _voice_note(self, channel: Channel, message: dict[str, Any]) -> str | None:
         """A voice note's words, marked as heard, or None: not a voice note, too long,
         or nothing understood."""
         if self.transcriber is None:
@@ -409,7 +409,7 @@ class ChannelService:
                 url = first_audio(message)
                 audio = await self.messenger.download(url) if url else b""
                 name = "voice.mp4"
-            if not audio or len(audio) > MAX_VOICE_BYTES:
+            if not audio or len(audio) > MAX_VOICE_NOTE_BYTES:
                 return None
             words = await self.transcriber.transcribe(audio, name)
         except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):

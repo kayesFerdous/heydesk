@@ -28,8 +28,9 @@ from heydesk.adapters.payments.fake import FakeBkash, FakePayments
 from heydesk.adapters.payments.sslcommerz import SslCommerz
 from heydesk.adapters.sheets import fetch_csv
 from heydesk.adapters.telegram.bot import TelegramBot
+from heydesk.adapters.transcriber.chorus import ChorusTranscriber
+from heydesk.adapters.transcriber.deepgram import DeepgramTranscriber
 from heydesk.adapters.transcriber.fake import FakeTranscriber
-from heydesk.adapters.transcriber.groq import GroqTranscriber
 from heydesk.adapters.whatsapp.cloud import WhatsAppCloud
 from heydesk.adapters.woo import WooRest
 from heydesk.config import Settings
@@ -177,11 +178,18 @@ def build_mailer(settings: Settings) -> Mailer:
 
 
 def build_transcriber(settings: Settings) -> Transcriber | None:
-    """Voice notes in words: Groq's Whisper with a Groq key, the fake offline, or none
-    (a voice note gets "please type")."""
-    if settings.GROQ_API_KEY:
-        return GroqTranscriber(settings.GROQ_API_KEY)
-    return FakeTranscriber() if settings.LLM_PROVIDER == "fake" else None
+    """Speech in words for voice notes, and for calls on Chorus: STT_PROVIDER's service in
+    VOICE_LANGUAGE, the fake offline, or none without a Deepgram key (a voice note gets
+    "please type")."""
+    if settings.LLM_PROVIDER == "fake":
+        return FakeTranscriber()
+    if settings.STT_PROVIDER == "chorus":
+        return ChorusTranscriber(
+            settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY, settings.VOICE_LANGUAGE
+        )
+    if settings.DEEPGRAM_API_KEY:
+        return DeepgramTranscriber(settings.DEEPGRAM_API_KEY, settings.VOICE_LANGUAGE)
+    return None
 
 
 def build_services(
@@ -238,6 +246,7 @@ def build_services(
         settings,
         now,
     )
+    transcriber = build_transcriber(settings)  # one for voice notes and calls
     users = UserService(
         sessions, settings.jwt_secret, build_mailer(settings), now, f"{settings.public_url}/sign-in"
     )
@@ -261,7 +270,7 @@ def build_services(
             whatsapp,
             settings,
             now,
-            build_transcriber(settings),
+            transcriber,
         ),
         conversations=conversations,
         courier=CourierService(
@@ -284,5 +293,6 @@ def build_services(
         rate_limits=rate_limits,
         sheets=SheetService(sessions, agents, team, fetch_sheet),
         team=team,
+        transcriber=transcriber,
         woo=woo_service,
     )

@@ -1,8 +1,8 @@
 """One voice call: the browser's audio in, speech out (design §10).
 
-Each thing the caller says becomes a `start_turn(channel="voice")`, the same
-turn the web chat runs; the reply's tokens go to the TTS, which speaks it
-sentence by sentence as they arrive.
+STT_PROVIDER hears the caller: Deepgram as they talk, or Chorus one whole utterance at a
+time. Each thing they say becomes a `start_turn(channel="voice")`, the same turn the web chat
+runs; the reply's tokens go to the voice, which speaks it sentence by sentence as they arrive.
 
 Barge-in: talking over the agent for `INTERRUPT_SECONDS` stops the audio and the turn,
 which still saves what it had. A short "mm-hmm" doesn't stop it and isn't a turn.
@@ -10,6 +10,7 @@ which still saves what it had. A short "mm-hmm" doesn't stop it and isn't a turn
 
 import asyncio
 import time
+from collections.abc import AsyncGenerator
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -18,6 +19,7 @@ from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
     EndWorkerFrame,
+    ErrorFrame,
     Frame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
@@ -35,23 +37,24 @@ from pipecat.processors.audio.vad_processor import VADProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.piper.tts import PiperTTSService
+from pipecat.services.stt_service import SegmentedSTTService
 from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.utils.text.base_text_filter import BaseTextFilter
+from pipecat.utils.time import time_now_iso8601
 
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError
+from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
 from heydesk.runtime.events import HandOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
 from heydesk.services.calls import Answered
 from heydesk.services.conversations import ConversationService
-from heydesk.voice.bangla_tts import BanglaTTS
-from heydesk.voice.chorus import ChorusSTT
-from heydesk.voice.whisper_stt import WhisperSTT
+from heydesk.voice.bangla_voice import BanglaVoice
 
 VOICE = "en_US-lessac-medium"  # Piper, free and local, when VOICE_LANGUAGE is `en`
 END_OF_SPEECH_SECONDS = (
@@ -62,7 +65,7 @@ HANG_UP_SECONDS = 1.5  # after the last word of a settled shop call, it hangs up
 SHORT_ACKNOWLEDGEMENTS = {"mm-hmm", "mhm", "mm", "hmm", "uh-huh", "okay", "ok", "right", "i see"}
 
 
-class VoiceAgent(FrameProcessor):
+class CallAgent(FrameProcessor):
     """Runs a turn for each thing the caller says and passes the reply on to be spoken."""
 
     def __init__(
@@ -169,7 +172,7 @@ class VoiceAgent(FrameProcessor):
         await self.push_frame(LLMFullResponseEndFrame())
 
 
-class SpokenTextFilter(BaseTextFilter):
+class SpeakableText(BaseTextFilter):
     """Each sentence in words just before it's spoken: "৳450" → "four hundred and fifty taka"."""
 
     def __init__(self, language: str) -> None:
@@ -177,6 +180,27 @@ class SpokenTextFilter(BaseTextFilter):
 
     async def filter(self, text: str) -> str:
         return speakable(text, self.language)
+
+
+class WholeUtterances(SegmentedSTTService):
+    """Hears the caller one whole utterance at a time, as a voice note is heard (Chorus).
+    Pipecat collects the audio while they talk and hands it over as a WAV when the VAD says
+    they stopped."""
+
+    def __init__(self, transcriber: Transcriber) -> None:
+        super().__init__()
+        self.transcriber = transcriber
+
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None]:
+        started = time.perf_counter()
+        try:
+            text = await self.transcriber.transcribe(audio, "speech.wav")
+        except TranscriberUnavailable as error:  # logged; the caller says it again
+            yield ErrorFrame(error=str(error))
+            return
+        logger.info(f"heard: {time.perf_counter() - started:.2f}s")
+        if text:
+            yield TranscriptionFrame(text, self._user_id, time_now_iso8601())
 
 
 class FirstSoundTimer(BaseObserver):
@@ -210,23 +234,21 @@ async def run_call(
         connection, TransportParams(audio_in_enabled=True, audio_out_enabled=True)
     )
     language = settings.VOICE_LANGUAGE  # what every call hears and speaks
-    stt: FrameProcessor
-    if settings.STT_PROVIDER == "deepgram":
-        stt = DeepgramSTTService(
+    hear: FrameProcessor
+    if settings.STT_PROVIDER == "chorus" and services.transcriber:
+        hear = WholeUtterances(services.transcriber)  # the voice notes' Chorus
+    else:
+        hear = DeepgramSTTService(
             api_key=settings.DEEPGRAM_API_KEY,
             settings=DeepgramSTTService.Settings(language=Language(language)),
         )
-    elif settings.STT_PROVIDER == "whisper":
-        stt = WhisperSTT(settings.WHISPER_STT_URL, language)
-    else:
-        stt = ChorusSTT(settings.GIGALOGY_PROJECT_KEY, settings.GIGALOGY_API_KEY, language)
-    tts: FrameProcessor
+    speak: FrameProcessor
     if language == "bn":
-        tts = BanglaTTS(settings.BANGLA_TTS_URL, text_filters=[SpokenTextFilter(language)])
+        speak = BanglaVoice(settings.BANGLA_VOICE_URL, text_filters=[SpeakableText(language)])
     else:
-        tts = PiperTTSService(
+        speak = PiperTTSService(
             settings=PiperTTSService.Settings(voice=VOICE),
-            text_filters=[SpokenTextFilter(language)],
+            text_filters=[SpeakableText(language)],
         )
     pipeline = Pipeline(
         [
@@ -234,14 +256,14 @@ async def run_call(
             VADProcessor(
                 vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=END_OF_SPEECH_SECONDS))
             ),
-            stt,
-            VoiceAgent(
+            hear,
+            CallAgent(
                 services.conversations,
                 agent,
                 visitor,
                 answered.conversation_id if answered else None,
             ),
-            tts,
+            speak,
             transport.output(),
         ]
     )

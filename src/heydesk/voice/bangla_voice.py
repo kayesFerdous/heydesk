@@ -1,4 +1,5 @@
-"""Text-to-speech in Bangla: each sentence goes to our local TTS server (`tts_server/`).
+"""The Bangla voice: each sentence goes to our Bangla voice server (`tts_server/`, or the Kaggle
+notebook) at BANGLA_VOICE_URL.
 
 The server answers with the whole sentence as raw 16-bit PCM, which Pipecat resamples for the
 call. A sentence takes 0.6–1.3 s on an M2's CPU, and speech starts after the first one.
@@ -14,7 +15,7 @@ from pipecat.utils.text.base_text_filter import BaseTextFilter
 TIMEOUT_SECONDS = 15.0
 
 
-class BanglaTTS(TTSService):
+class BanglaVoice(TTSService):
     def __init__(self, url: str, text_filters: list[BaseTextFilter]) -> None:
         super().__init__(push_start_frame=True, push_stop_frames=True, text_filters=text_filters)
         self.client = httpx.AsyncClient(base_url=url, timeout=TIMEOUT_SECONDS)
@@ -27,7 +28,7 @@ class BanglaTTS(TTSService):
             response = await self.client.post("/speak", json={"text": text})
             response.raise_for_status()
         except httpx.HTTPError as error:  # logged; this sentence isn't heard
-            yield ErrorFrame(error=f"bangla tts: {type(error).__name__}: {error}")
+            yield ErrorFrame(error=f"bangla voice: {type(error).__name__}: {error}")
             return
         await self.start_tts_usage_metrics(text)
 

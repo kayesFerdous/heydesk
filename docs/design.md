@@ -79,7 +79,7 @@ src/heydesk/
 │                        Telegram, Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43),
 │                        payments (D47), background (`run_every`: the jobs the app runs on its own)
 ├── api/                 routes: read the request, call one service or store, return
-├── voice/               the voice channel (M2); bangla_tts.py, the Bangla voice's client (D84)
+├── voice/               the voice channel (M2): call.py, one call; bangla_voice.py, the Bangla voice's client (D84)
 └── web/static/          the dev chat page
 tts_server/              the Bangla voice: its own uv project, run beside HeyDesk (D84)
 ```
@@ -1357,16 +1357,24 @@ agent shows: show_photos(products) ─► a Photos event ─► Reply.photos
 - The port gains `download(url) -> bytes` and `send_cards(token, chat_id, cards)`; `FakeMessenger`
   records both.
 
-### Voice notes (D147)
+### Voice notes (D147, D183)
 
 A voice note on Telegram (`voice`, or `audio`), WhatsApp (`audio`) or Messenger (an `audio`
-attachment, `first_audio`) is downloaded like a photo and put in words by the `Transcriber`
-port: Groq's Whisper (`whisper-large-v3-turbo`, `adapters/transcriber/groq.py`), which takes the
-apps' ogg and mp4 as they are and finds the language itself. `build_transcriber` uses it when
-`GROQ_API_KEY` is set, the fake when `LLM_PROVIDER=fake`, and none otherwise. The turn reads
-`[Voice note] <words>` as if typed; the reply stays text. A note over `MAX_VOICE_BYTES` (2 MB,
-minutes long), one that can't be fetched or heard, or no transcriber, is skipped like a sticker:
-alone, it gets `NOT_TEXT_REPLY`. Nothing is kept but the words in the transcript.
+attachment, `first_audio`) is downloaded like a photo (`ChannelService._voice_note`) and put in
+words by the `Transcriber` port. `STT_PROVIDER` picks it, the same switch that hears calls (§10),
+and it hears in `VOICE_LANGUAGE`:
+
+- `deepgram` (the default): `DeepgramTranscriber` (`adapters/transcriber/deepgram.py`) sends the
+  whole file to Deepgram's `nova-3-general`, the model calls stream to, in about 1.5–3.5 s.
+- `chorus`: `ChorusTranscriber` (`adapters/transcriber/chorus.py`) uploads the file to Gigalogy's
+  Chorus, then asks for the words every 0.5 s until they're ready, about 23 s later.
+
+Both take the apps' ogg and mp4 as they are. `build_transcriber` builds one for the whole server
+(`Services.transcriber`, which a call on Chorus also uses): the fake when `LLM_PROVIDER=fake`, and
+none with `deepgram` but no `DEEPGRAM_API_KEY`. The turn reads `[Voice note] <words>` as if typed;
+the reply stays text. A note over `MAX_VOICE_NOTE_BYTES` (2 MB, minutes long), one that can't be
+fetched or heard, or no transcriber, is skipped like a sticker: alone, it gets `NOT_TEXT_REPLY`.
+Nothing is kept but the words in the transcript.
 
 ### Photos on Telegram (D63)
 
@@ -1794,19 +1802,31 @@ orders by hand (D95).
 
 A `voice/` package turns speech into `start_turn(channel="voice")` calls and
 the turn's events back into speech, with Pipecat (D18): the browser's audio over
-WebRTC (`POST /api/voice/offer`), Silero VAD, Deepgram for speech-to-text
-(streamed; `STT_PROVIDER=chorus` switches to Chorus, one upload per utterance
-after 0.5s of silence, D39; `STT_PROVIDER=whisper` to our Whisper, D87) and Piper for
-text-to-speech.
+WebRTC (`POST /api/voice/offer`), Silero VAD, `STT_PROVIDER` to hear and the Bangla voice or
+Piper to speak. `run_call` (`voice/call.py`) builds one call's pipeline:
+
+```
+microphone → VAD → hear → CallAgent → speak (SpeakableText first) → speaker
+```
+
+`CallAgent` runs a turn for each thing the caller says and passes the reply on to be spoken.
+
+- **Hearing (D39, D183):** `STT_PROVIDER` hears calls and voice notes alike, in `VOICE_LANGUAGE`.
+  `deepgram` (the default, `DEEPGRAM_API_KEY`) streams the call to Pipecat's `DeepgramSTTService`
+  (`nova-3-general`), so the words are ready as soon as the caller stops. `chorus` (the Gigalogy
+  keys) can't stream: `WholeUtterances` hands each utterance, a WAV cut after 0.5 s of silence,
+  to `Services.transcriber`, the `ChorusTranscriber` that hears voice notes. Chorus is Groq's
+  `whisper-large-v3` behind a queue, about 23 s an utterance on 11 Nov: for comparing, not for a
+  caller to wait on.
 
 - **Off for now (D108, D164):** `shop.TAKES_VOICE` is off, so
   `GET /api/chat/{key}` says `voice: false`, the page shows no Call button, and
   `POST /api/voice/offer` is a 403 `no_voice`. The code stays for the shop's confirmation
   calls (below): turning it on is the one switch.
 - **Bangla (D84, D86):** the server's `VOICE_LANGUAGE` (`bn`, the default, or `en`) says what
-  every call hears and speaks, whatever the agent. A `bn` call asks Deepgram for Bangla
+  every call hears and speaks, whatever the agent. A `bn` call is heard in Bangla
   (`language=bn`) and speaks with our Bangla voice:
-  `voice/bangla_tts.py` (`BanglaTTS`) sends each sentence to `BANGLA_TTS_URL`, a small server in
+  `voice/bangla_voice.py` (`BanglaVoice`) sends each sentence to `BANGLA_VOICE_URL`, a small server in
   `tts_server/` (its own uv project, so torch stays out of HeyDesk's) running
   `EMTIAZZ/bangladeshi-bangla-tts-vits` (VITS, Apache 2.0, a Bangladeshi accent) on the CPU.
   `POST /speak {text}` returns the sentence as 16-bit PCM, its rate in `X-Sample-Rate`. That voice
@@ -1818,21 +1838,14 @@ text-to-speech.
   `POST /speak` from a Kaggle T4, with a model that sounds more natural than VITS: BanglaBox
   (`Banglabox/chatterbox-bangla-tts`, a Bangla Chatterbox) or OmniVoice (`k2-fsa/OmniVoice`,
   non-commercial). Both clone one of BanglaBox's reference voices. A Cloudflare quick tunnel gives
-  the notebook a public URL. The notebook prints that URL as a `BANGLA_TTS_URL=` line for `.env`,
+  the notebook a public URL. The notebook prints that URL as a `BANGLA_VOICE_URL=` line for `.env`,
   and the URL changes on every run.
-- **Our Whisper on a free GPU, for demos (D87):** `tts_server/kaggle_stt.ipynb` serves
-  `kayees/whisper-medium-bn-en-cs-faster` (Whisper medium fine-tuned on Bangla–English mixed
-  speech, faster-whisper int8) from its own Kaggle session and tunnel, or with `MODEL =
-  "bengaliai"` BengaliAI's Bangla Whisper medium, converted to CTranslate2 float16 at start, to
-  compare. `voice/whisper_stt.py`
-  (`WhisperSTT`, shaped like Chorus) posts each utterance's 16 kHz WAV to
-  `WHISPER_STT_URL/transcribe?language=<VOICE_LANGUAGE>` and gets `{"text": …}` back.
 
-- **Sentences:** the reply's tokens go straight to Pipecat's TTS, which speaks them
-  sentence by sentence, so speech starts after the first sentence.
+- **Sentences:** the reply's tokens go straight to the voice (Pipecat's TTS), which speaks
+  them sentence by sentence, so speech starts after the first sentence.
 - **Spoken forms:** the model always sees display forms ("৳450", "7:30 pm"). On
-  voice, each sentence goes through `runtime/speech.py`'s `speakable()` just
-  before the TTS, which says money, times, phone numbers and order numbers in
+  voice, each sentence goes through `runtime/speech.py`'s `speakable()` (`SpeakableText`) just
+  before it's spoken, which says money, times, phone numbers and order numbers in
   words ("four hundred and fifty taka") (D20). The "right now" section asks for
   short, list-free replies.
 - **Fillers:** when a tool with a `filler` starts, the voice channel says it.
@@ -1950,7 +1963,7 @@ version handles them.
 | What the caller *heard* after a barge-in | The turn's trace says `interrupted`; the text is what was generated |
 | Clearing old `turns`, a price for Gigalogy, Gemini embeddings and speech-to-text | Every turn is kept; a turn's cost is Groq's alone (Gigalogy reports tokens, no price), so a Gigalogy turn's cost is 0, meaning unknown (D71) |
 | Usage shown to the owner, limits per plan, Cloudflare Turnstile | One `VISITOR_DAILY_TURNS` and `WORKSPACE_DAILY_TURNS` for every business (D51); cost is in each turn's log line. Clearing the browser's token makes a new web visitor, still inside the business's daily turns and the IP's rate limit (D52) |
-| Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply, Bangla on Chorus | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters. Chorus is sent `bn`, untested (D84) |
+| Bangla voice: a GPU, streaming the audio inside a sentence, several calls speaking at once, English words in a Bangla reply | One sentence at a time, whole, on the CPU or a Kaggle T4 for demos (D85); a second call waits for the first's sentence. The local VITS voice drops Latin letters, so the prompt asks for them in Bangla letters |
 | Teams: more than one owner, other roles or per-page permissions, one email in two businesses, handing the business to someone else, the owner seeing an admin's changes, a 2FA | One owner and up to 10 moderators per business, one fixed split (D97); an invited email can't already have an account; the activity has the routes, not what changed in them |
 | Billing, phone numbers, hosting | No plans or billing; voice in the browser only: the shop's confirmation calls, and no Call button (D108, D164, D168); a Docker image and `compose.yaml` run it on one machine (SQLite in a volume); production is one Render instance with Postgres and Redis (D161, D182), no staging, and a rollback is Render's *Rollback* button |
 | Telegram: voice notes, messages over 4,096 characters, buttons the model chooses, a delivery-area button, sharing the phone with a tap | Text, photos (D63) and Python's buttons (D99), and replies are a few sentences (D42). The district comes from the address (D98), so there's no Inside/Outside Dhaka button; Telegram's contact button and Messenger's phone quick reply are a later step (docs/product-gaps.md §2) |
