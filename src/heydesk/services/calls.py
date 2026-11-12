@@ -21,15 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.errors import Conflict, HeyDeskError, NotFound
-from heydesk.models import Call, Conversation
-from heydesk.models.call import DONE, LIVE, QUEUED, RINGING, TALKING
+from heydesk.models import ConfirmationCall, Conversation
+from heydesk.models.confirmation_call import DONE, LIVE, QUEUED, RINGING, TALKING
 from heydesk.ports.llm import LanguageModel
 from heydesk.runtime.speech import money
 from heydesk.services.agents import AgentService, LiveAgent
 from heydesk.services.team import TeamService
 from heydesk.shop.config import CallSettings
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.orders import mobile, spoken_items
+from heydesk.shop.orders import parse_mobile, spoken_items
 from heydesk.shop.store import ShopStore
 
 log = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class Answered:
     said: str  # the call's first line: the agent says it as the call connects
 
 
-class CallService:
+class ConfirmationCallService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
@@ -70,10 +70,10 @@ class CallService:
         production (design §12), so there a call would only ever be missed."""
         return self.settings.APP_ENV != "production"
 
-    def clean_number(self, said: str) -> str:
+    def parse_mobile_number(self, said: str) -> str:
         """The page's mobile, written as an order's is: "+880 1712-345678" → "01712345678"."""
         try:
-            return mobile(said)
+            return parse_mobile(said)
         except ValueError:  # its message is for the model: "Ask for it again."
             raise HeyDeskError(
                 "A Bangladeshi mobile number has 11 digits and starts with 01, like 01712345678."
@@ -92,7 +92,7 @@ class CallService:
 
     # Into the queue
 
-    async def after_turn(self, agent: LiveAgent, conversation_id: str) -> None:
+    async def queue_new_orders(self, agent: LiveAgent, conversation_id: str) -> None:
         """A turn saved something: each new order from it is queued, if the shop has calls on.
         An order is queued by itself once; the owner can call it again.
         Only the shop's own calls: a visitor still can't call the shop (`TAKES_VOICE`)."""
@@ -105,7 +105,7 @@ class CallService:
             if order.status == "new" and not await self._calls_for(agent.workspace_id, order.id):
                 await self._queue(agent, order, calls.wait_minutes)
 
-    async def call_order(self, workspace_id: str, order_id: str) -> Call:
+    async def call_order(self, workspace_id: str, order_id: str) -> ConfirmationCall:
         """The owner's "Call to confirm": first in the queue."""
         agent = await self.agents.by_workspace(workspace_id)
         if not self.can_ring:
@@ -121,9 +121,9 @@ class CallService:
 
     async def _queue(
         self, agent: LiveAgent, order: ShopOrder, wait: int, priority: int = 0
-    ) -> Call:
+    ) -> ConfirmationCall:
         now = self.now()
-        call = Call(
+        call = ConfirmationCall(
             workspace_id=agent.workspace_id,
             agent_id=agent.agent_id,
             order_id=order.id,
@@ -148,20 +148,24 @@ class CallService:
         view: Literal["waiting", "done"] = "waiting",
         order_id: str | None = None,
         limit: int = 100,
-    ) -> list[Call]:
+    ) -> list[ConfirmationCall]:
         """Waiting: the live calls, then the queue in the order it's called. Done: newest
         first. With `order_id`: that order's calls, newest first."""
-        query = select(Call).where(Call.workspace_id == workspace_id)
+        query = select(ConfirmationCall).where(ConfirmationCall.workspace_id == workspace_id)
         if order_id:
-            query = query.where(Call.order_id == order_id).order_by(Call.created_at.desc())
+            query = query.where(ConfirmationCall.order_id == order_id).order_by(
+                ConfirmationCall.created_at.desc()
+            )
         elif view == "done":
-            query = query.where(Call.status == DONE).order_by(Call.updated_at.desc())
+            query = query.where(ConfirmationCall.status == DONE).order_by(
+                ConfirmationCall.updated_at.desc()
+            )
         else:
-            query = query.where(Call.status != DONE).order_by(*QUEUE_ORDER)
+            query = query.where(ConfirmationCall.status != DONE).order_by(*QUEUE_ORDER)
         async with self.sessions() as s:
             return list(await s.scalars(query.limit(limit)))
 
-    async def call_now(self, workspace_id: str, call_id: str) -> Call:
+    async def call_now(self, workspace_id: str, call_id: str) -> ConfirmationCall:
         """A queued call goes to the front, due now."""
         async with self.sessions() as s, s.begin():
             call = await self._get(s, call_id, workspace_id)
@@ -170,7 +174,7 @@ class CallService:
             call.priority, call.next_try_at, call.updated_at = 1, self.now(), self.now()
         return call
 
-    async def stop(self, workspace_id: str, call_id: str) -> Call:
+    async def stop(self, workspace_id: str, call_id: str) -> ConfirmationCall:
         """The owner cancels a queued call: the order stays as it is."""
         async with self.sessions() as s, s.begin():
             call = await self._get(s, call_id, workspace_id)
@@ -191,7 +195,9 @@ class CallService:
 
     async def _after_restart(self) -> None:
         async with self.sessions() as s, s.begin():
-            for call in await s.scalars(select(Call).where(Call.status == TALKING)):
+            for call in await s.scalars(
+                select(ConfirmationCall).where(ConfirmationCall.status == TALKING)
+            ):
                 call.status, call.outcome = DONE, "no_decision"
 
     async def ring_due_calls(self) -> None:
@@ -201,16 +207,22 @@ class CallService:
         late = now - timedelta(seconds=self.settings.RING_SECONDS)
         async with self.sessions() as s:
             missed = list(
-                await s.scalars(select(Call.id).where(Call.status == RINGING, Call.rang_at < late))
+                await s.scalars(
+                    select(ConfirmationCall.id).where(
+                        ConfirmationCall.status == RINGING, ConfirmationCall.rang_at < late
+                    )
+                )
             )
         for call_id in missed:
             await self.mark_missed(call_id)
         async with self.sessions() as s:
-            live = await s.scalar(select(func.count()).where(Call.status.in_(LIVE))) or 0
+            live = (
+                await s.scalar(select(func.count()).where(ConfirmationCall.status.in_(LIVE))) or 0
+            )
             due = list(
                 await s.scalars(
-                    select(Call)
-                    .where(Call.status == QUEUED, Call.next_try_at <= now)
+                    select(ConfirmationCall)
+                    .where(ConfirmationCall.status == QUEUED, ConfirmationCall.next_try_at <= now)
                     .order_by(*QUEUE_ORDER)
                 )
             )
@@ -224,7 +236,7 @@ class CallService:
             except NotFound:  # a business suspended, or an order gone: it isn't called
                 await self._finish(call.id, "skipped")
 
-    async def _ring(self, call: Call) -> bool:
+    async def _ring(self, call: ConfirmationCall) -> bool:
         """Rings the call's page, if it's time. False when it didn't ring."""
         agent = await self.agents.by_id(call.agent_id)
         calls = agent.config.calls
@@ -272,7 +284,7 @@ class CallService:
             row.updated_at = self.now()
         log.info("call missed", extra={"call_id": call_id, "gave_up": gave_up})
         if gave_up:
-            await self.team.notify(
+            await self.team.notify_owner(
                 call.workspace_id,
                 f"📞 No answer from {call.name} ({call.phone}) about order {call.code}, after "
                 f"{call.tries} {'try' if call.tries == 1 else 'tries'}. Please call them yourself.",
@@ -284,7 +296,7 @@ class CallService:
         """The buyer tapped Answer: a new voice conversation that starts with the call's first
         line, and knows which order it's about (`state.calling`)."""
         async with self.sessions() as s:
-            call = await s.get(Call, call_id)
+            call = await s.get(ConfirmationCall, call_id)
         if call is None or call.status != RINGING:
             raise NotFound("This call has ended.")
         agent = await self.agents.by_id(call.agent_id)
@@ -326,7 +338,7 @@ class CallService:
         outcome = order.status if order.status in ("confirmed", "cancelled") else "no_decision"
         await self._finish(call_id, outcome)
         if outcome == "no_decision":
-            await self.team.notify(
+            await self.team.notify_owner(
                 call.workspace_id,
                 f"📞 {call.name} ({call.phone}) answered the call about order {call.code} but "
                 "didn't confirm or cancel it. It's still new.",
@@ -338,18 +350,23 @@ class CallService:
             row.status, row.outcome, row.updated_at = DONE, outcome, self.now()
         log.info("call done", extra={"call_id": call_id, "outcome": outcome})
 
-    async def _calls_for(self, workspace_id: str, order_id: str) -> list[Call]:
+    async def _calls_for(self, workspace_id: str, order_id: str) -> list[ConfirmationCall]:
         async with self.sessions() as s:
             found = await s.scalars(
-                select(Call).where(Call.workspace_id == workspace_id, Call.order_id == order_id)
+                select(ConfirmationCall).where(
+                    ConfirmationCall.workspace_id == workspace_id,
+                    ConfirmationCall.order_id == order_id,
+                )
             )
             return list(found)
 
-    async def _get(self, s: AsyncSession, call_id: str, workspace_id: str | None = None) -> Call:
+    async def _get(
+        self, s: AsyncSession, call_id: str, workspace_id: str | None = None
+    ) -> ConfirmationCall:
         """One call: the owner's routes pass their `workspace_id`; the worker and the phone go by id."""
-        query = select(Call).where(Call.id == call_id)
+        query = select(ConfirmationCall).where(ConfirmationCall.id == call_id)
         if workspace_id is not None:
-            query = query.where(Call.workspace_id == workspace_id)
+            query = query.where(ConfirmationCall.workspace_id == workspace_id)
         call = await s.scalar(query)
         if call is None:
             raise NotFound("There's no such call.")
@@ -361,10 +378,10 @@ class CallService:
 
 # Who's called next: the live ones first, then "Call now", then the earliest due, the oldest
 QUEUE_ORDER = (
-    case((Call.status.in_(LIVE), 0), else_=1),
-    Call.priority.desc(),
-    Call.next_try_at,
-    Call.created_at,
+    case((ConfirmationCall.status.in_(LIVE), 0), else_=1),
+    ConfirmationCall.priority.desc(),
+    ConfirmationCall.next_try_at,
+    ConfirmationCall.created_at,
 )
 
 

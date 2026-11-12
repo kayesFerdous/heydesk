@@ -13,7 +13,7 @@ from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, ToolResult, fail
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.delivery import ADDRESS_LIMIT, Zone, match_zone, with_district
-from heydesk.shop.orders import BuyForm, NewOrder, cart_text, mobile, subtotal_of
+from heydesk.shop.orders import BuyForm, NewOrder, cart_text, parse_mobile, subtotal_of
 from heydesk.shop.products import LOW_STOCK, OWN_STOCK, Product
 from heydesk.shop.store import ShopStore
 
@@ -135,7 +135,7 @@ async def new_order(
         note=one_line(note, 500),
         status=(  # one way to confirm it: the advance, the shop's call, or none
             "unpaid"
-            if charge and zone.pay_first and await store.pays_first(config)
+            if charge and zone.pay_first and await store.takes_payment_first(config)
             else "new"
             if config.call_to_confirm
             else "confirmed"
@@ -179,7 +179,7 @@ async def checked_order(
     )
     zone = check.take("district", form.district, lambda d: match_zone(config.delivery, d))
     name = check.take("name", form.name, parse.name)
-    phone = check.take("mobile number", form.phone, mobile)
+    phone = check.take("mobile number", form.phone, parse_mobile)
     if zone is None or address is None or name is None or phone is None:
         return f"Please check your {', '.join([*check.problems, *check.missing])}."
     address = with_district(address, form.district)

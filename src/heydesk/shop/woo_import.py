@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from heydesk.shop.csv_import import parse_money
-from heydesk.shop.products import Product, grouped
+from heydesk.shop.products import Product, merge_variant_rows
 
 SIZE, COLOUR = {"size"}, {"colour", "color"}  # attribute names, in any case
 WOO_DEFAULT_CATEGORY = "Uncategorized"  # Woo's own default category: ours is "Products"
@@ -72,7 +72,7 @@ def woo_variations(
         row |= {"colours": [colour] if colour else base["colours"]}
         rows.append(Product.model_validate(row))
         found.setdefault(rows[-1].price, {})[f"{size}|{colour}"] = v["id"]
-    by_price = {p.price: p for p in grouped(rows)}
+    by_price = {p.price: p for p in merge_variant_rows(rows)}
     if not by_price:
         raise ValueError(f"{base['name']}: none of its variations has a price")
     return found, by_price

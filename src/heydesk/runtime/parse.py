@@ -9,7 +9,6 @@ import re
 from datetime import date, datetime, time, timedelta
 
 from heydesk.runtime.schedule import WeeklyHours
-from heydesk.runtime.speech import clock_time
 
 
 def name(said: str) -> str:
@@ -151,8 +150,3 @@ def day_of(said: str, now: datetime, at: time | None = None) -> date:
             except ValueError:
                 raise ValueError(hint) from None
     raise ValueError(hint)
-
-
-def day_time(when: datetime) -> str:
-    """How a day and time is shown and read back: "Wed 30 Sep, 5:00 pm"."""
-    return f"{when:%a} {when.day} {when:%b}, {clock_time(when.time())}"

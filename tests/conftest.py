@@ -24,7 +24,7 @@ from heydesk.config import Settings
 from heydesk.db import Base, make_engine
 from heydesk.main import create_app
 from heydesk.models import Conversation
-from heydesk.runtime.config import Handoff
+from heydesk.runtime.config import HandoffSettings
 from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
@@ -41,7 +41,7 @@ AGENT = ShopConfig(  # a small config for unit tests
     business_name="Spice Garden",
     timezone="Asia/Dhaka",
     greeting="Hi, welcome to {business_name}!",
-    handoff=Handoff(message="Please call us.", phone="+880 1700 000000"),
+    handoff=HandoffSettings(message="Please call us.", phone="+880 1700 000000"),
 )
 
 

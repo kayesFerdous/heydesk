@@ -32,9 +32,9 @@ from heydesk.shop import csv_import
 from heydesk.shop.csv_import import PRODUCT_COLUMNS, products_from_csv, stock_cell
 from heydesk.shop.delivery import with_district
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.orders import STATUS_WORDS, Coupon, mobile
+from heydesk.shop.orders import STATUS_WORDS, Coupon, parse_mobile
 from heydesk.shop.products import LONG_PRODUCT_LIST, Product, merge_products
-from heydesk.shop.prompt import shop_missing, shop_note, shop_prompt
+from heydesk.shop.prompt import missing_setup, shop_note, shop_prompt
 from heydesk.shop.tools.cart import CartLine, UpdateCartInput, update_cart
 from heydesk.shop.tools.orders import (
     ChangeOrderInput,
@@ -118,10 +118,10 @@ async def buy(world: World, agent: LiveAgent, *lines: dict[str, object]) -> str:
 
 def test_a_mobile_number_is_eleven_digits_however_it_is_typed() -> None:
     for said in ("01712345678", "+880 1712-345678", "8801712345678", "০১৭১২৩৪৫৬৭৮"):
-        assert mobile(said) == "01712345678"
+        assert parse_mobile(said) == "01712345678"
     for wrong in ("0171234567", "02 9123456", "01212345678"):  # too short, a landline, no 012
         with pytest.raises(ValueError, match="11 digits"):
-            mobile(wrong)
+            parse_mobile(wrong)
 
 
 async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_cart(
@@ -147,7 +147,7 @@ async def test_the_prompt_has_the_products_and_delivery_and_the_note_has_the_car
     no_guide = agent.config.model_copy(update={"size_guide": ""})
     assert "# Size guide" not in await shop_prompt(no_guide, world.store(agent))
     assert "# The shop" in text  # it has policies
-    assert await shop_missing(agent.config, world.store(agent)) == []
+    assert await missing_setup(agent.config, world.store(agent)) == []
 
     added = await update_cart(make_ctx(world.store(agent), agent=agent.config), cart(KURTI))
     assert shop_note(agent.config, {}).startswith("\n# Language\nWrite your reply")
@@ -458,7 +458,7 @@ async def test_their_columns_are_matched_to_ours_and_imported(
 
 def test_columns_match_by_other_names_bangla_and_misspellings() -> None:
     headers = ["পণ্যের নাম", "দাম (৳)", "Regular Price", "Colors", "Catagory", "SKU", "Notes"]
-    assert csv_import.match(headers, PRODUCT_COLUMNS) == {
+    assert csv_import.match_columns(headers, PRODUCT_COLUMNS) == {
         "name": "পণ্যের নাম",
         "price": "দাম (৳)",
         "was_price": "Regular Price",
@@ -466,7 +466,7 @@ def test_columns_match_by_other_names_bangla_and_misspellings() -> None:
         "category": "Catagory",  # misspelt
         "code": "SKU",
     }  # "Notes" fits nothing: left for the owner
-    assert csv_import.match(["Product Name", "Category Name"], PRODUCT_COLUMNS) == {
+    assert csv_import.match_columns(["Product Name", "Category Name"], PRODUCT_COLUMNS) == {
         "name": "Product Name",
         "category": "Category Name",
     }
@@ -958,14 +958,14 @@ async def test_photo_links_in_a_list_are_downloaded_and_indexed_once(world: Worl
         "kurti,Kurti,950,\n"
     )
 
-    silk, kurti = await store.with_photos(products_from_csv(csv))
+    silk, kurti = await store.attach_photos(products_from_csv(csv))
     [url] = silk.photos
     assert world.services.photos.is_product_photo(DEV_WORKSPACE_ID, url)
     assert kurti.photos == [ours]
     matches = await world.services.photos.nearest(DEV_WORKSPACE_ID, to_jpeg(photo("red")))
     assert matches and matches[0][0] == url  # a visitor's photo finds it
 
-    again, _ = await store.with_photos(products_from_csv(csv))  # the next sync
+    again, _ = await store.attach_photos(products_from_csv(csv))  # the next sync
     assert again.photos == [url]
     assert fetched.count("https://cdn.example.com/silk.jpg") == 1
     assert fetched.count("https://cdn.example.com/gone.jpg") == 2  # tried again
@@ -1239,7 +1239,7 @@ async def test_the_team_types_an_order_and_takes_it_to_money_in(
     async def notify(workspace_id: str, text: str) -> None:
         told.append(text)
 
-    monkeypatch.setattr(services.team, "notify", notify)
+    monkeypatch.setattr(services.team, "notify_owner", notify)
     body = {
         "lines": [{"code": "kurti", "quantity": 2, "size": "M", "colour": "Black"}],
         "name": "Rahim",
@@ -1436,7 +1436,7 @@ async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> No
     waiting = await world.say(
         agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK]
     )
-    nudge = world.services.orders.nudge_unfinished
+    nudge = world.services.orders.remind_unconfirmed_orders
     world.clock.advance(minutes=30)
     await nudge()  # too soon
     assert (await world.conversation(waiting)).messages[-1]["content"] == READ_BACK
@@ -1454,7 +1454,7 @@ async def test_a_placed_order_is_not_nudged(world: World) -> None:
     agent = await world.agent()
     await buy(world, agent, KURTI)
     world.clock.advance(hours=2)
-    await world.services.orders.nudge_unfinished()
+    await world.services.orders.remind_unconfirmed_orders()
     async with world.sessions() as s:
         assert [c.nudged for c in await s.scalars(select(Conversation))] == [False]
 

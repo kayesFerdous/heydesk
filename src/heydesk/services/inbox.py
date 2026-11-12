@@ -181,7 +181,7 @@ class InboxService:
             conversation.assigned_to = user_id
         log.info("assigned", extra={"conversation_id": conversation.id})
         if user_id is not None and user_id != by.user_id:  # given to them: tell them
-            await self.team.alert(
+            await self.team.alert_team(
                 conversation, handoff_alert(conversation.messages, "👉 This chat is yours now")
             )
         return conversation
@@ -220,7 +220,7 @@ class InboxService:
             for conversation in due:
                 conversation.snoozed_until = None
         for conversation in due:
-            await self.team.alert(conversation, "⏰ A chat you snoozed is back.")
+            await self.team.alert_team(conversation, "⏰ A chat you snoozed is back.")
             log.info("snooze over", extra={"conversation_id": conversation.id})
 
     async def hand_back(self, workspace_id: str, conversation_id: str) -> Conversation:
@@ -287,15 +287,19 @@ class InboxService:
         log.info("team replied", extra={"conversation_id": conversation.id})
         return conversation
 
-    async def take_over(self, workspace_id: str, conversation_id: str, on: bool) -> Conversation:
+    async def set_taken_over(
+        self, workspace_id: str, conversation_id: str, taken_over: bool
+    ) -> Conversation:
         """The team takes the chat, and the agent stays quiet in it, or gives it back:
         the inbox's switch, "." in Business Suite or on Telegram. Quiet for
         TAKEOVER_QUIET_MINUTES, it's the agent's again."""
         async with self.sessions() as s, s.begin():
             conversation = await get_conversation(s, workspace_id, conversation_id)
-            conversation.status = HUMAN_STATUS if on else "active"
-            conversation.taken_over_at = self.now() if on else None
-        log.info("taken over" if on else "given back", extra={"conversation_id": conversation.id})
+            conversation.status = HUMAN_STATUS if taken_over else "active"
+            conversation.taken_over_at = self.now() if taken_over else None
+        log.info(
+            "taken over" if taken_over else "given back", extra={"conversation_id": conversation.id}
+        )
         return conversation
 
     def _active_chats_filter(self) -> tuple[ColumnElement[bool], ...]:

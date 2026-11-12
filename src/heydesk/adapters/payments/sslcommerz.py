@@ -2,7 +2,7 @@
 
 Each call uses the business's own store. Starting a payment makes a session and returns its
 page. When the buyer is done, SSLCommerz posts a `val_id` to the back and notify URLs;
-`check` asks its validation API about it, so a forged post changes nothing.
+`fetch_payment` asks its validation API about it, so a forged post changes nothing.
 Docs: developer.sslcommerz.com/doc/v4/
 """
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.payments import Account, Checkout, Paid, PaymentUnavailable
+from heydesk.ports.payments import Checkout, GatewayAccount, Paid, PaymentUnavailable
 
 SANDBOX = "https://sandbox.sslcommerz.com"
 LIVE = "https://securepay.sslcommerz.com"
@@ -26,7 +26,7 @@ class SslCommerz:
     def __init__(self, timeout: float = 15.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
 
-    async def verify(self, account: Account) -> None:
+    async def verify_account(self, account: GatewayAccount) -> None:
         """SSLCommerz has no "are these right?" call, so this starts a ৳10 session no one will
         ever pay: it only opens for a store id and password that are right."""
         check = Checkout(
@@ -42,7 +42,7 @@ class SslCommerz:
         )
         await self.start(account, check)
 
-    async def start(self, account: Account, checkout: Checkout) -> str:
+    async def start(self, account: GatewayAccount, checkout: Checkout) -> str:
         form = {
             "store_id": account.store_id,
             "store_passwd": account.password,
@@ -69,7 +69,7 @@ class SslCommerz:
             raise PaymentUnavailable(str(body.get("failedreason") or "SSLCommerz said no"))
         return str(body["GatewayPageURL"])
 
-    async def check(self, account: Account, payment_id: str) -> Paid | None:
+    async def fetch_payment(self, account: GatewayAccount, payment_id: str) -> Paid | None:
         params = {
             "val_id": payment_id,
             "store_id": account.store_id,
@@ -87,7 +87,9 @@ class SslCommerz:
             reference=str(body.get("bank_tran_id") or payment_id),
         )
 
-    async def _call(self, account: Account, method: str, path: str, **kw: Any) -> dict[str, Any]:
+    async def _call(
+        self, account: GatewayAccount, method: str, path: str, **kw: Any
+    ) -> dict[str, Any]:
         base = SANDBOX if account.sandbox else LIVE
         try:
             res = await self.client.request(method, base + path, **kw)

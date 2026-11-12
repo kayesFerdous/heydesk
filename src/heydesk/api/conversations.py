@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import LoggedInUser, Paged, Svc, WorkspaceId
+from heydesk.api.deps import LoggedInUser, Paging, Svc, WorkspaceId
 from heydesk.api.sse import live_frames
 from heydesk.api.visitors import VisitorOut, visitor_out
 from heydesk.models import Conversation
@@ -111,7 +111,7 @@ async def live(services: Svc, workspace_id: WorkspaceId) -> StreamingResponse:
 async def conversations(
     services: Svc,
     workspace_id: WorkspaceId,
-    page: Paged,
+    page: Paging,
     current_user: LoggedInUser,
     status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
@@ -332,7 +332,7 @@ async def take_over(
     """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
     TAKEOVER_QUIET_MINUTES."""
-    conversation = await services.inbox.take_over(workspace_id, conversation_id, body.on)
+    conversation = await services.inbox.set_taken_over(workspace_id, conversation_id, body.on)
     return await conversation_out(services, workspace_id, conversation)
 
 

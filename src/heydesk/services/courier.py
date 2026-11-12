@@ -27,7 +27,7 @@ from heydesk.shop.store import STATUSES_TO_BOOK, ShopStore
 log = logging.getLogger(__name__)
 
 NAMES = {"steadfast": "Steadfast", "pathao": "Pathao", "fake": "the test courier"}
-# ponytail: the words for "the rider has it today", matched in what the courier says. Only
+# Limitation: the words for "the rider has it today", matched in what the courier says. Only
 # the fake courier's are known; add Steadfast's or Pathao's once a live parcel shows them
 OUT_FOR_DELIVERY = ("out for delivery",)
 REVIEW_TOO_LATE = timedelta(days=2)  # a review asked later than this after it's due isn't sent
@@ -84,7 +84,7 @@ class CourierService:
         """Checks the keys with the courier and links it, replacing one already there."""
         agent = await self.agents.get(workspace_id)
         try:
-            store_id = await self.apis[given.kind].check(given)
+            store_id = await self.apis[given.kind].verify_account(given)
         except CourierError as error:
             raise InvalidConfig({"key": str(error)}) from None
         async with self.sessions() as s, s.begin():
@@ -148,8 +148,8 @@ class CourierService:
                     parcel_id = await api.book(acct, parcel(order))
                 except CourierError as error:
                     raise CourierError(f"{order.code} wasn't booked with {name}: {error}") from None
-                await self._tell_visitor_status(await shop.parcel_booked(order.id, parcel_id))
-                await self.team.notify(
+                await self._tell_visitor_status(await shop.mark_parcel_booked(order.id, parcel_id))
+                await self.team.notify_owner(
                     workspace_id, f"📦 {order.code} is booked with {name} ({parcel_id}). Pack it."
                 )
             for order in await shop.orders_for_courier("shipped"):
@@ -164,7 +164,7 @@ class CourierService:
                 elif not order.reminded and out_for_delivery(tracked.status_text):
                     await self._remind(shop, moved)
                 if tracked.final_status == "returned":
-                    await self.team.notify(
+                    await self.team.notify_owner(
                         workspace_id, f"↩️ {order.code} is coming back. Put its items back in stock."
                     )
         except CourierError as error:  # the rest wait for the next round
@@ -176,7 +176,7 @@ class CourierService:
             saved = await s.get_one(CourierLink, link.id)
             told, saved.problem = saved.problem, problem
         if problem and problem != told:
-            await self.team.notify(workspace_id, f"⚠️ Your courier: {problem}")
+            await self.team.notify_owner(workspace_id, f"⚠️ Your courier: {problem}")
 
     async def _tell_visitor_status(self, order: ShopOrder) -> None:
         if order.conversation_id and (line := order.status_update_text()):

@@ -88,11 +88,13 @@ async def test_a_paid_plan_starts_once_and_only_for_the_right_amount(world: Worl
 
     # Less than the price: nothing changes
     gateway.paid["short"] = Paid(checkout.order_id, 100, "BDT", "bank-1")
-    assert (await billing.check_payment(checkout.order_id, "short")).status == "unpaid"  # type: ignore[union-attr]
+    assert (await billing.confirm_payment(checkout.order_id, "short")).status == "unpaid"  # type: ignore[union-attr]
 
     gateway.paid["ok"] = Paid(checkout.order_id, checkout.amount, "BDT", "bank-2")
-    assert (await billing.check_payment(checkout.order_id, "ok")).status == "paid"  # type: ignore[union-attr]
-    await billing.check_payment(checkout.order_id, "ok")  # the gateway's notice too: no second year
+    assert (await billing.confirm_payment(checkout.order_id, "ok")).status == "paid"  # type: ignore[union-attr]
+    await billing.confirm_payment(
+        checkout.order_id, "ok"
+    )  # the gateway's notice too: no second year
     async with world.sessions() as s:
         workspace = await s.get(Workspace, DEV_WORKSPACE_ID)
     assert workspace is not None and workspace.plan == "growth"
@@ -114,8 +116,8 @@ async def test_a_plan_paid_by_bkash_starts_the_same_way(app: FastAPI, world: Wor
     assert checkout.back_url.endswith(f"/billing/{checkout.order_id}/bkash")
 
     bkash.paid["P1"] = Paid(checkout.order_id, checkout.amount, "BDT", "TRX1")
-    assert (await billing.check_payment(checkout.order_id, "P1", "bkash")).status == "paid"  # type: ignore[union-attr]
-    await billing.check_payment(
+    assert (await billing.confirm_payment(checkout.order_id, "P1", "bkash")).status == "paid"  # type: ignore[union-attr]
+    await billing.confirm_payment(
         checkout.order_id, "P1", "bkash"
     )  # the owner reloads: no second month
     async with world.sessions() as s:
@@ -143,7 +145,7 @@ async def pay(billing: BillingService, gateway: FakePayments, plan: str, months:
     await billing.checkout(DEV_WORKSPACE_ID, plan, months)
     checkout = gateway.started[-1][1]
     gateway.paid[checkout.order_id] = Paid(checkout.order_id, checkout.amount, "BDT", "bank")
-    payment = await billing.check_payment(checkout.order_id, checkout.order_id)
+    payment = await billing.confirm_payment(checkout.order_id, checkout.order_id)
     assert payment is not None
     return payment.status
 
@@ -210,7 +212,7 @@ async def test_a_payment_priced_before_the_plan_changed_is_held(world: World) ->
     assert await pay(billing, gateway, "starter", 12) == "paid"  # then a year of Starter
 
     gateway.paid["late"] = Paid(upgrade.order_id, upgrade.amount, "BDT", "bank")
-    held = await billing.check_payment(upgrade.order_id, "late")
+    held = await billing.confirm_payment(upgrade.order_id, "late")
     assert held is not None and held.status == "review"
     assert (await get_workspace(world)).plan == "starter"  # not a year of Pro for 2 days' price
     payments = (await billing.billing(DEV_WORKSPACE_ID)).payments

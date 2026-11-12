@@ -3,8 +3,8 @@ those."""
 
 from heydesk.models.agent import Agent
 from heydesk.models.audit import AuditEvent
-from heydesk.models.call import Call
-from heydesk.models.channel import Channel
+from heydesk.models.channel_link import ChannelLink
+from heydesk.models.confirmation_call import ConfirmationCall
 from heydesk.models.conversation import Conversation
 from heydesk.models.courier_link import CourierLink
 from heydesk.models.document import Document
@@ -26,8 +26,8 @@ from heydesk.models.workspace import Workspace
 __all__ = [
     "Agent",
     "AuditEvent",
-    "Call",
-    "Channel",
+    "ChannelLink",
+    "ConfirmationCall",
     "Conversation",
     "CourierLink",
     "Document",

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, model_validator
 
 from heydesk.api.auth import ROLES, Role
-from heydesk.api.deps import Admin, Paged, Svc
+from heydesk.api.deps import Admin, Paging, Svc
 from heydesk.services.admin import BusinessDetail, BusinessRow, FailedTurn, Overview
 from heydesk.services.users import temporary_password
 
@@ -61,7 +61,7 @@ async def overview(
 
 @router.get("/failed-turns")
 async def failed_turns(
-    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
+    admin: Admin, services: Svc, page: Paging, workspace_id: str | None = None
 ) -> list[FailedTurn]:
     """Turns that ended with the polite line, newest first, a page at a time."""
     return await services.admin.failed_turns(workspace_id, limit=page.limit, before=page.before)
@@ -127,7 +127,7 @@ async def reset_password(user_id: str, admin: Admin, services: Svc) -> Temporary
 
 @router.get("/audit")
 async def audit(
-    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
+    admin: Admin, services: Svc, page: Paging, workspace_id: str | None = None
 ) -> list[AuditOut]:
     """Newest first, a page at a time (`limit`, `before` an `at`)."""
     return [

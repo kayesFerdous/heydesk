@@ -58,8 +58,8 @@ class ShopConfig(AgentConfig):
     exchange_days: int = Field(default=0, ge=0, le=60)
 
     @property
-    def pay_first(self) -> bool:
-        """Some area's charge is paid online first: `ShopStore.pays_first` reads it."""
+    def any_zone_pays_first(self) -> bool:
+        """Some area's charge is paid online first: `ShopStore.takes_payment_first` reads it."""
         return any(zone.pay_first for zone in self.delivery)
 
     @model_validator(mode="after")

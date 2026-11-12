@@ -146,7 +146,7 @@ class MemberService:
                 add(user_id, leads_sold=n)
         return out
 
-    async def record(self, current_user: CurrentUser, action: str, target: str) -> None:
+    async def record_activity(self, current_user: CurrentUser, action: str, target: str) -> None:
         assert current_user.workspace_id is not None
         async with self.sessions() as s, s.begin():
             email = await s.scalar(select(User.email).where(User.id == current_user.user_id))

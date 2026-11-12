@@ -1,5 +1,5 @@
 """The business's team: the owner adds and removes moderators, and sees what the team
-did. Owners only: a moderator gets a 403 here (`deps.owners_only`)."""
+did. Owners only: a moderator gets a 403 here (`deps.is_owner_only_route`)."""
 
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel
 
 from heydesk.api.auth import EMAIL
-from heydesk.api.deps import ClientIp, LoggedInUser, Paged, Svc, WorkspaceId
+from heydesk.api.deps import ClientIp, LoggedInUser, Paging, Svc, WorkspaceId
 from heydesk.models import User
 
 router = APIRouter(prefix="/api/team", tags=["team"])
@@ -132,7 +132,7 @@ async def stats(
 
 
 @router.get("/activity")
-async def activity(workspace_id: WorkspaceId, services: Svc, paged: Paged) -> list[EventOut]:
+async def activity(workspace_id: WorkspaceId, services: Svc, paged: Paging) -> list[EventOut]:
     """What the owners and moderators changed, newest first (`limit`, `before`)."""
     events = await services.members.activity(workspace_id, limit=paged.limit, before=paged.before)
     return [

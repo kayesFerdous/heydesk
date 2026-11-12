@@ -24,7 +24,7 @@ from heydesk.errors import (
     NotFound,
     VisitorSilenced,
 )
-from heydesk.models import Channel
+from heydesk.models import ChannelLink
 from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OUR_APP_TAG, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -129,15 +129,15 @@ class ChannelService:
         expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
         return bool(secret) and hmac.compare_digest(expected, signature)
 
-    async def telegram_webhook(self, channel_id: str, secret: str) -> Channel:
+    async def telegram_webhook(self, channel_id: str, secret: str) -> ChannelLink:
         """The channel a webhook call is for. 404 unless the secret is the one we gave Telegram."""
         async with self.sessions() as s:
-            channel = await s.get(Channel, channel_id)
+            channel = await s.get(ChannelLink, channel_id)
         if channel is None or not secrets.compare_digest(channel.secret, secret):
             raise NotFound("Not found")
         return channel
 
-    async def answer_telegram(self, channel: Channel, update: dict[str, Any]) -> None:
+    async def answer_telegram(self, channel: ChannelLink, update: dict[str, Any]) -> None:
         """Answers one message from Telegram. Runs after the webhook has said OK. A tapped
         button is a callback query: its data becomes the message's text."""
         message = update.get("message") or {}
@@ -154,7 +154,7 @@ class ChannelService:
         name = " ".join(filter(None, [chat.get("first_name"), chat.get("last_name")]))
         await self._answer(channel, str(chat["id"]), message | {"name": name})
 
-    async def answer_messenger(self, channel: Channel, event: dict[str, Any]) -> None:
+    async def answer_messenger(self, channel: ChannelLink, event: dict[str, Any]) -> None:
         """Answers one message to a Facebook Page. Runs after the webhook has said OK."""
         message = event.get("message")
         if "postback" in event:  # a card's button: its payload is what they chose
@@ -173,7 +173,7 @@ class ChannelService:
         await self._answer(channel, chat_id, message)
 
     async def answer_whatsapp(
-        self, channel: Channel, message: dict[str, Any], name: str | None = None
+        self, channel: ChannelLink, message: dict[str, Any], name: str | None = None
     ) -> None:
         """Answers one WhatsApp message. Runs after the webhook has said OK. It's put in the
         shape `_answer` reads: a tapped button's id is the text, a photo's caption its
@@ -195,7 +195,7 @@ class ChannelService:
         remember(self.whatsapp_said, message["id"], said)
         await self._answer(channel, str(message["from"]), said | {"name": name})
 
-    async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
+    async def _answer(self, channel: ChannelLink, chat_id: str, message: dict[str, Any]) -> None:
         """Nothing here may raise: a failure is logged and the visitor gets a polite line."""
         text = message.get("text")
         try:
@@ -213,7 +213,7 @@ class ChannelService:
             if text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 agent = await self.agents.by_id(channel.agent_id)
                 await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
-                await self.team.send(channel, chat_id, agent.greeting)
+                await self.team.send_message(channel, chat_id, agent.greeting)
                 return
             # every message counts toward a flood, even one batched into another's turn
             await self.visitors.count_message(channel.workspace_id, f"{channel.kind}:{chat_id}")
@@ -223,13 +223,13 @@ class ChannelService:
         except VisitorSilenced:  # blocked, and told once already
             return
         except HeyDeskError as error:  # too long, or a suspended business: it says why
-            await self.team.send(channel, chat_id, error.message)
+            await self.team.send_message(channel, chat_id, error.message)
         except Exception:
             log.exception("answer failed", extra={"channel_id": channel.id})
-            await self.team.send(channel, chat_id, FAILED_REPLY)
+            await self.team.send_message(channel, chat_id, FAILED_REPLY)
 
     async def _collect_messages(
-        self, channel: Channel, chat_id: str, message: dict[str, Any]
+        self, channel: ChannelLink, chat_id: str, message: dict[str, Any]
     ) -> list[dict[str, Any]] | None:
         """Many bubbles, one turn: waits `CHAT_WAIT_SECONDS` after a message. If another
         came meanwhile, that one answers both, so this gives None; if not, every message the
@@ -244,7 +244,7 @@ class ChannelService:
         return waiting
 
     async def _run_turn(
-        self, channel: Channel, chat_id: str, messages: list[dict[str, Any]]
+        self, channel: ChannelLink, chat_id: str, messages: list[dict[str, Any]]
     ) -> None:
         """One turn on the visitor's messages: their words a line each, a quoted message before
         the words that reply to it, and the last photo, theirs or a quoted one."""
@@ -265,7 +265,7 @@ class ChannelService:
             if quoted is not None and sent is None:
                 photo = quoted
         if not lines:
-            await self.team.send(channel, chat_id, NOT_TEXT_REPLY)
+            await self.team.send_message(channel, chat_id, NOT_TEXT_REPLY)
             return
         typing = None  # "typing…" only when the agent will answer, not the team
         if await self.conversations.will_answer(agent, channel.kind, chat_id):
@@ -292,12 +292,12 @@ class ChannelService:
         summary = reply.card is not None and reply.card.kind == "summary"
         choices = buttons(reply.choices)
         if reply.text:
-            await self.team.send(channel, chat_id, reply.text, [] if summary else choices)
+            await self.team.send_message(channel, chat_id, reply.text, [] if summary else choices)
         if reply.card:
             await self._send_card(channel, chat_id, reply.card, choices if summary else [])
         if reply.handoff:
             phone = reply.handoff.phone or reply.handoff.email
-            await self.team.send(
+            await self.team.send_message(
                 channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
             )
 
@@ -307,7 +307,7 @@ class ChannelService:
                 remember(self.cards_sent, message_id, said)
 
     async def _replied_to_message(
-        self, channel: Channel, message: dict[str, Any]
+        self, channel: ChannelLink, message: dict[str, Any]
     ) -> tuple[str, bytes | None]:
         """The earlier message this one replies to: its words and its photo. Telegram sends the whole message; Messenger its id, so it's fetched;
         WhatsApp its id, so only a message this server kept is known: the buyer's own, or a
@@ -337,7 +337,7 @@ class ChannelService:
             return "", None  # the reply is read on its own
         return words, photo
 
-    async def _voice_note(self, channel: Channel, message: dict[str, Any]) -> str | None:
+    async def _voice_note(self, channel: ChannelLink, message: dict[str, Any]) -> str | None:
         """A voice note's words, marked as heard, or None: not a voice note, too long,
         or nothing understood."""
         if self.transcriber is None:
@@ -367,7 +367,7 @@ class ChannelService:
             return None
         return f"[Voice note] {words}" if words else None
 
-    async def _photo(self, channel: Channel, message: dict[str, Any]) -> bytes | None:
+    async def _photo(self, channel: ChannelLink, message: dict[str, Any]) -> bytes | None:
         """The photo a visitor sent, downloaded now (Facebook's URLs expire), or None."""
         if channel.kind == TELEGRAM:  # the same photo in several sizes, largest last
             sizes = message.get("photo")
@@ -382,7 +382,7 @@ class ChannelService:
 
     async def _send_photos(
         self,
-        channel: Channel,
+        channel: ChannelLink,
         chat_id: str,
         photos: list[dict[str, str]],
         key: str,
@@ -444,7 +444,7 @@ class ChannelService:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
 
     async def _send_card(
-        self, channel: Channel, chat_id: str, card: Card, choices: list[str]
+        self, channel: ChannelLink, chat_id: str, card: Card, choices: list[str]
     ) -> None:
         """A tool's card, after the words, each app its own way: on Telegram
         HTML with buttons; on Messenger and WhatsApp the words with `choices`, a receipt with
@@ -464,7 +464,7 @@ class ChannelService:
                     channel.token, channel.address, chat_id, text, "Pay now", pay_url
                 )
             else:
-                await self.team.send(channel, chat_id, text, choices)
+                await self.team.send_message(channel, chat_id, text, choices)
         except CHAT_APP_ERRORS as error:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
@@ -493,7 +493,7 @@ class ChannelService:
         """A photo on this server's disk is "/media/…"; one in R2 is whole already."""
         return url if url.startswith("https://") else self.settings.public_url + url
 
-    async def _keep_typing(self, channel: Channel, chat_id: str, message_id: str) -> None:
+    async def _keep_typing(self, channel: ChannelLink, chat_id: str, message_id: str) -> None:
         """ "typing…" lasts five seconds on Telegram; a reply can take longer. WhatsApp's lasts
         until the reply, so it's sent once, with their last message's id."""
         while True:

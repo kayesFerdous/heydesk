@@ -7,7 +7,8 @@ from datetime import UTC
 from pydantic import BaseModel, Field
 
 from heydesk.runtime import parse
-from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.commit_check import ask_for_yes, confirm
+from heydesk.runtime.speech import day_time
 from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 from heydesk.shop.records import NewLead, NewMessage, RecordStore
@@ -35,7 +36,7 @@ def _handoff_contact(ctx: ToolContext[RecordStore]) -> dict[str, str]:
     return {k: v for k, v in data.items() if v}
 
 
-HANDOFF = Tool(
+HANDOFF_TO_HUMAN = Tool(
     name="handoff_to_human",
     description=(
         "Pass the conversation to a person on the team: when the visitor asks for a person, "
@@ -67,7 +68,7 @@ async def flag_complaint(ctx: ToolContext[RecordStore], args: ComplaintInput) ->
     )
 
 
-COMPLAINT = Tool(
+FLAG_COMPLAINT = Tool(
     name="flag_complaint",
     description=(
         "The visitor is unhappy or complains: about an order, a delivery, a product, the staff "
@@ -166,7 +167,7 @@ async def take_lead(ctx: ToolContext[RecordStore], args: TakeLeadInput) -> ToolR
     note = one_line(args.note, 300)
 
     lead = NewLead(when.astimezone(UTC), note, name, phone)
-    read_back = f"We call you on {parse.day_time(when)} at {phone}" + "".join(
+    read_back = f"We call you on {day_time(when)} at {phone}" + "".join(
         f"; {label} {value}" for label, value in (("about", note), ("for", name)) if value
     )
     confirmed = confirm(ctx.last_read_back, lead, read_back)

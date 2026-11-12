@@ -79,7 +79,7 @@ class Coupon(BaseModel):
         return f"{self.code}: free delivery"
 
 
-class BuyerRecord(BaseModel):
+class BuyerHistory(BaseModel):
     """A mobile's orders with this shop: shown on each order before it's sent, since
     a buyer who refused parcels before costs the shop two delivery charges again."""
 
@@ -89,7 +89,7 @@ class BuyerRecord(BaseModel):
     cancelled: int = 0
 
 
-class Buyer(BuyerRecord):
+class Buyer(BuyerHistory):
     """One line of the buyers list: a mobile, and what it did with this shop."""
 
     phone: str
@@ -101,7 +101,7 @@ class Buyer(BuyerRecord):
     conversations: int
 
 
-def mobile(said: str) -> str:
+def parse_mobile(said: str) -> str:
     """A Bangladeshi mobile number as 11 digits: "+880 1712-345678" or "০১৭১২৩৪৫৬৭৮" →
     "01712345678". A wrong number means a parcel that can't be delivered, so it's strict."""
     digits = re.sub(r"[\s\-().]", "", said.translate(BANGLA_DIGITS)).removeprefix("+")

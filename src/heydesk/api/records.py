@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Paged, Shop, StatusIn, Svc, WorkspaceId
+from heydesk.api.deps import Paging, Shop, StatusIn, Svc, WorkspaceId
 from heydesk.models import Lead, TeamMessage, Ticket
 
 router = APIRouter(tags=["records"])
@@ -29,7 +29,7 @@ class MessageOut(BaseModel):
 
 @router.get("/api/messages")
 async def messages(
-    store: Shop, page: Paged, status: str | None = None, q: str | None = None
+    store: Shop, page: Paging, status: str | None = None, q: str | None = None
 ) -> list[MessageOut]:
     """Messages for the team, newest first, a page at a time (`limit`, `before`). `q`
     matches the code, the name or the phone."""
@@ -65,7 +65,7 @@ async def tickets(
     store: Shop,
     services: Svc,
     workspace_id: WorkspaceId,
-    page: Paged,
+    page: Paging,
     status: Literal["open", "solved"] | None = None,
 ) -> list[TicketOut]:
     """Complaints the agent flagged, newest first, a page at a time; `status=open`
@@ -124,7 +124,7 @@ class WhyOut(BaseModel):
 @router.get("/api/leads")
 async def leads(
     store: Shop,
-    page: Paged,
+    page: Paging,
     status: Literal["open", "sold", "not_now", "lost"] | None = None,
 ) -> list[LeadOut]:
     """Call backs the agent took, newest first; `status=open` for the ones to call."""

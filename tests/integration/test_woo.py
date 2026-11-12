@@ -15,7 +15,7 @@ from httpx import AsyncClient
 from heydesk.errors import InvalidConfig
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.payments import Paid
-from heydesk.ports.woo import WooStore, WooUnreachable
+from heydesk.ports.woo import WooCredentials, WooUnreachable
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.services.woo import TOPICS, WOO_STATUS
 from heydesk.shop.woo_import import products_from_woo
@@ -96,42 +96,42 @@ class FakeWoo:
         self.url = URL  # the store's address
         self.hooks: dict[int, dict[str, Any]] = {}  # the webhooks made in it
 
-    async def products(self, store: WooStore) -> list[dict[str, Any]]:
+    async def products(self, store: WooCredentials) -> list[dict[str, Any]]:
         assert (store.url, store.key, store.secret) == (self.url, "ck_1", "cs_1")
         self._check()
         return self.items
 
-    async def can_write(self, store: WooStore) -> bool:
+    async def can_write(self, store: WooCredentials) -> bool:
         return self.writes
 
-    async def create_order(self, store: WooStore, body: dict[str, Any]) -> int:
+    async def create_order(self, store: WooCredentials, body: dict[str, Any]) -> int:
         self._check()
         woo_id = 100 + len(self.orders)
         self.orders[woo_id] = body
         self._take(body, -1)
         return woo_id
 
-    async def set_status(self, store: WooStore, order_id: int, status: str) -> None:
+    async def set_status(self, store: WooCredentials, order_id: int, status: str) -> None:
         self._check()
         if status == "cancelled":
             self._take(self.orders[order_id], +1)
         self.orders[order_id]["status"] = status
 
-    async def add_webhook(self, store: WooStore, topic: str, url: str, secret: str) -> int:
+    async def add_webhook(self, store: WooCredentials, topic: str, url: str, secret: str) -> int:
         made = max(self.hooks, default=49) + 1
         self.hooks[made] = {"topic": topic, "delivery_url": url, "secret": secret}
         self.hooks[made]["status"] = "active"
         return made
 
-    async def webhook(self, store: WooStore, webhook_id: int) -> dict[str, Any] | None:
+    async def webhook(self, store: WooCredentials, webhook_id: int) -> dict[str, Any] | None:
         return self.hooks.get(webhook_id)
 
     async def update_webhook(
-        self, store: WooStore, webhook_id: int, changes: dict[str, Any]
+        self, store: WooCredentials, webhook_id: int, changes: dict[str, Any]
     ) -> None:
         self.hooks[webhook_id] |= changes
 
-    async def delete_webhook(self, store: WooStore, webhook_id: int) -> None:
+    async def delete_webhook(self, store: WooCredentials, webhook_id: int) -> None:
         self.hooks.pop(webhook_id, None)
 
     def _check(self) -> None:
@@ -258,7 +258,7 @@ async def test_an_order_paid_online_is_in_woo_as_soon_as_it_is_paid(world: World
     assert order.status == "unpaid" and woo.orders == {}  # no alert yet, so no push
 
     gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B1")
-    await world.services.payments.check_payment(order.id, "v1")
+    await world.services.payments.confirm_payment(order.id, "v1")
     await pushed(world)  # no sync: the payment wrote it
     [body] = woo.orders.values()
     assert body["status"] == WOO_STATUS["confirmed"]
@@ -283,7 +283,7 @@ async def test_a_pull_doesnt_undo_an_order_not_in_woo_yet(world: World) -> None:
     assert await stock(world, agent, "TP-1") == 10  # Woo's 12, less our 2
 
 
-async def refuse(store: WooStore, body: dict[str, Any]) -> int:
+async def refuse(store: WooCredentials, body: dict[str, Any]) -> int:
     raise WooUnreachable("WooCommerce answered 400.")
 
 

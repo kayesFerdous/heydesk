@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import Response
 
-# ponytail: an export is the newest 10,000 rows in one file; page it if a business has more
+# Limitation: an export is the newest 10,000 rows in one file; page it if a business has more
 EXPORT_ROWS = 10_000
 FORMULA = ("=", "+", "-", "@", "\t", "\r")  # a spreadsheet runs a cell that starts with these
 

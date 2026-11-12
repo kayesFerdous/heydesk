@@ -3,7 +3,7 @@ its own SSLCommerz store, its own bKash account, or both, which its owner connec
 
 `place_order` saves the order `unpaid` and sends the visitor `/pay/<id>`. That page
 starts a payment with the gateway the visitor picks. When the gateway sends word back (the
-visitor's browser, and SSLCommerz itself, both to URLs naming the row), `check_payment` asks the
+visitor's browser, and SSLCommerz itself, both to URLs naming the row), `confirm_payment` asks the
 business's account with that gateway whether it really went through, for this row and this
 amount, and only then moves it on, to `confirmed`.
 Nothing the agent says can do that.
@@ -22,11 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError, NotFound
 from heydesk.models import PaymentAccount
-from heydesk.models.customer_request import UNPAID
+from heydesk.models.record import UNPAID
 from heydesk.ports.payments import (
     PROVIDERS,
-    Account,
     Checkout,
+    GatewayAccount,
     Gateways,
     PaymentUnavailable,
     Provider,
@@ -38,7 +38,7 @@ from heydesk.shop.models import ShopOrder
 
 log = logging.getLogger(__name__)
 
-NOTIFY_PATH = "/api/payments/sslcommerz/{record_id}"  # SSLCommerz's own post, server to server
+NOTIFY_PATH = "/api/payments/sslcommerz/{order_id}"  # SSLCommerz's own post, server to server
 NAMES = {"sslcommerz": "SSLCommerz", "bkash": "bKash"}
 
 
@@ -82,11 +82,11 @@ class PaymentService:
         return [p for p in PROVIDERS if p in found]
 
     async def connect(
-        self, workspace_id: str, provider: Provider, account: Account
+        self, workspace_id: str, provider: Provider, account: GatewayAccount
     ) -> PaymentAccount:
         """Checks the account with its gateway, then keeps it, in place of any before."""
         try:
-            await self.gateways[provider].verify(account)
+            await self.gateways[provider].verify_account(account)
         except PaymentUnavailable as error:
             raise HeyDeskError(f"{NAMES[provider]} didn't accept these: {error}") from None
         async with self.sessions() as s, s.begin():
@@ -123,11 +123,11 @@ class PaymentService:
                 raise NotFound(f"No {NAMES[provider]} account is connected.")
             await s.delete(saved)
 
-    async def _gateway_account(self, workspace_id: str, provider: Provider) -> Account:
+    async def _gateway_account(self, workspace_id: str, provider: Provider) -> GatewayAccount:
         saved = await self.account(workspace_id, provider)
         if saved is None:
             raise PaymentUnavailable(f"this business takes no payments by {NAMES[provider]}")
-        return Account(
+        return GatewayAccount(
             saved.store_id,
             saved.password,
             saved.sandbox,
@@ -138,53 +138,53 @@ class PaymentService:
 
     # Paying
 
-    async def find(self, record_id: str) -> ShopOrder | None:
+    async def find(self, order_id: str) -> ShopOrder | None:
         """The order with this id."""
         async with self.sessions() as s:
-            return await s.get(ShopOrder, record_id)
+            return await s.get(ShopOrder, order_id)
 
-    async def start(self, record: ShopOrder, provider: Provider) -> str:
+    async def start(self, order: ShopOrder, provider: Provider) -> str:
         """The gateway's page for paying an unpaid order. SSLCommerz posts the
         visitor back to `/pay/<id>/back`; bKash sends them to `/pay/<id>/bkash`."""
         base = self.settings.public_url
         back = "back" if provider == "sslcommerz" else "bkash"
         return await self.gateways[provider].start(
-            await self._gateway_account(record.workspace_id, provider),
+            await self._gateway_account(order.workspace_id, provider),
             Checkout(
-                order_id=record.id,
-                amount=record.amount_due,
-                currency=record.currency,
-                what=f"{record.PAY_FOR[4:].capitalize()} for {record.code}",  # minus "the "
-                name=record.name,
-                phone=record.phone,
-                address=record.address,
-                back_url=f"{base}/pay/{record.id}/{back}",
-                notify_url=base + NOTIFY_PATH.replace("{record_id}", record.id),
+                order_id=order.id,
+                amount=order.amount_due,
+                currency=order.currency,
+                what=f"{order.PAY_FOR[4:].capitalize()} for {order.code}",  # minus "the "
+                name=order.name,
+                phone=order.phone,
+                address=order.address,
+                back_url=f"{base}/pay/{order.id}/{back}",
+                notify_url=base + NOTIFY_PATH.replace("{order_id}", order.id),
             ),
         )
 
-    async def check_payment(
-        self, record_id: str, payment_id: str, provider: Provider = "sslcommerz"
+    async def confirm_payment(
+        self, order_id: str, payment_id: str, provider: Provider = "sslcommerz"
     ) -> ShopOrder | None:
         """Checks a payment a gateway sent word of for a row and, if it paid that unpaid row
         in full, places it. The visitor's return and SSLCommerz's notice both come here; only
         the first one changes anything. Returns the row."""
-        record = await self.find(record_id)
-        if record is None:
+        order = await self.find(order_id)
+        if order is None:
             return None
-        paid = await self.gateways[provider].check(
-            await self._gateway_account(record.workspace_id, provider), payment_id
+        paid = await self.gateways[provider].fetch_payment(
+            await self._gateway_account(order.workspace_id, provider), payment_id
         )
-        if paid is None or paid.order_id != record.id:
-            return record
-        if (paid.amount, paid.currency) != (record.amount_due, record.currency):
-            log.warning("payment amount differs", extra={"record_id": record.id})
-            return record
+        if paid is None or paid.order_id != order.id:
+            return order
+        if (paid.amount, paid.currency) != (order.amount_due, order.currency):
+            log.warning("payment amount differs", extra={"order_id": order.id})
+            return order
 
         async with self.sessions() as s, s.begin():
             moved = await s.execute(  # only from unpaid, so two posts can't both place it
                 update(ShopOrder)
-                .where(ShopOrder.id == record.id, ShopOrder.status == UNPAID)
+                .where(ShopOrder.id == order.id, ShopOrder.status == UNPAID)
                 .values(
                     status="confirmed",
                     paid=paid.amount,
@@ -192,31 +192,31 @@ class PaymentService:
                     updated_at=self.now(),
                 )
             )
-        record = await self.find(record.id)
-        assert record is not None
+        order = await self.find(order.id)
+        assert order is not None
         amount = money(paid.amount, paid.currency)
         if moved.rowcount == 1:  # type: ignore[attr-defined]
-            log.info("paid online", extra={"record_id": record.id})
-            await self._tell_visitor_paid(record, amount)
-        elif record.status == "cancelled" and not record.paid:
+            log.info("paid online", extra={"order_id": order.id})
+            await self._tell_visitor_paid(order, amount)
+        elif order.status == "cancelled" and not order.paid:
             await self.orders.alert(
-                record.workspace_id,
-                await self.orders.conversation_of(record),
-                f"⚠️ {record.code} was paid after it was cancelled: refund {amount} "
+                order.workspace_id,
+                await self.orders.conversation_of(order),
+                f"⚠️ {order.code} was paid after it was cancelled: refund {amount} "
                 f"({paid.reference}).",
             )
-        return record
+        return order
 
-    async def _tell_visitor_paid(self, record: ShopOrder, amount: str) -> None:
-        if record.conversation_id:
+    async def _tell_visitor_paid(self, order: ShopOrder, amount: str) -> None:
+        if order.conversation_id:
             await self.team.tell_visitor(
-                record.workspace_id,
-                record.conversation_id,
-                f"✅ Payment received: {amount} for {record.PAY_FOR}. {record.next_step_text()}",
+                order.workspace_id,
+                order.conversation_id,
+                f"✅ Payment received: {amount} for {order.PAY_FOR}. {order.next_step_text()}",
             )
         await self.orders.order_saved(
-            record.workspace_id,
-            await self.orders.conversation_of(record),
-            f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
-            f"{record.alert_summary()}; name {record.name}; phone {record.phone}",
+            order.workspace_id,
+            await self.orders.conversation_of(order),
+            f"💳 New {order.code}: {order.PAY_FOR} paid online, {amount}\n"
+            f"{order.alert_summary()}; name {order.name}; phone {order.phone}",
         )

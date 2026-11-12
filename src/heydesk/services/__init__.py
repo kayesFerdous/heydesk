@@ -5,7 +5,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.assist import AssistService
 from heydesk.services.billing import BillingService
-from heydesk.services.calls import CallService
+from heydesk.services.calls import ConfirmationCallService
 from heydesk.services.channel_links import ChannelLinkService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
@@ -31,7 +31,7 @@ class Services:
     agents: AgentService
     assist: AssistService  # the model's help for the team on a chat
     billing: BillingService  # paying HeyDesk for a plan
-    calls: CallService  # the shop's call to confirm an order, to a /phone page
+    calls: ConfirmationCallService  # the shop's call to confirm an order, to a /phone page
     channel_links: ChannelLinkService  # connecting Telegram, Messenger and WhatsApp
     channels: ChannelService  # answering them
     conversations: ConversationService

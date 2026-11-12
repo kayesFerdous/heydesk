@@ -211,7 +211,7 @@ def find_products(
     return [p for n, p in counted if n == best and (n or group)], False
 
 
-def grouped(rows: list[Product]) -> list[Product]:
+def merge_variant_rows(rows: list[Product]) -> list[Product]:
     """Rows with the same name and price are one product: many shops keep one row per
     size and colour ("T-Shirt, M, Black, 100" and "T-Shirt, L, White, 80"). Its sizes and
     colours are all the rows', and each row's count is a variant. The first row gives
@@ -222,10 +222,12 @@ def grouped(rows: list[Product]) -> list[Product]:
     groups: dict[tuple[str, int], list[Product]] = {}
     for p in rows:
         groups.setdefault((p.name.strip().lower(), p.price), []).append(p)
-    return [group[0] if len(group) == 1 else one_product(group) for group in groups.values()]
+    return [
+        group[0] if len(group) == 1 else merge_rows_into_product(group) for group in groups.values()
+    ]
 
 
-def one_product(group: list[Product]) -> Product:
+def merge_rows_into_product(group: list[Product]) -> Product:
     variants: list[Variant] = []
     for p in group:
         if p.variants:
@@ -262,7 +264,7 @@ def stock_snapshot(product: Product) -> list[Any]:
     return [product.stock, [v.model_dump() for v in product.variants]]
 
 
-def minus_ordered(product: Product, lines: list[dict[str, Any]]) -> Product:
+def subtract_ordered(product: Product, lines: list[dict[str, Any]]) -> Product:
     """`p` less these order lines (its own), never below 0: what's left to sell."""
     stock, variants = product.stock, [v.model_copy() for v in product.variants]
     for line in lines:
@@ -289,7 +291,7 @@ def merge_sheet_products(
         if old and seen.get(p.code) == stock_snapshot(p):  # the owner didn't touch this count
             p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
         else:
-            p = minus_ordered(p, [line for line in held if line["code"] == p.code])
+            p = subtract_ordered(p, [line for line in held if line["code"] == p.code])
         kept.append(p)
     return kept
 

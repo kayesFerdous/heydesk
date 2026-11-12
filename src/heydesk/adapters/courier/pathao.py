@@ -17,7 +17,7 @@ SANDBOX = "https://courier-api-sandbox.pathao.com"
 NORMAL_DELIVERY = 48  # delivery_type: normal, not on-demand
 PARCEL_ITEM_TYPE = 2  # item_type: a parcel, not a document
 PARCEL_WEIGHT_KG = (
-    0.5  # kg. ponytail: one weight for every parcel; a product weight when shops need it
+    0.5  # kg. Limitation: one weight for every parcel; a product weight when shops need it
 )
 FINAL_STATUSES: dict[
     str, FinalStatus
@@ -35,7 +35,7 @@ class Pathao:
         self.client = httpx.AsyncClient(timeout=timeout)
         self.tokens: dict[tuple[bool, str, str], tuple[str, float]] = {}  # → (token, expires)
 
-    async def check(self, account: CourierAccount) -> int | None:
+    async def verify_account(self, account: CourierAccount) -> int | None:
         data = await self._call(account, "GET", "stores")
         stores = (data.get("data") or {}).get("data") or []
         ids = [s["store_id"] for s in stores if s.get("is_active", 1)]

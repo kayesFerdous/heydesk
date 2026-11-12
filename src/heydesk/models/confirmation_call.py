@@ -9,7 +9,7 @@ QUEUED, RINGING, TALKING, DONE = "queued", "ringing", "talking", "done"
 LIVE = (RINGING, TALKING)
 
 
-class Call(Base):
+class ConfirmationCall(Base):
     """A call to confirm a shop order: the queue is the calls that aren't `done`.
 
     queued → ringing → talking → done, or ringing → queued again when it wasn't answered and

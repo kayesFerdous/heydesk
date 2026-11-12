@@ -15,7 +15,7 @@ async def count(world: World, model: type) -> int:
 
 
 async def test_the_dev_agent_comes_from_its_seed(world: World) -> None:
-    agent = await world.services.agents.by_key(DEV_KEY)
+    agent = await world.services.agents.by_public_key(DEV_KEY)
 
     assert agent.workspace_id == DEV_WORKSPACE_ID
     assert agent.greeting.startswith("Assalamu alaikum! Welcome to Nakshi Threads.")
@@ -35,12 +35,12 @@ async def test_an_edit_is_live_at_once(world: World) -> None:
 
     await world.services.agents.update(DEV_WORKSPACE_ID, {"faq": "New."})
 
-    assert (await world.services.agents.by_key(DEV_KEY)).config.faq == "New."
+    assert (await world.services.agents.by_public_key(DEV_KEY)).config.faq == "New."
 
 
 async def test_an_unknown_key_is_not_found(world: World) -> None:
     with pytest.raises(NotFound):
-        await world.services.agents.by_key("nope")
+        await world.services.agents.by_public_key("nope")
 
 
 async def test_another_workspace_cant_edit_the_agent(world: World) -> None:

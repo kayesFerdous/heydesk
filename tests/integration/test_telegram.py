@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import select, text
 
-from heydesk.models import Channel, Conversation
+from heydesk.models import ChannelLink, Conversation
 from heydesk.ports.llm import ToolCall
 from tests.conftest import SEEDS, new_business
 from tests.integration.test_shop import kurti_with_photo, photo
@@ -67,7 +67,7 @@ async def test_the_token_is_encrypted_in_the_database(app: FastAPI, client: Asyn
     path, secret = await connect(app, client)
     async with app.state.sessions() as s:
         stored = await s.scalar(text("SELECT token FROM channels"))
-        channel = await s.scalar(select(Channel))
+        channel = await s.scalar(select(ChannelLink))
     assert stored and TOKEN not in stored  # a copy of the database can't run the bot
     assert channel is not None and channel.token == TOKEN  # the code reads it as it was given
 

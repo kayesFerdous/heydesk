@@ -29,13 +29,13 @@ saved. Nothing is saved without reading it back and hearing a yes.
 | Config | What the owner edits about the agent: a `ShopConfig` (`shop/config.py`), saved whole in `agents.config` and live on the next message. It subclasses `AgentConfig` (`runtime/config.py`): the agent's general fields, the only part the engine (`runtime/`) knows, since it can't import the shop. `ShopConfig` adds the shop's own (delivery, calls, policies) |
 | Settings | The server's own `.env` (`Settings` in `config.py`): keys, limits, the model. Ours, never the owner's |
 | Store | A business's data (`ShopStore`: products, orders, messages), always scoped to one workspace. `RecordStore` (`shop/records.py`) is the part every chat uses; `ShopStore` adds the products and orders |
-| Record | What a chat saves for the team to act on, with a code the visitor is told: an order (`O-104`, `ShopOrder`), a message for the team (`M-…`, `TeamMessage`), a call back (`L-…`, `Lead`) or a complaint (`C-…`, `Ticket`). They share `CustomerRequest`'s columns |
+| Record | What a chat saves for the team to act on, with a code the visitor is told: an order (`O-104`, `ShopOrder`), a message for the team (`M-…`, `TeamMessage`), a call back (`L-…`, `Lead`) or a complaint (`C-…`, `Ticket`). They share `Record`'s columns |
 | Visitor | Someone talking to an agent on any channel (a *buyer* in the shop's words): a row in `visitors`, named by `visitor_key(channel, contact)` |
 | Team | The people of a business who log in: its owner, and the moderators the owner adds (`users.role`). An admin runs the platform and belongs to no workspace |
 | Conversation | One visitor's chat or call: its `messages` are the whole transcript |
 | Turn | One visitor message and everything the agent did for it |
 | Channel | Where a visitor talks: `web`, `voice` or a messaging app (`telegram`, `messenger`, `whatsapp`). A messaging app's link to the business is a row in `channels` (D42, D60, D103) |
-| Tool | Something the model can call: `update_cart`, `place_order`… The shop's tools are in `shop/tools/`: products, cart and orders, and the inbox ones (`take_message`, `handoff_to_human`, `off_topic`, `search_knowledge`…) |
+| Tool | Something the model can call: `update_cart`, `place_order`… The shop's tools are in `shop/tools/`: products, cart and orders, and the support ones (`take_message`, `handoff_to_human`, `off_topic`, `search_knowledge`…) |
 | Notes | Four different things. The owner's `notes` in the config, added to the prompt. The team's `Note` on a chat, which the visitor and the model never see. What the agent remembers about a visitor (`Visitor.notes`, the `remember` tool, `visitor_notes()`). And the shop's note (`shop_note()`): the language reminder and the order so far (on a confirmation call, the call too), added to the system prompt before every model call |
 
 ## 3. The rules
@@ -70,15 +70,15 @@ src/heydesk/
 ├── runtime/             the engine: loop, tool contract, commit check, parsers, prompt, speech, cards
 ├── shop/                the shop (D172, D179)
 │   ├── prompt.py        its sections of the system prompt, the note, what's missing from its setup
-│   ├── tools/           what the model calls: products · cart · orders · inbox (messages, hand-off, notes…);
+│   ├── tools/           what the model calls: products · cart · orders · support (messages, hand-off, notes…);
 │   │                    `tools_for()` in its __init__
 │   ├── products.py · delivery.py · orders.py · config.py    its shapes, no database
 │   ├── checkout.py      pricing and checking an order from a chat, a product page or the team (D186)
 │   ├── csv_import.py · woo_import.py   a CSV file or a Woo store as products (D50, D53, D115, D75)
 │   ├── records.py       RecordStore: what any chat can make (messages, call backs, complaints) and its numbering
 │   ├── store.py         ShopStore(RecordStore): adds the products, orders and coupons
-│   └── models.py · page.py · districts.py
-├── models/              the shared tables; `customer_request.py` is what orders and messages share
+│   └── models.py · html_pages.py · districts.py
+├── models/              the shared tables; `record.py` is what orders and messages share
 ├── services/            agents, conversations (a visitor's turn), inbox (the team's side of a chat), users,
 │                        admin, visitors (the limits, D51), rate_limits (D52),
 │                        live (the inbox's news, D158; both in Redis when there is one, D182), knowledge, photos (D57),
@@ -110,9 +110,9 @@ server.
 
 | File | What's in it |
 |---|---|
-| `prompt.py` | Its `ROLE` text, `shop_prompt()` (its sections of the system prompt, with its facts), `shop_note()` and `shop_missing()` |
-| `tools/` | Its tools, one file per part of a visit: `products.py` (`find_product`, D80, and `show_photos`), `cart.py` (`update_cart`), `orders.py` (`place_order`, `track_order`, `change_order`, `cancel_order`, `confirm_order`, `request_exchange`) and `inbox.py` (`take_message`, `take_lead`, `handoff_to_human`, `flag_complaint`, `remember`, `off_topic`, `search_knowledge`); `tools_for()` is in its `__init__.py` |
-| `products.py`, `delivery.py`, `orders.py`, `config.py` | Its shapes, no database: `Product`; `Zone` and `match_zone()`; the order statuses, `NewOrder`, `Coupon` and `mobile()`; `ShopConfig`. `districts.py` is Bangladesh's 64 districts and their old spellings (D98) |
+| `prompt.py` | Its `ROLE` text, `shop_prompt()` (its sections of the system prompt, with its facts), `shop_note()` and `missing_setup()` |
+| `tools/` | Its tools, one file per part of a visit: `products.py` (`find_product`, D80, and `show_photos`), `cart.py` (`update_cart`), `orders.py` (`place_order`, `track_order`, `change_order`, `cancel_order`, `confirm_order`, `request_exchange`) and `support.py` (`take_message`, `take_lead`, `handoff_to_human`, `flag_complaint`, `remember`, `off_topic`, `search_knowledge`); `tools_for()` is in its `__init__.py` |
+| `products.py`, `delivery.py`, `orders.py`, `config.py` | Its shapes, no database: `Product`; `Zone` and `match_zone()`; the order statuses, `NewOrder`, `Coupon` and `parse_mobile()`; `ShopConfig`. `districts.py` is Bangladesh's 64 districts and their old spellings (D98) |
 | `csv_import.py`, `woo_import.py` | A CSV file's rows, or a Woo store's products, as ours |
 | `models.py` | Its tables: `products`, `coupons` and `shop_orders` |
 | `records.py`, `store.py` | Its data access, for its tools and its owner routes, always one workspace: `RecordStore` (messages, call backs, complaints, notes) and `ShopStore`, which adds the products and orders |
@@ -142,7 +142,7 @@ so a business's agent is just "the agent": no ids in the URLs. Creating a second
 The frontend still reads `kind` on the agent and the admin's businesses, and `GET /api/desks` for the config's fields; `kind` is always `"shop"` (D172).
 
 **`AgentService`** (`services/agents.py`): `create`, `update` (validates; live from the next
-message), `get` (with `missing`), `by_key` (a `LiveAgent`: its config and document titles),
+message), `get` (with `missing`), `by_public_key` (a `LiveAgent`: its config and document titles),
 `store(workspace_id)` for the owner routes. There is no publish step and no versions (D15).
 
 **Dev agent.** In development, startup runs `ensure_dev_agent()`: the `dev` workspace and the
@@ -261,7 +261,7 @@ merged into the conversation's `state`, saved with the turn.
 | `off_topic` | shared | no | Called instead of answering a message that has nothing to do with the business. Its `reply`, one short line in the visitor's language, is sent as it is and ends the turn: no second model call. Each call is a strike for the visitor (D51) |
 | `remember` | shared | no | `about` (a word or two) and `note`: something the visitor said on their own (a taste, a size, who they buy for, an allergy). Kept on their `visitors` row, replacing the note on the same `about`, newest 20; never asked for (D124) |
 
-**The commit check** (`runtime/guards.py`, D107): a writing tool's first call returns its
+**The commit check** (`runtime/commit_check.py`, D107): a writing tool's first call returns its
 read-back (`ask_for_yes`), which goes into the conversation state as `read_back`. The talking
 model judges the visitor's reply: only after a clear yes does it call the tool again. At the
 start of each turn the loop puts the state's `read_back` in `ToolContext.last_read_back`; `confirm`
@@ -269,7 +269,7 @@ makes a `Confirmed[T]` only when this call's read-back equals it. So the visitor
 what is saved, on an earlier turn: a call in the same turn as its read-back, or with any detail
 changed, only reads back again. A store's writing methods accept only `Confirmed[...]`, so mypy
 catches a write that skipped the check, and `scripts/check_imports.sh` checks that only
-`runtime/guards.py` makes one.
+`runtime/commit_check.py` makes one.
 
 **Parsing** (`runtime/parse.py`): `name`, `phone`, `text` and `day_and_time` ("tomorrow at 5 pm",
 "saturday 5pm", "5 Oct 6:30 pm"; within 14 days; a time with no am/pm is asked again, never
@@ -455,7 +455,7 @@ Every table has `workspace_id` (except `workspaces`).
 | `coupons` | code (unique per business, in capitals), kind (`percent`/`amount`/`free_delivery`), value (a percent or minor units), ends_at, max_uses (empty: no limit), used (D133), only_for (an offer's chats, JSON; empty: anyone, D140) |
 | `shop_orders` | the shared columns, the paid columns, lines JSON, subtotal, delivery_charge, discount and coupon (a coupon's code and what it took off the items, D133), total (subtotal − discount + delivery_charge), zone, address, note, woo_id and woo_sent (the order in a linked WooCommerce store, and our status as last written there; "" never, D75), parcel_id and courier_status (booked with the courier and its last words; "" not booked, D112), paid_in (the rider's cash reached the shop) and reason (why it came back or was cancelled), set once it ended (D131), source (where it was placed: `chat`, `page` for *Buy now* or `team`, D144). Code `O-101`; unpaid → confirmed (the delivery charge was paid, which confirms it; or the owner moves it, D92); new → confirmed (the shop called the buyer); placed `confirmed` when the shop doesn't call (D92), or when the team typed it (D131); confirmed → packed → shipped → delivered or returned (confirmed → shipped still works); new, confirmed or packed → on_hold → confirmed; anything before shipped → cancelled |
 
-The **shared columns** (`models/customer_request.py`) are what the agent took for the business: conversation_id,
+The **shared columns** (`models/record.py`) are what the agent took for the business: conversation_id,
 number (101, 102… per business and table), status, name, phone, created_at, updated_at. A status
 change the table's `STATUS_FLOW` doesn't allow is a 409 `invalid_transition`. A shop order also has the **paid columns**
 (`shop/models.py`), for what a visitor can be asked to pay for first (D47, D48): currency,
@@ -695,7 +695,7 @@ Startup logs `HeyDesk ready` with the environment, model and embedder.
 
 ### Limits on a public chat (D51)
 
-The chat needs no login, so `VisitorService` (`services/visitors.py`) stops timepass from
+The chat needs no login, so `VisitorService` (`services/visitors.py`) stops off-topic chatting from
 spending a business's turns. Every turn names its **visitor**: the web page keeps a random token
 in the browser (`visitor_id` in the chat body, `?visitor=` on a call's offer; a 422 without it),
 and Telegram's is the chat id.
@@ -706,7 +706,7 @@ start_turn ─► visitors.count_turn: blocked? the plan ended, or its replies u
                                    the business's turns today ≥ WORKSPACE_DAILY_TURNS (500)?
                  yes ─► 429 visitor_limited: "…Please contact us at <hand-off phone>." No model call
                  no  ─► count the turn, run it
-turn ended ─► visitors.after_turn: off_topic ran ─► a strike; OFF_TOPIC_STRIKES (5) in a row
+turn ended ─► visitors.count_off_topic_strike: off_topic ran ─► a strike; OFF_TOPIC_STRIKES (5) in a row
                                                     ─► blocked for BLOCK_HOURS (24)
                                    another tool ran ─► strikes back to 0
 ```
@@ -746,7 +746,7 @@ a messaging app's message ─► visitors.count_message: FLOOD_MESSAGES (20) in 
 
 ### Rate limits (D52)
 
-The daily limits stop slow timepass; rate limits stop bursts. `RateLimiter`
+The daily limits stop slow off-topic chatting; rate limits stop bursts. `RateLimiter`
 (`services/rate_limits.py`, on the `limits` library) counts over a sliding window and answers a
 429 `rate_limited` before anything else runs. The limits are constants at the top of the file:
 
@@ -825,7 +825,7 @@ names needs no step 1.
 
 **One row per size and colour (D59).** Many shops keep a row for each ("T-Shirt, M, Black, 100"
 and "T-Shirt, L, White, 80"). The shop's `products_from_csv` makes rows with the same name
-(any case) and price one product (`grouped`): its sizes and colours are all the rows', each
+(any case) and price one product (`merge_variant_rows`): its sizes and colours are all the rows', each
 row's count is a variant (D56), and the first row gives the code, description and category.
 When every row has a count, a size and colour no row has gets a variant at 0: a T-shirt in
 M/Black and L/White lists M and L, Black and White, but L/Black was never made, and unlisted
@@ -834,8 +834,8 @@ no variant. A different price
 stays its own product: a product has one price. A sheet gets the same, since it's read by the
 same function.
 
-**The suggestion is the column names, in Python** (D115). `csv_import.suggest` reads the headers
-and 3 sample rows; `match` scores each header against each field's name and `aliases`: 1 for the
+**The suggestion is the column names, in Python** (D115). `csv_import.suggest_columns` reads the headers
+and 3 sample rows; `match_columns` scores each header against each field's name and `aliases`: 1 for the
 same words ("Price (৳)" and `price`), 0.9 when they're inside it ("Selling Price"), and a close
 misspelling ("Catagory", "Colors") by `difflib` at 0.8 alike or more, scored below both. The best
 scores are taken first, each field and each column once; a field nothing fits is left for the
@@ -904,7 +904,7 @@ every SHEET_SYNC_MINUTES (5):
           if old and seen.get(p.code) == cells[p.code]:      # the owner didn't touch the count
               p = p.model_copy(update={"stock": old.stock, "variants": old.variants})
           else:                                              # a new count of the shelf
-              p = minus_ordered(p, [l for l in held if l["code"] == p.code])
+              p = subtract_ordered(p, [l for l in held if l["code"] == p.code])
           keep.append(p.model_copy(update={"photos": old.photos if old else []}))
       return keep
   ```
@@ -919,7 +919,7 @@ every SHEET_SYNC_MINUTES (5):
   saved until the whole sheet is clean), or a sheet that can't be fetched: the list stays as
   it was, `problem` says why (the first 3 rows' problems, or "couldn't open the sheet"), and the
   owner gets one Telegram alert when the problem first appears, not every 5 minutes (a new
-  `TeamService.notify(workspace_id, text)`: an alert with no conversation, so no `Ref:` line).
+  `TeamService.notify_owner(workspace_id, text)`: an alert with no conversation, so no `Ref:` line).
   A sheet that can't be fetched is read whole again once it's back.
   The next clean sync clears it.
 - **A linked sheet adds and updates only its own products** (D120, below), so `PUT
@@ -928,7 +928,7 @@ every SHEET_SYNC_MINUTES (5):
   fields, the same as the import's, and the store takes the sheet's text
   (`ShopStore.import_sheet(text, mapping, seen) -> seen`): the
   shop merges, in one transaction with reading the orders that hold stock (`merge_sheet_products`,
-  `minus_ordered` in `products.py`, `STATUSES_HOLDING_STOCK` in `orders.py`).
+  `subtract_ordered` in `products.py`, `STATUSES_HOLDING_STOCK` in `orders.py`).
 
 **Routes:**
 
@@ -995,7 +995,7 @@ sync:
   written, and puts back what's cancelled (seen on WooCommerce 9.4: an order created `on-hold`
   or `processing` takes its stock once; `cancelled` puts it back). So the pull takes Woo's
   count as it is, with no `seen` and no shelf sum (D58's `merge_sheet_products` isn't used), **less the orders
-  that hold stock here but aren't in Woo yet** (`STATUSES_HOLDING_STOCK` with no `woo_id`, `minus_ordered`). That's
+  that hold stock here but aren't in Woo yet** (`STATUSES_HOLDING_STOCK` with no `woo_id`, `subtract_ordered`). That's
   what keeps a pull from undoing an order placed a minute ago. `place_order` takes stock here
   as always, so two buyers in the same minute still can't get the last one.
 - **Push, then pull.** Each sync first writes the orders that changed: `shop_orders.woo_sent`
@@ -1037,7 +1037,7 @@ sync:
   gets them all at its next sync (D79). Without an `https://` `PUBLIC_URL` (Woo won't post to localhost) no webhooks are
   made and the store is synced every `WOO_SYNC_MINUTES`, as before.
 - **A problem is noted and the owner hears once**, as with a sheet (`problem`,
-  `TeamService.notify`): the store can't be reached, the key stopped working, or an order
+  `TeamService.notify_owner`): the store can't be reached, the key stopped working, or an order
   couldn't be written ("O-106 wasn't added to WooCommerce: …"). The orders not written are tried
   again next sync, and the list stays as it was until a pull works. The next clean sync clears it.
 - **While linked, the store's products are kept in step** (D120, below): `PUT /api/products`
@@ -1089,7 +1089,7 @@ Tapping a product in a chat opens its own page: `/p/<the agent's public_key>/<co
 `c=<chat>` when a chat sent it (D160). The owner's products list has *Open its page* and *Copy
 its link* on each product, for the team to paste the link in a reply.
 `public_key` is already public (it's in the chat link); the code is the product's. The page
-(`shop/page.py`) is server-rendered HTML: the photos, name, price (and the price before a
+(`shop/html_pages.py`) is server-rendered HTML: the photos, name, price (and the price before a
 sale), the sizes and colours in stock (`Product.in_stock`), the description, and "To order, go
 back to the chat and say *Order [code]*". No JSON and no `/api` link; a policy header lets
 nothing but its photos load and no script run. An unknown key, a key that isn't a shop's, or
@@ -1119,7 +1119,7 @@ an unknown code is the same 404 page.
 - **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
   stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
   area's charge and days. It posts back to the page. `checked_order` (`shop/checkout.py`)
-  checks it as `place_order` does (`lines_with_prices`, `stock_problem`, `match_zone`, `mobile`), and
+  checks it as `place_order` does (`lines_with_prices`, `stock_problem`, `match_zone`, `parse_mobile`), and
   `new_order` builds the order and its read-back for both. The first post shows **Check your
   order**, the order read back, with the details and `heard` (that read-back) in hidden
   fields; *Place order* posts them again, and `confirm(heard, order, read_back)` saves it only
@@ -1129,7 +1129,7 @@ an unknown code is the same 404 page.
   the web chat's own). Only one of this agent's conversations counts. The order is linked to
   it, the owner's alert is the chat's (with `Ref:`), and the receipt goes into it as the team's
   message (`tell_visitor`): the web chat shows it, the apps send it, the agent sees it. With no
-  chat, the order still saves and the owner hears of it with `notify`.
+  chat, the order still saves and the owner hears of it with `notify_owner`.
 - **`/o/<id>`**: where the order is, from its long random id (as `/pay/<id>`, D47): status,
   steps, the courier's last words, items, total and what the rider collects, and *Pay* when it
   waits for the delivery charge. Not the name, mobile or address: a link can be passed on.
@@ -1612,10 +1612,10 @@ visitor opens the link ─► both connected? a button for each; the visitor pic
     ─► a new session with that gateway for `amount_due` ─► its page
 SSLCommerz posts val_id back (the buyer's browser to /pay/<id>/back, and its IPN to
     /api/payments/sslcommerz/<id>)
-    ─► check_payment(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
+    ─► confirm_payment(id, val_id): the business's store asks SSLCommerz's validation API: VALID,
        for this row (its tran_id), this amount
 bKash sends the browser to /pay/<id>/bkash?paymentID=…&status=success (failure, cancel: nothing)
-    ─► check_payment(id, paymentID, "bkash"): the business's bKash account executes it (or asks its
+    ─► confirm_payment(id, paymentID, "bkash"): the business's bKash account executes it (or asks its
        status): Completed, for this row (its merchantInvoiceNumber), this amount
     ─► UPDATE … WHERE status = 'unpaid' → confirmed, paid,
        payment_ref (only the first post wins)
@@ -1653,7 +1653,7 @@ billing page ─► POST /api/billing/checkout {plan, months, gateway} ─► a 
              (unpaid) ─► our SSLCommerz page (BILLING_STORE_*) or our bKash page
              (BILLING_BKASH_*, D109), not the business's own accounts
 gateway sends word back (SSLCommerz: /billing/<id>/back and its notice; bKash: /billing/<id>/bkash
-             with status=success) ─► check_payment: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
+             with status=success) ─► confirm_payment: our account says paid, this payment, this amount? ─► paid (once: only from unpaid); the plan is the new one,
              priced again (quote, D116): applied, or held as review if the plan changed meanwhile
 every turn ─► visitors.count_turn ─► plan_problem: now ≥ paid_until (+ GRACE_DAYS (3), not a trial)
              or the turns saved in the last 30 days ≥ the plan's replies ─► 429, the limited line
@@ -1679,7 +1679,7 @@ every turn ─► visitors.count_turn ─► plan_problem: now ≥ paid_until (+
   | A plan running | a smaller plan | refused until it ends; the grace days keep answering meanwhile | |
   | More moderators than the plan has | that plan | refused: remove some first | |
 
-  `check_payment` prices the payment again when the gateway says it's paid, under a row lock on the
+  `confirm_payment` prices the payment again when the gateway says it's paid, under a row lock on the
   workspace. If it's still the same kind and costs no more than was paid, it's applied;
   otherwise (another payment or an admin changed the plan meanwhile) it's kept as `review`,
   money taken but not applied, and an admin settles it by hand. `/api/billing` lists the
@@ -1786,7 +1786,7 @@ orders came to, and the chats they ordered from. Only this shop's orders count (
 ### The courier (D112, D113)
 
 A confirmed order goes to the courier on its own. `CourierApi` (`ports/courier.py`) has
-`check(account)`, `book(account, Parcel) → parcel id` and `status(account, parcel id) →
+`verify_account(account)`, `book(account, Parcel) → parcel id` and `status(account, parcel id) →
 ParcelStatus(said, ending)`. Its adapters: `Steadfast` and `Pathao` (`adapters/courier/`), with the
 shop's own merchant login linked at `/api/agent/courier` (checked when saved; `courier_links`,
 secrets encrypted), and `FakeCourier`, which moves a parcel one step every 2 minutes and
@@ -1832,7 +1832,7 @@ microphone → VAD → hear → CallAgent → speak (SpeakableText first) → sp
 - **Hearing (D39, D183):** `STT_PROVIDER` hears calls and voice notes alike, in `VOICE_LANGUAGE`.
   `deepgram` (the default, `DEEPGRAM_API_KEY`) streams the call to Pipecat's `DeepgramSTTService`
   (`nova-3-general`), so the words are ready as soon as the caller stops. `chorus` (the Gigalogy
-  keys) can't stream: `WholeUtterances` hands each utterance, a WAV cut after 0.5 s of silence,
+  keys) can't stream: `WholeUtteranceTranscriber` hands each utterance, a WAV cut after 0.5 s of silence,
   to `Services.transcriber`, the `ChorusTranscriber` that hears voice notes. Chorus is Groq's
   `whisper-large-v3` behind a queue, about 23 s an utterance on 11 Nov: for comparing, not for a
   caller to wait on.

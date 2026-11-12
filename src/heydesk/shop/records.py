@@ -1,7 +1,7 @@
 """The records every chat can make that aren't products or orders (`RecordStore`): messages
 for the team, call backs, complaints, missed questions, notes on a visitor, and the
 numbering every record shares. `shop/store.py` adds the products and orders; the tools that
-use only this part are in `shop/tools/inbox.py`.
+use only this part are in `shop/tools/support.py`.
 """
 
 from collections.abc import Callable, Sequence
@@ -24,11 +24,11 @@ from heydesk.models import (
     Visitor,
     Workspace,
 )
-from heydesk.models.customer_request import CustomerRequest, next_number
+from heydesk.models.record import Record, next_number
 from heydesk.ports.knowledge_store import Snippet
 from heydesk.runtime.text import one_line
 
-PAGE = 100  # the most rows a list returns at once (newest first)
+PAGE_SIZE = 100  # the most rows a list returns at once (newest first)
 BROWSER_CHANNELS = ("web", "voice")  # one browser's token is the contact on both
 MAX_NOTES = 20  # what the agent remembers about one visitor, at most
 
@@ -96,10 +96,10 @@ class RecordStore:
         self.public_url = public_url  # where a link in a reply points: the payment page
         self.photos = photos  # for the photo links in a shop's list
 
-    def pay_link(self, record_id: str) -> str:
+    def pay_link(self, order_id: str) -> str:
         """The visitor's link to pay for something saved unpaid. It starts a new payment
         each time, so it doesn't run out; the id is long and random, so no one guesses another."""
-        return f"{self.public_url}/pay/{record_id}"
+        return f"{self.public_url}/pay/{order_id}"
 
     async def search_knowledge(self, question: str) -> list[Snippet]:
         if self.knowledge is None:
@@ -208,16 +208,14 @@ class RecordStore:
 
     # Shared by every table of things taken (`models.customer_request`)
 
-    async def add[T: CustomerRequest](self, table: type[T], **fields: Any) -> T:
+    async def add[T: Record](self, table: type[T], **fields: Any) -> T:
         """Saves a new one with the business's next number."""
         async with self.sessions() as s, s.begin():
             await self._lock(s)
             row = await self._new_row(s, table, **fields)
         return row
 
-    async def _new_row[T: CustomerRequest](
-        self, s: AsyncSession, table: type[T], **fields: Any
-    ) -> T:
+    async def _new_row[T: Record](self, s: AsyncSession, table: type[T], **fields: Any) -> T:
         """A new row with the business's next number, linked to this conversation. The
         caller holds the lock (`_lock`), so two at once don't get the same number."""
         now = self.now()
@@ -232,13 +230,13 @@ class RecordStore:
         s.add(row)
         return row
 
-    async def find[T: CustomerRequest](
+    async def find[T: Record](
         self,
         table: type[T],
         status: str | None = None,
         q: str | None = None,
         *,
-        limit: int = PAGE,
+        limit: int = PAGE_SIZE,
         before: datetime | None = None,
     ) -> list[T]:
         """Newest first. `q` matches the number or code ("A-104"), the name or the phone.
@@ -265,7 +263,7 @@ class RecordStore:
         async with self.sessions() as s:
             return list(await s.scalars(query.order_by(table.created_at.desc()).limit(limit)))
 
-    async def records_in_conversation[T: CustomerRequest](self, table: type[T]) -> list[T]:
+    async def records_in_conversation[T: Record](self, table: type[T]) -> list[T]:
         """What was taken in this conversation, newest first: the visitor needs no code
         for it."""
         if self.conversation_id is None:
@@ -281,7 +279,7 @@ class RecordStore:
             )
             return list(found)
 
-    async def earlier_records[T: CustomerRequest](self, table: type[T], limit: int = 1) -> list[T]:
+    async def earlier_records[T: Record](self, table: type[T], limit: int = 1) -> list[T]:
         """What this visitor had before, newest first: in this conversation or an
         earlier one from the same chat on a messaging app, or the same browser on the web chat
         and its calls. A second order in the same chat is offered the first one's details too.
@@ -357,18 +355,18 @@ class RecordStore:
         )
         return found
 
-    async def get[T: CustomerRequest](self, table: type[T], row_id: str) -> T:
+    async def get[T: Record](self, table: type[T], row_id: str) -> T:
         async with self.sessions() as s:
             return await self._get_row(s, table, row_id)
 
-    async def by_number[T: CustomerRequest](self, table: type[T], number: int) -> T | None:
+    async def by_number[T: Record](self, table: type[T], number: int) -> T | None:
         async with self.sessions() as s:
             found: T | None = await s.scalar(
                 select(table).where(table.workspace_id == self.workspace_id, table.number == number)
             )
             return found
 
-    async def set_status[T: CustomerRequest](self, table: type[T], row_id: str, status: str) -> T:
+    async def set_status[T: Record](self, table: type[T], row_id: str, status: str) -> T:
         async with self.sessions() as s, s.begin():
             row = await self._get_row(s, table, row_id)
             self._move(row, status)
@@ -402,7 +400,7 @@ class RecordStore:
             select(Workspace.id).where(Workspace.id == self.workspace_id).with_for_update()
         )
 
-    def _move(self, row: CustomerRequest, status: str) -> None:
+    def _move(self, row: Record, status: str) -> None:
         """`row.move`, with its problems as the errors the owner's routes return."""
         try:
             row.move(status, self.now())
@@ -411,7 +409,7 @@ class RecordStore:
         except ValueError as error:
             raise InvalidTransition(str(error)) from None
 
-    async def _get_row[T: CustomerRequest](self, s: AsyncSession, table: type[T], row_id: str) -> T:
+    async def _get_row[T: Record](self, s: AsyncSession, table: type[T], row_id: str) -> T:
         row: T | None = await s.scalar(
             select(table).where(table.id == row_id, table.workspace_id == self.workspace_id)
         )

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from heydesk.models import Channel
+from heydesk.models import ChannelLink
 from heydesk.ports.llm import ToolCall
 from heydesk.runtime import cards
 from heydesk.runtime.events import Card
@@ -38,10 +38,10 @@ TRACKING = Card(
 )
 
 
-def channel(kind: str) -> Channel:
+def channel(kind: str) -> ChannelLink:
     """A connected channel as `_send_card` reads it; not saved."""
     now = datetime.now(UTC)
-    return Channel(
+    return ChannelLink(
         id="c1",
         workspace_id="w1",
         agent_id="a1",

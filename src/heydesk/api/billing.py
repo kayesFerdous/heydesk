@@ -4,7 +4,7 @@ the owner back to `/billing/<id>/back` and tells the server itself at NOTIFY_PAT
 `val_id` it posts counts, checked with our store. bKash sends them back to `/billing/<id>/bkash`;
 only its `paymentID`, executed with our bKash account, counts. Both returns send the owner on
 to the billing page, `/billing?payment=paid|review|failed`, in the same tab. Owners only: a moderator gets a
-403 (`owners_only`). `/api/billing/quote` shows what a plan costs before paying: an upgrade
+403 (`is_owner_only_route`). `/api/billing/quote` shows what a plan costs before paying: an upgrade
 is the difference for the days left, and a smaller plan waits until this one ends.
 """
 
@@ -127,19 +127,19 @@ def to_billing_page(payment: SubscriptionPayment | None, services: Svc) -> Redir
 
 
 @router.post("/billing/{payment_id}/back", include_in_schema=False)
-async def back(
+async def sslcommerz_return(
     payment_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
 ) -> RedirectResponse:
     """SSLCommerz sends the owner back here, paid, failed or cancelled."""
     payment = None
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
-            payment = await services.billing.check_payment(payment_id, val_id)
+            payment = await services.billing.confirm_payment(payment_id, val_id)
     return to_billing_page(payment, services)
 
 
 @router.get("/billing/{payment_id}/bkash", include_in_schema=False)
-async def bkash_back(
+async def bkash_return(
     payment_id: str,
     services: Svc,
     bkash_id: Annotated[str, Query(alias="paymentID")] = "",
@@ -150,15 +150,15 @@ async def bkash_back(
     payment = None
     if bkash_id and outcome == "success":
         with suppress(PaymentUnavailable):
-            payment = await services.billing.check_payment(payment_id, bkash_id, "bkash")
+            payment = await services.billing.confirm_payment(payment_id, bkash_id, "bkash")
     return to_billing_page(payment, services)
 
 
 @router.post(NOTIFY_PATH, include_in_schema=False)
-async def notice(
+async def sslcommerz_notice(
     payment_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
 ) -> dict[str, bool]:
     """The gateway's notice (SSLCommerz's IPN), even if the owner closed the tab."""
     if val_id:
-        await services.billing.check_payment(payment_id, val_id)
+        await services.billing.confirm_payment(payment_id, val_id)
     return {"ok": True}

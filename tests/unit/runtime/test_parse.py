@@ -5,6 +5,7 @@ import pytest
 
 from heydesk.runtime import parse
 from heydesk.runtime.schedule import WeeklyHours
+from heydesk.runtime.speech import day_time
 from tests.conftest import FIXED_NOW
 
 DHAKA = ZoneInfo("Asia/Dhaka")
@@ -104,4 +105,4 @@ def test_a_bare_weekday_is_the_next_one_or_today() -> None:
 
 
 def test_a_day_and_time_is_shown_in_words() -> None:
-    assert parse.day_time(datetime(2026, 9, 30, 17, 0, tzinfo=DHAKA)) == "Wed 30 Sep, 5:00 pm"
+    assert day_time(datetime(2026, 9, 30, 17, 0, tzinfo=DHAKA)) == "Wed 30 Sep, 5:00 pm"

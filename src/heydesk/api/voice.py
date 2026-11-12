@@ -49,7 +49,9 @@ async def offer(
     if answered:
         agent = answered.agent
     else:
-        agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
+        agent = await state.services.agents.by_public_key(
+            key or state.dev_agent_key
+        )  # 404 if unknown
         if not shop.TAKES_VOICE:
             raise NoVoice("This agent takes no calls: chat with it instead.")
         await state.services.visitors.count_turn(
@@ -84,7 +86,7 @@ async def rings(number: str, request: Request) -> StreamingResponse:
     """The `/phone` page waits here for its mobile's calls: `ready {number}`, then a
     `ring {call, business, order}` for each one."""
     calls = request.app.state.services.calls
-    mobile = calls.clean_number(number)  # 400 if it isn't a mobile number
+    mobile = calls.parse_mobile_number(number)  # 400 if it isn't a mobile number
 
     async def stream() -> AsyncIterator[str]:
         queue = calls.wait_for_calls(mobile)

@@ -11,7 +11,7 @@ from heydesk.models import Conversation, Lead, TeamMessage, Ticket
 from heydesk.ports.llm import ToolCall
 from heydesk.services.agents import DEV_WORKSPACE_ID
 from heydesk.shop.tools import tools_for
-from heydesk.shop.tools.inbox import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
+from heydesk.shop.tools.support import ComplaintInput, TakeLeadInput, flag_complaint, take_lead
 from tests.conftest import DEV_KEY, World, make_ctx, said_yes
 
 MESSAGE = {"message": "Do you cater weddings?", "name": "Kayes", "phone": "01712345678"}
@@ -22,7 +22,7 @@ async def messages(world: World) -> list[TeamMessage]:
         return list(await s.scalars(select(TeamMessage)))
 
 
-async def test_the_shop_takes_messages_hands_off_and_declines_timepass() -> None:
+async def test_the_shop_takes_messages_hands_off_and_declines_off_topic_chat() -> None:
     names = [t.name for t in tools_for(has_documents=False)]
     assert names[-6:] == [
         "take_message",

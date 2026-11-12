@@ -21,7 +21,7 @@ forbid "the shop imports no services or api" $src/shop "${imp}heydesk\.(services
 forbid "services/ import no api" $src/services "${imp}heydesk\.(api|wiring)"
 forbid "only api/ knows HTTP" "$src/services $src/models $src/shop" "${imp}(fastapi|starlette)"
 forbid "api/ and services/ call no other server themselves" "$src/api $src/services" "${imp}httpx"
-forbid "only runtime/guards.py makes a Confirmed" "$src --exclude=guards.py --exclude=values.py" 'Confirmed(\[[^]]*\])?\('
+forbid "only runtime/commit_check.py makes a Confirmed" "$src --exclude=commit_check.py --exclude=values.py" 'Confirmed(\[[^]]*\])?\('
 if [ -d $src/voice ]; then
   forbid "voice/ is a listener: no DB, no tools" $src/voice "${imp}(sqlalchemy|heydesk\.(models|shop|adapters|db))"
 fi

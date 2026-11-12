@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.config import Settings
 from heydesk.db import new_id
 from heydesk.errors import HeyDeskError, InvalidConfig, NotFound
-from heydesk.models import Channel, User
+from heydesk.models import ChannelLink, User
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
@@ -50,7 +50,7 @@ class ChannelLinkService:
         self.settings = settings
         self.now = now
 
-    async def channel_of(self, workspace_id: str, kind: str) -> Channel:
+    async def channel_of(self, workspace_id: str, kind: str) -> ChannelLink:
         """The business's link to one app. 404 when it isn't connected."""
         async with self.sessions() as s:
             channel = await find_channel(s, workspace_id, kind)
@@ -58,7 +58,7 @@ class ChannelLinkService:
             raise NotFound(NOT_CONNECTED[kind])
         return channel
 
-    async def connect_telegram(self, workspace_id: str, token: str) -> Channel:
+    async def connect_telegram(self, workspace_id: str, token: str) -> ChannelLink:
         """Checks the token with Telegram and points the bot's messages at us. Connecting
         again (a new token) replaces the old bot."""
         if not self.settings.PUBLIC_URL:
@@ -91,7 +91,9 @@ class ChannelLinkService:
             return
         async with self.sessions() as s:
             found = await s.scalars(
-                select(Channel).where(Channel.kind == TELEGRAM).order_by(Channel.created_at)
+                select(ChannelLink)
+                .where(ChannelLink.kind == TELEGRAM)
+                .order_by(ChannelLink.created_at)
             )
             channels = list(found)
         for channel in channels:
@@ -108,7 +110,7 @@ class ChannelLinkService:
             await self.telegram.delete_webhook(channel.token)
         await self._delete(channel)
 
-    async def connect_messenger(self, workspace_id: str, token: str, page_id: str) -> Channel:
+    async def connect_messenger(self, workspace_id: str, token: str, page_id: str) -> ChannelLink:
         """Subscribes our app to the Page's messages, which also checks that the token is for
         that Page. Connecting again (a new token, or another Page) replaces the old one."""
         if not self.settings.META_APP_SECRET:
@@ -150,7 +152,9 @@ class ChannelLinkService:
                 {"user_token": "Facebook didn't accept this login. Try connecting again."}
             ) from None
 
-    async def connect_facebook(self, workspace_id: str, user_token: str, page_id: str) -> Channel:
+    async def connect_facebook(
+        self, workspace_id: str, user_token: str, page_id: str
+    ) -> ChannelLink:
         """Connects one of the login's Pages with its own token, as if typed in."""
         pages = await self.facebook_pages(user_token)
         page = next((p for p in pages if p["id"] == page_id), None)
@@ -166,7 +170,7 @@ class ChannelLinkService:
 
     async def connect_whatsapp(
         self, workspace_id: str, token: str, account_id: str, phone_id: str
-    ) -> Channel:
+    ) -> ChannelLink:
         """Subscribes our app to the business account's messages, which also checks the token,
         the account and the number. Connecting again replaces the old number."""
         if not self.settings.META_APP_SECRET:
@@ -199,7 +203,7 @@ class ChannelLinkService:
 
     async def connect_whatsapp_signup(
         self, workspace_id: str, code: str, account_id: str, phone_id: str
-    ) -> Channel:
+    ) -> ChannelLink:
         """Embedded Signup's code becomes the business's token, the number is registered on
         the Cloud API, then it's connected as if typed in."""
         self.whatsapp_login()  # the app's id, secret and configuration are set
@@ -225,12 +229,12 @@ class ChannelLinkService:
         messages find no channel and aren't answered."""
         await self._delete(await self.channel_of(workspace_id, WHATSAPP))
 
-    async def channel_at(self, kind: str, address: str) -> Channel | None:
+    async def channel_at(self, kind: str, address: str) -> ChannelLink | None:
         """The channel a Page's id or a WhatsApp number's id belongs to, or None. One webhook
         serves every Page and every number, so a post is matched by that id."""
         async with self.sessions() as s:
             return await s.scalar(
-                select(Channel).where(Channel.kind == kind, Channel.address == address)
+                select(ChannelLink).where(ChannelLink.kind == kind, ChannelLink.address == address)
             )
 
     async def _refuse_if_taken(
@@ -251,13 +255,13 @@ class ChannelLinkService:
         secret: str,
         address: str,
         channel_id: str | None = None,
-    ) -> Channel:
+    ) -> ChannelLink:
         """Saves the business's link to an app, over the one it had. Telegram passes the new
         row's id: its webhook's address names it, and is set before anything is saved."""
         async with self.sessions() as s, s.begin():
             channel = await find_channel(s, workspace_id, kind)
             if channel is None:
-                channel = Channel(
+                channel = ChannelLink(
                     id=channel_id or new_id(),
                     workspace_id=workspace_id,
                     agent_id=agent_id,
@@ -275,6 +279,6 @@ class ChannelLinkService:
                 )
         return channel
 
-    async def _delete(self, channel: Channel) -> None:
+    async def _delete(self, channel: ChannelLink) -> None:
         async with self.sessions() as s, s.begin():
-            await s.delete(await s.get_one(Channel, channel.id))
+            await s.delete(await s.get_one(ChannelLink, channel.id))

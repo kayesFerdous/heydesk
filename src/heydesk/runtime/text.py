@@ -104,7 +104,7 @@ MIN_QUESTION_MATCH = 0.75  # how close two questions' words are to count as one
 def group_alike(questions: list[str]) -> list[list[int]]:
     """The questions in groups of ones asked alike, each a list of their indexes, the
     biggest group first. Each joins the first group whose first question is close enough.
-    ponytail: word likeness, not meaning; an embedding would group "delivery charge?" with
+    Limitation: word likeness, not meaning; an embedding would group "delivery charge?" with
     "how much to send?", if the owner needs it."""
     groups: list[tuple[str, list[int]]] = []
     for i, question in enumerate(questions):

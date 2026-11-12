@@ -53,7 +53,7 @@ from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
 from heydesk.services.assist import AssistService
 from heydesk.services.billing import BillingService
-from heydesk.services.calls import CallService
+from heydesk.services.calls import ConfirmationCallService
 from heydesk.services.channel_links import ChannelLinkService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
@@ -233,7 +233,7 @@ def build_services(
         local_http=settings.APP_ENV == "development",
         hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
-    calls = CallService(sessions, agents, team, llm, settings, now)
+    calls = ConfirmationCallService(sessions, agents, team, llm, settings, now)
     orders = OrderService(sessions, agents, team, woo_service, now)
     inbox = InboxService(sessions, llm, team, now)
     conversations = ConversationService(

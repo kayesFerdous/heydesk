@@ -22,7 +22,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.products import Product
-from heydesk.shop.prompt import shop_missing
+from heydesk.shop.prompt import missing_setup
 from heydesk.shop.store import ShopStore
 
 log = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class AgentInfo:
     missing: list[str]  # what the owner still has to fill in, in plain words
 
 
-def validate(data: dict[str, Any]) -> ShopConfig:
+def validate_config(data: dict[str, Any]) -> ShopConfig:
     """Runs on every save. Problems come back per field."""
     try:
         return ShopConfig.model_validate(data)
@@ -88,7 +88,7 @@ class AgentService:
             business = await s.get(Workspace, workspace_id)
         name = business.name if business else workspace_id
         # A business can start with no fields: the name comes from signup
-        config = validate({"business_name": name, "name": f"{name} assistant", **fields})
+        config = validate_config({"business_name": name, "name": f"{name} assistant", **fields})
         now = self.now()
         agent = Agent(
             workspace_id=workspace_id,
@@ -108,7 +108,7 @@ class AgentService:
         """Top-level fields in `patch` replace the config's. Live from the next message."""
         async with self.sessions() as s, s.begin():
             agent = await self._get(s, workspace_id)
-            config = validate({**agent.config, **patch})
+            config = validate_config({**agent.config, **patch})
             agent.config = config.model_dump(
                 mode="json", exclude_unset=True
             )  # a new dict, so SQLAlchemy sees it
@@ -121,8 +121,8 @@ class AgentService:
             agent = await self._get(s, workspace_id)
         config = ShopConfig.model_validate(agent.config)
         store = self.build_store(workspace_id)
-        missing = await shop_missing(config, store)
-        if config.pay_first and not await store.pays_first(config):
+        missing = await missing_setup(config, store)
+        if config.any_zone_pays_first and not await store.takes_payment_first(config):
             missing.append("Connect SSLCommerz or bKash to take payments first.")
         return AgentInfo(agent.id, agent.public_key, config, missing)
 
@@ -146,7 +146,7 @@ class AgentService:
             photos=self.photos,
         )
 
-    async def by_key(self, key: str) -> LiveAgent:
+    async def by_public_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
 
     async def by_workspace(self, workspace_id: str) -> LiveAgent:
@@ -193,10 +193,10 @@ class AgentService:
         else:
             async with self.sessions() as s, s.begin():
                 saved = await self._get(s, DEV_WORKSPACE_ID)
-                saved.config = validate(seed).model_dump(mode="json", exclude_unset=True)
+                saved.config = validate_config(seed).model_dump(mode="json", exclude_unset=True)
                 saved.name = str(saved.config["name"])
         log.info("dev agent ready", extra={"public_key": key})
-        return await self.by_key(key)
+        return await self.by_public_key(key)
 
     async def _get(self, s: AsyncSession, workspace_id: str) -> Agent:
         agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))

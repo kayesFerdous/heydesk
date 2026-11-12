@@ -19,12 +19,12 @@ from heydesk.errors import (
 )
 from heydesk.models import Conversation, Turn
 from heydesk.ports.llm import LanguageModel
-from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, TurnEnded
+from heydesk.runtime.events import Card, Event, HandedOff, Photos, Token, TurnEnded
 from heydesk.runtime.loop import TurnInput, run_turn
 from heydesk.runtime.prompt import build_system_prompt
 from heydesk.runtime.trace import summary
 from heydesk.services.agents import AgentService, LiveAgent
-from heydesk.services.calls import CallService
+from heydesk.services.calls import ConfirmationCallService
 from heydesk.services.inbox import InboxService, get_conversation, least_busy
 from heydesk.services.photos import PhotoService
 from heydesk.services.team import (
@@ -55,7 +55,7 @@ class Reply:
     """A whole turn's reply, for a channel that sends messages, not a stream (Telegram)."""
 
     text: str  # empty when the turn failed: the hand-off says what to do
-    handoff: HandOff | None
+    handoff: HandedOff | None
     photos: list[dict[str, str]] = field(default_factory=list)  # shown by a tool
     choices: list[str] = field(default_factory=list)  # buttons under the text
     card: Card | None = None  # the last card a tool showed, sent its own way
@@ -96,7 +96,7 @@ class ConversationService:
         inbox: InboxService,
         visitors: VisitorService,
         woo: WooService,
-        calls: CallService,
+        calls: ConfirmationCallService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
@@ -118,21 +118,21 @@ class ConversationService:
         conversation_id: str | None,
         text: str,
         channel: str,
-        visitor: str,
+        visitor_key: str,
         contact: str | None = None,
         photo: bytes | None = None,
         name: str | None = None,
     ) -> RunningTurn:
         """Loads the conversation (or starts one), then runs the turn as the listener reads it.
-        `visitor` is who is talking, for the limits: `web:<token>`, `telegram:<chat id>`.
+        `visitor_key` is who is talking, for the limits: `web:<token>`, `telegram:<chat id>`.
         A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
         new conversation; the web chat and a call pass the browser's token. A web visitor
         can send a `photo` with it, or instead of words."""
         text = text.strip()
         if not (text or photo) or len(text) > self.settings.MAX_MESSAGE_CHARS:
             raise HeyDeskError(f"A message is 1 to {self.settings.MAX_MESSAGE_CHARS} characters.")
-        runs_ai = await self.visitors.check_not_blocked(
-            agent, visitor
+        runs_ai = await self.visitors.ai_may_answer(
+            agent, visitor_key
         )  # a 429 when they're blocked
         # AI off for all: the message waits for the team, like AI off for one visitor
         runs_ai = runs_ai and not agent.config.ai_off
@@ -156,7 +156,7 @@ class ConversationService:
             and not await self._return_if_quiet(conversation)
         ):
             return self._team_turn(conversation, text, channel)
-        await self.visitors.count_turn(agent, visitor)  # counts the turn, or refuses it
+        await self.visitors.count_turn(agent, visitor_key)  # counts the turn, or refuses it
         if conversation is None:
             conversation = self._new_conversation(agent, channel, contact, name)
             async with self.sessions() as s, s.begin():
@@ -194,7 +194,7 @@ class ConversationService:
             photo_line=about_photo,
         )
         return RunningTurn(
-            conversation.id, self._run_turn(turn, conversation, agent, visitor), turn.interrupt
+            conversation.id, self._run_turn(turn, conversation, agent, visitor_key), turn.interrupt
         )
 
     async def reply(
@@ -231,7 +231,7 @@ class ConversationService:
             async for event in events:
                 if isinstance(event, Token):
                     parts.append(event.text)
-                elif isinstance(event, HandOff):
+                elif isinstance(event, HandedOff):
                     handoff = event
                 elif isinstance(event, Photos):
                     photos.extend(event.items)
@@ -245,8 +245,8 @@ class ConversationService:
         """Whether the agent will answer the contact's next message on a messaging app, so the
         app shows "typing…" only then: not blocked, the AI on for them and for the business, and
         not a chat the team has."""
-        visitor = f"{channel}:{contact}"
-        found = await self.visitors.find(agent.workspace_id, visitor)
+        visitor_key = f"{channel}:{contact}"
+        found = await self.visitors.find(agent.workspace_id, visitor_key)
         if found is not None and (found.ai_off or is_blocked(found, self.now())):
             return False
         if agent.config.ai_off:
@@ -341,7 +341,7 @@ class ConversationService:
         if conversation is None:  # they wrote first: there's nothing to add it to yet
             return
         if text.strip() == ".":
-            await self.inbox.take_over(
+            await self.inbox.set_taken_over(
                 agent.workspace_id, conversation.id, conversation.status != HUMAN_STATUS
             )
             return
@@ -356,7 +356,7 @@ class ConversationService:
         one that was the team's while the AI was off for the visitor."""
         if self._team_is_answering(conversation):
             return False
-        await self.inbox.take_over(conversation.workspace_id, conversation.id, False)
+        await self.inbox.set_taken_over(conversation.workspace_id, conversation.id, False)
         conversation.status, conversation.taken_over_at = "active", None
         return True
 
@@ -371,7 +371,7 @@ class ConversationService:
         return self.now() - at < quiet
 
     async def _run_turn(
-        self, turn: TurnInput, conversation: Conversation, agent: LiveAgent, visitor: str
+        self, turn: TurnInput, conversation: Conversation, agent: LiveAgent, visitor_key: str
     ) -> AsyncGenerator[Event]:
         """Passes the turn's events to the listener and saves the turn when it ends.
 
@@ -383,8 +383,8 @@ class ConversationService:
                     await self._save(conversation, event, agent.config.handoff.auto_assign)
                     await self._alert(conversation, event)
                     if event.alerts:  # a new shop order: its buyer may get a call
-                        await self.calls.after_turn(agent, conversation.id)
-                    await self.visitors.after_turn(agent, visitor, event.tools)
+                        await self.calls.queue_new_orders(agent, conversation.id)
+                    await self.visitors.count_off_topic_strike(agent, visitor_key, event.tools)
                 yield event
 
     async def _conversation_for_team(
@@ -420,17 +420,17 @@ class ConversationService:
         message = self.llm.user_message(text)
         ended = TurnEnded([message], conversation.state, {"channel": channel, "to_team": True})
         await self._save(conversation, ended)
-        await self.team.forward(conversation, text)
+        await self.team.forward_to_team(conversation, text)
         yield ended
 
     async def _alert(self, conversation: Conversation, ended: TurnEnded) -> None:
         """Tells the owner what the turn saved, and if the visitor wants a person."""
         for alert in ended.alerts:
-            await self.team.alert(conversation, alert)
+            await self.team.alert_team(conversation, alert)
         if ended.alerts:  # an order saved or changed: into a linked WooCommerce store now
             self.woo.push_soon(conversation.workspace_id)
         if ended.handed_off:
-            await self.team.alert(
+            await self.team.alert_team(
                 conversation, handoff_alert([*conversation.messages, *ended.added])
             )
 

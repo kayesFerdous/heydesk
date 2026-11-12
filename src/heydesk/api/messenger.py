@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.api.meta import MetaChallenge, MetaPost
-from heydesk.models import Channel
+from heydesk.models import ChannelLink
 from heydesk.services.team import MESSENGER
 
 router = APIRouter(tags=["messenger"])
@@ -48,7 +48,7 @@ class MessengerOut(BaseModel):
     link: str  # share it with customers: it opens a chat with the Page
 
 
-def messenger_out(channel: Channel) -> MessengerOut:
+def messenger_out(channel: ChannelLink) -> MessengerOut:
     return MessengerOut(page_id=channel.address, link=f"https://m.me/{channel.address}")
 
 

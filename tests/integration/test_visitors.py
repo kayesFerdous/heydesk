@@ -14,7 +14,7 @@ JOKE = ToolCall("c", "off_topic", {"reply": "I can only help with Spice Garden's
 
 async def say(world: World, script: list[object], visitor: str = "web:a") -> str:
     """One turn from `visitor`; returns what the visitor saw."""
-    agent = await world.services.agents.by_key(DEV_KEY)
+    agent = await world.services.agents.by_public_key(DEV_KEY)
     world.llm.script = script
     turn = await world.services.conversations.start_turn(agent, None, "…", "web", visitor)
     return "".join([e.text async for e in turn.events if isinstance(e, Token)])

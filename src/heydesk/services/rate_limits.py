@@ -1,6 +1,6 @@
 """Rate limits: how fast someone can send chat messages, log in or sign up.
 
-The daily limits stop slow timepass; these stop bursts, such as a script sending many
+The daily limits stop slow off-topic chatting; these stop bursts, such as a script sending many
 messages a second or making a new visitor id for every message. Too many → a 429.
 The counts are kept in Redis when there is one, so every server process adds to the same
 count and a restart keeps it; without Redis, in this process's memory. The flood check on the
@@ -61,7 +61,7 @@ class RateLimiter:
     async def check_code(self, who: str) -> None:
         await self._check(CHECK_CODE, "check-code", who.strip().lower())
 
-    async def hit(self, limit: str, what: str, *key: str) -> bool:
+    async def allow(self, limit: str, what: str, *key: str) -> bool:
         """Counts one hit; False when there were too many. When Redis is down the hit is let
         through: a limit that can't count mustn't take the chat and the login down with it."""
         try:
@@ -72,6 +72,6 @@ class RateLimiter:
 
     async def _check(self, limit: str, what: str, *key: str) -> None:
         """Counts one hit; raises `TooFast` when there were too many."""
-        if not await self.hit(limit, what, *key):
+        if not await self.allow(limit, what, *key):
             log.info("rate limited", extra={"what": what})
             raise TooFast("Too many requests. Please wait a minute and try again.")

@@ -1,7 +1,7 @@
 """Rows from a CSV file a business already has (a spreadsheet saved as CSV). Pure.
 
 Their columns become our fields by a `mapping` the owner checked ({"price": "MRP"}).
-`suggest` makes the first one from the column names alone, and without a mapping
+`suggest_columns` makes the first one from the column names alone, and without a mapping
 columns match by name ("Price (৳)" → `price`). The shop turns each row into a product; every
 row's problems come back at once, and nothing is saved unless the whole file is clean.
 `products_from_csv` and `PRODUCT_COLUMNS`, at the end, are the shop's use of it.
@@ -16,10 +16,9 @@ from difflib import SequenceMatcher
 from pydantic import BaseModel, ValidationError
 
 from heydesk.errors import InvalidConfig
-from heydesk.shop.products import Product, Variant, grouped
+from heydesk.shop.products import Product, Variant, merge_variant_rows
 
 MAX_ROWS = 2000
-YES_WORDS = {"yes", "y", "true", "1", "available", "in stock", ""}
 SAMPLE_ROWS = 3  # what the owner's screen shows of a file
 MIN_COLUMN_MATCH = 0.8  # how alike a misspelt column name must be ("prise", "colors") to count
 
@@ -42,17 +41,17 @@ class Suggestion(BaseModel):
     mapping: dict[str, str]  # our field → their column; a field with no column is left out
 
 
-def needs(columns: list[Column]) -> set[str]:
+def required_fields(columns: list[Column]) -> set[str]:
     return {c.name for c in columns if c.required}
 
 
-def reader(text: str) -> csv.DictReader[str]:
+def csv_reader(text: str) -> csv.DictReader[str]:
     return csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
 
 
 def preview_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
     """The file's column names and its first few rows, as they are."""
-    rows = reader(text)
+    rows = csv_reader(text)
     headers = [h for h in rows.fieldnames or [] if h and h.strip()]
     if not headers:
         raise InvalidConfig({"csv": "the file has no header row"})
@@ -65,16 +64,16 @@ def preview_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
     return headers, samples
 
 
-def suggest(text: str, columns: list[Column]) -> Suggestion:
+def suggest_columns(text: str, columns: list[Column]) -> Suggestion:
     """The file's columns, a few rows, and which column is which of our fields, for the owner
     to check and change."""
     headers, samples = preview_csv(text)
     return Suggestion(
-        columns=columns, headers=headers, samples=samples, mapping=match(headers, columns)
+        columns=columns, headers=headers, samples=samples, mapping=match_columns(headers, columns)
     )
 
 
-def match(headers: list[str], columns: list[Column]) -> dict[str, str]:
+def match_columns(headers: list[str], columns: list[Column]) -> dict[str, str]:
     """Our field → the file's column, best matches first, each column used once. A field
     whose names fit no column is left out."""
     scored = []
@@ -111,7 +110,7 @@ def split_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9\u0980-\u09ff]+", plain)
 
 
-def key(header: str) -> str:
+def header_key(header: str) -> str:
     """ "Price (৳)" → "price", "Start Time" → "start_time"."""
     words = re.sub(r"\(.*?\)", "", header).strip().lower()
     return re.sub(r"[^a-z0-9]+", "_", words).strip("_")
@@ -126,29 +125,25 @@ def parse_money(text: str) -> int:
         raise ValueError(f"{text!r} isn't an amount") from None
 
 
-def items(text: str) -> list[str]:
+def split_list(text: str) -> list[str]:
     """ "sat; sun", "Sat, Sun", "english|bangla" → a list."""
     return [part.strip() for part in re.split(r"[;|,/]", text) if part.strip()]
-
-
-def available(text: str) -> bool:
-    return text.strip().lower() in YES_WORDS
 
 
 def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:50] or "item"
 
 
-def parse[T](
+def parse_rows[T](
     text: str,
-    needs: set[str],
+    required: set[str],
     row: Callable[[dict[str, str]], T],
     mapping: dict[str, str] | None = None,
 ) -> list[T]:
     """Every row through `row`, which gets the cells by our field names: through `mapping`
-    (our field → their column) when there is one, by `key()` otherwise. Raises InvalidConfig
+    (our field → their column) when there is one, by `header_key()` otherwise. Raises InvalidConfig
     with one problem per bad row ("row 3": "…")."""
-    rows = reader(text)
+    rows = csv_reader(text)
     headers = rows.fieldnames or []
     if mapping is not None:
         absent = [h for h in mapping.values() if h not in headers]
@@ -156,9 +151,9 @@ def parse[T](
             raise InvalidConfig({"mapping": f"the file has no column {absent[0]!r}"})
         columns = set(mapping)
     else:
-        columns = {key(h) for h in headers}
-    if not needs <= columns:
-        raise InvalidConfig({"csv": f"needs columns: {', '.join(sorted(needs - columns))}"})
+        columns = {header_key(h) for h in headers}
+    if not required <= columns:
+        raise InvalidConfig({"csv": f"needs columns: {', '.join(sorted(required - columns))}"})
     found, problems = [], {}
     for n, cells in enumerate(rows, start=2):  # row 1 is the header
         if n > MAX_ROWS + 1:
@@ -166,7 +161,7 @@ def parse[T](
         if mapping is not None:
             clean = {field: (cells.get(h) or "").strip() for field, h in mapping.items()}
         else:
-            clean = {key(k): (v or "").strip() for k, v in cells.items() if k}
+            clean = {header_key(k): (v or "").strip() for k, v in cells.items() if k}
         if not any(clean.values()):
             continue  # a blank line
         try:
@@ -271,8 +266,8 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
     `mapping` names them in the file."""
 
     def row(cells: dict[str, str]) -> Product:
-        sizes = items(cells.get("sizes", ""))
-        colours = items(cells.get("colours") or cells.get("colors", ""))
+        sizes = split_list(cells.get("sizes", ""))
+        colours = split_list(cells.get("colours") or cells.get("colors", ""))
         stock, variants = stock_cell(cells.get("stock", ""), sizes, colours)
         was = cells.get("was_price", "")
         return Product.model_validate(
@@ -287,16 +282,16 @@ def products_from_csv(text: str, mapping: dict[str, str] | None = None) -> list[
                 "colours": colours,
                 "stock": stock,
                 "variants": variants,
-                "photos": links(cells.get("photos", "")),
-                "videos": links(cells.get("videos", "")),
-                "goes_with": items(cells.get("goes_with", ""))[:3],
+                "photos": media_links(cells.get("photos", "")),
+                "videos": media_links(cells.get("videos", "")),
+                "goes_with": split_list(cells.get("goes_with", ""))[:3],
             }
         )
 
-    return grouped(parse(text, needs(PRODUCT_COLUMNS), row, mapping))
+    return merge_variant_rows(parse_rows(text, required_fields(PRODUCT_COLUMNS), row, mapping))
 
 
-def links(text: str) -> list[str]:
+def media_links(text: str) -> list[str]:
     """A photos (or videos) cell: up to 3 http(s) links, apart by spaces, commas, ";" or "|"."""
     found = [
         part for part in re.split(r"[\s,;|]+", text) if part.startswith(("http://", "https://"))

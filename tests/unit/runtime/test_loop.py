@@ -15,11 +15,11 @@ from heydesk.ports.llm import (
     Usage,
 )
 from heydesk.runtime import cards
-from heydesk.runtime.events import Card, Event, HandOff, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import Card, Event, HandedOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.loop import MAX_MODEL_CALLS, TurnInput, run_turn
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult
-from heydesk.shop.tools.inbox import HANDOFF, HandoffInput
+from heydesk.shop.tools.support import HANDOFF_TO_HUMAN, HandoffInput
 from tests.conftest import AGENT, FIXED_NOW
 
 PRICES = {"chk-biryani": ("Chicken Biryani", 45000), "borhani": ("Borhani", 13000)}
@@ -105,7 +105,7 @@ async def test_the_first_turn_starts_with_the_greeting_the_visitor_saw() -> None
 async def test_provider_failure_hands_off_politely() -> None:
     events = await collect(make_turn(), FakeLLM([LLMUnavailable("503")]))
 
-    assert events[0] == HandOff("Please call us.", phone="+880 1700 000000")
+    assert events[0] == HandedOff("Please call us.", phone="+880 1700 000000")
     end = events[-1]
     assert isinstance(end, TurnEnded) and end.handed_off
     assert end.added[-1] == {"role": "assistant", "content": "Please call us."}
@@ -172,10 +172,10 @@ async def test_a_turn_that_never_stops_calling_tools_hands_off() -> None:
 
 async def test_asking_for_a_person_hands_off_after_the_reply() -> None:
     llm = FakeLLM([ToolCall("call_1", "handoff_to_human", {}), "Of course. Please call us."])
-    events = await collect(make_turn("can I talk to a person?", tools=[HANDOFF]), llm)
+    events = await collect(make_turn("can I talk to a person?", tools=[HANDOFF_TO_HUMAN]), llm)
 
     *_, card, end = events
-    assert card == HandOff("Please call us.", "+880 1700 000000", None)
+    assert card == HandedOff("Please call us.", "+880 1700 000000", None)
     assert isinstance(end, TurnEnded) and end.handed_off
     # The model's own reply is the last word: no closing line added, unlike a failure
     assert end.added[-1] == {"role": "assistant", "content": "Of course. Please call us."}

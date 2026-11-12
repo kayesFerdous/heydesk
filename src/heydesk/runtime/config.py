@@ -17,7 +17,7 @@ PLACEHOLDERS = ("business_name",)
 LOGO = r"^((/media|https://[\w.-]+)/[\w-]+/logo/[0-9a-f]{32}\.jpg)?$"
 
 
-class Handoff(BaseModel):
+class HandoffSettings(BaseModel):
     message: str = "Let me get a member of our team to help you."
     phone: str | None = None
     email: str | None = None
@@ -58,7 +58,7 @@ class AgentConfig(BaseModel):
     hours: WeeklyHours = WeeklyHours()
     notes: str = Field(default="", max_length=4000)  # the owner's: tone, rules, anything to add
     faq: str = Field(default="", max_length=20000)
-    handoff: Handoff = Handoff()
+    handoff: HandoffSettings = HandoffSettings()
     widget: Widget = Widget()  # the shop sets its own starters
     # The team's saved replies, picked from the inbox's reply box; never the model's
     saved_replies: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(

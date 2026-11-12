@@ -37,6 +37,11 @@ def local_time(at: datetime, timezone: str) -> str:
     )
 
 
+def day_time(when: datetime) -> str:
+    """How a day and time is shown and read back: "Wed 30 Sep, 5:00 pm"."""
+    return f"{when:%a} {when.day} {when:%b}, {clock_time(when.time())}"
+
+
 def clock_time(t: time) -> str:
     """19:30 → "7:30 pm"; 12:05 → "12:05 pm"."""
     hour = t.hour % 12 or 12

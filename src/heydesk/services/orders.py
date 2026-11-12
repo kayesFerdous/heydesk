@@ -31,8 +31,8 @@ from heydesk.shop.store import OutOfStock, ShopStore
 log = logging.getLogger(__name__)
 
 # A shop order read back and never said yes to gets one nudge this long after
-NUDGE_AFTER, NUDGE_BEFORE = timedelta(hours=1), timedelta(hours=3)
-NUDGE = "Shall I confirm your order? Tap Yes, or tell me what to change."
+REMINDER_AFTER, REMINDER_BEFORE = timedelta(hours=1), timedelta(hours=3)
+ORDER_REMINDER = "Shall I confirm your order? Tap Yes, or tell me what to change."
 
 
 class OrderService:
@@ -56,9 +56,9 @@ class OrderService:
         """To whoever has the order's chat. An order from a product page opened from no chat,
         or typed by the team, has none: the owner hears of it."""
         if conversation is None:
-            await self.team.notify(workspace_id, text)
+            await self.team.notify_owner(workspace_id, text)
         else:
-            await self.team.alert(conversation, text)
+            await self.team.alert_team(conversation, text)
 
     async def order_saved(
         self, workspace_id: str, conversation: Conversation | None, alert: str
@@ -188,7 +188,7 @@ class OrderService:
         text = one_line(text)
         sent = [
             chat
-            for chat in await store.chats_since(now - timedelta(hours=hours))
+            for chat in await store.conversations_since(now - timedelta(hours=hours))
             if await self.team.tell_visitor_if_allowed(store.workspace_id, chat, text)
         ]
         await store.add_offer(coupon, sent)
@@ -197,7 +197,7 @@ class OrderService:
 
     # A background job
 
-    async def nudge_unfinished(self) -> None:
+    async def remind_unconfirmed_orders(self) -> None:
         """A shop order read back and never said yes to, 1–3 hours on: the chat's last
         turn ran `place_order` and no order came of it. One nudge per chat, ever, with the
         read-back's buttons, and only inside the app's window (`tell_visitor_if_allowed`)."""
@@ -210,7 +210,7 @@ class OrderService:
                 .where(
                     Conversation.status == "active",
                     Conversation.nudged.is_(False),
-                    Conversation.updated_at.between(now - NUDGE_BEFORE, now - NUDGE_AFTER),
+                    Conversation.updated_at.between(now - REMINDER_BEFORE, now - REMINDER_AFTER),
                 )
             )
             for conversation in quiet.all():
@@ -220,7 +220,7 @@ class OrderService:
                     .order_by(Turn.at.desc())
                     .limit(1)
                 )
-                # ponytail: a place_order that only asked for a missing detail counts too
+                # Limitation: a place_order that only asked for a missing detail counts too
                 if last is None or "place_order" not in last.tools:
                     continue
                 placed = await s.scalar(
@@ -235,6 +235,6 @@ class OrderService:
                     due.append((conversation.workspace_id, conversation.id))
         for workspace_id, conversation_id in due:
             await self.team.tell_visitor_if_allowed(
-                workspace_id, conversation_id, NUDGE, ["Yes", "Change"]
+                workspace_id, conversation_id, ORDER_REMINDER, ["Yes", "Change"]
             )
             log.info("nudged", extra={"conversation_id": conversation_id})

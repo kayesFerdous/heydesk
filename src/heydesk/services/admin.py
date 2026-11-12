@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.models import (
     Agent,
     AuditEvent,
-    Channel,
+    ChannelLink,
     Conversation,
     Document,
     PaymentAccount,
@@ -25,7 +25,7 @@ from heydesk.models import (
 )
 from heydesk.services.billing import get_workspace
 
-PAGE = 200
+PAGE_SIZE = 200
 DAY_ZONE = ZoneInfo("Asia/Dhaka")  # the overview's days are Dhaka's: every business is there today
 BUSIEST = 5
 
@@ -194,7 +194,7 @@ class AdminService:
             .outerjoin(owner, owner.c.workspace_id == Workspace.id)
             .outerjoin(chats, chats.c.workspace_id == Workspace.id)
             .order_by(Workspace.created_at.desc())
-            .limit(PAGE)
+            .limit(PAGE_SIZE)
         )
         async with self.sessions() as s:
             rows = (await s.execute(query)).all()
@@ -232,9 +232,9 @@ class AdminService:
                 .order_by(User.created_at)
             )
             channels = await s.scalars(
-                select(Channel)
-                .where(Channel.workspace_id == workspace_id)
-                .order_by(Channel.created_at)
+                select(ChannelLink)
+                .where(ChannelLink.workspace_id == workspace_id)
+                .order_by(ChannelLink.created_at)
             )
             account = await s.scalar(
                 select(PaymentAccount).where(PaymentAccount.workspace_id == workspace_id)
@@ -336,7 +336,7 @@ class AdminService:
         self,
         workspace_id: str | None = None,
         *,
-        limit: int = PAGE,
+        limit: int = PAGE_SIZE,
         before: datetime | None = None,
     ) -> list[FailedTurn]:
         """Newest first, every business's or one's. The next page is `before=` the last `at`."""
@@ -379,13 +379,17 @@ class AdminService:
             select(User, Workspace.name)
             .outerjoin(Workspace, Workspace.id == User.workspace_id)
             .order_by(User.created_at.desc())
-            .limit(PAGE)
+            .limit(PAGE_SIZE)
         )
         async with self.sessions() as s:
             return [(user, name) for user, name in (await s.execute(query)).all()]
 
     async def audit_log(
-        self, workspace_id: str | None = None, *, limit: int = PAGE, before: datetime | None = None
+        self,
+        workspace_id: str | None = None,
+        *,
+        limit: int = PAGE_SIZE,
+        before: datetime | None = None,
     ) -> list[tuple[AuditEvent, str]]:
         """Newest first, with the admin's email. The next page is `before=` the last `at`."""
         query = select(AuditEvent, User.email).join(User, User.id == AuditEvent.actor_id)

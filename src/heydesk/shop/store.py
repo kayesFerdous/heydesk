@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation, Lead, PaymentAccount, Turn
-from heydesk.models.customer_request import UNPAID
+from heydesk.models.record import UNPAID
 from heydesk.runtime.text import one_line
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.csv_import import products_from_csv
@@ -25,7 +25,7 @@ from heydesk.shop.orders import (
     FINISHED_STATUSES,
     STATUSES_HOLDING_STOCK,
     Buyer,
-    BuyerRecord,
+    BuyerHistory,
     Coupon,
     NewOrder,
     OrderCancel,
@@ -37,10 +37,10 @@ from heydesk.shop.products import (
     Product,
     merge_products,
     merge_sheet_products,
-    minus_ordered,
     stock_snapshot,
+    subtract_ordered,
 )
-from heydesk.shop.records import PAGE, RecordStore, TooLate
+from heydesk.shop.records import PAGE_SIZE, RecordStore, TooLate
 
 STATUSES_TO_BOOK = ("confirmed", "packed")  # the courier books these; not one on hold
 NOT_SALE_STATUSES = ("cancelled", UNPAID)  # rows the dashboard doesn't count as sales
@@ -68,11 +68,11 @@ class Stats:
 
 
 class ShopStore(RecordStore):
-    async def pays_first(self, config: ShopConfig) -> bool:
+    async def takes_payment_first(self, config: ShopConfig) -> bool:
         """Whether the agent asks for payment before placing anything: the owner turned it on
-        (`pay_first`) and connected the business's SSLCommerz store or bKash account. Without
+        (`pay_first` on an area) and connected the business's SSLCommerz store or bKash account. Without
         either, the agent takes orders as if it were off."""
-        if not config.pay_first:
+        if not config.any_zone_pays_first:
             return False
         async with self.sessions() as s:
             found = await s.scalar(
@@ -146,7 +146,7 @@ class ShopStore(RecordStore):
     async def add_products(self, found: list[Product]) -> int:
         """A file's products join the list: the ones we have are updated, the rest are
         added, and none is deleted. Returns how many were new."""
-        found = await self.with_photos(found)  # downloads the new links
+        found = await self.attach_photos(found)  # downloads the new links
         async with self.sessions() as s, s.begin():
             await self._lock(s)
             ours = await self._products(s)
@@ -162,11 +162,11 @@ class ShopStore(RecordStore):
         )
         return [Product.model_validate(r, from_attributes=True) for r in rows]
 
-    async def with_photos(self, found: list[Product]) -> list[Product]:
+    async def attach_photos(self, found: list[Product]) -> list[Product]:
         """A list's products with their photos: a product with photo links gets those
         photos, each downloaded and indexed the first time; one with none keeps the photos it
         has here (the owner's own uploads)."""
-        # ponytail: a first import with many new links waits for them all (4 at a time);
+        # Limitation: a first import with many new links waits for them all (4 at a time);
         # move this to the background if owners wait too long
         ours = {p.code: p.photos for p in await self.products()}
         wanted = [link for p in found for link in p.photos]
@@ -192,7 +192,7 @@ class ShopStore(RecordStore):
         """The sheet's products, keeping our count where the sheet's didn't change, and
         taking a new count less the orders not shipped yet, and its photos. They
         join the list: the ones the sheet had last time (`seen`) and hasn't now go."""
-        found = await self.with_photos(products_from_csv(text, mapping))
+        found = await self.attach_photos(products_from_csv(text, mapping))
         async with self.sessions() as s, s.begin():
             await self._lock(s)  # an order placed meanwhile is counted, not lost
             listed = await self._products(s)
@@ -210,12 +210,13 @@ class ShopStore(RecordStore):
         """The WooCommerce store's products join the list, with Woo's count less
         the orders that hold stock here but aren't in Woo yet, and Woo's photos. The
         `gone` codes, ones Woo had last time and hasn't now, leave it."""
-        found = await self.with_photos(found)
+        found = await self.attach_photos(found)
         async with self.sessions() as s, s.begin():
             await self._lock(s)  # an order placed meanwhile is counted, not lost
             held = await self._lines_holding_stock(s, ShopOrder.woo_id.is_(None))
             kept = [
-                minus_ordered(p, [line for line in held if line["code"] == p.code]) for p in found
+                subtract_ordered(p, [line for line in held if line["code"] == p.code])
+                for p in found
             ]
             await self._replace(s, ProductRow, merge_products(await self._products(s), kept, gone))
 
@@ -289,7 +290,7 @@ class ShopStore(RecordStore):
         async with self.sessions() as s, s.begin():
             setattr(await self._get_row(s, ShopOrder, order_id), what, True)
 
-    async def parcel_booked(self, order_id: str, parcel_id: str) -> ShopOrder:
+    async def mark_parcel_booked(self, order_id: str, parcel_id: str) -> ShopOrder:
         """The courier has the order's parcel: it's `shipped`, unless it moved meanwhile."""
         async with self.sessions() as s, s.begin():
             order = await self._get_row(s, ShopOrder, order_id)
@@ -357,7 +358,7 @@ class ShopStore(RecordStore):
             )
         return saved
 
-    async def same_order(
+    async def find_duplicate_order(
         self, phone: str, lines: list[dict[str, Any]], since: datetime
     ) -> ShopOrder | None:
         """The newest order from this mobile since then, not cancelled, with the same items:
@@ -412,7 +413,7 @@ class ShopStore(RecordStore):
     def _coupon_allowed(self, row: CouponRow) -> bool:
         return row.only_for is None or self.conversation_id in row.only_for
 
-    async def offer_code(self) -> str:
+    async def active_offer_code(self) -> str:
         """The newest offer sent to this chat that hasn't ended, or ""."""
         if self.conversation_id is None:
             return ""
@@ -428,7 +429,7 @@ class ShopStore(RecordStore):
             )
             return next((r.code for r in rows if self._coupon_allowed(r)), "")
 
-    async def chats_since(self, since: datetime) -> list[str]:
+    async def conversations_since(self, since: datetime) -> list[str]:
         """The shop's chats where the visitor wrote since then (an offer's audience), not
         calls and not the team's own asks."""
         async with self.sessions() as s:
@@ -483,9 +484,9 @@ class ShopStore(RecordStore):
                 raise NotFound("There's no such coupon.")
             await s.delete(row)
 
-    async def buyer_records(self, phones: set[str]) -> dict[str, BuyerRecord]:
+    async def buyer_histories(self, phones: set[str]) -> dict[str, BuyerHistory]:
         """Each mobile's orders with this shop by how they ended, in one query."""
-        found: dict[str, BuyerRecord] = {phone: BuyerRecord() for phone in phones}
+        found: dict[str, BuyerHistory] = {phone: BuyerHistory() for phone in phones}
         if not phones:
             return found
         async with self.sessions() as s:
@@ -501,7 +502,7 @@ class ShopStore(RecordStore):
                     setattr(record, status, getattr(record, status) + count)
         return found
 
-    async def buyers(self, q: str | None = None, limit: int = PAGE) -> list[Buyer]:
+    async def buyers(self, q: str | None = None, limit: int = PAGE_SIZE) -> list[Buyer]:
         """The shop's buyers by mobile, the latest to order first. `q` matches the
         mobile or a name they ordered under."""
         workspace_id = self.workspace_id
@@ -539,7 +540,7 @@ class ShopStore(RecordStore):
                     .distinct()
                 )
             ).all()
-        records = await self.buyer_records(phones)
+        records = await self.buyer_histories(phones)
         return [
             Buyer(
                 **records[phone].model_dump(),
@@ -590,7 +591,7 @@ class ShopStore(RecordStore):
                 order.lines, order.subtotal = e.lines, e.subtotal
             order.address, order.zone, order.phone, order.note = e.address, e.zone, e.phone, e.note
             order.delivery_charge = e.delivery_charge
-            # ponytail: the coupon's amount stays as it was, at most the new items
+            # Limitation: the coupon's amount stays as it was, at most the new items
             order.discount = min(order.discount, order.subtotal)
             order.total = order.subtotal - order.discount + e.delivery_charge
             order.updated_at = self.now()

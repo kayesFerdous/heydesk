@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Header, status
 from pydantic import BaseModel, Field
 
 from heydesk.api.deps import LoggedInUser, Svc, WorkspaceId
-from heydesk.models import Channel
+from heydesk.models import ChannelLink
 from heydesk.services.team import owner_link
 
 router = APIRouter(tags=["telegram"])
@@ -30,7 +30,7 @@ class TelegramOut(BaseModel):
     owner_linked: bool  # the owner has opened it
 
 
-def telegram_out(channel: Channel) -> TelegramOut:
+def telegram_out(channel: ChannelLink) -> TelegramOut:
     return TelegramOut(
         username=channel.address,
         link=f"https://t.me/{channel.address}",

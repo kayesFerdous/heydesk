@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from heydesk.domain.values import parse_code
 from heydesk.runtime import cards, parse
-from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.commit_check import ask_for_yes, confirm
 from heydesk.runtime.speech import money, money_or_free
 from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult, fail
@@ -38,7 +38,7 @@ from heydesk.shop.orders import (
     OrderConfirm,
     OrderEdit,
     lines_text,
-    mobile,
+    parse_mobile,
     subtotal_of,
 )
 from heydesk.shop.products import (
@@ -113,7 +113,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
         else None  # asked for with the address
     )
     name = check.take("name", args.name, parse.name)
-    phone = check.take("phone", args.phone, mobile)
+    phone = check.take("phone", args.phone, parse_mobile)
 
     currency = config.currency
     charge = cart_delivery_charge(config, zone, cart) if zone else 0
@@ -127,7 +127,7 @@ async def place_order(ctx: Ctx, args: PlaceOrderInput) -> ToolResult:
     address = with_district(address, args.district)
     if not args.again:  # the same mobile and items a little while ago
         since = ctx.now - timedelta(hours=DUPLICATE_HOURS)
-        if earlier := await ctx.store.same_order(phone, cart["lines"], since):
+        if earlier := await ctx.store.find_duplicate_order(phone, cart["lines"], since):
             return fail(
                 f"{phone} already ordered the same items as {earlier.code}. Ask whether this "
                 "is a second order on purpose. If yes, call place_order again with again=true; "
@@ -279,7 +279,7 @@ async def _order_in_this_chat(ctx: Ctx) -> ShopOrder | ToolResult | None:
 
 async def _latest_order_by_phone(ctx: Ctx, phone: str) -> ShopOrder | ToolResult:
     try:
-        latest = await ctx.store.latest_order(mobile(phone))
+        latest = await ctx.store.latest_order(parse_mobile(phone))
     except ValueError as error:
         return fail(str(error))
     if latest is None:
@@ -295,7 +295,7 @@ async def _order_by_code(ctx: Ctx, code: str, phone: str) -> ShopOrder | ToolRes
     if parsed is None or parsed[0] not in ("", "O"):
         return fail("That isn't an order code: they look like O-104. Ask again.")
     try:
-        number = mobile(phone)
+        number = parse_mobile(phone)
     except ValueError as error:
         return fail(str(error))
     found = await ctx.store.order(parsed[1])
@@ -526,7 +526,7 @@ def _order_edit(
         "address", args.address, lambda said: parse.text(said, limit=ADDRESS_LIMIT)
     )
     zone = check.take("district", args.district, lambda d: match_zone(config.delivery, d))
-    phone = check.take("new_phone", args.new_phone, mobile)
+    phone = check.take("new_phone", args.new_phone, parse_mobile)
     if check.problems:
         return fail(" ".join(check.problems.values()))
     if address:  # its district is required by change_order

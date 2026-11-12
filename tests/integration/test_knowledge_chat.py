@@ -59,7 +59,7 @@ async def test_another_business_never_gets_the_documents(app: FastAPI, client: A
     other = await new_business(app)
     try:
         agent = (await other.post("/api/agent", json={})).json()
-        live = await app.state.services.agents.by_key(agent["public_key"])
+        live = await app.state.services.agents.by_public_key(agent["public_key"])
         assert live.documents == []
         assert "search_knowledge" not in {
             t.name for t in tools_for(has_documents=bool(live.documents))
@@ -75,11 +75,11 @@ async def test_deleting_the_last_document_takes_the_tool_away(
     app: FastAPI, client: AsyncClient
 ) -> None:
     doc = (await client.post("/api/agent/documents", json={"title": "P", "text": POLICY})).json()
-    assert (await app.state.services.agents.by_key(DEV_KEY)).documents == ["P"]
+    assert (await app.state.services.agents.by_public_key(DEV_KEY)).documents == ["P"]
 
     await client.delete(f"/api/agent/documents/{doc['id']}")
 
-    assert (await app.state.services.agents.by_key(DEV_KEY)).documents == []
+    assert (await app.state.services.agents.by_public_key(DEV_KEY)).documents == []
 
 
 async def test_a_missed_question_is_listed_taught_and_found_next_time(

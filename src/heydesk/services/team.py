@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.models import Channel, Conversation, TeamEvent, Turn, User
+from heydesk.models import ChannelLink, Conversation, TeamEvent, Turn, User
 from heydesk.ports.llm import LanguageModel, Message
 from heydesk.ports.messenger import MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
@@ -57,22 +57,22 @@ GIVEN_BACK = "The agent is answering this chat again."
 TELEGRAM_REPLY = "Telegram reply"  # a team event's action: a reply to an alert
 
 
-def owner_code(channel: Channel) -> str:
+def owner_code(channel: ChannelLink) -> str:
     """For the owner's link. Made from the webhook secret, so connecting again changes it."""
     return hashlib.sha256(f"owner:{channel.secret}".encode()).hexdigest()[:24]
 
 
-def owner_link(channel: Channel) -> str:
+def owner_link(channel: ChannelLink) -> str:
     """Opens the bot and sends `/start owner_<code>`, which links the owner's chat."""
     return f"https://t.me/{channel.address}?start=owner_{owner_code(channel)}"
 
 
-def member_code(channel: Channel, user_id: str) -> str:
+def member_code(channel: ChannelLink, user_id: str) -> str:
     """For a moderator's link: theirs alone, and connecting the bot again changes it."""
     return hashlib.sha256(f"member:{channel.secret}:{user_id}".encode()).hexdigest()[:16]
 
 
-def member_link(channel: Channel, user_id: str) -> str:
+def member_link(channel: ChannelLink, user_id: str) -> str:
     """Opens the bot and sends `/start member_<user id><code>`, which links the member's chat."""
     return f"https://t.me/{channel.address}?start=member_{user_id}{member_code(channel, user_id)}"
 
@@ -90,10 +90,12 @@ def handoff_alert(messages: list[Message], title: str = "🙋 Someone wants a pe
     return f"{title}\n\n" + "\n".join(lines)
 
 
-async def find_channel(s: AsyncSession, workspace_id: str, kind: str) -> Channel | None:
+async def find_channel(s: AsyncSession, workspace_id: str, kind: str) -> ChannelLink | None:
     """The business's link to one app, or None when it isn't connected."""
     return await s.scalar(
-        select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
+        select(ChannelLink).where(
+            ChannelLink.workspace_id == workspace_id, ChannelLink.kind == kind
+        )
     )
 
 
@@ -130,7 +132,7 @@ class TeamService:
         self.whatsapp = whatsapp
         self.now = now
 
-    async def alert(self, conversation: Conversation, text: str) -> None:
+    async def alert_team(self, conversation: Conversation, text: str) -> None:
         """Sends an alert about `conversation` to the team member who has it, if they've linked their
         chat; otherwise to the owner, if they have."""
         channel = await self._channel(conversation.workspace_id)
@@ -146,17 +148,17 @@ class TeamService:
         if chat_id is None:
             return
         how = HOW_TO_ANSWER.get(conversation.channel, "")
-        await self.send(channel, chat_id, f"{text}\n\n{how}\nRef: {conversation.id}")
+        await self.send_message(channel, chat_id, f"{text}\n\n{how}\nRef: {conversation.id}")
 
-    async def notify(self, workspace_id: str, text: str) -> None:
+    async def notify_owner(self, workspace_id: str, text: str) -> None:
         """Tells the owner something about the business, not a chat (a sheet that can't be
         read), if they've linked their chat. No `Ref:`: there's no one to answer."""
         channel = await self._channel(workspace_id)
         if channel is not None and channel.owner_chat_id is not None:
-            await self.send(channel, channel.owner_chat_id, text)
+            await self.send_message(channel, channel.owner_chat_id, text)
 
-    async def send(
-        self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
+    async def send_message(
+        self, channel: ChannelLink, chat_id: str, text: str, choices: list[str] | None = None
     ) -> None:
         """One message from the business's bot, Page or number, with buttons for `choices`. A
         failure is logged, never raised."""
@@ -172,9 +174,9 @@ class TeamService:
         except CHAT_APP_ERRORS as error:
             log.warning("send failed: %s", error, extra={"channel_id": channel.id})
 
-    async def forward(self, conversation: Conversation, text: str) -> None:
+    async def forward_to_team(self, conversation: Conversation, text: str) -> None:
         """A visitor wrote while the team is answering: pass it on, for the owner to reply to."""
-        await self.alert(conversation, f"💬 Customer: {text}")
+        await self.alert_team(conversation, f"💬 Customer: {text}")
 
     async def tell_visitor(
         self, workspace_id: str, conversation_id: str, text: str, choices: list[str] | None = None
@@ -213,17 +215,17 @@ class TeamService:
         await self.tell_visitor(workspace_id, conversation_id, text, choices)
         return True
 
-    async def link_owner(self, channel: Channel, chat_id: str, code: str) -> None:
+    async def link_owner(self, channel: ChannelLink, chat_id: str, code: str) -> None:
         if code != owner_code(channel):
-            await self.send(channel, chat_id, OLD_LINK)
+            await self.send_message(channel, chat_id, OLD_LINK)
             return
         async with self.sessions() as s, s.begin():
-            saved = await s.get_one(Channel, channel.id)
+            saved = await s.get_one(ChannelLink, channel.id)
             saved.owner_chat_id = chat_id
         log.info("telegram owner linked", extra={"channel_id": channel.id})
-        await self.send(channel, chat_id, LINKED)
+        await self.send_message(channel, chat_id, LINKED)
 
-    async def link_member(self, channel: Channel, chat_id: str, payload: str) -> None:
+    async def link_member(self, channel: ChannelLink, chat_id: str, payload: str) -> None:
         """A moderator opened their link: alerts about their chats come to this chat."""
         user_id, code = payload[:32], payload[32:]
         async with self.sessions() as s, s.begin():
@@ -235,12 +237,12 @@ class TeamService:
                 user.telegram_chat_id = chat_id
                 linked = True
         if not linked:  # said after the transaction: no row waits on Telegram
-            await self.send(channel, chat_id, OLD_LINK)
+            await self.send_message(channel, chat_id, OLD_LINK)
             return
         log.info("telegram member linked", extra={"channel_id": channel.id})
-        await self.send(channel, chat_id, LINKED)
+        await self.send_message(channel, chat_id, LINKED)
 
-    async def is_team(self, channel: Channel, chat_id: str) -> bool:
+    async def is_team(self, channel: ChannelLink, chat_id: str) -> bool:
         """The owner's chat, or a moderator's linked one."""
         if chat_id == channel.owner_chat_id:
             return True
@@ -248,7 +250,7 @@ class TeamService:
             return await s.scalar(self._member(channel, chat_id)) is not None
 
     async def handle_team_reply(
-        self, channel: Channel, chat_id: str, message: dict[str, Any]
+        self, channel: ChannelLink, chat_id: str, message: dict[str, Any]
     ) -> None:
         """Someone on the team replied to an alert: send their words to that visitor, or with
         `/done` give the chat back to the agent; "." takes it over, or gives it back.
@@ -259,7 +261,7 @@ class TeamService:
         quoted = (message.get("reply_to_message") or {}).get("text") or ""
         found = REF_PATTERN.search(quoted)
         if not text or found is None:
-            await self.send(channel, owner, PICK_A_CHAT)
+            await self.send_message(channel, owner, PICK_A_CHAT)
             return
         answer, to_visitor = "", False
         async with self.sessions() as s, s.begin():
@@ -271,18 +273,18 @@ class TeamService:
                     s, channel, chat_id, conversation, text
                 )
         if conversation is None:  # said after the transaction: no row waits on Telegram
-            await self.send(channel, owner, CHAT_NOT_FOUND)
+            await self.send_message(channel, owner, CHAT_NOT_FOUND)
             return
         if to_visitor:
             await self.send_to_visitor(conversation, text)
         if answer:
-            await self.send(channel, owner, f"{answer}\nRef: {conversation.id}")
+            await self.send_message(channel, owner, f"{answer}\nRef: {conversation.id}")
         log.info("team answered", extra={"conversation_id": conversation.id})
 
     async def _apply_team_reply(
         self,
         s: AsyncSession,
-        channel: Channel,
+        channel: ChannelLink,
         chat_id: str,
         conversation: Conversation,
         text: str,
@@ -335,7 +337,7 @@ class TeamService:
             return
         channel = await self._channel(conversation.workspace_id, conversation.channel)
         if channel is not None:
-            await self.send(channel, str(conversation.contact), text, choices)
+            await self.send_message(channel, str(conversation.contact), text, choices)
 
     async def member_alert_link(self, workspace_id: str, user_id: str) -> tuple[str | None, bool]:
         """A team member's own alerts link and whether they've opened it; no link without
@@ -349,12 +351,12 @@ class TeamService:
             return owner_link(channel), channel.owner_chat_id is not None
         return member_link(channel, user_id), user.telegram_chat_id is not None
 
-    def _member(self, channel: Channel, chat_id: str) -> Any:
+    def _member(self, channel: ChannelLink, chat_id: str) -> Any:
         return select(User).where(
             User.workspace_id == channel.workspace_id, User.telegram_chat_id == chat_id
         )
 
-    async def _channel(self, workspace_id: str, kind: str = TELEGRAM) -> Channel | None:
+    async def _channel(self, workspace_id: str, kind: str = TELEGRAM) -> ChannelLink | None:
         """Alerts always go to Telegram; a visitor's channel can be any app."""
         async with self.sessions() as s:
             return await find_channel(s, workspace_id, kind)

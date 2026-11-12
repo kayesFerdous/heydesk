@@ -44,7 +44,7 @@ class CourierError(Exception):
 
 
 class CourierApi(Protocol):
-    async def check(self, account: CourierAccount) -> int | None:
+    async def verify_account(self, account: CourierAccount) -> int | None:
         """The keys work. Pathao: the store to send from (the account's, or the first active
         one); the others: None."""
         ...

@@ -1,5 +1,5 @@
 from heydesk.domain.values import Confirmed
-from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.commit_check import ask_for_yes, confirm
 
 READ_BACK = "2 × Chicken Biryani; pickup today at 7:30 pm; name Rahim; phone 01711000000"
 

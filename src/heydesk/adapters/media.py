@@ -238,7 +238,7 @@ async def download(url: str, local: bool) -> bytes:
 
 async def check_public_url(url: str, local: bool) -> None:
     """Raises ImageUnreachable unless `url` is http(s) to a host whose every address is public."""
-    # ponytail: the name is looked up again by httpx, so a host that changes its answer in
+    # Limitation: the name is looked up again by httpx, so a host that changes its answer in
     # between (DNS rebinding) gets through; pin the address if a business ever tries it
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
