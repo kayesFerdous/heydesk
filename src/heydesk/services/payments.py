@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError, NotFound
-from heydesk.models import Conversation, PaymentAccount
+from heydesk.models import PaymentAccount
 from heydesk.models.customer_request import UNPAID
 from heydesk.ports.payments import (
     PROVIDERS,
@@ -32,8 +32,8 @@ from heydesk.ports.payments import (
     Provider,
 )
 from heydesk.runtime.speech import money
+from heydesk.services.orders import OrderService
 from heydesk.services.team import TeamService
-from heydesk.services.woo import WooService
 from heydesk.shop.models import ShopOrder
 
 log = logging.getLogger(__name__)
@@ -48,14 +48,14 @@ class PaymentService:
         sessions: async_sessionmaker[AsyncSession],
         gateways: Gateways,
         team: TeamService,
-        woo: WooService,
+        orders: OrderService,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self.sessions = sessions
         self.gateways = gateways
         self.team = team
-        self.woo = woo  # a paid shop order goes into a linked WooCommerce store at once
+        self.orders = orders  # a paid order: the owner hears, and it goes into a linked store
         self.settings = settings
         self.now = now
 
@@ -199,8 +199,9 @@ class PaymentService:
             log.info("paid online", extra={"record_id": record.id})
             await self._tell_visitor_paid(record, amount)
         elif record.status == "cancelled" and not record.paid:
-            await self._alert(
-                record,
+            await self.orders.alert(
+                record.workspace_id,
+                await self.orders.conversation_of(record),
                 f"⚠️ {record.code} was paid after it was cancelled: refund {amount} "
                 f"({paid.reference}).",
             )
@@ -213,26 +214,9 @@ class PaymentService:
                 record.conversation_id,
                 f"✅ Payment received: {amount} for {record.PAY_FOR}. {record.next_step_text()}",
             )
-        await self._alert(
-            record,
+        await self.orders.order_saved(
+            record.workspace_id,
+            await self.orders.conversation_of(record),
             f"💳 New {record.code}: {record.PAY_FOR} paid online, {amount}\n"
             f"{record.alert_summary()}; name {record.name}; phone {record.phone}",
         )
-        self.woo.push_soon(record.workspace_id)
-
-    async def _alert(self, record: ShopOrder, text: str) -> None:
-        """To whoever has the order's chat. An order from a product page opened from no chat
-        has none: the owner hears of it."""
-        conversation = None
-        if record.conversation_id:
-            async with self.sessions() as s:
-                conversation = await s.scalar(
-                    select(Conversation).where(
-                        Conversation.id == record.conversation_id,
-                        Conversation.workspace_id == record.workspace_id,
-                    )
-                )
-        if conversation is None:
-            await self.team.notify(record.workspace_id, text)
-        else:
-            await self.team.alert(conversation, text)

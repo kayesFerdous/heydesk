@@ -170,7 +170,7 @@ to the end, so the model never reads yesterday's half-order; the team still sees
 
 *Summary*, *Ask about this chat* and *Draft a reply* run the chat's own prompt and history with
 **no tools**, and add one last user message that starts `[For the team, not the customer]`
-(`ASSIST` in `services/conversations.py`):
+(`ASSIST` in `services/assist.py`):
 
 | Kind | The line | Why |
 |---|---|---|

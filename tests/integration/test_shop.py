@@ -21,6 +21,7 @@ from httpx import AsyncClient
 from PIL import Image
 from sqlalchemy import select
 
+from heydesk.api.shop import OfferIn, send_offer
 from heydesk.models import Conversation, Lead, TeamMessage, Turn
 from heydesk.ports.llm import ToolCall
 from heydesk.ports.media import ImageUnreachable
@@ -28,7 +29,6 @@ from heydesk.runtime.tool import ToolContext, ToolResult
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent, dev_workspace
 from heydesk.services.photos import to_jpeg
 from heydesk.shop import csv_import
-from heydesk.shop.api import OfferIn, send_offer
 from heydesk.shop.csv_import import PRODUCT_COLUMNS, products_from_csv, stock_cell
 from heydesk.shop.delivery import with_district
 from heydesk.shop.models import ShopOrder
@@ -1436,7 +1436,7 @@ async def test_an_order_read_back_with_no_yes_gets_one_nudge(world: World) -> No
     waiting = await world.say(
         agent, None, [*first, ToolCall("c2", "place_order", DETAILS), READ_BACK]
     )
-    nudge = world.services.conversations.nudge_unfinished
+    nudge = world.services.orders.nudge_unfinished
     world.clock.advance(minutes=30)
     await nudge()  # too soon
     assert (await world.conversation(waiting)).messages[-1]["content"] == READ_BACK
@@ -1454,7 +1454,7 @@ async def test_a_placed_order_is_not_nudged(world: World) -> None:
     agent = await world.agent()
     await buy(world, agent, KURTI)
     world.clock.advance(hours=2)
-    await world.services.conversations.nudge_unfinished()
+    await world.services.orders.nudge_unfinished()
     async with world.sessions() as s:
         assert [c.nudged for c in await s.scalars(select(Conversation))] == [False]
 

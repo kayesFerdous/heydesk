@@ -8,7 +8,7 @@ word makes it delivered or returned. The buyer hears each move in their chat. A 
 problem stops that shop's round, is noted on the link, and the owner hears once."""
 
 import logging
-from datetime import UTC, timedelta
+from datetime import timedelta
 from typing import cast
 
 from sqlalchemy import and_, or_, select
@@ -203,11 +203,7 @@ class CourierService:
         now = shop.now()
         for order in await shop.orders_to_review(now - self.review_after):
             await shop.mark_notified(order.id, "review_asked")
-            delivered = (
-                order.updated_at
-                if order.updated_at.tzinfo
-                else order.updated_at.replace(tzinfo=UTC)
-            )
+            delivered = order.updated_at
             if (
                 order.conversation_id is None
                 or now - delivered > self.review_after + REVIEW_TOO_LATE

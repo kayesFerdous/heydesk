@@ -97,7 +97,7 @@ def create_app(
             run_every(settings.COURIER_SYNC_MINUTES * 60, services.courier.sync_all),
             run_every(settings.CALL_QUEUE_SECONDS, services.calls.check_queue),
             run_every(settings.SNOOZE_CHECK_SECONDS, services.inbox.wake_snoozed),
-            run_every(settings.SNOOZE_CHECK_SECONDS, services.conversations.nudge_unfinished),
+            run_every(settings.SNOOZE_CHECK_SECONDS, services.orders.nudge_unfinished),
             run_once_after(settings.SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),
         ]
         if redis is not None:  # other processes' inbox news, for this one's open pages

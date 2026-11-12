@@ -9,13 +9,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import ScalarResult, case, func, or_, select
+from sqlalchemy import ColumnElement, ScalarResult, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from heydesk.domain.values import Confirmed
 from heydesk.errors import Conflict, InvalidTransition, NotFound
 from heydesk.models import Conversation, Lead, PaymentAccount, Turn
-from heydesk.models.customer_request import UNPAID, next_number
+from heydesk.models.customer_request import UNPAID
 from heydesk.runtime.text import one_line
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.csv_import import products_from_csv
@@ -193,18 +193,11 @@ class ShopStore(RecordStore):
         taking a new count less the orders not shipped yet, and its photos. They
         join the list: the ones the sheet had last time (`seen`) and hasn't now go."""
         found = await self.with_photos(products_from_csv(text, mapping))
-        workspace_id = self.workspace_id
         async with self.sessions() as s, s.begin():
             await self._lock(s)  # an order placed meanwhile is counted, not lost
             listed = await self._products(s)
             ours = {p.code: p for p in listed}
-            orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
-                select(ShopOrder.lines).where(
-                    ShopOrder.workspace_id == workspace_id,
-                    ShopOrder.status.in_(STATUSES_HOLDING_STOCK),
-                )
-            )
-            held = [line for lines in orders for line in lines]
+            held = await self._lines_holding_stock(s)
             gone = set(seen) - {p.code for p in found}
             await self._replace(
                 s,
@@ -218,21 +211,26 @@ class ShopStore(RecordStore):
         the orders that hold stock here but aren't in Woo yet, and Woo's photos. The
         `gone` codes, ones Woo had last time and hasn't now, leave it."""
         found = await self.with_photos(found)
-        workspace_id = self.workspace_id
         async with self.sessions() as s, s.begin():
             await self._lock(s)  # an order placed meanwhile is counted, not lost
-            orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
-                select(ShopOrder.lines).where(
-                    ShopOrder.workspace_id == workspace_id,
-                    ShopOrder.status.in_(STATUSES_HOLDING_STOCK),
-                    ShopOrder.woo_id.is_(None),
-                )
-            )
-            held = [line for lines in orders for line in lines]
+            held = await self._lines_holding_stock(s, ShopOrder.woo_id.is_(None))
             kept = [
                 minus_ordered(p, [line for line in held if line["code"] == p.code]) for p in found
             ]
             await self._replace(s, ProductRow, merge_products(await self._products(s), kept, gone))
+
+    async def _lines_holding_stock(
+        self, s: AsyncSession, *also: ColumnElement[bool]
+    ) -> list[dict[str, Any]]:
+        """The items of the orders sold but still on the shelf (and matching `also`)."""
+        orders: ScalarResult[list[dict[str, Any]]] = await s.scalars(
+            select(ShopOrder.lines).where(
+                ShopOrder.workspace_id == self.workspace_id,
+                ShopOrder.status.in_(STATUSES_HOLDING_STOCK),
+                *also,
+            )
+        )
+        return [line for lines in orders for line in lines]
 
     async def orders_for_woo(self, since: datetime) -> list[ShopOrder]:
         """The orders placed since the store was linked whose status changed since it was
@@ -330,11 +328,7 @@ class ShopStore(RecordStore):
             await self._lock(s)  # one save at a time: the last one and a coupon's last use
             await self._change_stock(s, order.lines, -1)
             if order.coupon:  # one more use, checked again in this transaction
-                row = await s.scalar(
-                    select(CouponRow).where(
-                        CouponRow.workspace_id == self.workspace_id, CouponRow.code == order.coupon
-                    )
-                )
+                row = await self._coupon_row(s, order.coupon)
                 problem = (
                     Coupon.model_validate(row, from_attributes=True).problem(self.now())
                     if row and self._coupon_allowed(row)
@@ -343,13 +337,9 @@ class ShopStore(RecordStore):
                 if row is None or problem:
                     raise CouponGone(problem)
                 row.used += 1
-            now = self.now()
-            saved = ShopOrder(
-                workspace_id=self.workspace_id,
-                conversation_id=self.conversation_id,
-                number=await next_number(s, ShopOrder, self.workspace_id),
-                created_at=now,
-                updated_at=now,
+            saved = await self._new_row(
+                s,
+                ShopOrder,
                 status=order.status,
                 name=order.name,
                 phone=order.phone,
@@ -365,7 +355,6 @@ class ShopStore(RecordStore):
                 note=order.note,
                 source=source,
             )
-            s.add(saved)
         return saved
 
     async def same_order(
@@ -408,14 +397,17 @@ class ShopStore(RecordStore):
     async def coupon(self, code: str) -> Coupon | None:
         """The code, if this chat may use it: an offer's only by the chats it went to."""
         async with self.sessions() as s:
-            row = await s.scalar(
-                select(CouponRow).where(
-                    CouponRow.workspace_id == self.workspace_id, CouponRow.code == code.upper()
-                )
-            )
+            row = await self._coupon_row(s, code.upper())
         if row is None or not self._coupon_allowed(row):
             return None
         return Coupon.model_validate(row, from_attributes=True)
+
+    async def _coupon_row(self, s: AsyncSession, code: str) -> CouponRow | None:
+        return await s.scalar(
+            select(CouponRow).where(
+                CouponRow.workspace_id == self.workspace_id, CouponRow.code == code
+            )
+        )
 
     def _coupon_allowed(self, row: CouponRow) -> bool:
         return row.only_for is None or self.conversation_id in row.only_for
@@ -486,11 +478,7 @@ class ShopStore(RecordStore):
     async def delete_coupon(self, code: str) -> None:
         """Orders placed with it keep their discount."""
         async with self.sessions() as s, s.begin():
-            row = await s.scalar(
-                select(CouponRow).where(
-                    CouponRow.workspace_id == self.workspace_id, CouponRow.code == code.upper()
-                )
-            )
+            row = await self._coupon_row(s, code.upper())
             if row is None:
                 raise NotFound("There's no such coupon.")
             await s.delete(row)
@@ -613,17 +601,18 @@ class ShopStore(RecordStore):
 
     async def cancel_order(self, cancel: Confirmed[OrderCancel]) -> None:
         """The buyer cancels before the courier has it; the items go back in stock."""
-        found = await self.order(cancel.value.number)
-        if found is None:
-            raise NotFound("There's no such order.")
-        await self.move_order(found.id, "cancelled")
+        await self.move_order(await self._order_id(cancel.value.number), "cancelled")
 
     async def confirm_order(self, confirm: Confirmed[OrderConfirm]) -> ShopOrder:
         """The buyer said yes on the shop's confirmation call: `new` → `confirmed`."""
-        found = await self.order(confirm.value.number)
+        return await self.move_order(await self._order_id(confirm.value.number), "confirmed")
+
+    async def _order_id(self, number: int) -> str:
+        """The id of the order with this number: a tool knows the number, a move takes the id."""
+        found = await self.order(number)
         if found is None:
             raise NotFound("There's no such order.")
-        return await self.move_order(found.id, "confirmed")
+        return found.id
 
     async def move_order(self, order_id: str, status: str) -> ShopOrder:
         """The owner moves an order along (or the buyer cancels it). A cancelled order's items

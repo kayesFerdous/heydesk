@@ -127,6 +127,11 @@ def cart_text(cart: dict[str, Any], currency: str) -> str:
     return said
 
 
+def subtotal_of(lines: list[dict[str, Any]]) -> int:
+    """What the items cost together, before delivery and any coupon. Minor units."""
+    return sum(line["price"] * line["quantity"] for line in lines)
+
+
 def lines_text(lines: list[dict[str, Any]]) -> str:
     def one(line: dict[str, Any]) -> str:
         picked = ", ".join(p for p in (line["size"], line["colour"]) if p)

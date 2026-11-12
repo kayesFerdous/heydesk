@@ -108,6 +108,16 @@ def woo_order(order: ShopOrder, ids: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def find_link(s: AsyncSession, workspace_id: str) -> WooLink | None:
+    """The business's linked WooCommerce store, or None."""
+    return await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+
+
+def store_of(link: WooLink) -> WooStore:
+    """Where the linked store is and the keys to call it with."""
+    return WooStore(link.url, link.key, link.secret)
+
+
 class WooService:
     def __init__(
         self,
@@ -160,9 +170,9 @@ class WooService:
         await shop.import_woo(found, set())
         hooks, hook_secret = await self._add_hooks(store, workspace_id)
         async with self.sessions() as s, s.begin():
-            old = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            old = await find_link(s, workspace_id)
             if old is not None:
-                dropped = (WooStore(old.url, old.key, old.secret), old.hooks)
+                dropped = (store_of(old), old.hooks)
                 await s.delete(old)
                 await s.flush()
             link = WooLink(
@@ -186,7 +196,7 @@ class WooService:
 
     async def get(self, workspace_id: str) -> WooLink:
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None:
             raise NotFound("No WooCommerce store is linked.")
         return link
@@ -195,18 +205,18 @@ class WooService:
         """Stops syncing. The list stays and can be edited here again; orders already in Woo
         stay there."""
         async with self.sessions() as s, s.begin():
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
             if link is not None:
                 await s.delete(link)
         if link is not None:
-            await self._drop_hooks(WooStore(link.url, link.key, link.secret), link.hooks)
+            await self._drop_hooks(store_of(link), link.hooks)
 
     async def sync(self, workspace_id: str) -> WooLink:
         """Pushes the orders that changed, then pulls the products. Never raises for the
         store's own problems: they're `problem`."""
         link = await self.get(workspace_id)
         shop = await self.agents.store(workspace_id)
-        store = WooStore(link.url, link.key, link.secret)
+        store = store_of(link)
         async with self.lock:
             problem = await self._push(shop, store, link)
         ids, checked = link.ids, link.checked
@@ -237,14 +247,14 @@ class WooService:
 
     async def push(self, workspace_id: str) -> None:
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None:  # not linked: nothing to write
             return
         try:
             async with self.lock:
                 await self._push(
                     await self.agents.store(workspace_id),
-                    WooStore(link.url, link.key, link.secret),
+                    store_of(link),
                     link,
                 )
         except Exception:
@@ -253,7 +263,7 @@ class WooService:
     async def hook_signed(self, workspace_id: str, body: bytes, signature: str) -> bool:
         """Woo signs each webhook post: base64 of its HMAC-SHA256 with the secret we gave it."""
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None or not link.hook_secret:
             return False
         digest = hmac.new(link.hook_secret.encode(), body, hashlib.sha256).digest()
@@ -301,7 +311,7 @@ class WooService:
         if not self.hook_base:
             return
         link = await self.get(workspace_id)
-        store = WooStore(link.url, link.key, link.secret)
+        store = store_of(link)
         url = f"{self.hook_base}/{workspace_id}"
         hooks = dict(link.hooks)
         secret = link.hook_secret or secrets.token_urlsafe(32)

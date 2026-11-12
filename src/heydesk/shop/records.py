@@ -181,16 +181,6 @@ class RecordStore:
         reason = one_line(reason, 300) or "complaint"
         return await self.add(Ticket, status="open", name="", phone="", reason=reason), True
 
-    async def messages(
-        self,
-        status: str | None = None,
-        q: str | None = None,
-        *,
-        limit: int = PAGE,
-        before: datetime | None = None,
-    ) -> list[TeamMessage]:
-        return await self.find(TeamMessage, status, q, limit=limit, before=before)
-
     # The products: replaced whole, kept in order
 
     async def all_rows[M: BaseModel](self, table: type[Any], model: type[M]) -> list[M]:
@@ -222,16 +212,24 @@ class RecordStore:
         """Saves a new one with the business's next number."""
         async with self.sessions() as s, s.begin():
             await self._lock(s)
-            now = self.now()
-            row = table(
-                workspace_id=self.workspace_id,
-                conversation_id=self.conversation_id,
-                number=await next_number(s, table, self.workspace_id),
-                created_at=now,
-                updated_at=now,
-                **fields,
-            )
-            s.add(row)
+            row = await self._new_row(s, table, **fields)
+        return row
+
+    async def _new_row[T: CustomerRequest](
+        self, s: AsyncSession, table: type[T], **fields: Any
+    ) -> T:
+        """A new row with the business's next number, linked to this conversation. The
+        caller holds the lock (`_lock`), so two at once don't get the same number."""
+        now = self.now()
+        row = table(
+            workspace_id=self.workspace_id,
+            conversation_id=self.conversation_id,
+            number=await next_number(s, table, self.workspace_id),
+            created_at=now,
+            updated_at=now,
+            **fields,
+        )
+        s.add(row)
         return row
 
     async def find[T: CustomerRequest](
@@ -288,16 +286,18 @@ class RecordStore:
         earlier one from the same chat on a messaging app, or the same browser on the web chat
         and its calls. A second order in the same chat is offered the first one's details too.
         Only this conversation's when it has no `contact`."""
-        here = await self._current_conversation()
-        if here is None:
-            return []
         workspace_id = self.workspace_id
-        if here.contact is None:
-            same = table.conversation_id == here.id
-        else:
-            channels = BROWSER_CHANNELS if here.channel in BROWSER_CHANNELS else (here.channel,)
-            same = and_(Conversation.channel.in_(channels), Conversation.contact == here.contact)
         async with self.sessions() as s:
+            here = await self._current_conversation(s)
+            if here is None:
+                return []
+            if here.contact is None:
+                same = table.conversation_id == here.id
+            else:
+                channels = BROWSER_CHANNELS if here.channel in BROWSER_CHANNELS else (here.channel,)
+                same = and_(
+                    Conversation.channel.in_(channels), Conversation.contact == here.contact
+                )
             found = await s.scalars(
                 select(table)
                 .join(Conversation, table.conversation_id == Conversation.id)
@@ -331,22 +331,21 @@ class RecordStore:
             visitor.notes = dict(list(notes.items())[-MAX_NOTES:])  # a new value, or it isn't saved
         return True
 
-    async def _current_conversation(self) -> Conversation | None:
+    async def _current_conversation(self, s: AsyncSession) -> Conversation | None:
         if self.conversation_id is None:
             return None
-        async with self.sessions() as s:
-            found: Conversation | None = await s.scalar(
-                select(Conversation).where(
-                    Conversation.workspace_id == self.workspace_id,
-                    Conversation.id == self.conversation_id,
-                )
+        found: Conversation | None = await s.scalar(
+            select(Conversation).where(
+                Conversation.workspace_id == self.workspace_id,
+                Conversation.id == self.conversation_id,
             )
-            return found
+        )
+        return found
 
     async def _visitor(self, s: AsyncSession) -> Visitor | None:
         """This conversation's visitor, keyed as the limits key them: `web:<token>` for
         the web chat and calls, `messenger:<chat_id>` and so on."""
-        here = await self._current_conversation()
+        here = await self._current_conversation(s)
         if here is None or here.contact is None:
             return None
         channel = "web" if here.channel in BROWSER_CHANNELS else here.channel

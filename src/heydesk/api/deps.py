@@ -12,6 +12,7 @@ from heydesk.errors import Forbidden, HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
 from heydesk.services.users import CurrentUser
 from heydesk.shop.records import PAGE  # the most rows one list request returns
+from heydesk.shop.store import ShopStore
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 SESSION_COOKIE = "heydesk_session"  # the browser's copy of the token; page scripts can't read it
@@ -137,6 +138,14 @@ type LoggedInUser = Annotated[CurrentUser, Depends(get_current_user)]
 type Admin = Annotated[CurrentUser, Depends(admin_only)]
 type Paged = Annotated[Page, Depends(page)]
 type ClientIp = Annotated[str, Depends(client_ip)]
+
+
+async def shop_store(services: Svc, workspace_id: WorkspaceId) -> ShopStore:
+    """The data of the business the request is for. 404 until the business has an agent."""
+    return await services.agents.store(workspace_id)
+
+
+type Shop = Annotated[ShopStore, Depends(shop_store)]
 
 
 class StatusIn(BaseModel):

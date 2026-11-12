@@ -72,11 +72,13 @@ class AgentService:
         knowledge: KnowledgeService,
         photos: PhotoService,
         now: Callable[[], datetime],
+        public_url: str = "",
     ) -> None:
         self.sessions = sessions
         self.knowledge = knowledge
         self.photos = photos
         self.now = now
+        self.public_url = public_url  # where a store's links start: the payment and order pages
 
     async def create(
         self, workspace_id: str, fields: dict[str, Any], *, public_key: str | None = None
@@ -118,7 +120,7 @@ class AgentService:
         async with self.sessions() as s:
             agent = await self._get(s, workspace_id)
         config = ShopConfig.model_validate(agent.config)
-        store = ShopStore(self.sessions, workspace_id, self.now)
+        store = self.build_store(workspace_id)
         missing = await shop_missing(config, store)
         if config.pay_first and not await store.pays_first(config):
             missing.append("Connect SSLCommerz or bKash to take payments first.")
@@ -128,7 +130,21 @@ class AgentService:
         """The business's data, for its owner's routes. 404 until it has an agent."""
         async with self.sessions() as s:
             await self._get(s, workspace_id)
-        return ShopStore(self.sessions, workspace_id, self.now, photos=self.photos)
+        return self.build_store(workspace_id)
+
+    def build_store(self, workspace_id: str, conversation_id: str | None = None) -> ShopStore:
+        """The business's data, always built the same way, so no store is missing a part:
+        with the documents' search, the photo importer and the address its links start with.
+        A turn's tools get one for their `conversation_id`, so what they save is linked to it."""
+        return ShopStore(
+            self.sessions,
+            workspace_id,
+            self.now,
+            conversation_id=conversation_id,
+            knowledge=self.knowledge,
+            public_url=self.public_url,
+            photos=self.photos,
+        )
 
     async def by_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
@@ -169,7 +185,7 @@ class AgentService:
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == DEV_WORKSPACE_ID))
             if agent is not None:
                 agent.public_key = key
-        store = ShopStore(self.sessions, DEV_WORKSPACE_ID, self.now)
+        store = self.build_store(DEV_WORKSPACE_ID)
         products = seed.pop("products", [])  # the rest of the seed is the config
         await store.replace_products(TypeAdapter(list[Product]).validate_python(products))
         if agent is None:

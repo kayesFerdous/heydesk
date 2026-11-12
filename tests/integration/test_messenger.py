@@ -256,7 +256,7 @@ async def test_three_quick_messages_get_one_reply_after_seen_and_typing(
     await connect(client)
     channels = app.state.services.channels
     channels.settings.CHAT_WAIT_SECONDS = 0.05
-    channel = await app.state.services.channel_links.messenger_page(PAGE)
+    channel = await app.state.services.channel_links.channel_at("messenger", PAGE)
     bubbles = [
         {"sender": {"id": PSID}, "message": {"mid": f"m{i}", "text": text}}
         for i, text in enumerate(["hi", "dam koto", "biryani"])

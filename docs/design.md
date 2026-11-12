@@ -73,27 +73,35 @@ src/heydesk/
 │   ├── tools/           what the model calls: products · cart · orders · inbox (messages, hand-off, notes…);
 │   │                    `tools_for()` in its __init__
 │   ├── products.py · delivery.py · orders.py · config.py    its shapes, no database
+│   ├── checkout.py      pricing and checking an order from a chat, a product page or the team (D186)
 │   ├── csv_import.py · woo_import.py   a CSV file or a Woo store as products (D50, D53, D115, D75)
 │   ├── records.py       RecordStore: what any chat can make (messages, call backs, complaints) and its numbering
 │   ├── store.py         ShopStore(RecordStore): adds the products, orders and coupons
-│   └── models.py · api.py · page.py · districts.py
+│   └── models.py · page.py · districts.py
 ├── models/              the shared tables; `customer_request.py` is what orders and messages share
 ├── services/            agents, conversations (a visitor's turn), inbox (the team's side of a chat), users,
 │                        admin, visitors (the limits, D51), rate_limits (D52),
 │                        live (the inbox's news, D158; both in Redis when there is one, D182), knowledge, photos (D57),
 │                        sheets (D58), woo (D75), channels and channel_links (answering and connecting
 │                        Telegram, Messenger and WhatsApp, D42, D60, D103), team (the owner's alerts, D43),
-│                        payments (D47), background (`run_every`: the jobs the app runs on its own)
-├── api/                 routes: read the request, call one service or store, return
-├── voice/               the voice channel (M2): call.py, one call; bangla_voice.py, the Bangla voice's client (D84)
+│                        payments (D47), orders (what follows an order: its alert, WooCommerce; the page's
+│                        and the team's orders, offers, the order nudge, D186), assist (the model's help
+│                        for the team, D137), card_text (a card as each app's words),
+│                        background (`run_every`: the jobs the app runs on its own)
+├── api/                 routes: read the request, call one service or store, return; `shop.py` is the
+│                        shop's (D186), `meta.py` what Messenger's and WhatsApp's webhooks share
+├── voice/               the voice channel (M2): call.py, one call; bangla_voice.py, the Bangla voice's client (D84);
+│                        ice.py, the relay a far-away call's audio goes through
 └── web/static/          the dev chat page
 tts_server/              the Bangla voice: its own uv project, run beside HeyDesk (D84)
 ```
 
 Imports point inwards: `api`/`voice` → `services` → `shop` → `runtime` → `ports`. The shop's
-tools reach the database only through its store, and only its `api.py` knows HTTP or imports
-`services`: the store is handed the two services it uses (`KnowledgeSearch`, `PhotoImporter`).
-`models/` import only the database, and `adapters/` only `ports` and `runtime`.
+tools reach the database only through its store. `shop/` imports no `services` or `api`, and
+only `api/` knows HTTP: the shop's routes are `api/shop.py` (D186), and the store is handed
+the two services it uses (`KnowledgeSearch`, `PhotoImporter`). `models/` import only the
+database, and `adapters/` only `ports` and `runtime`. Only adapters and `voice/` call another
+server.
 `scripts/check_imports.sh` checks it.
 
 ## 5. The agent and the shop
@@ -108,7 +116,9 @@ tools reach the database only through its store, and only its `api.py` knows HTT
 | `csv_import.py`, `woo_import.py` | A CSV file's rows, or a Woo store's products, as ours |
 | `models.py` | Its tables: `products`, `coupons` and `shop_orders` |
 | `records.py`, `store.py` | Its data access, for its tools and its owner routes, always one workspace: `RecordStore` (messages, call backs, complaints, notes) and `ShopStore`, which adds the products and orders |
-| `api.py` | Its owner routes: `/api/products`, `/api/shop/…` |
+| `checkout.py` | Pricing and checking an order wherever it comes from: `lines_with_prices`, `stock_problem`, `new_order`, `checked_order` (a form's order), `order_alert` |
+
+Its owner routes (`/api/products`, `/api/shop/…`) and its public pages (`/p/…`, `/o/…`) are `api/shop.py` (D186).
 
 `tools_for(has_documents)` is the shop's tools, then the inbox ones: `take_message`, `handoff_to_human` and `off_topic` (D51) always,
 `search_knowledge` when the business has documents (D35).
@@ -611,7 +621,7 @@ the ones that are due and alerts the owner ("⏰ A chat you snoozed is back", wi
 The same round nudges an unfinished order (D139): a shop chat, `active`, last touched 1 to 3
 hours ago, whose last turn (not an `assist` one) ran `place_order` with no order saved since,
 gets "Shall I confirm your order? Tap Yes, or tell me what to change." with *Yes* and *Change*,
-through `tell_visitor_if_allowed`. `nudged` is set when tried, so never twice in a chat. A *Yes* is
+through `tell_visitor_if_allowed` (`OrderService.nudge_unfinished`). `nudged` is set when tried, so never twice in a chat. A *Yes* is
 answered by the agent: the read-back is still the state's, so `place_order` saves it.
 `?q=` matches the name, or the messages as text (`CAST(messages AS TEXT) ILIKE`), so a phone,
 an order code or any words find it, in done and snoozed chats too; `%` and `_` are taken as
@@ -1108,7 +1118,7 @@ an unknown code is the same 404 page.
   so `# Right now` tells the web chat too that a tapped button arrives as its words (`BUTTON_REPLY_RULE`).
 - **Buy now** (D130): a `<details>` form on the page, no script: size and colour (what's in
   stock), how many, name, mobile, address, district (a list of the 64) and a note, with each
-  area's charge and days. It posts back to the page. `checked_order` (`shop/tools/orders.py`)
+  area's charge and days. It posts back to the page. `checked_order` (`shop/checkout.py`)
   checks it as `place_order` does (`lines_with_prices`, `stock_problem`, `match_zone`, `mobile`), and
   `new_order` builds the order and its read-back for both. The first post shows **Check your
   order**, the order read back, with the details and `heard` (that read-back) in hidden
@@ -1528,7 +1538,7 @@ owner replies "." to a chat the agent has ─► `human`, with nothing sent to t
 - **Saved replies:** `saved_replies` in every agent's config (up to 50), edited with the owner's
   answers and picked from the reply box. Only the team uses them; the prompt doesn't have them.
 - **The model's help (D137):** *Summary*, *Ask about this chat* and *Draft a reply* above the
-  reply box. `ConversationService.assist` runs the chat's own prompt and history through the
+  reply box. `AssistService.write` (`services/assist.py`) runs the chat's own prompt and history through the
   same loop with no tools and one last line of what's wanted (`ASSIST`, docs/prompt-rules.md
   §6c); its words come back as `{text}`. Nothing is added to the chat or sent: a draft fills
   the reply box, a summary or an answer shows above it. The turn is saved on the channel
@@ -1695,8 +1705,8 @@ A paid order is never queued for a call: the queue takes only `new` orders. With
 ### Orders the team types, and the end of an order (D131)
 
 - **A buyer who called:** *New order* on the inbox posts `/api/shop/orders`. `checked_order`
-  (`shop/tools/orders.py`, the product page's too) prices it and checks the stock, the area and
-  the mobile; `ShopStore.add_team_order` saves it `confirmed`, in no chat. It takes a plain
+  (`shop/checkout.py`, the product page's too) prices it and checks the stock, the area and
+  the mobile; `OrderService.add_team_order` has `ShopStore.add_team_order` save it `confirmed`, in no chat. It takes a plain
   `NewOrder`, not a `Confirmed`: the team member who typed it is the yes (rule 2's one
   exception, and the only writing method without one). The owner's alert says "typed by the
   team"; the audit log has who.

@@ -362,7 +362,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "deps: auth & scope",
    "type": "api",
    "file": "src/heydesk/api/deps.py",
-   "purpose": "Session cookie or Bearer token → CurrentUser; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity.",
+   "purpose": "Session cookie or Bearer token → CurrentUser; scopes every owner route to one workspace; moderators read the settings and channels and change none of them (D151, D153); admin audit; team activity. `Shop` hands a route the business's `ShopStore`.",
    "inputs": "Session cookie or Authorization, X-Business",
    "outputs": "workspace_id (the `WorkspaceId` type; `LoggedInUser` is the CurrentUser)",
    "fn": "current_workspace"
@@ -426,6 +426,16 @@ tr.hl td { background: var(--accent-soft); }
    "inputs": "signed post",
    "outputs": "{ok:true}",
    "fn": "whatsapp_webhook"
+  },
+  {
+   "id": "a-meta",
+   "label": "Meta webhook checks",
+   "type": "api",
+   "file": "src/heydesk/api/meta.py",
+   "purpose": "What Messenger's and WhatsApp's webhooks share: Meta's one-time check of the verify token (`MetaChallenge`) and its signature on every post (`MetaPost`). A wrong token or signature is a 404.",
+   "inputs": "hub.* query, X-Hub-Signature-256",
+   "outputs": "the challenge; the signed post as a dict",
+   "fn": "signed_meta_post"
   },
   {
    "id": "a-payments",
@@ -571,7 +581,7 @@ tr.hl td { background: var(--accent-soft); }
    "id": "a-desk-shop",
    "label": "Shop routes",
    "type": "api",
-   "file": "src/heydesk/shop/api.py",
+   "file": "src/heydesk/api/shop.py",
    "purpose": "Products (with photos; an import adds and updates, never replaces, D120), shop orders; moving one tells the buyer, cancelling restocks. On hold and packed; once it ends, money in and a reason; the team's own order with no yes (`add_team_order`); orders.csv (D131). Each order's buyer record and /api/shop/buyers by mobile (D132). Coupons: /api/shop/coupons (D133). Offers to the chats from the last 24 h, or as far back as the owner picks (D163): /api/shop/offers, a coupon only they may use (D140).",
    "inputs": "Product[], status, paid_in, reason, TeamOrder",
    "outputs": "ShopOrderOut",
@@ -592,7 +602,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "ConversationService",
    "type": "service",
    "file": "src/heydesk/services/conversations.py",
-   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`save_page_message`, D135); one the AI was off for is given back once the AI is on again (`_return_if_quiet`, D127). `assist`: a summary, answer or draft for the team, no tools, nothing sent (D137). `nudge_unfinished`: one nudge for an order read back and never said yes to. The team's side of a chat is InboxService (D179).",
+   "purpose": "The one entry point for a visitor's message on every channel: limits, conversation, prompt, tools, run the turn, save, alert. A chat the team took over (\".\" in Business Suite or on Telegram, the inbox's switch) runs no turn until given back or 30 quiet minutes (`save_page_message`, D135); one the AI was off for is given back once the AI is on again (`_return_if_quiet`, D127). The team's side of a chat is InboxService (D179); the model's help for the team is AssistService, and the order nudge is OrderService's (D186).",
    "inputs": "LiveAgent, text, channel, visitor, photo",
    "outputs": "RunningTurn (events) / Reply",
    "fn": "start_turn"
@@ -716,6 +726,36 @@ tr.hl td { background: var(--accent-soft); }
    "inputs": "filename, bytes",
    "outputs": "text",
    "fn": "extract_text"
+  },
+  {
+   "id": "s-orders",
+   "label": "OrderService",
+   "type": "service",
+   "file": "src/heydesk/services/orders.py",
+   "purpose": "What follows a shop order, in one place (D186): `order_saved` alerts whoever has its chat, or the owner when it has none, and pushes it into a linked WooCommerce store. Also the order from a product's page (`place_from_page`), the team's own order (`add_team_order`), moving one along (`move`), an offer (`send_offer`) and the one nudge for an order read back and never said yes to (`nudge_unfinished`).",
+   "inputs": "ShopStore, Confirmed[NewOrder], TeamOrder, status",
+   "outputs": "ShopOrder; alerts",
+   "fn": "order_saved"
+  },
+  {
+   "id": "s-assist",
+   "label": "AssistService",
+   "type": "service",
+   "file": "src/heydesk/services/assist.py",
+   "purpose": "The model's help for the team on a chat (D137): a summary, an answer or a draft, from the chat's own prompt and history with no tools. Nothing is added to the chat or sent; the turn is saved on the channel `assist`.",
+   "inputs": "LiveAgent, conversation id, kind, question",
+   "outputs": "text",
+   "fn": "write"
+  },
+  {
+   "id": "s-card-text",
+   "label": "card_text",
+   "type": "service",
+   "file": "src/heydesk/services/card_text.py",
+   "purpose": "A tool's card, a product card and the reply's buttons as each messaging app's words: Telegram's HTML, WhatsApp's stars, plain on Messenger and the web. Only words; nothing is sent.",
+   "inputs": "Card, channel",
+   "outputs": "text",
+   "fn": "card_text"
   },
   {
    "id": "s-payments",
@@ -945,6 +985,16 @@ tr.hl td { background: var(--accent-soft); }
    "inputs": "Confirmed values",
    "outputs": "rows",
    "fn": "RecordStore"
+  },
+  {
+   "id": "k-checkout",
+   "label": "checkout",
+   "type": "core",
+   "file": "src/heydesk/shop/checkout.py",
+   "purpose": "Pricing and checking an order wherever it comes from, a chat's tools, a product page's form or the team's (D186): the shop's prices, the stock, the delivery charge, the total and the words read back (`lines_with_prices`, `stock_problem`, `new_order`, `checked_order`), and the owner's alert (`order_alert`).",
+   "inputs": "CartLine[], BuyForm or TeamOrder, ShopConfig",
+   "outputs": "NewOrder, read-back, how it's paid",
+   "fn": "new_order"
   },
   {
    "id": "k-csv",
@@ -1917,8 +1967,48 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "a-desk-shop",
+   "target": "s-orders",
+   "label": "place_from_page, add_team_order, move, send_offer"
+  },
+  {
+   "source": "a-desk-shop",
+   "target": "k-checkout",
+   "label": "checked_order"
+  },
+  {
+   "source": "s-orders",
    "target": "s-team",
-   "label": "tell_visitor"
+   "label": "alert, notify, tell_visitor"
+  },
+  {
+   "source": "s-orders",
+   "target": "s-woo",
+   "label": "push_soon"
+  },
+  {
+   "source": "s-orders",
+   "target": "k-checkout",
+   "label": "checked_order, order_alert"
+  },
+  {
+   "source": "s-orders",
+   "target": "s-card-text",
+   "label": "the receipt's words"
+  },
+  {
+   "source": "s-channels",
+   "target": "s-card-text",
+   "label": "card_text, buttons"
+  },
+  {
+   "source": "a-conversations",
+   "target": "s-assist",
+   "label": "write"
+  },
+  {
+   "source": "s-assist",
+   "target": "r-loop",
+   "label": "run_turn, no tools"
   },
   {
    "source": "a-desk-shop",
@@ -2128,7 +2218,7 @@ tr.hl td { background: var(--accent-soft); }
   {
    "source": "s-payments",
    "target": "s-team",
-   "label": "tell_visitor / alert"
+   "label": "tell_visitor"
   },
   {
    "source": "s-payments",
@@ -2137,8 +2227,8 @@ tr.hl td { background: var(--accent-soft); }
   },
   {
    "source": "s-payments",
-   "target": "s-woo",
-   "label": "push_soon"
+   "target": "s-orders",
+   "label": "order_saved, alert"
   },
   {
    "source": "s-calls",
@@ -2718,6 +2808,21 @@ tr.hl td { background: var(--accent-soft); }
    "source": "a-messenger",
    "target": "s-channel-links",
    "label": "connect, which Page"
+  },
+  {
+   "source": "a-messenger",
+   "target": "a-meta",
+   "label": "MetaChallenge, MetaPost"
+  },
+  {
+   "source": "a-whatsapp",
+   "target": "a-meta",
+   "label": "MetaChallenge, MetaPost"
+  },
+  {
+   "source": "a-meta",
+   "target": "s-channels",
+   "label": "verify token, signature"
   },
   {
    "source": "a-whatsapp",
@@ -5316,7 +5421,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "life",
      "label": "lifespan start",
      "shape": "event",
-     "code": "jobs = [\n  run_every(SHEET_SYNC_MINUTES * 60, services.sheets.sync_all),\n  run_every(WOO_SYNC_MINUTES * 60, services.woo.sync_all),\n  run_every(COURIER_SYNC_MINUTES * 60, services.courier.sync_all),\n  run_every(CALL_QUEUE_SECONDS, services.calls.check_queue),\n  run_every(SNOOZE_CHECK_SECONDS, services.inbox.wake_snoozed),\n  run_every(SNOOZE_CHECK_SECONDS, services.conversations.nudge_unfinished),\n  run_once_after(SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),\n]\nloops = [asyncio.create_task(job) for job in jobs]",
+     "code": "jobs = [\n  run_every(SHEET_SYNC_MINUTES * 60, services.sheets.sync_all),\n  run_every(WOO_SYNC_MINUTES * 60, services.woo.sync_all),\n  run_every(COURIER_SYNC_MINUTES * 60, services.courier.sync_all),\n  run_every(CALL_QUEUE_SECONDS, services.calls.check_queue),\n  run_every(SNOOZE_CHECK_SECONDS, services.inbox.wake_snoozed),\n  run_every(SNOOZE_CHECK_SECONDS, services.orders.nudge_unfinished),\n  run_once_after(SNOOZE_CHECK_SECONDS, services.channel_links.refresh_telegram),\n]\nloops = [asyncio.create_task(job) for job in jobs]",
      "fn": "create_app.lifespan"
     },
     {
@@ -5670,7 +5775,7 @@ tr.hl td { background: var(--accent-soft); }
      "id": "placed",
      "label": "rowcount 1 → tell visitor + alert owner (+ shop order to Woo)",
      "shape": "end",
-     "code": "await self.team.tell_visitor(...)\nawait self._alert(record, ...)\nif isinstance(record, ShopOrder):\n    self.woo.push_soon(record.workspace_id)",
+     "code": "await self.team.tell_visitor(...)\nawait self.orders.order_saved(\n    record.workspace_id, await self.orders.conversation_of(record), ...)",
      "fn": "_tell_visitor_paid"
     },
     {
@@ -6367,8 +6472,8 @@ tr.hl td { background: var(--accent-soft); }
      "from": "t-shop-place_order",
      "to": "s-conversations",
      "data": "alert 🛍️ + state.cart = {}",
-     "file": "src/heydesk/shop/tools/orders.py",
-     "fn": "_order_alert"
+     "file": "src/heydesk/shop/checkout.py",
+     "fn": "order_alert"
     },
     {
      "from": "s-conversations",
@@ -6574,7 +6679,7 @@ tr.hl td { background: var(--accent-soft); }
      "from": "a-voice",
      "to": "x-turn",
      "data": "ICE servers (TURN key) or STUN only",
-     "file": "src/heydesk/api/voice.py",
+     "file": "src/heydesk/voice/ice.py",
      "fn": "ice_servers"
     },
     {
@@ -9055,7 +9160,7 @@ tr.hl td { background: var(--accent-soft); }
       {"id": "voice", "shape": "event", "label": "Shop's confirmation call", "file": "src/heydesk/api/voice.py", "fn": "offer", "note": "The shop calls a buyer to confirm an order. A visitor can't call the shop today: `TAKES_VOICE` is False. Each thing the buyer says becomes one turn."},
       {"id": "voicereply", "label": "voice/call.py reply", "file": "src/heydesk/voice/call.py", "fn": "reply", "note": "Calls `start_turn` with channel `voice`, and speaks each `Token`. A caller talking over the agent sets `turn.interrupt`."},
       {"id": "inbox", "shape": "event", "label": "Team inbox: summary, draft, ask", "file": "src/heydesk/api/conversations.py", "fn": "assist", "note": "A team member asks for help on a chat. This isn't a visitor talking, so it skips the visitor checks."},
-      {"id": "assist", "label": "conversations.assist", "file": "src/heydesk/services/conversations.py", "fn": "assist", "note": "Builds its own `TurnInput` with `tools=[]`. The words go back to the team and nothing is added to the chat. A `turns` row is still saved, on the channel `assist`."},
+      {"id": "assist", "label": "assist.write", "file": "src/heydesk/services/assist.py", "fn": "write", "note": "Builds its own `TurnInput` with `tools=[]`. The words go back to the team and nothing is added to the chat. A `turns` row is still saved, on the channel `assist`."},
       {"id": "start", "label": "conversations.start_turn: THE entry point", "file": "src/heydesk/services/conversations.py", "fn": "start_turn", "note": "**This is the function that starts the agent.** It runs the checks, loads the conversation, packs `TurnInput`, and returns a `RunningTurn`. The model hasn't run yet."},
       {"id": "run", "label": "conversations._run_turn", "file": "src/heydesk/services/conversations.py", "fn": "_run_turn", "note": "A generator wrapped around `run_turn`. It passes each event on, and when it sees `TurnEnded` it saves the turn and does the after-work.", "code": "async with aclosing(run_turn(turn, self.runtime)) as events:\n    async for event in events:\n        if isinstance(event, TurnEnded):\n            await self._save(conversation, event, agent.config.handoff.auto_assign)\n            await self._alert(conversation, event)\n            ...\n        yield event"},
       {"id": "loop", "shape": "end", "label": "run_turn: the agent loop", "file": "src/heydesk/runtime/loop.py", "fn": "run_turn", "note": "The agent itself: up to 6 model calls, with tools running in between. Every path ends in exactly one `TurnEnded`."}

@@ -24,10 +24,15 @@ class HandoffInput(BaseModel):
 async def handoff_to_human(ctx: ToolContext[RecordStore], args: HandoffInput) -> ToolResult:
     if args.unanswered.strip():  # for the owner to teach
         await ctx.store.save_missed_question(args.unanswered)
+    # The page shows these on a card after the reply; the conversation is marked needs_human
+    return ToolResult(ok=True, data=_handoff_contact(ctx), handoff=True)
+
+
+def _handoff_contact(ctx: ToolContext[RecordStore]) -> dict[str, str]:
+    """The business's hand-off line and how to reach it, leaving out what it hasn't set."""
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
-    # The page shows these on a card after the reply; the conversation is marked needs_human
-    return ToolResult(ok=True, data={k: v for k, v in data.items() if v}, handoff=True)
+    return {k: v for k, v in data.items() if v}
 
 
 HANDOFF = Tool(
@@ -54,11 +59,9 @@ class ComplaintInput(BaseModel):
 async def flag_complaint(ctx: ToolContext[RecordStore], args: ComplaintInput) -> ToolResult:
     """A complaint: a hand-off that opens a ticket for the team, once a chat."""
     ticket, new = await ctx.store.open_ticket(args.reason)
-    contact = ctx.agent.handoff
-    data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
     return ToolResult(
         ok=True,
-        data={k: v for k, v in data.items() if v},
+        data=_handoff_contact(ctx),
         handoff=True,
         alert=f"😠 Complaint {ticket.code}: {ticket.reason}" if new else None,
     )

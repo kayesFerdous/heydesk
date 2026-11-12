@@ -2,7 +2,8 @@
 
 HeyDesk is an **MVP**: an online shop creates an AI front-desk agent, edits it, and
 visitors talk to it by web chat or the messaging apps. It serves only online shops: everything
-about the shop is in `src/heydesk/shop/`, with no layer for other kinds of business (D172).
+about the shop is in `src/heydesk/shop/` (its routes are `api/shop.py`), with no layer for other
+kinds of business (D172).
 Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking
 and for judging the visitor's yes (D107). Maira has no native tool calls, so its adapter asks for them
 as JSON in the reply (D16).

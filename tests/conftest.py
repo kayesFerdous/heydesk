@@ -130,9 +130,7 @@ class World:
 
     def store(self, agent: LiveAgent, conversation_id: str | None = None) -> ShopStore:
         """The agent's store, as its tools get it."""
-        return ShopStore(
-            self.sessions, agent.workspace_id, self.clock, conversation_id=conversation_id
-        )
+        return self.services.agents.build_store(agent.workspace_id, conversation_id)
 
     async def say(
         self, agent: LiveAgent, conversation_id: str | None, script: list[Any], text: str = "…"

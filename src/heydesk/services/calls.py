@@ -356,9 +356,7 @@ class CallService:
         return call
 
     def _store(self, agent: LiveAgent, conversation_id: str | None = None) -> ShopStore:
-        return ShopStore(
-            self.sessions, agent.workspace_id, self.now, conversation_id=conversation_id
-        )
+        return self.agents.build_store(agent.workspace_id, conversation_id)
 
 
 # Who's called next: the live ones first, then "Call now", then the earliest due, the oldest

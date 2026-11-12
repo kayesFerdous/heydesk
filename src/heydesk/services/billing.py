@@ -177,6 +177,14 @@ def dev_workspace(workspace_id: str, now: datetime) -> Workspace:
     )
 
 
+async def get_workspace(s: AsyncSession, workspace_id: str) -> Workspace:
+    """The business's row. 404 when there's no such business."""
+    workspace = await s.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFound("There's no such business.")
+    return workspace
+
+
 class BillingService:
     def __init__(
         self,
@@ -193,9 +201,7 @@ class BillingService:
     async def billing(self, workspace_id: str) -> Billing:
         now = self.now()
         async with self.sessions() as s:
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             used = await replies_used(s, workspace_id, now)
             payments = await s.scalars(
                 select(SubscriptionPayment)
@@ -225,9 +231,7 @@ class BillingService:
 
     async def quote(self, workspace_id: str, plan: str, months: int) -> Quote:
         async with self.sessions() as s:
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             return quote(
                 workspace, plan, months, await count_moderators(s, workspace_id), self.now()
             )
@@ -323,9 +327,7 @@ class BillingService:
     async def set_plan(self, workspace_id: str, plan: str, paid_until: datetime) -> None:
         """An admin's change, for a payment made another way."""
         async with self.sessions() as s, s.begin():
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             workspace.plan, workspace.paid_until = plan, paid_until
 
     def _account(self, gateway: Provider) -> Account:

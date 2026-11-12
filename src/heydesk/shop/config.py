@@ -79,6 +79,10 @@ class ShopConfig(AgentConfig):
             )
         return self
 
+    def zone(self, name: str) -> Zone | None:
+        """The delivery area with this name: an order keeps only its area's name."""
+        return next((zone for zone in self.delivery if zone.name == name), None)
+
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:
         if self.free_delivery_over and subtotal >= self.free_delivery_over:
             return 0

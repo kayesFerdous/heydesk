@@ -11,7 +11,7 @@ import hashlib
 import logging
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -26,6 +26,8 @@ from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
 log = logging.getLogger(__name__)
 
 TELEGRAM, MESSENGER, WHATSAPP = "telegram", "messenger", "whatsapp"  # as `channels.kind`
+# What sending to, or downloading from, any of the three raises when the app is down or refuses
+CHAT_APP_ERRORS = (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable)
 HUMAN_STATUS = "human"  # the conversation's status while the team answers
 TEAM_AUTHOR = "team"  # the "by" mark on a message the team wrote
 REF_PATTERN = re.compile(r"Ref: ([0-9a-f]{32})")
@@ -86,6 +88,22 @@ def handoff_alert(messages: list[Message], title: str = "🙋 Someone wants a pe
         f"{'Customer' if m['role'] == 'user' else 'Agent'}: {m['content'][:300]}" for m in said[-4:]
     ]
     return f"{title}\n\n" + "\n".join(lines)
+
+
+async def find_channel(s: AsyncSession, workspace_id: str, kind: str) -> Channel | None:
+    """The business's link to one app, or None when it isn't connected."""
+    return await s.scalar(
+        select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
+    )
+
+
+def add_team_line(conversation: Conversation, llm: LanguageModel, text: str, now: datetime) -> None:
+    """Adds the team's words to the transcript, in the model's message shape and marked as the
+    team's. Call it with the conversation locked (rule 5): a turn saving at the same moment
+    would drop the line."""
+    said = {**llm.assistant_message(text), "by": TEAM_AUTHOR}
+    conversation.messages = [*conversation.messages, said]  # a new list, so SQLAlchemy sees it
+    conversation.updated_at = now
 
 
 def conversation_in(workspace_id: str, conversation_id: str) -> Select[Conversation]:
@@ -151,7 +169,7 @@ class TeamService:
                 )
             else:
                 await self.telegram.send_message(channel.token, chat_id, text, choices)
-        except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable) as error:
+        except CHAT_APP_ERRORS as error:
             log.warning("send failed: %s", error, extra={"channel_id": channel.id})
 
     async def forward(self, conversation: Conversation, text: str) -> None:
@@ -169,12 +187,7 @@ class TeamService:
             # locked: a turn saving at the same moment would drop this line (rule 5)
             query = conversation_in(workspace_id, conversation_id).with_for_update()
             conversation = (await s.scalars(query)).one()
-            said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
-            conversation.messages = [
-                *conversation.messages,
-                said,
-            ]  # a new list, so SQLAlchemy sees it
-            conversation.updated_at = self.now()
+            add_team_line(conversation, self.llm, text, self.now())
         await self.send_to_visitor(conversation, text, choices)
 
     async def tell_visitor_if_allowed(
@@ -194,10 +207,9 @@ class TeamService:
             )
         if conversation.channel == "voice":
             return False
-        if conversation.channel in (MESSENGER, WHATSAPP):
-            last = last and (last if last.tzinfo else last.replace(tzinfo=UTC))
-            if last is None or self.now() - last > MESSAGING_WINDOW:
-                return False
+        outside_window = last is None or self.now() - last > MESSAGING_WINDOW
+        if conversation.channel in (MESSENGER, WHATSAPP) and outside_window:
+            return False
         await self.tell_visitor(workspace_id, conversation_id, text, choices)
         return True
 
@@ -289,11 +301,7 @@ class TeamService:
         elif conversation.channel == "voice":
             answer = NOT_A_CHAT
         else:
-            said = {**self.llm.assistant_message(text), "by": TEAM_AUTHOR}
-            conversation.messages = [
-                *conversation.messages,
-                said,
-            ]  # a new list, so SQLAlchemy sees it
+            add_team_line(conversation, self.llm, text, self.now())
             answer = "" if conversation.status == HUMAN_STATUS else TAKEN_OVER
             conversation.status, to_visitor = HUMAN_STATUS, True
             conversation.taken_over_at = self.now()  # quiet for 30 minutes, it's given back
@@ -349,6 +357,4 @@ class TeamService:
     async def _channel(self, workspace_id: str, kind: str = TELEGRAM) -> Channel | None:
         """Alerts always go to Telegram; a visitor's channel can be any app."""
         async with self.sessions() as s:
-            return await s.scalar(
-                select(Channel).where(Channel.workspace_id == workspace_id, Channel.kind == kind)
-            )
+            return await find_channel(s, workspace_id, kind)

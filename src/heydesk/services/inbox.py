@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.errors import Forbidden, InvalidConfig, InvalidTransition, NotFound
 from heydesk.models import Conversation, Note, TeamMessage, User
 from heydesk.ports.llm import LanguageModel
-from heydesk.services.team import HUMAN_STATUS, TEAM_AUTHOR, TeamService, handoff_alert
+from heydesk.services.team import (
+    HUMAN_STATUS,
+    TeamService,
+    add_team_line,
+    conversation_in,
+    handoff_alert,
+)
 from heydesk.services.users import CurrentUser
 from heydesk.shop.models import ShopOrder
 
@@ -275,16 +281,8 @@ class InboxService:
             conversation = await get_conversation(s, workspace_id, conversation_id, lock=True)
             if conversation.channel == "voice":
                 raise InvalidTransition("That was a phone call: call them back instead.")
-            said = {**self.llm.assistant_message(text.strip()), "by": TEAM_AUTHOR}
-            conversation.messages = [
-                *conversation.messages,
-                said,
-            ]  # a new list, so SQLAlchemy sees it
-            conversation.status, conversation.taken_over_at, conversation.updated_at = (
-                HUMAN_STATUS,
-                self.now(),
-                self.now(),
-            )
+            add_team_line(conversation, self.llm, text.strip(), self.now())
+            conversation.status, conversation.taken_over_at = HUMAN_STATUS, self.now()
         await self.team.send_to_visitor(conversation, text.strip())
         log.info("team replied", extra={"conversation_id": conversation.id})
         return conversation
@@ -326,9 +324,7 @@ async def get_conversation(
     """`lock` before adding to `messages`: two writes at once would each add to the list
     they read, and the later one would drop the other's line. Postgres holds the row
     until the transaction ends; SQLite writes one transaction at a time anyway."""
-    query = select(Conversation).where(
-        Conversation.id == conversation_id, Conversation.workspace_id == workspace_id
-    )
+    query = conversation_in(workspace_id, conversation_id)
     conversation = await s.scalar(query.with_for_update() if lock else query)
     if conversation is None:
         raise NotFound("There's no such conversation. Start a new one.")

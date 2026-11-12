@@ -9,7 +9,6 @@ import asyncio
 import contextlib
 import hashlib
 import hmac
-import html
 import logging
 import secrets
 from collections.abc import Callable
@@ -30,13 +29,20 @@ from heydesk.ports.media import MediaUnavailable
 from heydesk.ports.messenger import OUR_APP_TAG, MessengerApi, MessengerUnavailable
 from heydesk.ports.telegram import TelegramApi, TelegramUnavailable
 from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
-from heydesk.ports.whatsapp import WhatsAppApi, WhatsAppUnavailable
+from heydesk.ports.whatsapp import WhatsAppApi
 from heydesk.runtime.events import Card
 from heydesk.services.agents import AgentService
-from heydesk.services.channel_links import find_channel
+from heydesk.services.card_text import buttons, card_text, card_words
 from heydesk.services.conversations import ConversationService
 from heydesk.services.photos import PhotoService
-from heydesk.services.team import MESSENGER, TELEGRAM, WHATSAPP, TeamService
+from heydesk.services.team import (
+    CHAT_APP_ERRORS,
+    MESSENGER,
+    TELEGRAM,
+    WHATSAPP,
+    TeamService,
+    find_channel,
+)
 from heydesk.services.visitors import VisitorService
 
 log = logging.getLogger(__name__)
@@ -45,6 +51,7 @@ NOT_TEXT_REPLY = "I can only read text messages for now. Please type your questi
 FAILED_REPLY = "Sorry, something went wrong. Please try again."
 MAX_VOICE_NOTE_BYTES = 2_000_000  # a voice note bigger than this (minutes long) isn't listened to
 MAX_PHOTO_MESSAGES = 3  # on Telegram and WhatsApp a photo is a message; more cards are one list
+MAX_REMEMBERED = 10_000  # the recent messages kept in memory, for a reply that quotes one
 
 
 def first_photo(message: dict[str, Any]) -> str | None:
@@ -64,61 +71,11 @@ def first_audio(message: dict[str, Any]) -> str | None:
     return None
 
 
-def buttons(choices: list[str]) -> list[str]:
-    """The choices a button can carry: Messenger takes 13 quick replies of 20 characters,
-    and Telegram's button data is 64 bytes. A longer one is left out, so it's typed instead."""
-    return [c for c in choices if len(c) <= 20 and len(c.encode()) <= 64][:13]
-
-
-def card_text(card: Card, channel: str) -> str:
-    """A card as a message's words, a line each, its title in bold: Telegram's HTML
-    (so every value is escaped), WhatsApp's *stars*; Messenger has no bold."""
-
-    def esc(s: str) -> str:  # a name or an address could hold a "<"
-        return html.escape(s, quote=False) if channel == TELEGRAM else s
-
-    def bold(s: str) -> str:
-        if channel == TELEGRAM:
-            return f"<b>{s}</b>"
-        return f"*{s}*" if channel == WHATSAPP else s
-
-    data = card.data
-    said: list[str] = []
-    if card.kind == "tracking":
-        steps = data["steps"]
-        marks = [step_icon(s, i == len(steps) - 1 and len(steps) > 1) for i, s in enumerate(steps)]
-        said.append(bold(esc(f"Order {data['number']}")))
-        said.append(" → ".join(f"{m} {esc(s['label'])}" for m, s in zip(marks, steps, strict=True)))
-        if data["note"]:
-            said.append(esc(data["note"]))
-        return "\n".join(said)
-    if card.kind == "receipt":
-        said.append(bold(esc(f"{data['title']} · {data['number']}")))
-        said.append(esc(f"Status: {data['status']}"))
-    else:  # a summary
-        said.append(bold(esc(data["title"])))
-        for line in data["lines"]:
-            label = f"{line['qty']} × {line['label']}" if "qty" in line else line["label"]
-            cost = f" — {line['amount']['text']}" if "amount" in line else ""
-            said.append(esc(label + cost))
-    said += [esc(f"{r['label']}: {r['value']}") for r in data["rows"]]
-    if "total" in data:
-        said.append(bold(esc(f"Total: {data['total']['text']}")))
-    if "order_url" in data:  # the apps make a link of it
-        said.append(esc(f"Follow your order: {data['order_url']}"))
-    return "\n".join(said)
-
-
-def step_icon(step: dict[str, Any], last: bool) -> str:
-    """✅ done, 🔵 where it is now, ⚪ still to come; the last step reached is done."""
-    if step["current"] and not last:
-        return "🔵"
-    return "✅" if step["done"] else "⚪"
-
-
-def card_words(card: dict[str, str]) -> str:
-    """A product card as the buyer sees it: "Cotton Shirt · ৳950"."""
-    return f"{card['name']} · {card['price']}"
+def remember(kept: dict[str, Any], key: str, value: Any) -> None:
+    """Keeps `value` under `key`; past MAX_REMEMBERED, the oldest goes."""
+    kept[key] = value
+    if len(kept) > MAX_REMEMBERED:
+        del kept[next(iter(kept))]
 
 
 class ChannelService:
@@ -159,13 +116,13 @@ class ChannelService:
         # "Cotton Shirt · ৳950": a buyer's reply to one names the product
         self.cards_sent: dict[str, str] = {}
 
-    def messenger_verify(self, token: str) -> bool:
+    def meta_verify_token_matches(self, token: str) -> bool:
         """The verify token we set in the Meta app's dashboard, for Messenger's and WhatsApp's
         webhooks. None set: no webhook."""
         expected = self.settings.MESSENGER_VERIFY_TOKEN
         return bool(expected) and secrets.compare_digest(expected, token)
 
-    def messenger_signed(self, body: bytes, signature: str) -> bool:
+    def meta_signature_is_valid(self, body: bytes, signature: str) -> bool:
         """Meta signs each webhook post with our app secret, Messenger's and WhatsApp's. No
         secret: nothing is trusted."""
         secret = self.settings.META_APP_SECRET.encode()
@@ -235,9 +192,7 @@ class ChannelService:
             said = {"audio": message["audio"]}
         said["reply_to"] = (message.get("context") or {}).get("id")
         said["id"] = message["id"]  # "typing…" goes with it (`_keep_typing`)
-        self.whatsapp_said[message["id"]] = said
-        if len(self.whatsapp_said) > 10_000:  # the oldest goes
-            del self.whatsapp_said[next(iter(self.whatsapp_said))]
+        remember(self.whatsapp_said, message["id"], said)
         await self._answer(channel, str(message["from"]), said | {"name": name})
 
     async def _answer(self, channel: Channel, chat_id: str, message: dict[str, Any]) -> None:
@@ -258,7 +213,7 @@ class ChannelService:
             if text is not None and text.split(maxsplit=1)[:1] == ["/start"]:
                 agent = await self.agents.by_id(channel.agent_id)
                 await self.conversations.restart(agent, channel.kind, chat_id, message.get("name"))
-                await self._send(channel, chat_id, agent.greeting)
+                await self.team.send(channel, chat_id, agent.greeting)
                 return
             # every message counts toward a flood, even one batched into another's turn
             await self.visitors.count_message(channel.workspace_id, f"{channel.kind}:{chat_id}")
@@ -268,10 +223,10 @@ class ChannelService:
         except VisitorSilenced:  # blocked, and told once already
             return
         except HeyDeskError as error:  # too long, or a suspended business: it says why
-            await self._send(channel, chat_id, error.message)
+            await self.team.send(channel, chat_id, error.message)
         except Exception:
             log.exception("answer failed", extra={"channel_id": channel.id})
-            await self._send(channel, chat_id, FAILED_REPLY)
+            await self.team.send(channel, chat_id, FAILED_REPLY)
 
     async def _collect_messages(
         self, channel: Channel, chat_id: str, message: dict[str, Any]
@@ -310,7 +265,7 @@ class ChannelService:
             if quoted is not None and sent is None:
                 photo = quoted
         if not lines:
-            await self._send(channel, chat_id, NOT_TEXT_REPLY)
+            await self.team.send(channel, chat_id, NOT_TEXT_REPLY)
             return
         typing = None  # "typing…" only when the agent will answer, not the team
         if await self.conversations.will_answer(agent, channel.kind, chat_id):
@@ -337,21 +292,19 @@ class ChannelService:
         summary = reply.card is not None and reply.card.kind == "summary"
         choices = buttons(reply.choices)
         if reply.text:
-            await self._send(channel, chat_id, reply.text, [] if summary else choices)
+            await self.team.send(channel, chat_id, reply.text, [] if summary else choices)
         if reply.card:
             await self._send_card(channel, chat_id, reply.card, choices if summary else [])
         if reply.handoff:
             phone = reply.handoff.phone or reply.handoff.email
-            await self._send(
+            await self.team.send(
                 channel, chat_id, reply.handoff.message + (f"\n{phone}" if phone else "")
             )
 
     def _remember_cards(self, ids: list[str], words: list[str]) -> None:
         for message_id, said in zip(ids, words, strict=False):
             if message_id:
-                self.cards_sent[message_id] = said
-        while len(self.cards_sent) > 10_000:  # the oldest go
-            del self.cards_sent[next(iter(self.cards_sent))]
+                remember(self.cards_sent, message_id, said)
 
     async def _replied_to_message(
         self, channel: Channel, message: dict[str, Any]
@@ -380,14 +333,9 @@ class ChannelService:
                 return "", None
             words = (quoted.get("text") or quoted.get("caption") or "")[:300]
             photo = await self._photo(channel, quoted)
-        except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable):
+        except CHAT_APP_ERRORS:
             return "", None  # the reply is read on its own
         return words, photo
-
-    async def _send(
-        self, channel: Channel, chat_id: str, text: str, choices: list[str] | None = None
-    ) -> None:
-        await self.team.send(channel, chat_id, text, choices)
 
     async def _voice_note(self, channel: Channel, message: dict[str, Any]) -> str | None:
         """A voice note's words, marked as heard, or None: not a voice note, too long,
@@ -412,7 +360,7 @@ class ChannelService:
             if not audio or len(audio) > MAX_VOICE_NOTE_BYTES:
                 return None
             words = await self.transcriber.transcribe(audio, name)
-        except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):
+        except CHAT_APP_ERRORS:
             return None
         except TranscriberUnavailable as error:
             log.warning("voice note failed: %s", error, extra={"channel_id": channel.id})
@@ -492,12 +440,7 @@ class ChannelService:
                         for c in rest
                     ]
                     await self.telegram.send_card(channel.token, chat_id, "More to order:", keys)
-        except (
-            MessengerUnavailable,
-            TelegramUnavailable,
-            WhatsAppUnavailable,
-            MediaUnavailable,
-        ) as error:
+        except (*CHAT_APP_ERRORS, MediaUnavailable) as error:
             log.warning("photos not sent: %s", error, extra={"channel_id": channel.id})
 
     async def _send_card(
@@ -521,8 +464,8 @@ class ChannelService:
                     channel.token, channel.address, chat_id, text, "Pay now", pay_url
                 )
             else:
-                await self._send(channel, chat_id, text, choices)
-        except (MessengerUnavailable, TelegramUnavailable, WhatsAppUnavailable) as error:
+                await self.team.send(channel, chat_id, text, choices)
+        except CHAT_APP_ERRORS as error:
             log.warning("card not sent: %s", error, extra={"channel_id": channel.id})
 
     def product_page(self, key: str, code: str, kind: str, conversation_id: str = "") -> str:
@@ -562,6 +505,6 @@ class ChannelService:
                     await self.messenger.send_typing(channel.token, chat_id)
                 else:
                     await self.telegram.send_typing(channel.token, chat_id)
-            except (TelegramUnavailable, MessengerUnavailable, WhatsAppUnavailable):
+            except CHAT_APP_ERRORS:
                 return
             await asyncio.sleep(4)

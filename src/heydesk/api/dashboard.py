@@ -1,6 +1,5 @@
 """The owner's dashboard: chats, sales and call backs, by the business's own days."""
 
-from dataclasses import asdict
 from datetime import datetime, time, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -9,18 +8,9 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from heydesk.api.deps import Svc, WorkspaceId
+from heydesk.shop.store import Stats
 
 router = APIRouter(tags=["dashboard"])
-
-
-class StatsOut(BaseModel):
-    conversations: int  # chats the agent answered
-    handed_off: int  # of those, handed to a person; the rest the agent handled alone
-    sales: int  # orders, not cancelled or waiting for payment
-    amount: int  # their total, minor units
-    bought: int  # chats that ended in one
-    sources: dict[str, int]  # chat, page or team
-    leads: int  # call backs asked for and not sold
 
 
 class DayOut(BaseModel):
@@ -32,9 +22,9 @@ class DayOut(BaseModel):
 class DashboardOut(BaseModel):
     days: int
     currency: str
-    today: StatsOut
-    yesterday: StatsOut
-    period: StatsOut  # the last `days` days, today included
+    today: Stats
+    yesterday: Stats
+    period: Stats  # the last `days` days, today included
     daily: list[DayOut]  # those days one by one, oldest first and today last
 
 
@@ -50,9 +40,6 @@ async def stats(
     today = datetime.combine(store.now().astimezone(zone).date(), time(), zone)
     day = timedelta(days=1)
 
-    async def between(start: datetime, end: datetime) -> StatsOut:
-        return StatsOut(**asdict(await store.stats(start, end)))
-
     first = today - (days - 1) * day
     sold = await store.sales_between(first, today + day)
 
@@ -63,8 +50,8 @@ async def stats(
     return DashboardOut(
         days=days,
         currency=agent.config.currency,
-        today=await between(today, today + day),
-        yesterday=await between(today - day, today),
-        period=await between(first, today + day),
+        today=await store.stats(today, today + day),
+        yesterday=await store.stats(today - day, today),
+        period=await store.stats(first, today + day),
         daily=[day_out(first + back * day) for back in range(days)],
     )
