@@ -1,118 +1,21 @@
 """The platform admin's routes. Every one needs `Admin`: a 404 for owners.
-To act inside a business, an admin uses the ordinary routes with the X-Business header."""
+To act inside a business, an admin uses the ordinary routes with the X-Business header.
 
-from dataclasses import asdict
-from datetime import date, datetime
+The overview, the businesses and the failed turns go out in the shapes `services/admin.py`
+builds them in (its dataclasses), so each shape is written once."""
+
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, model_validator
 
 from heydesk.api.auth import ROLES, Role
-from heydesk.api.deps import Admin, Paged, Svc
+from heydesk.api.deps import Admin, Paging, Svc
+from heydesk.services.admin import BusinessDetail, BusinessRow, FailedTurn, Overview
 from heydesk.services.users import temporary_password
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-class BusinessRowOut(BaseModel):
-    id: str
-    name: str
-    status: Literal["active", "suspended"]
-    suspended_reason: str  # for admins only; empty while active
-    kind: str | None  # "shop"; None: no agent yet
-    owner_email: str | None
-    conversations: int
-    last_activity_at: datetime | None
-    created_at: datetime
-    plan: str
-    paid_until: datetime
-
-
-class OwnerOut(BaseModel):
-    email: str
-    created_at: datetime
-
-
-class ChannelOut(BaseModel):
-    kind: Literal["telegram", "messenger", "whatsapp"]
-    address: str  # the bot's username; the Page's id; the number's id
-    created_at: datetime
-
-
-class SheetOut(BaseModel):
-    synced_at: datetime | None  # the last good read
-    problem: str  # empty: fine
-
-
-class TotalsOut(BaseModel):
-    turns: int
-    conversations: int  # started in those days
-    input_tokens: int
-    cached_tokens: int  # of the input; cached / input is the cache's hit rate
-    output_tokens: int
-    cost_micros: int  # millionths of a dollar; priced providers only (Groq)
-    failed: int  # turns that ended with the polite line
-    handed_off: int
-    first_reply_ms: int | None  # the median first reply
-    slow_first_reply_ms: int | None  # the 95th percentile
-
-
-class BusinessOut(BaseModel):
-    id: str
-    name: str
-    status: Literal["active", "suspended"]
-    suspended_reason: str  # for admins only; empty while active
-    kind: str | None  # "shop"; None: no agent yet
-    agent_name: str | None
-    public_key: str | None  # the chat link is /chat/<public_key>
-    created_at: datetime
-    owners: list[OwnerOut]
-    channels: list[ChannelOut]
-    payments: Literal["sandbox", "live"] | None  # None: not connected
-    documents: int
-    sheet: SheetOut | None
-    conversations: int
-    conversations_7_days: int
-    waiting: int  # handed to a person and not yet answered
-    last_activity_at: datetime | None
-    usage: TotalsOut  # its turns in the last 7 days
-
-
-class DayOut(BaseModel):
-    day: date  # Dhaka's
-    turns: int
-    conversations: int
-    cost_micros: int
-    failed: int
-    handed_off: int
-
-
-class BusyOut(BaseModel):
-    id: str
-    name: str
-    turns: int
-    cost_micros: int
-
-
-class OverviewOut(BaseModel):
-    days: int
-    today: TotalsOut
-    period: TotalsOut
-    per_day: list[DayOut]  # oldest first
-    busiest: list[BusyOut]  # the most turns first, up to 5
-
-
-class FailedTurnOut(BaseModel):
-    id: str
-    at: datetime
-    workspace_id: str
-    business_name: str
-    business_status: Literal["active", "suspended"]
-    conversation_id: str
-    channel: str
-    llm: str
-    error: str
 
 
 class BusinessStatusIn(BaseModel):
@@ -151,29 +54,28 @@ class AuditOut(BaseModel):
 @router.get("/overview")
 async def overview(
     admin: Admin, services: Svc, days: Annotated[int, Query(ge=1, le=30)] = 7
-) -> OverviewOut:
+) -> Overview:
     """What every agent did today and in the last `days` days, from the saved turns."""
-    return OverviewOut.model_validate(asdict(await services.admin.overview(days)))
+    return await services.admin.overview(days)
 
 
 @router.get("/failed-turns")
 async def failed_turns(
-    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
-) -> list[FailedTurnOut]:
+    admin: Admin, services: Svc, page: Paging, workspace_id: str | None = None
+) -> list[FailedTurn]:
     """Turns that ended with the polite line, newest first, a page at a time."""
-    rows = await services.admin.failed_turns(workspace_id, limit=page.limit, before=page.before)
-    return [FailedTurnOut.model_validate(asdict(row)) for row in rows]
+    return await services.admin.failed_turns(workspace_id, limit=page.limit, before=page.before)
 
 
 @router.get("/businesses")
-async def businesses(admin: Admin, services: Svc) -> list[BusinessRowOut]:
-    return [BusinessRowOut.model_validate(asdict(row)) for row in await services.admin.businesses()]
+async def businesses(admin: Admin, services: Svc) -> list[BusinessRow]:
+    return await services.admin.businesses()
 
 
 @router.get("/businesses/{workspace_id}")
-async def business(workspace_id: str, admin: Admin, services: Svc) -> BusinessOut:
+async def business(workspace_id: str, admin: Admin, services: Svc) -> BusinessDetail:
     """One business at a glance: counts and connections, no customer's words."""
-    return BusinessOut.model_validate(asdict(await services.admin.business(workspace_id)))
+    return await services.admin.business(workspace_id)
 
 
 @router.patch("/businesses/{workspace_id}", status_code=204)
@@ -225,7 +127,7 @@ async def reset_password(user_id: str, admin: Admin, services: Svc) -> Temporary
 
 @router.get("/audit")
 async def audit(
-    admin: Admin, services: Svc, page: Paged, workspace_id: str | None = None
+    admin: Admin, services: Svc, page: Paging, workspace_id: str | None = None
 ) -> list[AuditOut]:
     """Newest first, a page at a time (`limit`, `before` an `at`)."""
     return [

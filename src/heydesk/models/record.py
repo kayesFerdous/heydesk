@@ -17,7 +17,7 @@ FIRST_STATUS = "new"  # what's waiting for the business
 UNPAID = "unpaid"  # waiting for its payment online; only the payment check moves it on
 
 
-class CustomerRequest:
+class Record:
     """A mixin for the tables. A subclass sets `CODE_LETTER` ("A" for A-104) and `STATUS_FLOW`."""
 
     CODE_LETTER: ClassVar[str]
@@ -53,7 +53,7 @@ class CustomerRequest:
         self.updated_at = now
 
 
-async def next_number(s: AsyncSession, table: type[CustomerRequest], workspace_id: str) -> int:
+async def next_number(s: AsyncSession, table: type[Record], workspace_id: str) -> int:
     """The business's next number in this table: 101, 102… Call it after `RecordStore._lock`,
     or two saves at once get the same number."""
     last = await s.scalar(select(func.max(table.number)).where(table.workspace_id == workspace_id))

@@ -36,7 +36,7 @@ class ChatIn(BaseModel):
 
 @router.get("/api/chat/{public_key}")
 async def agent(public_key: str, services: Svc) -> AgentOut:
-    found = await services.agents.by_key(public_key)  # 404 if unknown
+    found = await services.agents.by_public_key(public_key)  # 404 if unknown
     config = found.config
     widget = config.widget.model_copy(
         update={
@@ -56,7 +56,7 @@ async def agent(public_key: str, services: Svc) -> AgentOut:
 @router.post("/api/chat/{public_key}")
 async def chat(public_key: str, body: ChatIn, services: Svc, ip: ClientIp) -> StreamingResponse:
     await services.rate_limits.chat(body.visitor_id, ip)  # 429 for a burst
-    agent = await services.agents.by_key(public_key)  # 404 if unknown
+    agent = await services.agents.by_public_key(public_key)  # 404 if unknown
     turn = await services.conversations.start_turn(
         agent,
         body.conversation_id,
@@ -93,7 +93,7 @@ async def history(
     public_key: str, services: Svc, visitor_id: str = Query(min_length=8, max_length=64)
 ) -> HistoryOut:
     """The browser's last chat, so a reload shows it and carries on in it."""
-    agent = await services.agents.by_key(public_key)  # 404 if unknown
+    agent = await services.agents.by_public_key(public_key)  # 404 if unknown
     found = await services.conversations.last_web_chat(agent, visitor_id)
     if found is None:
         return HistoryOut(conversation_id=None, messages=[])
@@ -107,5 +107,5 @@ class TeamOut(BaseModel):
 @router.get("/api/chat/{public_key}/{conversation_id}/team")
 async def team_replies(public_key: str, conversation_id: str, services: Svc) -> TeamOut:
     """What the team wrote from Telegram. The chat page asks every few seconds."""
-    agent = await services.agents.by_key(public_key)  # 404 if unknown
+    agent = await services.agents.by_public_key(public_key)  # 404 if unknown
     return TeamOut(replies=await services.conversations.team_replies(agent, conversation_id))

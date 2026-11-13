@@ -17,7 +17,7 @@ class FakeCourier:
         self.now = now
         self.step = step
 
-    async def check(self, account: CourierAccount) -> int | None:
+    async def verify_account(self, account: CourierAccount) -> int | None:
         return None
 
     async def book(self, account: CourierAccount, parcel: Parcel) -> str:

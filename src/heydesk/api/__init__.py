@@ -18,13 +18,13 @@ from heydesk.api import (
     payments,
     records,
     sheets,
+    shop,
     telegram,
     visitors,
     voice,
     whatsapp,
     woo,
 )
-from heydesk.shop import api as shop
 
 
 def include_routers(app: FastAPI, *, dev_page: bool = False) -> None:

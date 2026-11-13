@@ -52,7 +52,7 @@ class Steadfast:
         self.parcels: dict[str, Parcel] = {}
         self.down = ""  # a problem for every booking
 
-    async def check(self, account: CourierAccount) -> int | None:
+    async def verify_account(self, account: CourierAccount) -> int | None:
         if account.secret != "secret-1":
             raise CourierError("Steadfast refused the keys: check the API key and secret key.")
         return None

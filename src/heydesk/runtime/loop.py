@@ -24,7 +24,7 @@ from heydesk.ports.llm import (
     ToolOutcome,
 )
 from heydesk.runtime.config import AgentConfig
-from heydesk.runtime.events import Card, Event, HandOff, Photos, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import Card, Event, HandedOff, Photos, Token, ToolStarted, TurnEnded
 from heydesk.runtime.tool import Tool, ToolContext, run_tool
 from heydesk.runtime.trace import Trace
 
@@ -162,7 +162,7 @@ async def run_turn(turn: TurnInput, llm: LanguageModel) -> AsyncGenerator[Event]
         added = safe_close(added, partial="".join(streamed), closing=closing, llm=llm)
     handoff = failed or asked_for_person
     if handoff:
-        yield HandOff(contact.message, contact.phone, contact.email)
+        yield HandedOff(contact.message, contact.phone, contact.email)
     trace.data["interrupted"] = interrupted
     yield TurnEnded(
         added,

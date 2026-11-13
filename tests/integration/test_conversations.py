@@ -12,7 +12,7 @@ from tests.conftest import DEV_KEY, World
 
 
 async def start(world: World, text: str, conversation_id: str | None = None) -> RunningTurn:
-    agent = await world.services.agents.by_key(DEV_KEY)
+    agent = await world.services.agents.by_public_key(DEV_KEY)
     return await world.services.conversations.start_turn(
         agent, conversation_id, text, "web", "web:test-visitor"
     )
@@ -106,7 +106,7 @@ async def test_an_order_is_added_up_and_kept_in_the_conversation_state(world: Wo
 
 
 async def test_a_store_only_sees_its_own_workspace(world: World) -> None:
-    agent = await world.services.agents.by_key(DEV_KEY)
+    agent = await world.services.agents.by_public_key(DEV_KEY)
     mine = world.store(agent)
     other = ShopStore(world.sessions, "someone-else", world.clock)
 
@@ -161,7 +161,7 @@ async def test_a_chat_taken_over_and_left_quiet_is_the_agents_again(world: World
     the next message is answered."""
     agent = await world.agent()
     conversation = await world.say(agent, None, ["Hello!"], "hi")
-    await world.services.inbox.take_over(agent.workspace_id, conversation, True)
+    await world.services.inbox.set_taken_over(agent.workspace_id, conversation, True)
     await world.say(agent, conversation, ["Should not be said."], "anyone?")
     assert "Should not be said." not in str((await world.conversation(conversation)).messages)
     world.clock.advance(minutes=31)

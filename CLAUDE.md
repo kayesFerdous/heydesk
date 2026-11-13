@@ -2,7 +2,8 @@
 
 HeyDesk is an **MVP**: an online shop creates an AI front-desk agent, edits it, and
 visitors talk to it by web chat or the messaging apps. It serves only online shops: everything
-about the shop is in `src/heydesk/shop/`, with no layer for other kinds of business (D172).
+about the shop is in `src/heydesk/shop/` (its routes are `api/shop.py`), with no layer for other
+kinds of business (D172).
 Async FastAPI, SQLAlchemy 2.0 async, Gigalogy's Maira (the default) or Groq (`openai/gpt-oss-120b`) for talking
 and for judging the visitor's yes (D107). Maira has no native tool calls, so its adapter asks for them
 as JSON in the reply (D16).
@@ -60,9 +61,10 @@ scripts/check.sh                           # pytest, ruff, format, mypy, import 
 ## The rules (design.md §3)
 
 1. **Python does facts**: prices, totals, dates, times. The model only talks.
-2. **Read back, then a yes, then save.** A store's writing methods take only
-   `Confirmed[T]`, made only by `confirm()`: the model judges the yes, Python checks
-   the details are the ones read back on an earlier turn. It fails closed.
+2. **Read back, then a yes, then save.** A tool saves what the visitor gave only
+   through store methods that take a `Confirmed[T]`, made only by `confirm()`: the
+   model judges the yes, Python checks the details are the ones read back on an
+   earlier turn. It fails closed. (The owner's own routes write without one.)
 3. **Platform rules come first** in the prompt and aren't editable.
 4. **The system prompt is built every turn** from the agent's config, with the
    channel, date and time at the end. No versions, no caching (D15).

@@ -23,6 +23,11 @@ def money(minor: int, currency: str) -> str:
     return f"{symbol}{major:,}" + (f".{cents:02d}" if cents else "")
 
 
+def money_or_free(minor: int, currency: str) -> str:
+    """A charge as the visitor reads it: "৳60", or "free" when there's nothing to pay."""
+    return money(minor, currency) if minor else "free"
+
+
 def local_time(at: datetime, timezone: str) -> str:
     """A stored time (UTC) in the business's own, for a file: "2026-09-29 14:00"."""
     return (
@@ -30,6 +35,11 @@ def local_time(at: datetime, timezone: str) -> str:
         .astimezone(ZoneInfo(timezone))
         .strftime("%Y-%m-%d %H:%M")
     )
+
+
+def day_time(when: datetime) -> str:
+    """How a day and time is shown and read back: "Wed 30 Sep, 5:00 pm"."""
+    return f"{when:%a} {when.day} {when:%b}, {clock_time(when.time())}"
 
 
 def clock_time(t: time) -> str:

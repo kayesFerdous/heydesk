@@ -19,7 +19,7 @@ class ToolStarted:
 
 
 @dataclass(frozen=True)
-class HandOff:
+class HandedOff:
     message: str
     phone: str | None = None
     email: str | None = None
@@ -53,4 +53,4 @@ class TurnEnded:
     choices: list[str] = field(default_factory=list)  # the last tool's buttons
 
 
-type Event = Token | ToolStarted | HandOff | Photos | Card | TurnEnded
+type Event = Token | ToolStarted | HandedOff | Photos | Card | TurnEnded

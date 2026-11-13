@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from heydesk.errors import Forbidden, InvalidConfig, InvalidTransition, NotFound
 from heydesk.models import Conversation, Note, TeamMessage, User
 from heydesk.ports.llm import LanguageModel
-from heydesk.services.team import HUMAN_STATUS, TEAM_AUTHOR, TeamService, handoff_alert
+from heydesk.services.team import (
+    HUMAN_STATUS,
+    TeamService,
+    add_team_line,
+    conversation_in,
+    handoff_alert,
+)
 from heydesk.services.users import CurrentUser
 from heydesk.shop.models import ShopOrder
 
@@ -175,7 +181,7 @@ class InboxService:
             conversation.assigned_to = user_id
         log.info("assigned", extra={"conversation_id": conversation.id})
         if user_id is not None and user_id != by.user_id:  # given to them: tell them
-            await self.team.alert(
+            await self.team.alert_team(
                 conversation, handoff_alert(conversation.messages, "👉 This chat is yours now")
             )
         return conversation
@@ -214,7 +220,7 @@ class InboxService:
             for conversation in due:
                 conversation.snoozed_until = None
         for conversation in due:
-            await self.team.alert(conversation, "⏰ A chat you snoozed is back.")
+            await self.team.alert_team(conversation, "⏰ A chat you snoozed is back.")
             log.info("snooze over", extra={"conversation_id": conversation.id})
 
     async def hand_back(self, workspace_id: str, conversation_id: str) -> Conversation:
@@ -275,29 +281,25 @@ class InboxService:
             conversation = await get_conversation(s, workspace_id, conversation_id, lock=True)
             if conversation.channel == "voice":
                 raise InvalidTransition("That was a phone call: call them back instead.")
-            said = {**self.llm.assistant_message(text.strip()), "by": TEAM_AUTHOR}
-            conversation.messages = [
-                *conversation.messages,
-                said,
-            ]  # a new list, so SQLAlchemy sees it
-            conversation.status, conversation.taken_over_at, conversation.updated_at = (
-                HUMAN_STATUS,
-                self.now(),
-                self.now(),
-            )
+            add_team_line(conversation, self.llm, text.strip(), self.now())
+            conversation.status, conversation.taken_over_at = HUMAN_STATUS, self.now()
         await self.team.send_to_visitor(conversation, text.strip())
         log.info("team replied", extra={"conversation_id": conversation.id})
         return conversation
 
-    async def take_over(self, workspace_id: str, conversation_id: str, on: bool) -> Conversation:
+    async def set_taken_over(
+        self, workspace_id: str, conversation_id: str, taken_over: bool
+    ) -> Conversation:
         """The team takes the chat, and the agent stays quiet in it, or gives it back:
         the inbox's switch, "." in Business Suite or on Telegram. Quiet for
         TAKEOVER_QUIET_MINUTES, it's the agent's again."""
         async with self.sessions() as s, s.begin():
             conversation = await get_conversation(s, workspace_id, conversation_id)
-            conversation.status = HUMAN_STATUS if on else "active"
-            conversation.taken_over_at = self.now() if on else None
-        log.info("taken over" if on else "given back", extra={"conversation_id": conversation.id})
+            conversation.status = HUMAN_STATUS if taken_over else "active"
+            conversation.taken_over_at = self.now() if taken_over else None
+        log.info(
+            "taken over" if taken_over else "given back", extra={"conversation_id": conversation.id}
+        )
         return conversation
 
     def _active_chats_filter(self) -> tuple[ColumnElement[bool], ...]:
@@ -326,9 +328,7 @@ async def get_conversation(
     """`lock` before adding to `messages`: two writes at once would each add to the list
     they read, and the later one would drop the other's line. Postgres holds the row
     until the transaction ends; SQLite writes one transaction at a time anyway."""
-    query = select(Conversation).where(
-        Conversation.id == conversation_id, Conversation.workspace_id == workspace_id
-    )
+    query = conversation_in(workspace_id, conversation_id)
     conversation = await s.scalar(query.with_for_update() if lock else query)
     if conversation is None:
         raise NotFound("There's no such conversation. Start a new one.")

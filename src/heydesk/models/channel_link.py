@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from heydesk.db import Base, Encrypted, new_id, utcnow
 
 
-class Channel(Base):
+class ChannelLink(Base):
     """A business's agent on a messaging app: its Telegram bot, Facebook Page or
     WhatsApp number.
     One per app.

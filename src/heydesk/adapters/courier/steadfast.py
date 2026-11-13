@@ -22,7 +22,7 @@ class Steadfast:
     def __init__(self, timeout: float = 15.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
 
-    async def check(self, account: CourierAccount) -> int | None:
+    async def verify_account(self, account: CourierAccount) -> int | None:
         await self._call(account, "GET", "get_balance")
         return None
 

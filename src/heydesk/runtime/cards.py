@@ -14,7 +14,7 @@ An amount is `{minor, currency, text}`; `at` is ISO 8601 in UTC. Voice gets no c
 from datetime import UTC, datetime
 from typing import Any
 
-from heydesk.runtime.speech import money
+from heydesk.runtime.speech import money_or_free
 
 type Card = dict[str, Any]
 
@@ -24,7 +24,7 @@ def amount(minor: int, currency: str) -> dict[str, Any]:
     return {
         "minor": minor,
         "currency": currency,
-        "text": money(minor, currency) if minor else "free",
+        "text": money_or_free(minor, currency),
     }
 
 

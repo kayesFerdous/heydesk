@@ -5,7 +5,7 @@ token lasts an hour and could be kept, but a payment is a few calls, so this kee
 
 Starting a payment creates it and returns bKash's page. When the buyer is done, bKash sends
 their browser to the back URL with `paymentID` and `status`; only "success" is worth asking
-about. `check` executes the payment (that's when the money moves) and reads what bKash says.
+about. `fetch_payment` executes the payment (that's when the money moves) and reads what bKash says.
 If execute fails (it was executed already, or timed out), it asks for the payment's status.
 bKash has no server-to-server notice in this flow, so `notify_url` isn't used: the money moves
 only when we execute, so a buyer who closes the tab first isn't charged.
@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from heydesk.ports.payments import Account, Checkout, Paid, PaymentUnavailable
+from heydesk.ports.payments import Checkout, GatewayAccount, Paid, PaymentUnavailable
 
 SANDBOX = "https://tokenized.sandbox.bka.sh/v1.2.0-beta/tokenized"
 LIVE = "https://tokenized.pay.bka.sh/v1.2.0-beta/tokenized"
@@ -28,11 +28,11 @@ class BkashCheckout:
     def __init__(self, timeout: float = 30.0) -> None:
         self.client = httpx.AsyncClient(timeout=timeout)
 
-    async def verify(self, account: Account) -> None:
+    async def verify_account(self, account: GatewayAccount) -> None:
         """Keys that grant a token are keys bKash accepts."""
         await self._token(account)
 
-    async def start(self, account: Account, checkout: Checkout) -> str:
+    async def start(self, account: GatewayAccount, checkout: Checkout) -> str:
         body = await self._call(
             account,
             "/checkout/create",
@@ -50,7 +50,7 @@ class BkashCheckout:
             raise PaymentUnavailable(str(body.get("statusMessage") or "bKash said no"))
         return str(body["bkashURL"])
 
-    async def check(self, account: Account, payment_id: str) -> Paid | None:
+    async def fetch_payment(self, account: GatewayAccount, payment_id: str) -> Paid | None:
         try:
             body = await self._call(account, "/checkout/execute", {"paymentID": payment_id})
         except PaymentUnavailable:
@@ -67,7 +67,7 @@ class BkashCheckout:
             reference=str(body.get("trxID") or payment_id),
         )
 
-    async def _token(self, account: Account) -> str:
+    async def _token(self, account: GatewayAccount) -> str:
         headers = {"username": account.username, "password": account.password}
         keys = {"app_key": account.app_key, "app_secret": account.app_secret}
         body = await self._post(account, "/checkout/token/grant", keys, headers)
@@ -75,13 +75,15 @@ class BkashCheckout:
             raise PaymentUnavailable(str(body.get("statusMessage") or "bKash refused the keys"))
         return str(body["id_token"])
 
-    async def _call(self, account: Account, path: str, data: dict[str, str]) -> dict[str, Any]:
+    async def _call(
+        self, account: GatewayAccount, path: str, data: dict[str, str]
+    ) -> dict[str, Any]:
         """One call with a fresh token."""
         headers = {"Authorization": await self._token(account), "X-App-Key": account.app_key}
         return await self._post(account, path, data, headers)
 
     async def _post(
-        self, account: Account, path: str, data: dict[str, str], headers: dict[str, str]
+        self, account: GatewayAccount, path: str, data: dict[str, str], headers: dict[str, str]
     ) -> dict[str, Any]:
         base = SANDBOX if account.sandbox else LIVE
         headers = {**headers, "Accept": "application/json"}  # httpx adds the Content-Type

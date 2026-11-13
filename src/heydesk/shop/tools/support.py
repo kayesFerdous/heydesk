@@ -7,7 +7,8 @@ from datetime import UTC
 from pydantic import BaseModel, Field
 
 from heydesk.runtime import parse
-from heydesk.runtime.guards import ask_for_yes, confirm
+from heydesk.runtime.commit_check import ask_for_yes, confirm
+from heydesk.runtime.speech import day_time
 from heydesk.runtime.text import one_line
 from heydesk.runtime.tool import ArgumentChecker, Tool, ToolContext, ToolResult
 from heydesk.shop.records import NewLead, NewMessage, RecordStore
@@ -24,13 +25,18 @@ class HandoffInput(BaseModel):
 async def handoff_to_human(ctx: ToolContext[RecordStore], args: HandoffInput) -> ToolResult:
     if args.unanswered.strip():  # for the owner to teach
         await ctx.store.save_missed_question(args.unanswered)
+    # The page shows these on a card after the reply; the conversation is marked needs_human
+    return ToolResult(ok=True, data=_handoff_contact(ctx), handoff=True)
+
+
+def _handoff_contact(ctx: ToolContext[RecordStore]) -> dict[str, str]:
+    """The business's hand-off line and how to reach it, leaving out what it hasn't set."""
     contact = ctx.agent.handoff
     data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
-    # The page shows these on a card after the reply; the conversation is marked needs_human
-    return ToolResult(ok=True, data={k: v for k, v in data.items() if v}, handoff=True)
+    return {k: v for k, v in data.items() if v}
 
 
-HANDOFF = Tool(
+HANDOFF_TO_HUMAN = Tool(
     name="handoff_to_human",
     description=(
         "Pass the conversation to a person on the team: when the visitor asks for a person, "
@@ -54,17 +60,15 @@ class ComplaintInput(BaseModel):
 async def flag_complaint(ctx: ToolContext[RecordStore], args: ComplaintInput) -> ToolResult:
     """A complaint: a hand-off that opens a ticket for the team, once a chat."""
     ticket, new = await ctx.store.open_ticket(args.reason)
-    contact = ctx.agent.handoff
-    data = {"message": contact.message, "phone": contact.phone, "email": contact.email}
     return ToolResult(
         ok=True,
-        data={k: v for k, v in data.items() if v},
+        data=_handoff_contact(ctx),
         handoff=True,
         alert=f"😠 Complaint {ticket.code}: {ticket.reason}" if new else None,
     )
 
 
-COMPLAINT = Tool(
+FLAG_COMPLAINT = Tool(
     name="flag_complaint",
     description=(
         "The visitor is unhappy or complains: about an order, a delivery, a product, the staff "
@@ -163,7 +167,7 @@ async def take_lead(ctx: ToolContext[RecordStore], args: TakeLeadInput) -> ToolR
     note = one_line(args.note, 300)
 
     lead = NewLead(when.astimezone(UTC), note, name, phone)
-    read_back = f"We call you on {parse.day_time(when)} at {phone}" + "".join(
+    read_back = f"We call you on {day_time(when)} at {phone}" + "".join(
         f"; {label} {value}" for label, value in (("about", note), ("for", name)) if value
     )
     confirmed = confirm(ctx.last_read_back, lead, read_back)

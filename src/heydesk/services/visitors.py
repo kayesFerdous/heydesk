@@ -1,11 +1,11 @@
-"""Limits on a public chat, so visitors here for timepass can't spend a business's turns,
+"""Limits on a public chat, so visitors who only chat off topic can't spend a business's turns,
 and the team's say over one visitor: Block them, or turn the AI off for them.
 
-Before anything, `check_not_blocked` refuses a blocked visitor (telling them once) and says when
+Before anything, `ai_may_answer` refuses a blocked visitor (telling them once) and says when
 the AI is off for them. A messaging app's every message goes through `count_message`, which
 blocks a flood. Before a turn, `count_turn` counts it, or refuses when the visitor is blocked, the business's plan
 has ended or used its replies, the visitor used today's turns, or the whole business did. A refusal costs no model call. After a turn,
-`after_turn` gives a strike when the model called `off_topic`; enough strikes in a row block the
+`count_off_topic_strike` gives a strike when the model called `off_topic`; enough strikes in a row block the
 visitor for a while. Any real step (another tool) clears the strikes.
 """
 
@@ -25,7 +25,7 @@ from heydesk.models import Visitor
 from heydesk.services.agents import LiveAgent
 from heydesk.services.billing import plan_problem
 from heydesk.services.rate_limits import RateLimiter
-from heydesk.shop.tools.inbox import OFF_TOPIC
+from heydesk.shop.tools.support import OFF_TOPIC
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class VisitorService:
         self.now = now
         self.rate_limits = rate_limits  # counts the floods, in Redis when there is one
 
-    async def check_not_blocked(self, agent: LiveAgent, key: str) -> bool:
+    async def ai_may_answer(self, agent: LiveAgent, key: str) -> bool:
         """Raises when they're blocked: `VisitorLimited` the first time, with how to reach
         the business, and `VisitorSilenced` after, so a messaging app tells them once. False
         when the team turned the AI off for them: their message goes to the team."""
@@ -64,9 +64,9 @@ class VisitorService:
         """One message from a messaging app. `FLOOD_MESSAGES` in a minute block them for
         `BLOCK_HOURS`, as chatting off topic does. The web chat has its own limit."""
         limit = f"{self.settings.FLOOD_MESSAGES}/minute"
-        if await self.rate_limits.hit(limit, "flood", workspace_id, key):
+        if await self.rate_limits.allow(limit, "flood", workspace_id, key):
             return
-        await self._first_seen(
+        await self._ensure_visitor_row(
             workspace_id, key, self.now().date()
         )  # admit puts the business's day right
         async with self.sessions() as s, s.begin():
@@ -74,14 +74,14 @@ class VisitorService:
             assert visitor is not None
             if not is_blocked(visitor, self.now()):
                 until = self.now() + timedelta(hours=self.settings.BLOCK_HOURS)
-                block(visitor, "flooding", until)
+                set_block(visitor, "flooding", until)
                 log.info("visitor flooding", extra={"workspace_id": workspace_id})
 
     async def find(self, workspace_id: str, key: str) -> Visitor | None:
         async with self.sessions() as s:
             return await self._find(s, workspace_id, key)
 
-    async def change(
+    async def update(
         self, workspace_id: str, visitor_id: str, by: str, blocked: bool | None, ai_off: bool | None
     ) -> Visitor:
         """The team blocks or unblocks a visitor, or turns the AI off or on for them.
@@ -95,9 +95,9 @@ class VisitorService:
             if visitor is None:
                 raise NotFound("There's no such visitor.")
             if blocked is True:
-                block(visitor, "team", None, by)
+                set_block(visitor, "team", None, by)
             elif blocked is False:
-                block(visitor, None, None)
+                set_block(visitor, None, None)
                 visitor.strikes = 0
             if ai_off is not None:
                 visitor.ai_off = ai_off
@@ -121,13 +121,13 @@ class VisitorService:
         only checks: a voice call checks before it connects."""
         now = self.now()
         today = now.astimezone(ZoneInfo(agent.config.timezone)).date()
-        await self._first_seen(agent.workspace_id, key, today)
+        await self._ensure_visitor_row(agent.workspace_id, key, today)
         async with self.sessions() as s, s.begin():
             visitor = await self._find(s, agent.workspace_id, key, lock=True)  # counted once each
             assert visitor is not None
             if visitor.day != today:  # a new day: yesterday's turns don't count
                 visitor.day, visitor.turns = today, 0
-            reason = await self._limit(s, agent.workspace_id, visitor, today, now)
+            reason = await self._limit_reason(s, agent.workspace_id, visitor, today, now)
             if reason:
                 log.info(
                     "visitor limited", extra={"workspace_id": agent.workspace_id, "why": reason}
@@ -137,10 +137,10 @@ class VisitorService:
                 visitor.turns += 1
                 visitor.updated_at = now
 
-    async def after_turn(self, agent: LiveAgent, key: str, tools: list[str]) -> None:
+    async def count_off_topic_strike(self, agent: LiveAgent, key: str, tools: list[str]) -> None:
         """A strike for an off-topic turn; another tool means real progress and clears them."""
         if not tools:
-            return  # a plain answer: neither progress nor timepass
+            return  # a plain answer: neither progress nor off-topic chatting
         async with self.sessions() as s, s.begin():
             visitor = await self._find(s, agent.workspace_id, key)
             if visitor is None:
@@ -151,12 +151,12 @@ class VisitorService:
                 visitor.strikes += 1
                 if visitor.strikes >= self.settings.OFF_TOPIC_STRIKES:
                     until = self.now() + timedelta(hours=self.settings.BLOCK_HOURS)
-                    block(visitor, "off_topic", until)
+                    set_block(visitor, "off_topic", until)
                     visitor.strikes = 0
                     log.info("visitor blocked", extra={"workspace_id": agent.workspace_id})
             visitor.updated_at = self.now()
 
-    async def _limit(
+    async def _limit_reason(
         self, s: AsyncSession, workspace_id: str, visitor: Visitor, today: date, now: datetime
     ) -> str | None:
         """Why the visitor can't have a turn now, or None."""
@@ -176,7 +176,7 @@ class VisitorService:
             return "workspace_daily_turns"
         return None
 
-    async def _first_seen(self, workspace_id: str, key: str, today: date) -> None:
+    async def _ensure_visitor_row(self, workspace_id: str, key: str, today: date) -> None:
         """Makes the visitor's row, the first time they write. Two first messages at once:
         the unique (workspace, key) refuses the second row, and both go on with the first."""
         async with self.sessions() as s:
@@ -207,7 +207,9 @@ def is_blocked(visitor: Visitor, now: datetime) -> bool:
     )
 
 
-def block(visitor: Visitor, why: str | None, until: datetime | None, by: str | None = None) -> None:
+def set_block(
+    visitor: Visitor, why: str | None, until: datetime | None, by: str | None = None
+) -> None:
     """Blocks the visitor (`why` None: unblocks), so their next message gets the one notice."""
     visitor.blocked_why, visitor.blocked_until, visitor.blocked_by = why, until, by
     visitor.told_blocked = False

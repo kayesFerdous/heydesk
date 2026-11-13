@@ -16,7 +16,7 @@ every purchase from where the business stands:
   rate of the cycle paid last), switched at once, ending on the same day;
 - a smaller plan while one runs: refused until it ends (it's paid for); and never with more
   moderators than the smaller plan has.
-`check_payment` prices the payment again when the gateway says it's paid: if the plan changed while
+`confirm_payment` prices the payment again when the gateway says it's paid: if the plan changed while
 the owner was paying (another payment, an admin), the payment is kept as `review` and an admin
 settles it by hand, rather than applying a price that no longer holds.
 
@@ -39,8 +39,8 @@ from heydesk.errors import Conflict, HeyDeskError, NotFound
 from heydesk.models import SubscriptionPayment, Turn, User, Workspace
 from heydesk.ports.payments import (
     PROVIDERS,
-    Account,
     Checkout,
+    GatewayAccount,
     Gateways,
     PaymentUnavailable,
     Provider,
@@ -177,6 +177,14 @@ def dev_workspace(workspace_id: str, now: datetime) -> Workspace:
     )
 
 
+async def get_workspace(s: AsyncSession, workspace_id: str) -> Workspace:
+    """The business's row. 404 when there's no such business."""
+    workspace = await s.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFound("There's no such business.")
+    return workspace
+
+
 class BillingService:
     def __init__(
         self,
@@ -193,9 +201,7 @@ class BillingService:
     async def billing(self, workspace_id: str) -> Billing:
         now = self.now()
         async with self.sessions() as s:
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             used = await replies_used(s, workspace_id, now)
             payments = await s.scalars(
                 select(SubscriptionPayment)
@@ -225,9 +231,7 @@ class BillingService:
 
     async def quote(self, workspace_id: str, plan: str, months: int) -> Quote:
         async with self.sessions() as s:
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             return quote(
                 workspace, plan, months, await count_moderators(s, workspace_id), self.now()
             )
@@ -270,7 +274,7 @@ class BillingService:
         except PaymentUnavailable as error:
             raise HeyDeskError(f"The payment page isn't answering: {error}") from None
 
-    async def check_payment(
+    async def confirm_payment(
         self, payment_id: str, val_id: str, gateway: Provider = "sslcommerz"
     ) -> SubscriptionPayment | None:
         """Checks a payment a gateway sent word of (SSLCommerz's `val_id`, bKash's paymentID)
@@ -281,7 +285,7 @@ class BillingService:
             payment = await s.get(SubscriptionPayment, payment_id)
         if payment is None:
             return None
-        paid = await self.gateways[gateway].check(self._account(gateway), val_id)
+        paid = await self.gateways[gateway].fetch_payment(self._account(gateway), val_id)
         if paid is None or paid.order_id != payment.id:
             return payment
         if (paid.amount, paid.currency) != (payment.amount, "BDT"):
@@ -323,16 +327,14 @@ class BillingService:
     async def set_plan(self, workspace_id: str, plan: str, paid_until: datetime) -> None:
         """An admin's change, for a payment made another way."""
         async with self.sessions() as s, s.begin():
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             workspace.plan, workspace.paid_until = plan, paid_until
 
-    def _account(self, gateway: Provider) -> Account:
+    def _account(self, gateway: Provider) -> GatewayAccount:
         s = self.settings
         if gateway == "sslcommerz":
-            return Account(s.BILLING_STORE_ID, s.BILLING_STORE_PASSWORD, s.BILLING_SANDBOX)
-        return Account(
+            return GatewayAccount(s.BILLING_STORE_ID, s.BILLING_STORE_PASSWORD, s.BILLING_SANDBOX)
+        return GatewayAccount(
             store_id="",
             password=s.BILLING_BKASH_PASSWORD,
             sandbox=s.BILLING_BKASH_SANDBOX,

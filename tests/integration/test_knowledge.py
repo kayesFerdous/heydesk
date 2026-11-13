@@ -14,7 +14,7 @@ FEES = "A general visit costs 400 taka. Dr. Hasan charges 900 taka."
 
 
 async def agent_id(world: World) -> str:
-    return (await world.services.agents.by_key(DEV_KEY)).agent_id
+    return (await world.services.agents.by_public_key(DEV_KEY)).agent_id
 
 
 async def add(world: World, title: str, text: str) -> Document:

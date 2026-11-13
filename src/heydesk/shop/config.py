@@ -58,8 +58,8 @@ class ShopConfig(AgentConfig):
     exchange_days: int = Field(default=0, ge=0, le=60)
 
     @property
-    def pay_first(self) -> bool:
-        """Some area's charge is paid online first: `ShopStore.pays_first` reads it."""
+    def any_zone_pays_first(self) -> bool:
+        """Some area's charge is paid online first: `ShopStore.takes_payment_first` reads it."""
         return any(zone.pay_first for zone in self.delivery)
 
     @model_validator(mode="after")
@@ -78,6 +78,10 @@ class ShopConfig(AgentConfig):
                 "districts."
             )
         return self
+
+    def zone(self, name: str) -> Zone | None:
+        """The delivery area with this name: an order keeps only its area's name."""
+        return next((zone for zone in self.delivery if zone.name == name), None)
 
     def delivery_charge(self, zone: Zone, subtotal: int) -> int:
         if self.free_delivery_over and subtotal >= self.free_delivery_over:

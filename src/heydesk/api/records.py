@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import Paged, StatusIn, Svc, WorkspaceId
+from heydesk.api.deps import Paging, Shop, StatusIn, Svc, WorkspaceId
 from heydesk.models import Lead, TeamMessage, Ticket
 
 router = APIRouter(tags=["records"])
@@ -29,30 +29,21 @@ class MessageOut(BaseModel):
 
 @router.get("/api/messages")
 async def messages(
-    services: Svc,
-    workspace_id: WorkspaceId,
-    page: Paged,
-    status: str | None = None,
-    q: str | None = None,
+    store: Shop, page: Paging, status: str | None = None, q: str | None = None
 ) -> list[MessageOut]:
     """Messages for the team, newest first, a page at a time (`limit`, `before`). `q`
     matches the code, the name or the phone."""
-    store = await services.agents.store(workspace_id)
-    found = await store.messages(status, q, limit=page.limit, before=page.before)
+    found = await store.find(TeamMessage, status, q, limit=page.limit, before=page.before)
     return [MessageOut.model_validate(m) for m in found]
 
 
 @router.get("/api/messages/{message_id}")
-async def message(message_id: str, services: Svc, workspace_id: WorkspaceId) -> MessageOut:
-    store = await services.agents.store(workspace_id)
+async def message(message_id: str, store: Shop) -> MessageOut:
     return MessageOut.model_validate(await store.get(TeamMessage, message_id))
 
 
 @router.patch("/api/messages/{message_id}")
-async def set_status(
-    message_id: str, body: StatusIn, services: Svc, workspace_id: WorkspaceId
-) -> MessageOut:
-    store = await services.agents.store(workspace_id)
+async def set_status(message_id: str, body: StatusIn, store: Shop) -> MessageOut:
     return MessageOut.model_validate(await store.set_status(TeamMessage, message_id, body.status))
 
 
@@ -71,14 +62,14 @@ class TicketOut(BaseModel):
 
 @router.get("/api/tickets")
 async def tickets(
+    store: Shop,
     services: Svc,
     workspace_id: WorkspaceId,
-    page: Paged,
+    page: Paging,
     status: Literal["open", "solved"] | None = None,
 ) -> list[TicketOut]:
     """Complaints the agent flagged, newest first, a page at a time; `status=open`
     for the ones still to deal with. Each with who has its chat."""
-    store = await services.agents.store(workspace_id)
     found = await store.find(Ticket, status, limit=page.limit, before=page.before)
     chats = {
         c.id: c
@@ -100,11 +91,8 @@ async def tickets(
 
 
 @router.patch("/api/tickets/{ticket_id}")
-async def set_ticket_status(
-    ticket_id: str, body: StatusIn, services: Svc, workspace_id: WorkspaceId
-) -> TicketOut:
+async def set_ticket_status(ticket_id: str, body: StatusIn, store: Shop) -> TicketOut:
     """`solved`, or `open` again. It stays open until someone marks it solved."""
-    store = await services.agents.store(workspace_id)
     return TicketOut.model_validate(await store.set_status(Ticket, ticket_id, body.status))
 
 
@@ -135,28 +123,22 @@ class WhyOut(BaseModel):
 
 @router.get("/api/leads")
 async def leads(
-    services: Svc,
-    workspace_id: WorkspaceId,
-    page: Paged,
+    store: Shop,
+    page: Paging,
     status: Literal["open", "sold", "not_now", "lost"] | None = None,
 ) -> list[LeadOut]:
     """Call backs the agent took, newest first; `status=open` for the ones to call."""
-    store = await services.agents.store(workspace_id)
     found = await store.find(Lead, status, limit=page.limit, before=page.before)
     return [LeadOut.model_validate(lead) for lead in found]
 
 
 @router.get("/api/leads/why")
-async def lost_reasons(services: Svc, workspace_id: WorkspaceId) -> list[WhyOut]:
+async def lost_reasons(store: Shop) -> list[WhyOut]:
     """Why we lose sales: the lost leads' whys, counted, most first."""
-    store = await services.agents.store(workspace_id)
     return [WhyOut(why=why, count=n) for why, n in await store.lost_reasons()]
 
 
 @router.patch("/api/leads/{lead_id}")
-async def lead_outcome(
-    lead_id: str, body: LeadIn, services: Svc, workspace_id: WorkspaceId
-) -> LeadOut:
+async def lead_outcome(lead_id: str, body: LeadIn, store: Shop) -> LeadOut:
     """The team taps how it went: sold, not now, or lost with why; `open` undoes it."""
-    store = await services.agents.store(workspace_id)
     return LeadOut.model_validate(await store.lead_outcome(lead_id, body.status, body.why))

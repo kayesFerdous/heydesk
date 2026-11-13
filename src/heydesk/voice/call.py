@@ -48,7 +48,7 @@ from pipecat.utils.time import time_now_iso8601
 from heydesk.config import Settings
 from heydesk.errors import HeyDeskError
 from heydesk.ports.transcriber import Transcriber, TranscriberUnavailable
-from heydesk.runtime.events import HandOff, Token, ToolStarted, TurnEnded
+from heydesk.runtime.events import HandedOff, Token, ToolStarted, TurnEnded
 from heydesk.runtime.speech import speakable
 from heydesk.services import Services
 from heydesk.services.agents import LiveAgent
@@ -72,24 +72,26 @@ class CallAgent(FrameProcessor):
         self,
         conversations: ConversationService,
         agent: LiveAgent,
-        visitor: str,
+        visitor_key: str,
         conversation_id: str | None = None,
     ) -> None:
         super().__init__()
         self.conversations = conversations
         self.agent = agent
-        self.visitor = visitor  # the caller's page token, for the limits
+        self.visitor_key = visitor_key  # the caller's page token, for the limits
         # One conversation per call: made by the first turn, or by the shop's call
         self.conversation_id = conversation_id
         self.turn: asyncio.Task[None] | None = None  # the running turn, in its own task
         self.interrupt: asyncio.Event | None = None  # that turn's stop flag
         self.speaking = False  # the agent's audio is playing
-        self.over_agent = False  # the caller started talking while the agent was busy
+        self.talking_over_agent = False  # the caller started talking while the agent was busy
         self.barge_in: asyncio.Task[None] | None = None
-        self.over = False  # the shop's call settled its order: hang up once the goodbye is said
+        self.order_settled = (
+            False  # the shop's call settled its order: hang up once the goodbye is said
+        )
         self.hang_up: asyncio.Task[None] | None = None
 
-    def busy(self) -> bool:
+    def agent_is_busy(self) -> bool:
         return self.speaking or (self.turn is not None and not self.turn.done())
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -102,30 +104,30 @@ class CallAgent(FrameProcessor):
             if self.hang_up:  # more words (the next sentence): not yet
                 await self.cancel_task(self.hang_up)
                 self.hang_up = None
-            if self.over and not self.busy():
-                self.hang_up = self.create_task(self.end_after(HANG_UP_SECONDS))
+            if self.order_settled and not self.agent_is_busy():
+                self.hang_up = self.create_task(self.hang_up_after(HANG_UP_SECONDS))
         elif isinstance(frame, VADUserStartedSpeakingFrame):
-            self.over_agent = self.busy()
-            if self.over_agent:
-                self.barge_in = self.create_task(self.stop_after(INTERRUPT_SECONDS))
+            self.talking_over_agent = self.agent_is_busy()
+            if self.talking_over_agent:
+                self.barge_in = self.create_task(self.interrupt_after(INTERRUPT_SECONDS))
         elif isinstance(frame, VADUserStoppedSpeakingFrame) and self.barge_in:
             await self.cancel_task(self.barge_in)
             self.barge_in = None
         await self.push_frame(frame, direction)
 
     async def on_transcript(self, text: str) -> None:
-        if self.over_agent and text.lower().strip(" .,!?") in SHORT_ACKNOWLEDGEMENTS:
+        if self.talking_over_agent and text.lower().strip(" .,!?") in SHORT_ACKNOWLEDGEMENTS:
             return  # "mm-hmm" while the agent talks: let it go on
         await self.stop()  # anything else is a new turn: the old one stops first
         if self.turn:
             await asyncio.wait([self.turn])  # wait, don't cancel: it saves what it had
         self.turn = self.create_task(self.reply(text))
 
-    async def end_after(self, seconds: float) -> None:
+    async def hang_up_after(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
         await self.push_frame(EndWorkerFrame())  # ends the call once the audio has played
 
-    async def stop_after(self, seconds: float) -> None:
+    async def interrupt_after(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
         await self.stop()
 
@@ -133,7 +135,7 @@ class CallAgent(FrameProcessor):
         """Stops the turn at its next token and the audio now."""
         if self.interrupt:
             self.interrupt.set()
-        if self.busy():
+        if self.agent_is_busy():
             await self.broadcast_interruption()
 
     async def reply(self, text: str) -> None:
@@ -143,8 +145,8 @@ class CallAgent(FrameProcessor):
                 self.conversation_id,
                 text,
                 "voice",
-                self.visitor,
-                self.visitor.removeprefix("web:"),  # the caller's browser, as in web chat
+                self.visitor_key,
+                self.visitor_key.removeprefix("web:"),  # the caller's browser, as in web chat
             )
         except HeyDeskError as error:  # over a limit, or a full conversation: say why
             await self.push_frame(LLMFullResponseStartFrame())
@@ -164,11 +166,11 @@ class CallAgent(FrameProcessor):
             elif isinstance(event, ToolStarted) and event.filler and not spoken.strip():
                 # Fills the silence while the tool runs; only the turn's own words are stored
                 await self.push_frame(LLMTextFrame(event.filler + " "))
-            elif isinstance(event, HandOff) and event.message not in spoken:
+            elif isinstance(event, HandedOff) and event.message not in spoken:
                 # There's no card on a call: a failure's polite line is said out loud
                 await self.push_frame(LLMTextFrame(f" {event.message}"))
             elif isinstance(event, TurnEnded) and event.state.get("calling", {}).get("over"):
-                self.over = True  # the goodbye is on its way
+                self.order_settled = True  # the goodbye is on its way
         await self.push_frame(LLMFullResponseEndFrame())
 
 
@@ -182,7 +184,7 @@ class SpeakableText(BaseTextFilter):
         return speakable(text, self.language)
 
 
-class WholeUtterances(SegmentedSTTService):
+class WholeUtteranceTranscriber(SegmentedSTTService):
     """Hears the caller one whole utterance at a time, as a voice note is heard (Chorus).
     Pipecat collects the audio while they talk and hands it over as a WAV when the VAD says
     they stopped."""
@@ -225,7 +227,7 @@ async def run_call(
     settings: Settings,
     services: Services,
     agent: LiveAgent,
-    visitor: str,
+    visitor_key: str,
     answered: Answered | None = None,
 ) -> None:
     """A call the visitor made, or with `answered`, the shop's call they answered on
@@ -236,7 +238,7 @@ async def run_call(
     language = settings.VOICE_LANGUAGE  # what every call hears and speaks
     hear: FrameProcessor
     if settings.STT_PROVIDER == "chorus" and services.transcriber:
-        hear = WholeUtterances(services.transcriber)  # the voice notes' Chorus
+        hear = WholeUtteranceTranscriber(services.transcriber)  # the voice notes' Chorus
     else:
         hear = DeepgramSTTService(
             api_key=settings.DEEPGRAM_API_KEY,
@@ -260,7 +262,7 @@ async def run_call(
             CallAgent(
                 services.conversations,
                 agent,
-                visitor,
+                visitor_key,
                 answered.conversation_id if answered else None,
             ),
             speak,

@@ -2,31 +2,26 @@
 page, its *Buy now* form and an order's page."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from heydesk.api.csv_export import EXPORT_ROWS, amount_cell, csv_file, phone_cell
-from heydesk.api.deps import Paged, Svc, WorkspaceId
-from heydesk.errors import Conflict, InvalidConfig, NotFound
-from heydesk.runtime import cards
-from heydesk.runtime.events import Card
-from heydesk.runtime.guards import confirm
+from heydesk.api.deps import Paging, Shop, Svc, WorkspaceId
+from heydesk.errors import InvalidConfig, NotFound
+from heydesk.runtime.commit_check import confirm
 from heydesk.runtime.speech import local_time
-from heydesk.runtime.text import one_line
 from heydesk.services.agents import LiveAgent
-from heydesk.services.channels import card_text
-from heydesk.shop import page
-from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
+from heydesk.shop import html_pages
+from heydesk.shop.checkout import CartLine, TeamOrder, checked_order
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest_columns
 from heydesk.shop.models import ShopOrder
-from heydesk.shop.orders import STATUS_WORDS, Buyer, BuyerRecord, BuyForm, Coupon, lines_text
+from heydesk.shop.orders import Buyer, BuyerHistory, BuyForm, Coupon, lines_text
 from heydesk.shop.products import Product
 from heydesk.shop.store import OutOfStock, ShopStore
-from heydesk.shop.tools.cart import CartLine
-from heydesk.shop.tools.orders import TeamOrder, checked_order, order_alert
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["shop"])
@@ -57,14 +52,6 @@ class ImportOut[T](BaseModel):
     added: int | None = None  # a shop's import: how many were new; the rest were updated
 
 
-async def shop_store(services: Svc, workspace_id: WorkspaceId) -> ShopStore:
-    """404 until the business has an agent."""
-    return await services.agents.store(workspace_id)
-
-
-type Shop = Annotated[ShopStore, Depends(shop_store)]
-
-
 class ShopOrderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,7 +78,7 @@ class ShopOrderOut(BaseModel):
     courier_status: str  # the courier's last words about it
     paid_in: bool  # once it ended: the rider's cash reached the shop
     reason: str  # why it came back or was cancelled: "refused", "damaged"
-    buyer: BuyerRecord = BuyerRecord()  # this mobile's orders with the shop, this one too
+    buyer: BuyerHistory = BuyerHistory()  # this mobile's orders with the shop, this one too
     created_at: datetime
     updated_at: datetime
 
@@ -149,7 +136,7 @@ async def add_product_photo(
 async def suggest_products_columns(body: SuggestIn, _: Shop) -> Suggestion:
     """The file's columns, a few rows and our fields, with a guess at which column is which
     field. The owner checks it, then imports with that `mapping`."""
-    return suggest(body.csv, PRODUCT_COLUMNS)
+    return suggest_columns(body.csv, PRODUCT_COLUMNS)
 
 
 @router.post("/api/products/import")
@@ -167,7 +154,7 @@ async def import_products(body: ImportIn, store: Shop) -> ImportOut[Product]:
 async def _product(services: Svc, public_key: str, code: str) -> tuple[LiveAgent, Product] | None:
     """The shop's agent and the product; None for a wrong key or code."""
     try:
-        agent = await services.agents.by_key(public_key)
+        agent = await services.agents.by_public_key(public_key)
         store = await services.agents.store(agent.workspace_id)
     except NotFound:
         return None
@@ -187,7 +174,7 @@ async def product(
     HTML; anything else is the same 404."""
     found = await _product(services, public_key, code)
     if found is None:
-        return html_page(page.not_found(), 404)
+        return html_page(html_pages.not_found(), 404)
     agent, item = found
     config = agent.config
     back = await services.channels.chat_link(agent.workspace_id, via)
@@ -195,7 +182,7 @@ async def product(
         services.channels.absolute_url(item.photos[0]) if item.photos else ""
     )  # a link's preview
     return html_page(
-        page.product_page(
+        html_pages.product_page(
             item, config.business_name, config.currency, back, config.delivery, image=image
         )
     )
@@ -216,15 +203,15 @@ async def buy(
     of a chat's order; the chat it came from (`c`) gets the receipt."""
     found = await _product(services, public_key, code)
     if found is None:
-        return html_page(page.not_found(), 404)
+        return html_page(html_pages.not_found(), 404)
     agent, item = found
     config = agent.config
     back = await services.channels.chat_link(agent.workspace_id, via)
-    shop, conversation = await services.conversations.store_for(agent, chat)
+    shop, conversation = await services.orders.page_store(agent, chat)
 
     def again(problem: str = "") -> HTMLResponse:  # the product page, the form filled in
         return html_page(
-            page.product_page(
+            html_pages.product_page(
                 item,
                 config.business_name,
                 config.currency,
@@ -242,37 +229,17 @@ async def buy(
     order, read_back, how = checked
     confirmed = confirm(form.heard, order, read_back)
     if confirmed is None:
-        days = next((z.days for z in config.delivery if z.name == order.zone), "")
+        zone = config.zone(order.zone)
+        days = zone.days if zone else ""
         return html_page(
-            page.check_page(
+            html_pages.check_page(
                 item, config.business_name, order, how, read_back, form, days, bool(form.heard)
             )
         )
     try:
-        saved = await shop.place_order(confirmed, "page")
+        saved = await services.orders.place_from_page(shop, conversation, confirmed, read_back, how)
     except OutOfStock:
         return again("Sold out since you checked. Choose another size or colour.")
-    workspace_id = agent.workspace_id
-    if conversation:
-        receipt = cards.receipt(
-            "Order placed",
-            saved.code,
-            STATUS_WORDS[saved.status].capitalize(),
-            [cards.row("Items", lines_text(order.lines)), cards.row("Payment", how)],
-            cards.amount(saved.total, saved.currency),
-            order_url=shop.order_link(saved.id),
-        )
-        said = card_text(Card(receipt["kind"], receipt["data"]), "web")  # plain words
-        await services.team.tell_visitor(conversation.id, said)
-    if saved.status != "unpaid":  # the owner hears of an unpaid one once it's paid
-        alert = await order_alert(shop, saved.code, read_back, order.phone, order.lines)
-        await (
-            services.team.alert(conversation, alert)
-            if conversation
-            else services.team.notify(workspace_id, alert)
-        )
-        services.woo.push_soon(workspace_id)  # into a linked WooCommerce store now
-    log.info("page order", extra={"workspace_id": workspace_id, "order_id": saved.id})
     return RedirectResponse(f"/o/{saved.id}", status_code=303)  # on this same server
 
 
@@ -282,20 +249,20 @@ async def order_status(order_id: str, services: Svc) -> HTMLResponse:
     payment link's is, so no one guesses another."""
     found = await services.payments.find(order_id)
     if not isinstance(found, ShopOrder):
-        return html_page(page.not_found(), 404)
+        return html_page(html_pages.not_found(), 404)
     agent = await services.agents.by_workspace(found.workspace_id)
     pay = f"/pay/{found.id}"
-    return html_page(page.order_page(found, agent.config.business_name, pay))
+    return html_page(html_pages.order_page(found, agent.config.business_name, pay))
 
 
 def html_page(text: str, status_code: int = 200) -> HTMLResponse:
-    headers = {"Content-Security-Policy": page.POLICY, "Referrer-Policy": "no-referrer"}
+    headers = {"Content-Security-Policy": html_pages.POLICY, "Referrer-Policy": "no-referrer"}
     return HTMLResponse(text, status_code, headers=headers)
 
 
 @router.get("/api/shop/orders")
 async def orders(
-    store: Shop, page: Paged, status: str | None = None, q: str | None = None
+    store: Shop, page: Paging, status: str | None = None, q: str | None = None
 ) -> list[ShopOrderOut]:
     """Newest first, a page at a time (`limit`, `before`). `q` matches the code or number,
     the name or the phone."""
@@ -305,8 +272,7 @@ async def orders(
 
 @router.get("/api/shop/orders/{order_id}")
 async def order(order_id: str, store: Shop) -> ShopOrderOut:
-    [found] = await with_buyers(store, [await store.get(ShopOrder, order_id)])
-    return found
+    return await with_buyer(store, await store.get(ShopOrder, order_id))
 
 
 @router.patch("/api/shop/orders/{order_id}")
@@ -318,48 +284,27 @@ async def change_order(
     Cancelling puts its items back in stock. The buyer hears it in their chat when it's
     confirmed, shipped or cancelled, as the team's message. Once it ended, `paid_in` and
     `reason` too, in the same request or later."""
-    found = await store.get(ShopOrder, order_id)
-    moved = await store.move_order(order_id, body.status or found.status)
-    if (
-        moved.status != found.status
-        and moved.conversation_id
-        and (line := moved.status_update_text())
-    ):
-        await services.team.tell_visitor(moved.conversation_id, line)
-    if body.paid_in is not None or body.reason is not None:
-        moved = await store.record_outcome(order_id, body.paid_in, body.reason)
-    [out] = await with_buyers(store, [moved])
-    return out
+    moved = await services.orders.move(store, order_id, body.status, body.paid_in, body.reason)
+    return await with_buyer(store, moved)
 
 
 @router.post("/api/shop/orders", status_code=201)
-async def add_order(
-    body: TeamOrder, store: Shop, services: Svc, workspace_id: WorkspaceId
-) -> ShopOrderOut:
+async def add_order(body: TeamOrder, store: Shop, services: Svc) -> ShopOrderOut:
     """An order the team types for a buyer who called: checked and added up as the
     chat's are, then saved `confirmed` with no yes asked, since the team member is the yes.
     The owner hears of it as of any new order."""
-    config = (await services.agents.by_workspace(workspace_id)).config
-    checked = await checked_order(store, config, body.lines, body)
-    if isinstance(checked, str):
-        raise InvalidConfig({"order": checked})
-    order, read_back, _ = checked
-    try:
-        saved = await store.add_team_order(order)
-    except OutOfStock as error:
-        raise Conflict(f"Not enough in stock: {error}.") from None
-    alert = await order_alert(store, saved.code, read_back, saved.phone, saved.lines)
-    await services.team.notify(
-        workspace_id, alert.replace("New order", "New order, typed by the team", 1)
-    )
-    services.woo.push_soon(workspace_id)
-    [out] = await with_buyers(store, [saved])
+    return await with_buyer(store, await services.orders.add_team_order(store, body))
+
+
+async def with_buyer(store: ShopStore, order: ShopOrder) -> ShopOrderOut:
+    """One order with its buyer's record."""
+    [out] = await with_buyers(store, [order])
     return out
 
 
 async def with_buyers(store: ShopStore, orders: list[ShopOrder]) -> list[ShopOrderOut]:
     """Each order with its buyer's record, counted for all of them at once."""
-    records = await store.buyer_records({o.phone for o in orders})
+    records = await store.buyer_histories({o.phone for o in orders})
     return [
         ShopOrderOut.model_validate(o).model_copy(update={"buyer": records[o.phone]})
         for o in orders
@@ -405,27 +350,14 @@ async def send_offer(body: OfferIn, store: Shop, services: Svc) -> OfferOut:
     the app's window (`tell_visitor_if_allowed`: Messenger and WhatsApp only within 24 hours), and saves
     it as a coupon only those chats may use, until `ends_at`; `update_cart` takes it off by
     itself."""
-    now = store.now()
-    if body.ends_at <= now:
-        raise InvalidConfig({"ends_at": "Pick an end time that's still to come."})
-    code = f"OFFER{await store.offers_made() + 1}"
-    try:
-        coupon = Coupon(code=code, kind=body.kind, value=body.value, ends_at=body.ends_at)
-    except ValueError as error:
-        raise InvalidConfig({"value": str(error)}) from None
-    text = one_line(body.text)
-    sent = [
-        chat
-        for chat in await store.chats_since(now - timedelta(hours=body.within_hours))
-        if await services.team.tell_visitor_if_allowed(chat, text)
-    ]
-    await store.add_offer(coupon, sent)
-    log.info("offer sent", extra={"workspace_id": store.workspace_id, "chats": len(sent)})
-    return OfferOut(code=code, sent_to=len(sent))
+    code, sent_to = await services.orders.send_offer(
+        store, body.text, body.kind, body.value, body.ends_at, body.within_hours
+    )
+    return OfferOut(code=code, sent_to=sent_to)
 
 
 @router.get("/api/shop/buyers")
-async def buyers(store: Shop, page: Paged, q: str | None = None) -> list[Buyer]:
+async def buyers(store: Shop, page: Paging, q: str | None = None) -> list[Buyer]:
     """The shop's buyers by mobile, the latest to order first, with how their orders ended,
     what they spent and where they wrote from. `q`: a mobile or a name."""
     return await store.buyers(q, limit=page.limit)

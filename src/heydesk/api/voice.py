@@ -7,7 +7,6 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-import httpx
 from aiortc import RTCIceServer
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
@@ -22,33 +21,17 @@ from heydesk import shop
 from heydesk.api.sse import frame
 from heydesk.errors import NoVoice
 from heydesk.voice.call import run_call
+from heydesk.voice.ice import ice_servers
 
 router = APIRouter(include_in_schema=False)
 handler = SmallWebRTCRequestHandler()  # keeps the open peer connections
 calls: set[asyncio.Task[None]] = set()  # running calls, so they aren't garbage-collected
-TURN_URL = "https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers"
-STUN_ONLY = [{"urls": ["stun:stun.cloudflare.com:3478"]}]
 STILL_HERE_SECONDS = 15  # a comment this often keeps a tunnel from closing a quiet stream
-
-
-async def ice_servers(request: Request) -> list[dict[str, Any]]:
-    """The relay details for one call: Cloudflare hands out passwords that last a day."""
-    settings = request.app.state.settings
-    if not settings.CLOUDFLARE_TURN_KEY_ID:
-        return STUN_ONLY
-    async with httpx.AsyncClient(timeout=10) as client:
-        res = await client.post(
-            TURN_URL.format(key_id=settings.CLOUDFLARE_TURN_KEY_ID),
-            headers={"Authorization": f"Bearer {settings.CLOUDFLARE_TURN_API_TOKEN}"},
-            json={"ttl": 86400},
-        )
-    res.raise_for_status()
-    return list(res.json()["iceServers"])
 
 
 @router.get("/api/voice/ice")
 async def ice_for_browser(request: Request) -> list[dict[str, Any]]:
-    return await ice_servers(request)
+    return await ice_servers(request.app.state.settings)
 
 
 @router.post("/api/voice/offer")
@@ -66,13 +49,15 @@ async def offer(
     if answered:
         agent = answered.agent
     else:
-        agent = await state.services.agents.by_key(key or state.dev_agent_key)  # 404 if unknown
+        agent = await state.services.agents.by_public_key(
+            key or state.dev_agent_key
+        )  # 404 if unknown
         if not shop.TAKES_VOICE:
             raise NoVoice("This agent takes no calls: chat with it instead.")
         await state.services.visitors.count_turn(
             agent, f"web:{visitor}", count=False
         )  # 429: limited
-    handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(request)])
+    handler.update_ice_servers([RTCIceServer(**s) for s in await ice_servers(state.settings)])
 
     async def handle_call(connection: SmallWebRTCConnection) -> None:
         try:
@@ -101,7 +86,7 @@ async def rings(number: str, request: Request) -> StreamingResponse:
     """The `/phone` page waits here for its mobile's calls: `ready {number}`, then a
     `ring {call, business, order}` for each one."""
     calls = request.app.state.services.calls
-    mobile = calls.clean_number(number)  # 400 if it isn't a mobile number
+    mobile = calls.parse_mobile_number(number)  # 400 if it isn't a mobile number
 
     async def stream() -> AsyncIterator[str]:
         queue = calls.wait_for_calls(mobile)

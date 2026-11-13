@@ -4,15 +4,13 @@ One webhook for every number, set once in our Meta app's dashboard; each message
 number's id. Signed and checked like Messenger's. It answers at once and the turns run after.
 """
 
-import json
-from typing import Annotated
-
-from fastapi import APIRouter, BackgroundTasks, Header, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, WorkspaceId
-from heydesk.errors import NotFound
+from heydesk.api.meta import MetaChallenge, MetaPost
+from heydesk.services.team import WHATSAPP
 
 router = APIRouter(tags=["whatsapp"])
 
@@ -85,33 +83,20 @@ async def disconnect_whatsapp(workspace_id: WorkspaceId, services: Svc) -> None:
 
 
 @router.get("/api/whatsapp", include_in_schema=False)
-async def verify_whatsapp(
-    services: Svc,
-    mode: Annotated[str, Query(alias="hub.mode")] = "",
-    token: Annotated[str, Query(alias="hub.verify_token")] = "",
-    challenge: Annotated[str, Query(alias="hub.challenge")] = "",
-) -> PlainTextResponse:
+async def verify_whatsapp(challenge: MetaChallenge) -> PlainTextResponse:
     """Meta checks the webhook once, when it's set in the Meta app's dashboard."""
-    if mode != "subscribe" or not services.channels.messenger_verify(token):
-        raise NotFound("Not found")
     return PlainTextResponse(challenge)
 
 
 @router.post("/api/whatsapp", include_in_schema=False)
 async def whatsapp_webhook(
-    request: Request,
-    background: BackgroundTasks,
-    services: Svc,
-    signature: Annotated[str, Header(alias="X-Hub-Signature-256")] = "",
+    posted: MetaPost, background: BackgroundTasks, services: Svc
 ) -> dict[str, bool]:
-    body = await request.body()
-    if not services.channels.messenger_signed(body, signature):
-        raise NotFound("Not found")
-    for entry in json.loads(body).get("entry", []):
+    for entry in posted.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value") or {}  # delivery and read statuses have no messages
             phone_id = str((value.get("metadata") or {}).get("phone_number_id"))
-            channel = await services.channel_links.whatsapp_number(phone_id)
+            channel = await services.channel_links.channel_at(WHATSAPP, phone_id)
             if channel is None:  # a number that was disconnected
                 continue
             names = {

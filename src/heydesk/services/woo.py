@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from heydesk.errors import Conflict, InvalidConfig, NotFound
 from heydesk.models import SheetLink, WooLink
-from heydesk.ports.woo import WooApi, WooStore, WooUnreachable
+from heydesk.ports.woo import WooApi, WooCredentials, WooUnreachable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
 from heydesk.shop.models import ShopOrder
@@ -108,6 +108,16 @@ def woo_order(order: ShopOrder, ids: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def find_link(s: AsyncSession, workspace_id: str) -> WooLink | None:
+    """The business's linked WooCommerce store, or None."""
+    return await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+
+
+def credentials_of(link: WooLink) -> WooCredentials:
+    """Where the linked store is and the keys to call it with."""
+    return WooCredentials(link.url, link.key, link.secret)
+
+
 class WooService:
     def __init__(
         self,
@@ -142,13 +152,13 @@ class WooService:
         local = self.local_http and urlsplit(url).hostname in LOCAL
         if not url.startswith("https://") and not local:
             raise InvalidConfig({"url": "Paste your store's address: https://…"})
-        store = WooStore(url, key.strip(), secret.strip())
+        credentials = WooCredentials(url, key.strip(), secret.strip())
         async with self.sessions() as s:
             if await s.scalar(select(SheetLink.id).where(SheetLink.workspace_id == workspace_id)):
                 raise Conflict(ONE_PRODUCT_SOURCE)
         try:
-            items = await self.api.products(store)
-            if not await self.api.can_write(store):
+            items = await self.api.products(credentials)
+            if not await self.api.can_write(credentials):
                 raise InvalidConfig({"key": READ_WRITE})
         except WooUnreachable as error:
             raise InvalidConfig({"key": str(error)}) from None
@@ -158,19 +168,19 @@ class WooService:
             raise InvalidConfig({"products": str(error)}) from None
         shop = await self.agents.store(workspace_id)
         await shop.import_woo(found, set())
-        hooks, hook_secret = await self._add_hooks(store, workspace_id)
+        hooks, hook_secret = await self._add_hooks(credentials, workspace_id)
         async with self.sessions() as s, s.begin():
-            old = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            old = await find_link(s, workspace_id)
             if old is not None:
-                dropped = (WooStore(old.url, old.key, old.secret), old.hooks)
+                dropped = (credentials_of(old), old.hooks)
                 await s.delete(old)
                 await s.flush()
             link = WooLink(
                 workspace_id=workspace_id,
                 agent_id=agent.id,
                 url=url,
-                key=store.key,
-                secret=store.secret,
+                key=credentials.key,
+                secret=credentials.secret,
                 ids=ids,
                 checked=hash_items(items),
                 synced_at=shop.now(),
@@ -186,7 +196,7 @@ class WooService:
 
     async def get(self, workspace_id: str) -> WooLink:
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None:
             raise NotFound("No WooCommerce store is linked.")
         return link
@@ -195,23 +205,23 @@ class WooService:
         """Stops syncing. The list stays and can be edited here again; orders already in Woo
         stay there."""
         async with self.sessions() as s, s.begin():
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
             if link is not None:
                 await s.delete(link)
         if link is not None:
-            await self._drop_hooks(WooStore(link.url, link.key, link.secret), link.hooks)
+            await self._drop_hooks(credentials_of(link), link.hooks)
 
     async def sync(self, workspace_id: str) -> WooLink:
         """Pushes the orders that changed, then pulls the products. Never raises for the
         store's own problems: they're `problem`."""
         link = await self.get(workspace_id)
         shop = await self.agents.store(workspace_id)
-        store = WooStore(link.url, link.key, link.secret)
+        credentials = credentials_of(link)
         async with self.lock:
-            problem = await self._push(shop, store, link)
+            problem = await self._push(shop, credentials, link)
         ids, checked = link.ids, link.checked
         try:
-            items = await self.api.products(store)
+            items = await self.api.products(credentials)
             if hash_items(items) != checked:  # the same as last time: nothing to do
                 found, ids = products_from_woo(items)
                 await shop.import_woo(found, set(link.ids) - set(ids))  # deleted in Woo
@@ -225,7 +235,7 @@ class WooService:
             if not problem:
                 saved.synced_at = shop.now()
         if problem and problem != told:
-            await self.team.notify(workspace_id, f"⚠️ Your WooCommerce store: {problem}")
+            await self.team.notify_owner(workspace_id, f"⚠️ Your WooCommerce store: {problem}")
         log.info("woo synced", extra={"workspace_id": workspace_id, "problem": bool(problem)})
         return saved
 
@@ -237,14 +247,14 @@ class WooService:
 
     async def push(self, workspace_id: str) -> None:
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None:  # not linked: nothing to write
             return
         try:
             async with self.lock:
                 await self._push(
                     await self.agents.store(workspace_id),
-                    WooStore(link.url, link.key, link.secret),
+                    credentials_of(link),
                     link,
                 )
         except Exception:
@@ -253,7 +263,7 @@ class WooService:
     async def hook_signed(self, workspace_id: str, body: bytes, signature: str) -> bool:
         """Woo signs each webhook post: base64 of its HMAC-SHA256 with the secret we gave it."""
         async with self.sessions() as s:
-            link = await s.scalar(select(WooLink).where(WooLink.workspace_id == workspace_id))
+            link = await find_link(s, workspace_id)
         if link is None or not link.hook_secret:
             return False
         digest = hmac.new(link.hook_secret.encode(), body, hashlib.sha256).digest()
@@ -301,18 +311,20 @@ class WooService:
         if not self.hook_base:
             return
         link = await self.get(workspace_id)
-        store = WooStore(link.url, link.key, link.secret)
+        credentials = credentials_of(link)
         url = f"{self.hook_base}/{workspace_id}"
         hooks = dict(link.hooks)
         secret = link.hook_secret or secrets.token_urlsafe(32)
         try:
             for topic in TOPICS:
-                found = await self.api.webhook(store, hooks[topic]) if topic in hooks else None
+                found = (
+                    await self.api.webhook(credentials, hooks[topic]) if topic in hooks else None
+                )
                 if found is None:
-                    hooks[topic] = await self.api.add_webhook(store, topic, url, secret)
+                    hooks[topic] = await self.api.add_webhook(credentials, topic, url, secret)
                 elif found.get("status") != "active" or found.get("delivery_url") != url:
                     changes = {"status": "active", "delivery_url": url}
-                    await self.api.update_webhook(store, hooks[topic], changes)
+                    await self.api.update_webhook(credentials, hooks[topic], changes)
                     log.info(
                         "woo webhook put back", extra={"workspace_id": workspace_id, "topic": topic}
                     )
@@ -325,7 +337,7 @@ class WooService:
                     saved.hooks, saved.hook_secret = hooks, secret  # a new dict, so it's seen
 
     async def _add_hooks(
-        self, store: WooStore, workspace_id: str
+        self, credentials: WooCredentials, workspace_id: str
     ) -> tuple[dict[str, int], str | None]:
         """Makes our webhooks in the store. With no public address, or a store that won't
         make them, there are none and the store is synced every few minutes instead."""
@@ -336,20 +348,20 @@ class WooService:
         try:
             for topic in TOPICS:
                 hooks[topic] = await self.api.add_webhook(
-                    store, topic, f"{self.hook_base}/{workspace_id}", secret
+                    credentials, topic, f"{self.hook_base}/{workspace_id}", secret
                 )
         except WooUnreachable:
             log.warning("woo webhooks not made", extra={"workspace_id": workspace_id})
-            await self._drop_hooks(store, hooks)
+            await self._drop_hooks(credentials, hooks)
             return {}, None
         return hooks, secret
 
-    async def _drop_hooks(self, store: WooStore, hooks: dict[str, int]) -> None:
+    async def _drop_hooks(self, credentials: WooCredentials, hooks: dict[str, int]) -> None:
         """Deletes our webhooks from the store. One it won't delete is left: it posts to a
         workspace with no link, which gets a 404, and Woo turns it off after 5."""
         for webhook_id in hooks.values():
             with contextlib.suppress(WooUnreachable):
-                await self.api.delete_webhook(store, webhook_id)
+                await self.api.delete_webhook(credentials, webhook_id)
 
     def _run_in_background(self, work: Coroutine[Any, Any, None]) -> None:
         """Runs `work` in the background, kept so it isn't dropped halfway."""
@@ -357,18 +369,18 @@ class WooService:
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
 
-    async def _push(self, shop: ShopStore, store: WooStore, link: WooLink) -> str:
+    async def _push(self, shop: ShopStore, credentials: WooCredentials, link: WooLink) -> str:
         """Writes each order that changed. Stops at the first that can't be written, which
         is tried again next sync; returns its problem ("" when all went)."""
         for order in await shop.orders_for_woo(link.created_at):
             status = WOO_STATUS.get(order.status)
             try:
                 if order.woo_id is None and status not in (None, "cancelled"):
-                    woo_id = await self.api.create_order(store, woo_order(order, link.ids))
+                    woo_id = await self.api.create_order(credentials, woo_order(order, link.ids))
                     await shop.mark_sent_to_woo(order.id, woo_id, order.status)
                     continue
                 if order.woo_id is not None and status and status != WOO_STATUS.get(order.woo_sent):
-                    await self.api.set_status(store, order.woo_id, status)
+                    await self.api.set_status(credentials, order.woo_id, status)
             except KeyError:
                 return (
                     f"{order.code} wasn't written: one of its products isn't in the store any more."

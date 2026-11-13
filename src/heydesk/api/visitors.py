@@ -58,7 +58,7 @@ async def change_visitor(
     moderator. Their messages run no turn and cost nothing either way."""
     emails = {u.id: u.email for u in await services.members.members(workspace_id)}
     by = emails.get(current_user.user_id, "HeyDesk")  # an admin isn't on the team
-    visitor = await services.visitors.change(
+    visitor = await services.visitors.update(
         workspace_id, visitor_id, by, body.blocked, body.ai_off
     )
     return visitor_out(visitor, services.visitors.now())

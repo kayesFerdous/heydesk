@@ -1,7 +1,7 @@
 """The `PaymentGateway` port: taking a payment online. Two gateways sit behind it:
 SSLCommerz (cards, mobile wallets, banks) and bKash on its own.
 
-Every call takes the business's own `Account`: each business is paid into its own
+Every call takes the business's own `GatewayAccount`: each business is paid into its own
 store, so there's no one account for the platform. The gateway's word is the only proof a
 payment happened: what a visitor's browser posts back is checked with it first.
 """
@@ -18,7 +18,7 @@ class PaymentUnavailable(Exception):
 
 
 @dataclass(frozen=True)
-class Account:
+class GatewayAccount:
     """A business's account with one gateway. SSLCommerz needs a store id and its password;
     bKash an app key and secret, a username and a password."""
 
@@ -56,15 +56,15 @@ class Paid:
 
 
 class PaymentGateway(Protocol):
-    async def verify(self, account: Account) -> None:
+    async def verify_account(self, account: GatewayAccount) -> None:
         """Raises PaymentUnavailable, with the gateway's reason, unless it accepts the account."""
         ...
 
-    async def start(self, account: Account, checkout: Checkout) -> str:
+    async def start(self, account: GatewayAccount, checkout: Checkout) -> str:
         """The gateway's payment page, to send the buyer to."""
         ...
 
-    async def check(self, account: Account, payment_id: str) -> Paid | None:
+    async def fetch_payment(self, account: GatewayAccount, payment_id: str) -> Paid | None:
         """Asks the gateway about a payment it posted back. None unless it went through."""
         ...
 

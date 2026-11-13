@@ -11,11 +11,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from heydesk.errors import NotFound
 from heydesk.models import (
     Agent,
     AuditEvent,
-    Channel,
+    ChannelLink,
     Conversation,
     Document,
     PaymentAccount,
@@ -24,8 +23,9 @@ from heydesk.models import (
     User,
     Workspace,
 )
+from heydesk.services.billing import get_workspace
 
-PAGE = 200
+PAGE_SIZE = 200
 DAY_ZONE = ZoneInfo("Asia/Dhaka")  # the overview's days are Dhaka's: every business is there today
 BUSIEST = 5
 
@@ -34,8 +34,8 @@ BUSIEST = 5
 class BusinessRow:
     id: str
     name: str
-    status: str
-    suspended_reason: str
+    status: str  # "active" or "suspended"
+    suspended_reason: str  # for admins only; empty while active
     kind: str | None  # "shop"; None: no agent yet
     owner_email: str | None
     conversations: int
@@ -65,16 +65,32 @@ class Sheet:
 
 
 @dataclass(frozen=True)
+class Totals:
+    """What the agents did in a stretch of days. Cost counts only priced providers."""
+
+    turns: int
+    conversations: int  # started in those days
+    input_tokens: int
+    cached_tokens: int  # of the input: the share Groq's prompt cache served
+    output_tokens: int
+    cost_micros: int  # millionths of a dollar; priced providers only (Groq)
+    failed: int  # turns with an error: the visitor got the polite line
+    handed_off: int
+    first_reply_ms: int | None  # the median turn's first words
+    slow_first_reply_ms: int | None  # the 95th percentile's
+
+
+@dataclass(frozen=True)
 class BusinessDetail:
     """One business at a glance, for the admin (no customer's words, only counts)."""
 
     id: str
     name: str
-    status: str
-    suspended_reason: str  # empty while active
+    status: str  # "active" or "suspended"
+    suspended_reason: str  # for admins only; empty while active
     kind: str | None  # "shop"; None: no agent yet
     agent_name: str | None
-    public_key: str | None  # the chat link's key
+    public_key: str | None  # the chat link is /chat/<public_key>
     created_at: datetime
     owners: list[Owner]
     channels: list[ConnectedChannel]
@@ -85,28 +101,12 @@ class BusinessDetail:
     conversations_7_days: int
     waiting: int  # handed to a person and not yet answered
     last_activity_at: datetime | None
-    usage: "Totals"  # its turns in the last 7 days
-
-
-@dataclass(frozen=True)
-class Totals:
-    """What the agents did in a stretch of days. Cost counts only priced providers."""
-
-    turns: int
-    conversations: int  # started in those days
-    input_tokens: int
-    cached_tokens: int  # of the input: the share Groq's prompt cache served
-    output_tokens: int
-    cost_micros: int
-    failed: int  # turns with an error: the visitor got the polite line
-    handed_off: int
-    first_reply_ms: int | None  # the median turn's first words
-    slow_first_reply_ms: int | None  # the 95th percentile's
+    usage: Totals  # its turns in the last 7 days
 
 
 @dataclass(frozen=True)
 class DayRow:
-    day: date
+    day: date  # Dhaka's
     turns: int
     conversations: int
     cost_micros: int
@@ -128,7 +128,7 @@ class Overview:
     today: Totals
     period: Totals
     per_day: list[DayRow]  # oldest first, every day even an empty one
-    busiest: list[BusyBusiness]
+    busiest: list[BusyBusiness]  # the most turns first, up to 5
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,7 @@ class FailedTurn:
     at: datetime
     workspace_id: str
     business_name: str
-    business_status: str
+    business_status: str  # "active" or "suspended"
     conversation_id: str
     channel: str
     llm: str
@@ -169,8 +169,7 @@ class AdminService:
 
     async def require_business(self, workspace_id: str) -> None:
         async with self.sessions() as s:
-            if await s.get(Workspace, workspace_id) is None:
-                raise NotFound("There's no such business.")
+            await get_workspace(s, workspace_id)
 
     async def businesses(self) -> list[BusinessRow]:
         """Newest first."""
@@ -195,7 +194,7 @@ class AdminService:
             .outerjoin(owner, owner.c.workspace_id == Workspace.id)
             .outerjoin(chats, chats.c.workspace_id == Workspace.id)
             .order_by(Workspace.created_at.desc())
-            .limit(PAGE)
+            .limit(PAGE_SIZE)
         )
         async with self.sessions() as s:
             rows = (await s.execute(query)).all()
@@ -225,9 +224,7 @@ class AdminService:
         week_ago = self.since(7)
         chats = select(func.count()).where(Conversation.workspace_id == workspace_id)
         async with self.sessions() as s:
-            workspace = await s.get(Workspace, workspace_id)
-            if workspace is None:
-                raise NotFound("There's no such business.")
+            workspace = await get_workspace(s, workspace_id)
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))
             owners = await s.scalars(
                 select(User)
@@ -235,9 +232,9 @@ class AdminService:
                 .order_by(User.created_at)
             )
             channels = await s.scalars(
-                select(Channel)
-                .where(Channel.workspace_id == workspace_id)
-                .order_by(Channel.created_at)
+                select(ChannelLink)
+                .where(ChannelLink.workspace_id == workspace_id)
+                .order_by(ChannelLink.created_at)
             )
             account = await s.scalar(
                 select(PaymentAccount).where(PaymentAccount.workspace_id == workspace_id)
@@ -339,7 +336,7 @@ class AdminService:
         self,
         workspace_id: str | None = None,
         *,
-        limit: int = PAGE,
+        limit: int = PAGE_SIZE,
         before: datetime | None = None,
     ) -> list[FailedTurn]:
         """Newest first, every business's or one's. The next page is `before=` the last `at`."""
@@ -372,9 +369,7 @@ class AdminService:
     async def set_business_status(self, workspace_id: str, status: str, reason: str = "") -> None:
         """A reason goes with a suspension; reactivating clears it."""
         async with self.sessions() as s, s.begin():
-            business = await s.get(Workspace, workspace_id)
-            if business is None:
-                raise NotFound("There's no such business.")
+            business = await get_workspace(s, workspace_id)
             business.status = status
             business.suspended_reason = reason.strip() if status == "suspended" else ""
 
@@ -384,13 +379,17 @@ class AdminService:
             select(User, Workspace.name)
             .outerjoin(Workspace, Workspace.id == User.workspace_id)
             .order_by(User.created_at.desc())
-            .limit(PAGE)
+            .limit(PAGE_SIZE)
         )
         async with self.sessions() as s:
             return [(user, name) for user, name in (await s.execute(query)).all()]
 
     async def audit_log(
-        self, workspace_id: str | None = None, *, limit: int = PAGE, before: datetime | None = None
+        self,
+        workspace_id: str | None = None,
+        *,
+        limit: int = PAGE_SIZE,
+        before: datetime | None = None,
     ) -> list[tuple[AuditEvent, str]]:
         """Newest first, with the admin's email. The next page is `before=` the last `at`."""
         query = select(AuditEvent, User.email).join(User, User.id == AuditEvent.actor_id)

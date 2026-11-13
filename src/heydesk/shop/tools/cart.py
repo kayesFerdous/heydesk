@@ -7,21 +7,16 @@ from pydantic import BaseModel, Field
 
 from heydesk.runtime.speech import money
 from heydesk.runtime.tool import Tool, ToolContext, ToolResult, fail
+from heydesk.shop.checkout import CartLine, lines_with_prices, stock_problem
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.orders import (
     lines_text,
+    subtotal_of,
 )
-from heydesk.shop.products import OWN_STOCK, Product
+from heydesk.shop.products import Product
 from heydesk.shop.store import ShopStore
 
 type Ctx = ToolContext[ShopStore]
-
-
-class CartLine(BaseModel):
-    code: str = Field(description="The product's code, shown in [brackets]")
-    quantity: int = Field(ge=1, le=20)
-    size: str = Field(default="", description="One of the product's sizes, if it has any")
-    colour: str = Field(default="", description="One of the product's colours, if it has any")
 
 
 class UpdateCartInput(BaseModel):
@@ -33,79 +28,6 @@ class UpdateCartInput(BaseModel):
     lines: list[CartLine] = Field(
         description="Every product in the order, not just the change. An empty list clears it."
     )
-
-
-def lines_with_prices(
-    products: dict[str, Product], given: list[CartLine]
-) -> list[dict[str, Any]] | ToolResult:
-    """The lines as an order keeps them, with the shop's prices, the same product, size and
-    colour added up; or what's wrong with them. Stock isn't checked here."""
-    unknown = [line.code for line in given if line.code not in products]
-    if unknown:
-        return fail(f"Not in the shop: {', '.join(unknown)}. Use the codes in [brackets].")
-
-    wanted: dict[tuple[str, str, str], int] = {}  # the same product, size and colour is added up
-    problems = []
-    choices: list[str] = []  # buttons for the first question: what's in stock
-    for line in given:
-        product = products[line.code]
-        size = None
-        try:
-            size = product.match_option("size", line.size)
-            key = (line.code, size, product.match_option("colour", line.colour))
-        except ValueError as error:
-            problems.append(str(error))
-            choices = choices or (
-                product.in_stock("size", colour=line.colour)
-                if size is None
-                else product.in_stock("colour", size=size)
-            )
-            continue
-        wanted[key] = wanted.get(key, 0) + line.quantity
-    if problems:
-        return ToolResult(ok=False, data={"error": " ".join(problems)}, choices=choices)
-    return [
-        {
-            "code": code,
-            "name": products[code].name,
-            "size": size,
-            "colour": colour,
-            "quantity": quantity,
-            "price": products[code].price,
-        }
-        for (code, size, colour), quantity in wanted.items()
-    ]
-
-
-def stock_problem(
-    products: dict[str, Product],
-    lines: list[dict[str, Any]],
-    held: list[dict[str, Any]] | None = None,
-) -> str:
-    """What there isn't enough of for `lines`, for the model to tell the visitor; "" when
-    there's enough. `held` are an order's own items, still counted as on the shelf for it."""
-    needed: dict[tuple[str, int], int] = {}  # (code, counter) → how many, from each count
-    for line, sign in [(line, 1) for line in lines] + [(line, -1) for line in held or []]:
-        product = products.get(line["code"])
-        stock_index = product.stock_index(line["size"], line["colour"]) if product else None
-        if stock_index is not None:
-            key = (line["code"], stock_index)
-            needed[key] = needed.get(key, 0) + sign * line["quantity"]
-    short = []
-    for (code, stock_index), quantity in needed.items():
-        product, left = products[code], products[code].stock_at(stock_index)
-        if quantity > left:
-            others = (
-                f" (left: {product.available_variants()})"
-                if stock_index != OWN_STOCK and product.available_variants()
-                else ""
-            )
-            short.append(
-                f"{product.display_name(stock_index)}: "
-                + (f"only {left} left" if left else "sold out")
-                + others
-            )
-    return f"Not enough in stock. {'; '.join(short)}. Tell the visitor." if short else ""
 
 
 async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
@@ -120,7 +42,7 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
 
     config = cast(ShopConfig, ctx.agent)
     currency = config.currency
-    subtotal = sum(line["price"] * line["quantity"] for line in lines)
+    subtotal = subtotal_of(lines)
     said = [
         f"{lines_text([line])} = {money(line['price'] * line['quantity'], currency)}"
         for line in lines
@@ -139,7 +61,7 @@ async def update_cart(ctx: Ctx, args: UpdateCartInput) -> ToolResult:
         state["offered"] = [*(ctx.state.get("offered") or []), *(p.code for p in offer)]
     kept = ((ctx.state.get("cart") or {}).get("coupon") or {}).get("code", "")
     # the buyer's code, the cart's, or an offer sent to this chat
-    code = "".join(args.coupon.split()).upper() or kept or await ctx.store.offer_code()
+    code = "".join(args.coupon.split()).upper() or kept or await ctx.store.active_offer_code()
     if not code or not subtotal:
         return ToolResult(ok=True, data=data, state=state)
     coupon = await ctx.store.coupon(code)  # Python checks it and takes it off

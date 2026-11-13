@@ -51,8 +51,9 @@ from heydesk.ports.woo import WooApi
 from heydesk.services import Services
 from heydesk.services.admin import AdminService
 from heydesk.services.agents import AgentService
+from heydesk.services.assist import AssistService
 from heydesk.services.billing import BillingService
-from heydesk.services.calls import CallService
+from heydesk.services.calls import ConfirmationCallService
 from heydesk.services.channel_links import ChannelLinkService
 from heydesk.services.channels import ChannelService
 from heydesk.services.conversations import ConversationService
@@ -61,6 +62,7 @@ from heydesk.services.inbox import InboxService
 from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.live import LiveHub, watch
 from heydesk.services.members import MemberService
+from heydesk.services.orders import OrderService
 from heydesk.services.payments import PaymentService
 from heydesk.services.photos import PhotoService
 from heydesk.services.rate_limits import RateLimiter
@@ -215,7 +217,7 @@ def build_services(
     gateways = payments or build_payments(settings)
     knowledge = KnowledgeService(sessions, embedder, store, now)
     photos = build_photos(settings, embedder, photo_index, fetch_photo)
-    agents = AgentService(sessions, knowledge, photos, now)
+    agents = AgentService(sessions, knowledge, photos, now, settings.public_url)
     telegram = telegram or TelegramBot()
     messenger = messenger or MessengerGraph()
     whatsapp = whatsapp or WhatsAppCloud()
@@ -231,12 +233,13 @@ def build_services(
         local_http=settings.APP_ENV == "development",
         hook_base=f"{public}/api/woo/hook" if public.startswith("https://") else "",
     )
-    calls = CallService(sessions, agents, team, llm, settings, now)
+    calls = ConfirmationCallService(sessions, agents, team, llm, settings, now)
+    orders = OrderService(sessions, agents, team, woo_service, now)
     inbox = InboxService(sessions, llm, team, now)
     conversations = ConversationService(
         sessions,
         llm,
-        knowledge,
+        agents,
         photos,
         team,
         inbox,
@@ -253,6 +256,7 @@ def build_services(
     return Services(
         admin=AdminService(sessions, now),
         agents=agents,
+        assist=AssistService(sessions, llm, agents, settings, now),
         billing=BillingService(sessions, gateways, settings, now),
         calls=calls,
         channel_links=ChannelLinkService(
@@ -287,7 +291,8 @@ def build_services(
         live=live,
         members=MemberService(sessions, users, now),
         photos=photos,
-        payments=PaymentService(sessions, gateways, team, woo_service, settings, now),
+        orders=orders,
+        payments=PaymentService(sessions, gateways, team, orders, settings, now),
         users=users,
         visitors=visitors,
         rate_limits=rate_limits,

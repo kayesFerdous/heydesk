@@ -125,7 +125,7 @@ async def shop_prompt(config: ShopConfig, store: ShopStore) -> str:
         )
 
     # One way to confirm each order: the advance in its area, the shop's call, or none
-    pays = await store.pays_first(config)
+    pays = await store.takes_payment_first(config)
     # Each area's districts, not every place in it
     delivery = ["# Delivery", "The charge depends on the area:"]
     for zone in config.delivery:
@@ -216,7 +216,7 @@ def shop_note(config: ShopConfig, state: dict[str, Any]) -> str:
     return note
 
 
-async def shop_missing(config: ShopConfig, store: ShopStore) -> list[str]:
+async def missing_setup(config: ShopConfig, store: ShopStore) -> list[str]:
     """An online shop needs no address or opening hours: it answers all day."""
     missing = []
     if not await store.products():

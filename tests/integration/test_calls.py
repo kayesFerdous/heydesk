@@ -27,7 +27,7 @@ async def shop_with_calls(services: Services, **settings: Any) -> LiveAgent:
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     calls = {"enabled": True, "wait_minutes": 0, **settings}
     await services.agents.update(DEV_WORKSPACE_ID, {"calls": calls})
-    return await services.agents.by_key("dev-shop")
+    return await services.agents.by_public_key("dev-shop")
 
 
 async def order(services: Services, agent: LiveAgent, phone: str = MOBILE) -> ShopOrder:
@@ -85,7 +85,7 @@ async def test_a_new_order_rings_the_buyer_and_only_a_yes_on_the_call_confirms_i
 ) -> None:
     calls = world.services.calls
     agent = await shop_with_calls(world.services)
-    phone = calls.wait_for_calls(calls.clean_number("+880 1712-345678"))  # the /phone page
+    phone = calls.wait_for_calls(calls.parse_mobile_number("+880 1712-345678"))  # the /phone page
     placed = await order(world.services, agent)
     [queued] = await calls.find(DEV_WORKSPACE_ID)
     assert (queued.status, queued.code, queued.phone) == ("queued", placed.code, MOBILE)
@@ -195,7 +195,7 @@ async def test_confirm_order_only_works_on_the_shops_call(world: World) -> None:
         str(placed.conversation_id)
     )
     with pytest.raises(HeyDeskError, match="11 digits"):
-        world.services.calls.clean_number("12345")
+        world.services.calls.parse_mobile_number("12345")
 
 
 async def test_the_owner_sees_and_steers_the_queue(app: FastAPI, client: AsyncClient) -> None:

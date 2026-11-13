@@ -21,7 +21,7 @@ from heydesk.models import SheetLink, WooLink
 from heydesk.ports.sheets import FetchCsv, SheetUnreadable
 from heydesk.services.agents import AgentService
 from heydesk.services.team import TeamService
-from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest
+from heydesk.shop.csv_import import PRODUCT_COLUMNS, Suggestion, products_from_csv, suggest_columns
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class SheetService:
     async def suggest(self, workspace_id: str, url: str) -> Suggestion:
         """The sheet's columns and their match to a product's fields, for the owner to check."""
         await self.agents.get(workspace_id)  # 404 until it has an agent
-        return suggest(await self._read(url), PRODUCT_COLUMNS)
+        return suggest_columns(await self._read(url), PRODUCT_COLUMNS)
 
     async def link(
         self, workspace_id: str, url: str, mapping: dict[str, str], dry_run: bool = False
@@ -136,7 +136,9 @@ class SheetService:
             if not problem:
                 saved.synced_at = store.now()
         if problem and problem != told:
-            await self.team.notify(workspace_id, f"⚠️ Your Google Sheet wasn't read: {problem}")
+            await self.team.notify_owner(
+                workspace_id, f"⚠️ Your Google Sheet wasn't read: {problem}"
+            )
         log.info("sheet synced", extra={"workspace_id": workspace_id, "problem": bool(problem)})
         return saved
 

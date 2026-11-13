@@ -102,7 +102,7 @@ async def test_an_owner_cant_set_what_the_shop_doesnt_have(client: AsyncClient) 
 async def test_edits_are_live_from_the_next_message(app: FastAPI, client: AsyncClient) -> None:
     await client.patch("/api/agent", json={"faq": "Open on Eid.", "notes": "Be formal."})
 
-    live = await app.state.services.agents.by_key(DEV_KEY)
+    live = await app.state.services.agents.by_public_key(DEV_KEY)
     assert (live.config.faq, live.config.notes) == ("Open on Eid.", "Be formal.")
 
 

@@ -22,7 +22,7 @@ from heydesk.services.knowledge import KnowledgeService
 from heydesk.services.photos import PhotoService
 from heydesk.shop.config import ShopConfig
 from heydesk.shop.products import Product
-from heydesk.shop.prompt import shop_missing
+from heydesk.shop.prompt import missing_setup
 from heydesk.shop.store import ShopStore
 
 log = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class AgentInfo:
     missing: list[str]  # what the owner still has to fill in, in plain words
 
 
-def validate(data: dict[str, Any]) -> ShopConfig:
+def validate_config(data: dict[str, Any]) -> ShopConfig:
     """Runs on every save. Problems come back per field."""
     try:
         return ShopConfig.model_validate(data)
@@ -72,11 +72,13 @@ class AgentService:
         knowledge: KnowledgeService,
         photos: PhotoService,
         now: Callable[[], datetime],
+        public_url: str = "",
     ) -> None:
         self.sessions = sessions
         self.knowledge = knowledge
         self.photos = photos
         self.now = now
+        self.public_url = public_url  # where a store's links start: the payment and order pages
 
     async def create(
         self, workspace_id: str, fields: dict[str, Any], *, public_key: str | None = None
@@ -86,7 +88,7 @@ class AgentService:
             business = await s.get(Workspace, workspace_id)
         name = business.name if business else workspace_id
         # A business can start with no fields: the name comes from signup
-        config = validate({"business_name": name, "name": f"{name} assistant", **fields})
+        config = validate_config({"business_name": name, "name": f"{name} assistant", **fields})
         now = self.now()
         agent = Agent(
             workspace_id=workspace_id,
@@ -106,7 +108,7 @@ class AgentService:
         """Top-level fields in `patch` replace the config's. Live from the next message."""
         async with self.sessions() as s, s.begin():
             agent = await self._get(s, workspace_id)
-            config = validate({**agent.config, **patch})
+            config = validate_config({**agent.config, **patch})
             agent.config = config.model_dump(
                 mode="json", exclude_unset=True
             )  # a new dict, so SQLAlchemy sees it
@@ -118,9 +120,9 @@ class AgentService:
         async with self.sessions() as s:
             agent = await self._get(s, workspace_id)
         config = ShopConfig.model_validate(agent.config)
-        store = ShopStore(self.sessions, workspace_id, self.now)
-        missing = await shop_missing(config, store)
-        if config.pay_first and not await store.pays_first(config):
+        store = self.build_store(workspace_id)
+        missing = await missing_setup(config, store)
+        if config.any_zone_pays_first and not await store.takes_payment_first(config):
             missing.append("Connect SSLCommerz or bKash to take payments first.")
         return AgentInfo(agent.id, agent.public_key, config, missing)
 
@@ -128,9 +130,23 @@ class AgentService:
         """The business's data, for its owner's routes. 404 until it has an agent."""
         async with self.sessions() as s:
             await self._get(s, workspace_id)
-        return ShopStore(self.sessions, workspace_id, self.now, photos=self.photos)
+        return self.build_store(workspace_id)
 
-    async def by_key(self, key: str) -> LiveAgent:
+    def build_store(self, workspace_id: str, conversation_id: str | None = None) -> ShopStore:
+        """The business's data, always built the same way, so no store is missing a part:
+        with the documents' search, the photo importer and the address its links start with.
+        A turn's tools get one for their `conversation_id`, so what they save is linked to it."""
+        return ShopStore(
+            self.sessions,
+            workspace_id,
+            self.now,
+            conversation_id=conversation_id,
+            knowledge=self.knowledge,
+            public_url=self.public_url,
+            photos=self.photos,
+        )
+
+    async def by_public_key(self, key: str) -> LiveAgent:
         return await self._live(Agent.public_key == key)
 
     async def by_workspace(self, workspace_id: str) -> LiveAgent:
@@ -169,7 +185,7 @@ class AgentService:
             agent = await s.scalar(select(Agent).where(Agent.workspace_id == DEV_WORKSPACE_ID))
             if agent is not None:
                 agent.public_key = key
-        store = ShopStore(self.sessions, DEV_WORKSPACE_ID, self.now)
+        store = self.build_store(DEV_WORKSPACE_ID)
         products = seed.pop("products", [])  # the rest of the seed is the config
         await store.replace_products(TypeAdapter(list[Product]).validate_python(products))
         if agent is None:
@@ -177,10 +193,10 @@ class AgentService:
         else:
             async with self.sessions() as s, s.begin():
                 saved = await self._get(s, DEV_WORKSPACE_ID)
-                saved.config = validate(seed).model_dump(mode="json", exclude_unset=True)
+                saved.config = validate_config(seed).model_dump(mode="json", exclude_unset=True)
                 saved.name = str(saved.config["name"])
         log.info("dev agent ready", extra={"public_key": key})
-        return await self.by_key(key)
+        return await self.by_public_key(key)
 
     async def _get(self, s: AsyncSession, workspace_id: str) -> Agent:
         agent = await s.scalar(select(Agent).where(Agent.workspace_id == workspace_id))

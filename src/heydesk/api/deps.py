@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from heydesk.errors import Forbidden, HeyDeskError, NotFound, Unauthorized
 from heydesk.services import Services
 from heydesk.services.users import CurrentUser
-from heydesk.shop.records import PAGE  # the most rows one list request returns
+from heydesk.shop.records import PAGE_SIZE  # the most rows one list request returns
+from heydesk.shop.store import ShopStore
 
 bearer = HTTPBearer(auto_error=False)  # Swagger's "Authorize" button takes the token
 SESSION_COOKIE = "heydesk_session"  # the browser's copy of the token; page scripts can't read it
@@ -73,14 +74,14 @@ async def current_workspace(
     if current_user.role == "moderator":
         if not await services.users.still_moderator(current_user):
             raise Unauthorized("Log in again.")  # removed from the team: out at once
-        if owners_only(request.method, path):
+        if is_owner_only_route(request.method, path):
             raise Forbidden("Only the business's owner can do this.")
     yield current_user.workspace_id
     if request.method != "GET":  # reached only when the route didn't raise
-        await services.members.record(current_user, action, target)
+        await services.members.record_activity(current_user, action, target)
 
 
-def owners_only(method: str, path: str) -> bool:
+def is_owner_only_route(method: str, path: str) -> bool:
     """The team, billing and any change to the agent's settings or channels are the
     owner's. A moderator gets the rest: the inbox, the records, the lists, and reading the
     settings and channels, but change none of them."""
@@ -114,18 +115,18 @@ async def admin_only(
 
 
 @dataclass(frozen=True)
-class Page:
+class PageQuery:
     """Which slice of a newest-first list to return: up to `limit` rows, all older than
     `before`. To see more, ask again with `before` set to the last row's time."""
 
-    limit: int = PAGE
+    limit: int = PAGE_SIZE
     before: datetime | None = None
 
 
-def page(
-    limit: Annotated[int, Query(ge=1, le=PAGE)] = PAGE, before: datetime | None = None
-) -> Page:
-    return Page(limit, before)
+def page_query(
+    limit: Annotated[int, Query(ge=1, le=PAGE_SIZE)] = PAGE_SIZE, before: datetime | None = None
+) -> PageQuery:
+    return PageQuery(limit, before)
 
 
 type Svc = Annotated[Services, Depends(get_services)]
@@ -135,8 +136,16 @@ type WorkspaceId = Annotated[str, Depends(current_workspace, scope="function")]
 # Who is logged in: a `CurrentUser` from their token, not the `User` row
 type LoggedInUser = Annotated[CurrentUser, Depends(get_current_user)]
 type Admin = Annotated[CurrentUser, Depends(admin_only)]
-type Paged = Annotated[Page, Depends(page)]
+type Paging = Annotated[PageQuery, Depends(page_query)]
 type ClientIp = Annotated[str, Depends(client_ip)]
+
+
+async def shop_store(services: Svc, workspace_id: WorkspaceId) -> ShopStore:
+    """The data of the business the request is for. 404 until the business has an agent."""
+    return await services.agents.store(workspace_id)
+
+
+type Shop = Annotated[ShopStore, Depends(shop_store)]
 
 
 class StatusIn(BaseModel):

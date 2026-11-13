@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from heydesk.api.deps import LoggedInUser, Paged, Svc, WorkspaceId
+from heydesk.api.deps import LoggedInUser, Paging, Svc, WorkspaceId
 from heydesk.api.sse import live_frames
 from heydesk.api.visitors import VisitorOut, visitor_out
 from heydesk.models import Conversation
@@ -50,6 +50,14 @@ async def conversations_out(
             "preview": said[-1][:PREVIEW_CHARS] if said else "",
         }
         out.append(ConversationOut.model_validate(c).model_copy(update=update))
+    return out
+
+
+async def conversation_out(
+    services: Services, workspace_id: str, conversation: Conversation
+) -> ConversationOut:
+    """One conversation, as `conversations_out` gives each."""
+    [out] = await conversations_out(services, workspace_id, [conversation])
     return out
 
 
@@ -103,7 +111,7 @@ async def live(services: Svc, workspace_id: WorkspaceId) -> StreamingResponse:
 async def conversations(
     services: Svc,
     workspace_id: WorkspaceId,
-    page: Paged,
+    page: Paging,
     current_user: LoggedInUser,
     status: Literal["active", "needs_human", "human"] | None = None,
     channel: Literal["web", "voice", "telegram", "messenger", "whatsapp"] | None = None,
@@ -164,7 +172,7 @@ async def conversation(
     more = limit is not None and len(said) > limit
     if limit is not None:
         said = said[-limit:]
-    [head] = await conversations_out(services, workspace_id, [conversation])
+    head = await conversation_out(services, workspace_id, conversation)
     found = (
         await services.visitors.find(
             workspace_id, visitor_key(conversation.channel, conversation.contact)
@@ -192,12 +200,8 @@ async def hand_back(
     conversation_id: str, body: HandBackIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """Marks a hand-off handled. 409 `invalid_transition` if nobody was waiting."""
-    [handled] = await conversations_out(
-        services,
-        workspace_id,
-        [await services.inbox.hand_back(workspace_id, conversation_id)],
-    )
-    return handled
+    conversation = await services.inbox.hand_back(workspace_id, conversation_id)
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class DoneIn(BaseModel):
@@ -209,12 +213,8 @@ async def mark_done(
     conversation_id: str, body: DoneIn, services: Svc, workspace_id: WorkspaceId
 ) -> ConversationOut:
     """Done hides the chat until the visitor writes again; `false` shows it again."""
-    [marked] = await conversations_out(
-        services,
-        workspace_id,
-        [await services.inbox.mark_done(workspace_id, conversation_id, body.done)],
-    )
-    return marked
+    conversation = await services.inbox.mark_done(workspace_id, conversation_id, body.done)
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class SnoozeIn(BaseModel):
@@ -227,12 +227,8 @@ async def snooze(
 ) -> ConversationOut:
     """Hides the chat until `until`, when it comes back and the owner gets an alert.
     A 422 for a time not in the next 30 days."""
-    [snoozed] = await conversations_out(
-        services,
-        workspace_id,
-        [await services.inbox.snooze(workspace_id, conversation_id, body.until)],
-    )
-    return snoozed
+    conversation = await services.inbox.snooze(workspace_id, conversation_id, body.until)
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class LabelsIn(BaseModel):
@@ -245,8 +241,7 @@ async def set_labels(
 ) -> ConversationOut:
     """The chat's labels, the whole list; `?label=` on the list filters by one."""
     conversation = await services.inbox.set_labels(workspace_id, conversation_id, body.labels)
-    [labelled] = await conversations_out(services, workspace_id, [conversation])
-    return labelled
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class NoteIn(BaseModel):
@@ -302,8 +297,7 @@ async def reply(
     the chat is taken over. On Messenger and WhatsApp only within 24 hours of the
     visitor's last message: Meta refuses it after, and nothing reaches them."""
     conversation = await services.inbox.team_reply(workspace_id, conversation_id, body.text)
-    [replied] = await conversations_out(services, workspace_id, [conversation])
-    return replied
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class AssistIn(BaseModel):
@@ -323,7 +317,7 @@ async def assist(
     next reply, for the team to check and send). No tools, nothing added or sent; traced and
     billed as a turn. A 503 when the model didn't answer."""
     agent = await services.agents.by_workspace(workspace_id)
-    text = await services.conversations.assist(agent, conversation_id, body.kind, body.question)
+    text = await services.assist.write(agent, conversation_id, body.kind, body.question)
     return AssistOut(text=text)
 
 
@@ -338,9 +332,8 @@ async def take_over(
     """The inbox's *Take over* switch, as "." in Business Suite or on Telegram: the
     agent stays quiet in the chat until it's switched off, or the team is quiet for
     TAKEOVER_QUIET_MINUTES."""
-    conversation = await services.inbox.take_over(workspace_id, conversation_id, body.on)
-    [taken] = await conversations_out(services, workspace_id, [conversation])
-    return taken
+    conversation = await services.inbox.set_taken_over(workspace_id, conversation_id, body.on)
+    return await conversation_out(services, workspace_id, conversation)
 
 
 class AssigneeIn(BaseModel):
@@ -361,5 +354,4 @@ async def assign(
     conversation = await services.inbox.assign(
         workspace_id, conversation_id, current_user, body.user_id
     )
-    [assigned] = await conversations_out(services, workspace_id, [conversation])
-    return assigned
+    return await conversation_out(services, workspace_id, conversation)

@@ -2,15 +2,18 @@
 payment the gateway vouches for, for the right amount, places it. The shop takes the delivery
 charge in the areas that pay first, and that payment confirms the order."""
 
+import html
+import re
 from typing import Any, cast
 
+import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import text
 
 from heydesk.adapters.payments.fake import FakePayments
 from heydesk.ports.llm import ToolCall
-from heydesk.ports.payments import Account, Paid
+from heydesk.ports.payments import GatewayAccount, Paid
 from heydesk.services import Services
 from heydesk.services.agents import DEV_WORKSPACE_ID, LiveAgent
 from heydesk.shop.models import ShopOrder
@@ -32,9 +35,9 @@ async def paying_first(services: Services, **settings: object) -> tuple[LiveAgen
     connected, and its fake gateway. A shop pays first inside Dhaka only."""
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await services.agents.update(DEV_WORKSPACE_ID, {**pay_first(services), **settings})
-    store = Account("nakshi-test", "store-password", True)
+    store = GatewayAccount("nakshi-test", "store-password", True)
     await services.payments.connect(DEV_WORKSPACE_ID, "sslcommerz", store)
-    agent = await services.agents.by_key("dev-shop")
+    agent = await services.agents.by_public_key("dev-shop")
     return agent, cast(FakePayments, services.payments.gateways["sslcommerz"])
 
 
@@ -90,12 +93,12 @@ async def test_the_shop_order_waits_for_a_checked_payment_of_its_delivery_charge
     gateway.paid["short"] = Paid(order.id, 1000, "BDT", "B1")  # ৳10, not ৳60
     gateway.paid["elsewhere"] = Paid("another-order", 6000, "BDT", "B0")  # paid, but not this
     for forged_or_short in ("made-up", "short", "elsewhere"):
-        await payments.check_payment(order.id, forged_or_short)
+        await payments.confirm_payment(order.id, forged_or_short)
         assert (await found(world, conversation)).status == "unpaid"
 
     gateway.paid["v1"] = Paid(order.id, 6000, "BDT", "B2")
-    await payments.check_payment(order.id, "v1")
-    await payments.check_payment(
+    await payments.confirm_payment(order.id, "v1")
+    await payments.confirm_payment(
         order.id, "v1"
     )  # the visitor's return and the gateway's notice: once is enough
     placed = await found(world, conversation)
@@ -177,7 +180,7 @@ async def test_without_its_own_sslcommerz_the_agent_takes_orders_as_before(world
     services = world.services
     await services.agents.ensure_dev_agent(SEEDS / "shop.yaml")
     await services.agents.update(DEV_WORKSPACE_ID, pay_first(services))  # no store yet
-    agent = await services.agents.by_key("dev-shop")
+    agent = await services.agents.by_public_key("dev-shop")
     assert "paid online first" not in await shop_prompt(agent.config, world.store(agent))
     assert (
         "Connect SSLCommerz or bKash to take payments first."
@@ -297,3 +300,39 @@ async def test_a_bkash_payment_places_the_order_once_and_only_for_its_amount(
     assert (shown["status"], shown["paid"], shown["payment_ref"]) == ("confirmed", 6000, "TRX1")
     told = (await services.inbox.get(DEV_WORKSPACE_ID, conv_id)).messages
     assert sum("Payment received" in str(m) for m in told) == 1  # placed once
+
+
+async def test_the_owner_hears_of_a_paid_order_from_a_page_with_no_chat(
+    app: FastAPI, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """*Buy now* on a product page opened from no chat, in an area that pays first: the
+    owner hears nothing while it's unpaid, and hears of it once it's paid."""
+    services = app.state.services
+    _, gateway = await paying_first(services)
+    told: list[str] = []
+
+    async def notify(workspace_id: str, text: str) -> None:
+        told.append(text)
+
+    monkeypatch.setattr(services.team, "notify_owner", notify)
+    form = {
+        "size": "M",
+        "colour": "Black",
+        "quantity": "1",
+        "name": "Kayes",
+        "phone": "01712345678",
+        "address": "House 12, Road 5, Mirpur 10",
+        "district": "Dhaka",
+    }
+    check = await client.post("/p/dev-shop/kurti", data=form)
+    found = re.search(r'name="heard" value="([^"]*)"', check.text)
+    assert found
+    placed = await client.post("/p/dev-shop/kurti", data=form | {"heard": html.unescape(found[1])})
+    assert placed.status_code == 303
+    [order] = (await client.get("/api/shop/orders")).json()
+    assert (order["status"], order["conversation_id"]) == ("unpaid", None)
+    assert told == []
+
+    gateway.paid["v1"] = Paid(order["id"], 6000, "BDT", "B1")
+    await services.payments.confirm_payment(order["id"], "v1")
+    assert len(told) == 1 and order["code"] in told[0] and "paid online" in told[0]

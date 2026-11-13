@@ -5,7 +5,7 @@ from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from heydesk.db import Base, new_id
-from heydesk.models.customer_request import CustomerRequest
+from heydesk.models.record import Record
 from heydesk.runtime.speech import money
 from heydesk.shop.orders import lines_text
 
@@ -52,7 +52,7 @@ class CouponRow(Base):
     only_for: Mapped[list[str] | None] = mapped_column(JSON(none_as_null=True), default=None)
 
 
-class ShopOrder(CustomerRequest, Base):
+class ShopOrder(Record, Base):
     """A cash-on-delivery order. Prices are copied in, so a later edit doesn't change it.
 
     When the shop takes payment first, the order starts `unpaid` (its items held) and only

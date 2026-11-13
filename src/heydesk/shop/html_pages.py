@@ -8,7 +8,7 @@ chat reads it, then *Place order*, the buyer's yes. The order's own page is `/o/
 
 import html
 
-from heydesk.runtime.speech import money
+from heydesk.runtime.speech import money, money_or_free
 from heydesk.shop.delivery import Zone
 from heydesk.shop.districts import DISTRICTS
 from heydesk.shop.models import ShopOrder
@@ -253,7 +253,7 @@ def delivery(zones: list[Zone], currency: str) -> str:
     """Each area's charge and days, and that the rest is paid at the door."""
     e = html.escape
     rows = "".join(
-        f"<li>{TRUCK}<span><b>{e(z.name)}</b> · {e(money(z.charge, currency) if z.charge else 'free')}"
+        f"<li>{TRUCK}<span><b>{e(z.name)}</b> · {e(money_or_free(z.charge, currency))}"
         + (f"<small>Usually {e(z.days)}</small>" if z.days else "")
         + "</span></li>"
         for z in zones
@@ -334,8 +334,7 @@ def check_page(
             ("Items", lines_text(order.lines)),
             (
                 "Delivery",
-                f"{order.zone}: "
-                + (money(order.delivery_charge, cur) if order.delivery_charge else "free"),
+                f"{order.zone}: {money_or_free(order.delivery_charge, cur)}",
             ),
             ("Payment", how),
             ("Address", order.address),

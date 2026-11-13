@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 
 from heydesk.api.deps import Svc, WorkspaceId
-from heydesk.models.call import QUEUED
+from heydesk.models.confirmation_call import QUEUED
 
 router = APIRouter(tags=["calls"])
 

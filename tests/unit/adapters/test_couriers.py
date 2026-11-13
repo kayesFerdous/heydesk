@@ -58,7 +58,7 @@ async def test_pathao_logs_in_once_and_books_without_a_city() -> None:
     pathao = Pathao()
     pathao.client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
     account = CourierAccount("pathao", "id", "secret", "me@shop.com", "pw", sandbox=True)
-    assert await pathao.check(account) == 9  # the first active store
+    assert await pathao.verify_account(account) == 9  # the first active store
     account = CourierAccount("pathao", "id", "secret", "me@shop.com", "pw", 9, sandbox=True)
     assert (await pathao.book(account, PARCEL_ITEM_TYPE)) == "DL1"
     tracked = await pathao.status(account, "DL1")

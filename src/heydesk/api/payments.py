@@ -19,8 +19,8 @@ from pydantic import BaseModel, Field
 
 from heydesk.api.deps import Svc, WorkspaceId
 from heydesk.errors import NotFound
-from heydesk.models.customer_request import UNPAID
-from heydesk.ports.payments import Account, PaymentUnavailable, Provider
+from heydesk.models.record import UNPAID
+from heydesk.ports.payments import GatewayAccount, PaymentUnavailable, Provider
 from heydesk.runtime.speech import money
 from heydesk.services.payments import NOTIFY_PATH
 from heydesk.shop.models import ShopOrder
@@ -59,7 +59,7 @@ async def connect_sslcommerz(
 ) -> SslCommerzOut:
     """Checks the store with SSLCommerz (a 400 says why it said no), then keeps it. From the
     next message, an agent with paying first on asks for payments into it."""
-    account = Account(body.store_id.strip(), body.password.strip(), body.sandbox)
+    account = GatewayAccount(body.store_id.strip(), body.password.strip(), body.sandbox)
     saved = await services.payments.connect(workspace_id, "sslcommerz", account)
     return SslCommerzOut(
         store_id=saved.store_id, sandbox=saved.sandbox, connected_at=saved.created_at
@@ -98,7 +98,7 @@ async def get_bkash(workspace_id: WorkspaceId, services: Svc) -> BkashOut:
 async def connect_bkash(body: BkashIn, workspace_id: WorkspaceId, services: Svc) -> BkashOut:
     """Checks the keys with bKash by asking it for a token (a 400 says why it said no), then
     keeps them. From the next payment link, the visitor can pay by bKash."""
-    account = Account(
+    account = GatewayAccount(
         store_id="",
         password=body.password.strip(),
         sandbox=body.sandbox,
@@ -132,7 +132,7 @@ COLOURS = {"bkash": "#e2136e", "sslcommerz": "#1f5fbf"}
 LABELS = {"bkash": "Pay with bKash", "sslcommerz": "Pay with a card or mobile banking"}
 
 
-def page(text: str, status_code: int = 200) -> HTMLResponse:
+def html_page(text: str, status_code: int = 200) -> HTMLResponse:
     body = (
         f'{HEAD}<p style="{STYLE}">{html.escape(text, quote=False)}<br><br>'
         "You can close this page and go back to the chat.</p>"
@@ -140,59 +140,61 @@ def page(text: str, status_code: int = 200) -> HTMLResponse:
     return HTMLResponse(body, status_code)
 
 
-def choose_page(record: ShopOrder, providers: list[Provider]) -> HTMLResponse:
+def choose_page(order: ShopOrder, providers: list[Provider]) -> HTMLResponse:
     """One button for each gateway the business is connected to."""
-    what = f"{record.PAY_FOR[4:].capitalize()} for {record.code}: {money(record.amount_due, record.currency)}"
+    what = f"{order.PAY_FOR[4:].capitalize()} for {order.code}: {money(order.amount_due, order.currency)}"
     buttons = "".join(
-        f'<a style="{BUTTON}{COLOURS[p]}" href="/pay/{record.id}?via={p}">{LABELS[p]}</a>'
+        f'<a style="{BUTTON}{COLOURS[p]}" href="/pay/{order.id}?via={p}">{LABELS[p]}</a>'
         for p in providers
     )
     return HTMLResponse(f'{HEAD}<div style="{STYLE}"><p>{html.escape(what)}</p>{buttons}</div>')
 
 
-def record_page(record: ShopOrder | None) -> HTMLResponse:
-    if record is None:
-        return page("There's nothing to pay for here.", 404)
-    if record.status == UNPAID:
-        return page(NOT_PAID)
-    if record.status == "cancelled":
-        return page(f"{record.code} was cancelled.")
-    return page(f"Payment received. {record.next_step_text()}")
+def result_page(order: ShopOrder | None) -> HTMLResponse:
+    if order is None:
+        return html_page("There's nothing to pay for here.", 404)
+    if order.status == UNPAID:
+        return html_page(NOT_PAID)
+    if order.status == "cancelled":
+        return html_page(f"{order.code} was cancelled.")
+    return html_page(f"Payment received. {order.next_step_text()}")
 
 
-@router.get("/pay/{record_id}", response_model=None, include_in_schema=False)
+@router.get("/pay/{order_id}", response_model=None, include_in_schema=False)
 async def pay(
-    record_id: str, services: Svc, via: Provider | None = None
+    order_id: str, services: Svc, via: Provider | None = None
 ) -> HTMLResponse | RedirectResponse:
     """The link the agent sends: off to the gateway to pay. With both connected, the visitor
     picks one first, and comes back here with `via`."""
-    record = await services.payments.find(record_id)
-    if record is None or record.status != UNPAID:
-        return record_page(record)
-    providers = await services.payments.providers(record.workspace_id)
+    order = await services.payments.find(order_id)
+    if order is None or order.status != UNPAID:
+        return result_page(order)
+    providers = await services.payments.providers(order.workspace_id)
     if via is None and len(providers) > 1:
-        return choose_page(record, providers)
+        return choose_page(order, providers)
     provider = via or (providers[0] if providers else "sslcommerz")
     try:
-        url = await services.payments.start(record, provider)
+        url = await services.payments.start(order, provider)
         return RedirectResponse(url, status_code=303)
     except PaymentUnavailable:
-        return page("The payment page isn't answering. Please try the link again in a minute.")
+        return html_page("The payment page isn't answering. Please try the link again in a minute.")
 
 
-@router.post("/pay/{record_id}/back", include_in_schema=False)
-async def back(record_id: str, services: Svc, val_id: Annotated[str, Form()] = "") -> HTMLResponse:
+@router.post("/pay/{order_id}/back", include_in_schema=False)
+async def sslcommerz_return(
+    order_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
+) -> HTMLResponse:
     """The gateway sends the visitor back here, paid, failed or cancelled. Only `val_id`,
     checked with the gateway, counts; what else it posts could be forged."""
     if val_id:
         with suppress(PaymentUnavailable):  # then the gateway's own notice settles it
-            await services.payments.check_payment(record_id, val_id)
-    return record_page(await services.payments.find(record_id))
+            await services.payments.confirm_payment(order_id, val_id)
+    return result_page(await services.payments.find(order_id))
 
 
-@router.get("/pay/{record_id}/bkash", include_in_schema=False)
-async def bkash_back(
-    record_id: str,
+@router.get("/pay/{order_id}/bkash", include_in_schema=False)
+async def bkash_return(
+    order_id: str,
     services: Svc,
     payment_id: Annotated[str, Query(alias="paymentID")] = "",
     outcome: Annotated[str, Query(alias="status")] = "",
@@ -201,15 +203,15 @@ async def bkash_back(
     asking bKash about, and only bKash's answer counts: the link itself could be forged."""
     if payment_id and outcome == "success":
         with suppress(PaymentUnavailable):
-            await services.payments.check_payment(record_id, payment_id, "bkash")
-    return record_page(await services.payments.find(record_id))
+            await services.payments.confirm_payment(order_id, payment_id, "bkash")
+    return result_page(await services.payments.find(order_id))
 
 
 @router.post(NOTIFY_PATH, include_in_schema=False)
-async def notice(
-    record_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
+async def sslcommerz_notice(
+    order_id: str, services: Svc, val_id: Annotated[str, Form()] = ""
 ) -> dict[str, bool]:
     """The gateway's notice (SSLCommerz's IPN), even if the visitor closed the tab."""
     if val_id:
-        await services.payments.check_payment(record_id, val_id)
+        await services.payments.confirm_payment(order_id, val_id)
     return {"ok": True}

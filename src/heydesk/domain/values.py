@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class Confirmed[T]:
     """`value`, read back to the visitor, who said yes.
 
-    Only `runtime.guards.confirm` makes one (`scripts/check_imports.sh` checks),
+    Only `runtime.commit_check.confirm` makes one (`scripts/check_imports.sh` checks),
     so a store method that takes `Confirmed[...]` can't be called without the commit check.
     """
 

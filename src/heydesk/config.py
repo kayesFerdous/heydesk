@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     CONVERSATION_IDLE_HOURS: int = 12  # on a messaging app, a message after this starts afresh
     TAKEOVER_QUIET_MINUTES: int = 30  # a chat the team took over is the agent's again
 
-    # Limits on a public chat, so timepass can't spend the business's turns. A day is the
+    # Limits on a public chat, so off-topic chatting can't spend the business's turns. A day is the
     # business's local day.
     VISITOR_DAILY_TURNS: int = 30  # one visitor's turns a day, on any channel
     WORKSPACE_DAILY_TURNS: int = 500  # all of a business's visitors together
