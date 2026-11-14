@@ -135,6 +135,8 @@ async def test_labels_notes_and_a_reply_from_the_inbox(app: FastAPI, client: Asy
     assert reply.json()["status"] == "human"
     team = (await client.get(f"/api/chat/{DEV_KEY}/{conversation}/team")).json()["replies"]
     assert team == ["Ji, we'll call you"]
+    said = (await client.get(f"/api/conversations/{conversation}")).json()["messages"]
+    assert said[-1]["role"] == "team"  # the inbox shows it as the team's, not the agent's
 
     await client.put(f"/api/conversations/{conversation}/takeover", json={"on": False})
     llm.script = ["Sure."]

@@ -12,6 +12,7 @@ from heydesk.api.sse import live_frames
 from heydesk.api.visitors import VisitorOut, visitor_out
 from heydesk.models import Conversation
 from heydesk.services import Services
+from heydesk.services.team import TEAM_AUTHOR
 from heydesk.services.visitors import visitor_key
 
 router = APIRouter(tags=["conversations"])
@@ -63,7 +64,7 @@ async def conversation_out(
 
 class Line(BaseModel):
     index: int  # its place in the whole chat, for `before` and `history_from`
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "team"]  # team: written by a person from the inbox
     text: str  # empty for photos the agent showed
     photo: str = ""  # the photo the visitor sent with it
     photos: list[dict[str, str]] = []  # products the agent showed: {name, price, url}
@@ -81,7 +82,8 @@ def lines(conversation: Conversation) -> list[Line]:
             and m["content"].strip()
             and not m.get("tool_calls")
         ):
-            said.append(Line(index=i, role=m["role"], text=m["content"], photo=m.get("photo", "")))
+            role = TEAM_AUTHOR if m.get("by") == TEAM_AUTHOR else m["role"]
+            said.append(Line(index=i, role=role, text=m["content"], photo=m.get("photo", "")))
     return said
 
 
