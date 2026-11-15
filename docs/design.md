@@ -159,9 +159,13 @@ visitor message ─► start_turn: load the conversation (or start one), build t
                  ─► append the turn's messages (the row locked), save and log the trace
 ```
 
-`ConversationService.start_turn` is the one entry point for web and voice. The
-listener (the SSE response, or the voice pipeline) reads the turn's events;
-the turn is saved when it ends.
+`ConversationService.start_turn` is the one entry point for web and voice. It runs
+the turn in its own `asyncio` task, which puts the turn's events on a queue; the
+listener (the SSE response, or the voice pipeline) reads them from there. The turn is
+saved when it ends, so a listener that stops reading (a tab closed mid-reply, a call
+hung up) stops only the reading: the turn finishes and is saved, and the next visit's
+`/history` shows the reply (D188). The service keeps the running tasks, and the app's
+shutdown waits up to 20 seconds for them before the database closes.
 
 **What the model sees on every call**, in this order (each rule and why: [prompt-rules.md](prompt-rules.md)):
 
@@ -1967,7 +1971,6 @@ version handles them.
 
 | Left out | What happens instead |
 |---|---|
-| Turn keeps running after a closed tab | The turn runs inside the listener; closing the tab mid-reply loses that turn |
 | Retry replay (`client_message_id`), idempotency keys | A retried message is a new message |
 | One reply at a time per conversation (a lease) | The page blocks sending while a reply streams; two at once would both run |
 | Agent versions, a publish step, edit history | Edits are live on the next message, even mid-conversation |

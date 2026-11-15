@@ -46,7 +46,9 @@ log = logging.getLogger(__name__)
 @dataclass
 class RunningTurn:
     conversation_id: str
-    events: AsyncGenerator[Event]  # the listener reads these; the turn is saved at the end
+    # The listener reads these. The turn runs in its own task and is saved at the end, even
+    # if the listener stops reading
+    events: AsyncGenerator[Event]
     interrupt: asyncio.Event  # set it to stop the turn at the next token (a barge-in)
 
 
@@ -111,6 +113,9 @@ class ConversationService:
         self.calls = calls
         self.settings = settings
         self.now = now
+        # Turns still running. asyncio holds a task only weakly, so a turn whose listener
+        # left could be garbage-collected mid-reply without this
+        self.running: set[asyncio.Task[None]] = set()
 
     async def start_turn(
         self,
@@ -123,7 +128,7 @@ class ConversationService:
         photo: bytes | None = None,
         name: str | None = None,
     ) -> RunningTurn:
-        """Loads the conversation (or starts one), then runs the turn as the listener reads it.
+        """Loads the conversation (or starts one), then starts the turn in its own task.
         `visitor_key` is who is talking, for the limits: `web:<token>`, `telegram:<chat id>`.
         A messaging app passes its `contact` (the chat id) and their `name`, if it knows it, for a
         new conversation; the web chat and a call pass the browser's token. A web visitor
@@ -194,7 +199,11 @@ class ConversationService:
             photo_line=about_photo,
         )
         return RunningTurn(
-            conversation.id, self._run_turn(turn, conversation, agent, visitor_key), turn.interrupt
+            conversation.id,
+            self._in_background(
+                conversation.id, self._run_turn(turn, conversation, agent, visitor_key)
+            ),
+            turn.interrupt,
         )
 
     async def reply(
@@ -373,10 +382,7 @@ class ConversationService:
     async def _run_turn(
         self, turn: TurnInput, conversation: Conversation, agent: LiveAgent, visitor_key: str
     ) -> AsyncGenerator[Event]:
-        """Passes the turn's events to the listener and saves the turn when it ends.
-
-        The listener drives this, so a tab closed mid-reply loses the turn.
-        """
+        """Passes the turn's events on and saves the turn when it ends."""
         async with aclosing(run_turn(turn, self.llm)) as events:
             async for event in events:
                 if isinstance(event, TurnEnded):
@@ -410,8 +416,50 @@ class ConversationService:
     def _team_turn(self, conversation: Conversation, text: str, channel: str) -> RunningTurn:
         """A turn the agent stays out of: nothing to interrupt, and no model runs."""
         return RunningTurn(
-            conversation.id, self._save_for_team(conversation, text, channel), asyncio.Event()
+            conversation.id,
+            self._in_background(conversation.id, self._save_for_team(conversation, text, channel)),
+            asyncio.Event(),
         )
+
+    def _in_background(
+        self, conversation_id: str, events: AsyncGenerator[Event]
+    ) -> AsyncGenerator[Event]:
+        """Runs the turn in its own task, so it goes to its end and is saved even if the
+        listener stops reading: a tab closed mid-reply, a call hung up. The listener gets the
+        events through a queue."""
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()  # None: the turn is over
+
+        async def run() -> None:
+            try:
+                async for event in events:
+                    queue.put_nowait(event)
+            finally:
+                queue.put_nowait(None)
+
+        async def read() -> AsyncGenerator[Event]:
+            while (event := await queue.get()) is not None:
+                yield event
+            await task  # raises the turn's error, if it had one, for the listener to report
+
+        def finished(task: asyncio.Task[None]) -> None:
+            self.running.discard(task)
+            if not task.cancelled() and task.exception():  # logged here: the listener may be gone
+                log.error(
+                    "turn stopped on an error",
+                    exc_info=task.exception(),
+                    extra={"conversation_id": conversation_id},
+                )
+
+        task = asyncio.create_task(run())
+        self.running.add(task)
+        task.add_done_callback(finished)
+        return read()
+
+    async def finish_running(self, seconds: float) -> None:
+        """At shutdown: gives the turns still running up to `seconds` to end and be saved,
+        before the database closes."""
+        if self.running:
+            await asyncio.wait(self.running, timeout=seconds)
 
     async def _save_for_team(
         self, conversation: Conversation, text: str, channel: str

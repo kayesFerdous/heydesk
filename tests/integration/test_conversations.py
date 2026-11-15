@@ -44,6 +44,26 @@ async def test_the_transcript_grows_turn_by_turn(world: World) -> None:
     assert world.llm.requests[1].messages == conversation.messages[:-1]
 
 
+async def test_a_tab_closed_mid_reply_still_saves_the_whole_turn(world: World) -> None:
+    world.llm.script = ["The kurti is our favourite this week."]
+    world.llm.delay = 0.01  # the reply streams word by word, as a real model's does
+    turn = await start(world, "What's good?")
+    await anext(turn.events)  # the first word reaches the page, then the tab closes
+    await turn.events.aclose()
+    assert world.services.conversations.running  # the turn goes on without the page
+
+    await world.services.conversations.finish_running(5)
+    async with world.sessions() as s:
+        conversation = await s.get(Conversation, turn.conversation_id)
+        saved_turns = (
+            await s.scalars(select(Turn).where(Turn.conversation_id == turn.conversation_id))
+        ).all()
+    assert conversation is not None
+    assert conversation.messages[-1]["content"] == "The kurti is our favourite this week."
+    assert len(saved_turns) == 1 and not saved_turns[0].interrupted
+    assert not world.services.conversations.running
+
+
 async def test_the_prompt_has_the_date_and_an_edit_shows_up_next_message(world: World) -> None:
     conv_id = await say(world, "hi")
     await world.services.agents.update(DEV_WORKSPACE_ID, {"faq": "Changed."})
