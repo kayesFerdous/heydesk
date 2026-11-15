@@ -159,7 +159,7 @@ class CallAgent(FrameProcessor):
         await self.push_frame(LLMFullResponseStartFrame())
         async for event in turn.events:
             if turn.interrupt.is_set():
-                continue  # read to the end, so the turn is saved; say nothing more
+                continue  # read to the end: the next turn waits for this one's save; say nothing
             if isinstance(event, Token):
                 spoken += event.text
                 await self.push_frame(LLMTextFrame(event.text))

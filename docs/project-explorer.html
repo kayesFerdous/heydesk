@@ -352,7 +352,7 @@ tr.hl td { background: var(--accent-soft); }
    "label": "create_app",
    "type": "api",
    "file": "src/heydesk/main.py",
-   "purpose": "Builds the app: settings, logging, lifespan (engine, services, dev agent, three loops), middleware, routers, /media.",
+   "purpose": "Builds the app: settings, logging, lifespan (engine, services, dev agent, background loops; at shutdown it waits up to 20 s for running turns), middleware, routers, /media.",
    "inputs": "Settings, optional fakes",
    "outputs": "FastAPI app",
    "fn": "create_app"
@@ -6328,7 +6328,7 @@ tr.hl td { background: var(--accent-soft); }
     {
      "from": "s-conversations",
      "to": "a-sse",
-     "data": "events, as the listener reads them",
+     "data": "events, through a queue from the turn's own task",
      "file": "src/heydesk/services/conversations.py",
      "fn": "_run_turn"
     },
@@ -7388,7 +7388,7 @@ tr.hl td { background: var(--accent-soft); }
    "where": "`conversations.messages` (JSON, provider-native messages)",
    "written": "`_save`, `tell_visitor`, `handle_team_reply`, `ConfirmationCallService.answer`",
    "sync": "Only appended (rule 5). Re-read inside a transaction with the row locked (`_get_by_id(lock=True)`, D162), then `[*old, *new]`. The whole transcript is resent to the model each turn.",
-   "failure": "A tab closed mid-reply loses that turn (D3). A new list is assigned so SQLAlchemy sees it.",
+   "failure": "A tab closed mid-reply still saves the turn: it runs in its own task (D188). A restart waits up to 20 s for running turns. A new list is assigned so SQLAlchemy sees it.",
    "timeline": "turn"
   },
   {
@@ -9162,7 +9162,7 @@ tr.hl td { background: var(--accent-soft); }
       {"id": "inbox", "shape": "event", "label": "Team inbox: summary, draft, ask", "file": "src/heydesk/api/conversations.py", "fn": "assist", "note": "A team member asks for help on a chat. This isn't a visitor talking, so it skips the visitor checks."},
       {"id": "assist", "label": "assist.write", "file": "src/heydesk/services/assist.py", "fn": "write", "note": "Builds its own `TurnInput` with `tools=[]`. The words go back to the team and nothing is added to the chat. A `turns` row is still saved, on the channel `assist`."},
       {"id": "start", "label": "conversations.start_turn: THE entry point", "file": "src/heydesk/services/conversations.py", "fn": "start_turn", "note": "**This is the function that starts the agent.** It runs the checks, loads the conversation, packs `TurnInput`, and returns a `RunningTurn`. The model hasn't run yet."},
-      {"id": "run", "label": "conversations._run_turn", "file": "src/heydesk/services/conversations.py", "fn": "_run_turn", "note": "A generator wrapped around `run_turn`. It passes each event on, and when it sees `TurnEnded` it saves the turn and does the after-work.", "code": "async with aclosing(run_turn(turn, self.runtime)) as events:\n    async for event in events:\n        if isinstance(event, TurnEnded):\n            await self._save(conversation, event, agent.config.handoff.auto_assign)\n            await self._alert(conversation, event)\n            ...\n        yield event"},
+      {"id": "run", "label": "conversations._run_turn", "file": "src/heydesk/services/conversations.py", "fn": "_run_turn", "note": "A generator wrapped around `run_turn`, run in its own task by `_in_background`, so it finishes even if the listener leaves. It passes each event on, and when it sees `TurnEnded` it saves the turn and does the after-work.", "code": "async with aclosing(run_turn(turn, self.runtime)) as events:\n    async for event in events:\n        if isinstance(event, TurnEnded):\n            await self._save(conversation, event, agent.config.handoff.auto_assign)\n            await self._alert(conversation, event)\n            ...\n        yield event"},
       {"id": "loop", "shape": "end", "label": "run_turn: the agent loop", "file": "src/heydesk/runtime/loop.py", "fn": "run_turn", "note": "The agent itself: up to 6 model calls, with tools running in between. Every path ends in exactly one `TurnEnded`."}
     ],
     "edges": [
@@ -9361,7 +9361,7 @@ tr.hl td { background: var(--accent-soft); }
     {"d": 2, "k": "net", "fn": "_alert(conversation, ended)", "file": "src/heydesk/services/conversations.py", "does": "Telegram alert; pushes the order to WooCommerce", "db": "SELECT channels, users", "note": "Only when a tool left an alert, or the visitor was handed off."},
     {"d": 2, "k": "read", "fn": "calls.queue_new_orders(agent, conversation.id)", "file": "src/heydesk/services/calls.py", "does": "A new order may be queued for a call", "db": "SELECT shop_orders, calls; maybe INSERT calls", "note": "Only after a turn with an alert, and with calls turned on."},
     {"d": 2, "k": "write", "fn": "visitors.count_off_topic_strike(agent, visitor, tools)", "file": "src/heydesk/services/visitors.py", "does": "Adds or clears off-topic strikes", "db": "UPDATE visitors", "note": "No tools ran: nothing changes."},
-    {"d": 1, "k": "stream", "fn": "to_sse: choices, done", "file": "src/heydesk/api/sse.py", "does": "Buttons, then the done frame", "note": "`_run` yields `TurnEnded` after saving, so `done` means it's saved. **A tab closed mid-reply loses the turn:** the visitor drives the generator, so `_save` never runs. An order a tool already saved stays, but the transcript doesn't record it."}
+    {"d": 1, "k": "stream", "fn": "to_sse: choices, done", "file": "src/heydesk/api/sse.py", "does": "Buttons, then the done frame", "note": "`_run_turn` yields `TurnEnded` after saving, so `done` means it's saved. **A tab closed mid-reply still saves the turn:** it runs in its own task (`_in_background`) and the stream only reads its queue, so a closed tab stops the reading, not the turn. The next visit's history shows the reply."}
   ],
 
   "lanes": ["Visitor", "Python", "Model", "Database"],

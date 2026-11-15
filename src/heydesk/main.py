@@ -36,6 +36,9 @@ from heydesk.wiring import (
 
 log = logging.getLogger(__name__)
 
+# How long shutdown waits for turns still running. Render gives a stopping server 30 seconds
+TURN_SHUTDOWN_SECONDS = 20
+
 
 def create_app(
     settings: Settings | None = None,
@@ -113,6 +116,8 @@ def create_app(
             },
         )
         yield
+        # A visitor who closed the tab mid-reply: their turn still runs; let it save first
+        await services.conversations.finish_running(TURN_SHUTDOWN_SECONDS)
         for loop in loops:
             loop.cancel()
         if redis is not None:
